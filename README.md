@@ -5,9 +5,9 @@ Auto-rigging for sculpted and generated models, run headless in Blender, with a 
 it to an engine budget, audits the rig (PASS/FAIL, with pictures), authors clips for its archetype, and writes a model
 card an engine importer can read. Blender never opens a window.
 
-Status: the pipeline, the GUI (PLAN.md, P1) and the 3D results viewer (the viewer half of P2) work; the P2 spec form
-and "Rig again" are next. Not published yet: the public release will start from a fresh,
-squashed commit, because the early local history carries data from the private collection the tool grew out of.
+**Status: early (alpha).** The pipeline, the GUI and the 3D results viewer work. Writing a model's `rig.json` is
+still done by hand; a point-and-click spec editor (pick bones in 3D, save and re-rig, before/after audit) is being
+built next, then graded audit results (PASS / CHECK / FAIL). Expect rough edges; issues and pull requests are welcome.
 
 ## Quick start
 
