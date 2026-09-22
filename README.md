@@ -35,10 +35,15 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
    then shows a table worst first: grade, tears, the widest gap, bleed, head share, the worst bone. A row opens its
    model; **Table** shows the last results again.
 7. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
-   beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), with its clips, a skeleton /
-   bone names / weights overlay, and checks (real height, facing, bones, clips). Keys: Left/Right model, Up/Down clip,
-   Space play, R overlay, [ ] bone, V view, F frame, L loop; a gamepad's D-pad, A, X, Y, LB and RB do the same. It
-   reads `<rig folder>/preview.glb`, which **Preview** writes (a model without one says "run Preview first").
+   beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), both always framed whole
+   whatever the model's size; its clips with a scrub bar (drag to any frame; it pauses while you drag); a skeleton /
+   bone names / weights / bleed overlay; the audit's verdict and its worst bones, tinted red (a failed check) or
+   amber (a warning) on the skeleton and listed to click; in the weights view, every loose part of the mesh and the
+   bone that carries it, flagged when it rides the wrong one; and checks (real height, facing, bones, clips, the
+   audit). Keys: Left/Right model, Up/Down clip, Space play, R overlay, [ ] bone, V view, F frame, L loop, `,` `.`
+   step, Home/End. A gamepad (standard mapping: Xbox or PlayStation): D-pad or left stick model/clip, A play, Y
+   overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
+   (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
 
 ## Command line
 
@@ -57,7 +62,8 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
 ## Layout
 
     autorig/gui/     server.py  index.html                 the local GUI
-                     viewer.html  viewer.js  viewer_api.py  the 3D results viewer
+                     viewer.html  viewer.js  viewer_logic.js  viewer_api.py
+                                                           the 3D results viewer
                      vendor/three/                         three.js 0.186.0 (MIT), vendored so it works offline
     autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades
     autorig/steps/   survey  facing  measure  probe_tips    inspect   (run inside Blender)
@@ -67,7 +73,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
     docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN
-    tests/           test_server.py  test_viewer.py  test_grades.py
+    tests/           test_server.py  test_viewer.py  test_grades.py  viewer_logic_test.mjs
     samples/         the default models root (empty)
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
@@ -81,9 +87,10 @@ conventions), [PLAN](docs/PLAN.md).
 The server test starts the GUI's server with no browser against a temporary models folder, uploads a generated OBJ
 model with its `rig.json` the way the page does, runs every step through the API, cancels a running step, and checks
 the audit and the card. The viewer test checks the viewer's page, code and vendored three.js (token and Host rules,
-no way out of the folder), the list of previews, and runs the preview step on a generated two-bone rig with two
-actions, reading the GLB back: one skin, both clips as animations. The Blender parts are skipped when Blender is not
-installed. The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old
+no way out of the folder), the list of previews with its audit digest, the worst bones an audit blames, and runs the
+preview step on a generated two-bone rig with two actions, reading the GLB back: one skin, both clips as animations.
+With Node it also runs `tests/viewer_logic_test.mjs`: gamepad mapping and deadzone, the scrub bar, the bleed rule and
+mesh islands. The Blender and Node parts are skipped when either is not installed. The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old
 audits), and the collection endpoints on made-up audit files: the table worst first, the badges, the tear sites, and
 Audit all going on past a model it cannot read.
 

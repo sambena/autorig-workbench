@@ -2,17 +2,23 @@
 // Autorig Workbench: the results viewer (gui/viewer.html). Plain ES modules, no build step; three.js is vendored
 // under gui/vendor/three (MIT).
 //
-// A stage (dark, a floor ruled every unit, a 1.8 m reference figure to the left), the model standing centred on
-// the floor facing +X as a side-on game shows it, its clips, a rig overlay (skeleton, bone names, weights of one
-// bone), and a few checks: real height, facing, bones, clips.
+// A stage (dark, a floor ruled every unit, a 1.8 m reference figure a short gap to the left), the model standing
+// centred on the floor facing +X as a side-on game shows it, its clips with a scrub bar, a rig overlay (skeleton,
+// bone names, weights of one bone, bleed), the audit's verdict and its worst bones, the mesh's loose parts and the
+// bone each rides, and a few checks: real height, facing, bones, clips.
+//
+// Framing fits the model (over every clip, not only its bind pose) and the figure into the largest part of the
+// window the HUD leaves clear, so neither is ever cut off, whatever the model's size or the window's.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { padStep, scrubTicks, scrubTime, keyTimes, isBleed, segDist2, islands as meshIslands, sideOf, hops } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const REF_HEIGHT = 1.8;
-const OVERLAYS = ["off", "skeleton", "names", "weights"];
+const OVERLAYS = ["off", "skeleton", "names", "weights", "bleed"];
+const AUDIT_BAD = new THREE.Color(1.0, 0.16, 0.16), AUDIT_WARN = new THREE.Color(1.0, 0.62, 0.1);
 // Bone colours by role, as the rig step's QA pictures draw them (steps/rerig.py ROLE_COLOURS).
 const ROLE_COLOURS = {
   spine: [0.1, 0.35, 0.9], leg: [0.1, 0.65, 0.2], tail: [0.95, 0.5, 0.05], head: [0.6, 0.15, 0.75],
@@ -62,15 +68,19 @@ scene.add(key, key.target);
 const rim = new THREE.DirectionalLight(0x9fb4ff, 0.8);
 scene.add(rim);
 
+let resizeTimer = 0;
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h);
   labelRenderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  layoutPanels();
+  drawScrub();
+  clearTimeout(resizeTimer);                       // the side view refits once the window stops changing
+  resizeTimer = setTimeout(() => { if (view === "side") frame(); }, 120);
 }
-window.addEventListener("resize", resize);
-resize();
+window.addEventListener("resize", () => resize());
 
 // ---------------------------------------------------------------------------------------------------------------
 // The stage: floor, ruler, reference figure (rebuilt to the model's size)
@@ -105,6 +115,11 @@ function makeFigure() {
   const top = label("1.8 m", "ref"); top.position.set(0, REF_HEIGHT + 0.08, 0); g.add(top);
   g.userData.width = 0.62;
   return g;
+}
+
+function figureGap(box) {
+  const s = box.getSize(new THREE.Vector3());
+  return Math.max(0.04, 0.08 * Math.max(REF_HEIGHT, s.x, s.y));
 }
 
 function buildStage(box) {
@@ -144,8 +159,9 @@ function buildStage(box) {
   stage.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x8a93a6 })));
   scene.add(stage);
 
-  // the figure stands to the model's left (behind it, as it faces +X), clear of it
-  figure.position.set(box.min.x - 0.45 - figure.userData.width / 2, 0, 0);
+  // the figure stands to the model's left (behind it, as it faces +X), a short gap clear of everything it does in
+  // its clips; the gap scales with the larger of the two
+  figure.position.set(box.min.x - figureGap(box) - figure.userData.width / 2, 0, 0);
 
   const r = Math.max(extent, REF_HEIGHT) * 1.6 + Math.abs(figure.position.x);
   key.position.set(r * 0.6, r * 1.3, r * 0.9);
@@ -163,7 +179,7 @@ const loader = new GLTFLoader();
 let models = [], mi = -1;            // every rigged model the server knows; the one shown
 let cur = null;                      // {item, gltf, holder, mixer, clips, bones, skinned, box, fps, names, ...}
 let ci = 0, action = null, playing = true, loop = true, speed = 1;
-let overlay = 0, view = "side", framing = "all", sel = -1;
+let overlay = 0, view = "side", framing = "model", sel = -1;
 let loadToken = 0;
 
 function disposeTree(o) {
@@ -317,18 +333,62 @@ function setup(item, gltf) {
   mixer.addEventListener("finished", () => { playing = false; hudPlay(); });
   const clips = gltf.animations.slice();
   cur = { item, info, gltf, holder, root, overlay: overlayGroup, mixer, clips, bones, skinned, meshes, box, scale,
-          fileSize, fps: info.fps || 24, weightMats: [], origMats: new Map() };
+          fileSize, fps: info.fps || 24, weightMats: [], origMats: new Map(), audit: item.audit || null,
+          analysis: null, keys: clips.map((c) => keyTimes(c.tracks.map((t) => t.times))) };
   for (const m of meshes) cur.origMats.set(m, m.material);
+  const blame = new Map(((cur.audit && cur.audit.bones) || []).map((r) => [r.bone, r]));
+  for (const b of bones) b.audit = blame.get(b.name) || null;
 
-  buildStage(box);
+  cur.envelope = envelope();                     // where the model goes over all its clips
+  buildStage(cur.envelope);
   sel = pickDefaultBone();
   ci = Math.min(ci, Math.max(0, clips.length - 1));
   if (!clips.length) ci = 0;
   playClip(ci);
   applyOverlay();
-  frame();
   renderChecks(checks());
+  renderWorst();
   hud();
+  layoutPanels();
+  frame();
+}
+
+// The box the model fills over every clip: its bind-pose mesh, and each clip sampled through, the skeleton's box
+// grown by how far the mesh stood past the skeleton at bind pose.
+function envelope() {
+  const pts = new THREE.Box3(), p = new THREE.Vector3();
+  const boneBox = () => {
+    cur.holder.updateMatrixWorld(true);
+    pts.makeEmpty();
+    for (const b of cur.bones) {
+      pts.expandByPoint(b.bone.getWorldPosition(p));
+      pts.expandByPoint(b.bone.localToWorld(p.set(0, b.len, 0)));
+    }
+    return pts.clone();
+  };
+  for (const s of cur.skinned) s.skeleton.pose();
+  const env = cur.box.clone();
+  if (!cur.bones.length) return env;
+  const bind = boneBox();
+  const padLo = bind.min.clone().sub(cur.box.min).max(new THREE.Vector3());
+  const padHi = cur.box.max.clone().sub(bind.max).max(new THREE.Vector3());
+  for (const clip of cur.clips) {
+    const a = cur.mixer.clipAction(clip);
+    a.reset(); a.play();
+    const n = Math.min(48, Math.max(8, Math.round(clip.duration * cur.fps)));
+    for (let k = 0; k <= n; k++) {
+      a.time = clip.duration * k / n;
+      cur.mixer.update(0);
+      const bb = boneBox();
+      bb.min.sub(padLo); bb.max.add(padHi);
+      env.union(bb);
+    }
+    a.stop();
+  }
+  cur.mixer.stopAllAction();
+  for (const s of cur.skinned) s.skeleton.pose();
+  env.min.y = Math.min(env.min.y, 0);
+  return env;
 }
 
 // A unit bone along +Y, as Blender draws one: a point at the head, a square waist a tenth of the way, the tail.
@@ -399,6 +459,7 @@ function playClip(i) {
   cur.mixer.timeScale = speed;
   if (!playing) cur.mixer.update(0);
   hud();
+  drawScrub();
 }
 
 function setPlaying(p) {
@@ -415,8 +476,17 @@ function stepFrame(d) {
   if (!action) return;
   setPlaying(false);
   const dur = action.getClip().duration;
-  action.time = Math.min(dur, Math.max(0, action.time + d / cur.fps));
+  const f = Math.round(action.time * cur.fps) + d;
+  seek(Math.min(dur, Math.max(0, f / cur.fps)));
+}
+
+function seek(t) {
+  if (!action) return;
+  action.enabled = true;
+  action.time = t;
   cur.mixer.update(0);
+  drawScrub();
+  hudTime();
 }
 
 function setLoop(l) {
@@ -433,31 +503,48 @@ function setSpeed(s) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Overlays: off, skeleton, bone names, weights
+// Overlays: off, skeleton, bone names, weights, bleed
 // ---------------------------------------------------------------------------------------------------------------
 
 function applyOverlay() {
   const mode = OVERLAYS[overlay];
   $("bOverlay").textContent = "Overlay: " + mode;
   $("bOverlay").classList.toggle("on", overlay > 0);
-  if (!cur) return;
+  for (const id of ["boneinfo", "worst", "islands", "bleed"]) $(id).style.display = "none";
+  if (!cur) { layoutPanels(); return; }
   cur.overlay.visible = mode !== "off";
   for (const b of cur.bones) b.label.visible = mode === "names";
+  if (mode === "weights" || mode === "bleed") analyse();
   paintWeights(mode === "weights");
-  highlight();
+  if (mode === "bleed") paintBleed();
   $("boneinfo").style.display = mode === "weights" && sel >= 0 ? "block" : "none";
+  $("worst").style.display = mode !== "off" && cur.audit ? "block" : "none";
+  $("islands").style.display = mode === "weights" ? "block" : "none";
+  $("bleed").style.display = mode === "bleed" ? "block" : "none";
+  if (mode === "weights") renderIslands();
+  if (mode === "bleed") renderBleed();
+  renderWorst();
   hud();
+  layoutPanels();
 }
 
 function highlight() {
   if (!cur) return;
   const mode = OVERLAYS[overlay];
+  const white = new THREE.Color(1, 1, 1);
   cur.bones.forEach((b, i) => {
-    const on = i === sel && (mode === "weights" || mode === "names" || mode === "skeleton");
-    b.mesh.material.color.copy(on ? new THREE.Color(1, 1, 1) : b.col);
-    b.mesh.material.opacity = on ? 0.95 : (mode === "weights" ? 0.35 : 0.55);
+    const on = i === sel && mode !== "off";
+    // the audit's worst bones: red where a failed check blames them, amber where it only warns
+    const blamed = b.audit ? (b.audit.level === "bad" ? AUDIT_BAD : AUDIT_WARN) : null;
+    const c = on ? white : blamed || b.col;
+    b.mesh.material.color.copy(c);
+    b.edge.material.color.copy(on ? white : c.clone().lerp(white, 0.45));
+    b.mesh.material.opacity = on ? 0.95 : blamed ? 0.85 : (mode === "weights" || mode === "bleed" ? 0.3 : 0.55);
     b.label.element.classList.toggle("sel", on);
   });
+  for (const id of ["worstList", "islandList", "bleedList"]) {
+    for (const li of $(id).children) li.classList.toggle("sel", li.dataset.bone !== undefined && Number(li.dataset.bone) === sel);
+  }
 }
 
 function weightColour(w, out) {
@@ -506,7 +593,224 @@ function paintWeights(on) {
 function selectBone(i) {
   if (!cur || !cur.bones.length) return;
   sel = (i + cur.bones.length) % cur.bones.length;
-  applyOverlay();
+  const mode = OVERLAYS[overlay];
+  if (mode === "weights") { paintWeights(true); $("boneinfo").style.display = "block"; }
+  else if (mode === "bleed") paintBleed();
+  highlight();
+}
+const boneByName = (n) => cur ? cur.bones.findIndex((b) => b.name === n) : -1;
+
+// ---------------------------------------------------------------------------------------------------------------
+// The mesh, vertex by vertex, at bind pose: which bone owns each vertex, which is nearest, the audit's bleed rule,
+// and the loose parts (islands) with the bone that dominates each. Computed once per model, when first needed.
+// ---------------------------------------------------------------------------------------------------------------
+
+function analyse() {
+  if (cur.analysis) return cur.analysis;
+  const B = cur.bones, nb = B.length;
+  const names = B.map((b) => b.name), parent = B.map((b) => b.parent);
+  for (const s of cur.skinned) s.skeleton.pose();
+  cur.holder.updateMatrixWorld(true);
+  const p = new THREE.Vector3();
+  const heads = B.map((b) => b.bone.getWorldPosition(new THREE.Vector3()).toArray());
+  const tails = B.map((b) => b.bone.localToWorld(new THREE.Vector3(0, b.len, 0)).toArray());
+  const size = cur.box.getSize(new THREE.Vector3());
+  const S = Math.max(size.x, size.y, size.z) || 1;
+  const perMesh = [], isl = [];
+  const weighted = new Float64Array(nb);
+  for (const m of cur.meshes) {
+    const g = m.geometry, n = g.attributes.position.count;
+    const pos = new Float32Array(n * 3), dom = new Int32Array(n).fill(-1), share = new Float32Array(n);
+    const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    const map = m.isSkinnedMesh && si ? m.skeleton.bones.map((b) => B.findIndex((x) => x.bone === b)) : null;
+    let rider = -1;                                   // a rigid piece rides its parent bone whole
+    if (!map) for (let q = m.parent; q && rider < 0; q = q.parent) rider = B.findIndex((x) => x.bone === q);
+    const w = new Float64Array(nb);
+    for (let v = 0; v < n; v++) {
+      if (m.isSkinnedMesh) m.getVertexPosition(v, p); else p.fromBufferAttribute(g.attributes.position, v);
+      m.localToWorld(p);
+      pos[3 * v] = p.x; pos[3 * v + 1] = p.y; pos[3 * v + 2] = p.z;
+      if (map) {
+        let best = -1, bw = 0, tot = 0;
+        const js = [];
+        for (let k = 0; k < 4; k++) {
+          const j = map[si.getComponent(v, k)], x = sw.getComponent(v, k);
+          if (j < 0 || !(x > 0)) continue;
+          tot += x; w[j] += x; js.push(j); weighted[j] += x;
+        }
+        for (const j of js) if (w[j] > bw) { bw = w[j]; best = j; }
+        for (const j of js) w[j] = 0;
+        if (tot > 1e-4) { dom[v] = best; share[v] = bw / tot; }
+      } else if (rider >= 0) { dom[v] = rider; share[v] = 1; weighted[rider] += 1; }
+    }
+    const idx = g.index ? g.index.array : null;
+    const { labels, count, sizes } = meshIslands(pos, idx, 1e-5 * S);
+    // each vertex's share of the surface, as the audit weighs its bleed: a third of every triangle it is on
+    const area = new Float32Array(n);
+    const nt = idx ? idx.length / 3 : n / 3;
+    for (let t = 0; t < nt; t++) {
+      const a = idx ? idx[3 * t] : 3 * t, b = idx ? idx[3 * t + 1] : 3 * t + 1, c = idx ? idx[3 * t + 2] : 3 * t + 2;
+      const ux = pos[3 * b] - pos[3 * a], uy = pos[3 * b + 1] - pos[3 * a + 1], uz = pos[3 * b + 2] - pos[3 * a + 2];
+      const vx = pos[3 * c] - pos[3 * a], vy = pos[3 * c + 1] - pos[3 * a + 1], vz = pos[3 * c + 2] - pos[3 * a + 2];
+      const ar = 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 3;
+      area[a] += ar; area[b] += ar; area[c] += ar;
+    }
+    perMesh.push({ m, n, pos, dom, share, labels, area, offset: isl.length });
+    for (let k = 0; k < count; k++) isl.push({ verts: sizes[k], glbVerts: 0, weight: new Float64Array(nb), nearVotes: new Map(),
+                                              bleed: 0, box: new THREE.Box3(), rigid: true, unweighted: 0 });
+  }
+  // the nearest of the bones that carry weight, and the bleed rule, per vertex
+  const deform = [];
+  for (let j = 0; j < nb; j++) if (weighted[j] > 0) deform.push(j);
+  let nBleed = 0, nAll = 0, aBleed = 0, aAll = 0;
+  for (const pm of perMesh) {
+    pm.near = new Int32Array(pm.n).fill(-1);
+    pm.bleed = new Uint8Array(pm.n);
+    for (let v = 0; v < pm.n; v++) {
+      const x = pm.pos[3 * v], y = pm.pos[3 * v + 1], z = pm.pos[3 * v + 2];
+      let best = -1, bd = Infinity;
+      for (const j of deform) { const d = segDist2(x, y, z, heads[j], tails[j]); if (d < bd) { bd = d; best = j; } }
+      pm.near[v] = best;
+      const d = pm.dom[v];
+      const I = isl[pm.offset + pm.labels[v]];
+      aAll += pm.area[v];
+      I.glbVerts++; I.box.expandByPoint(p.set(x, y, z));
+      if (d < 0) { I.unweighted++; I.rigid = false; continue; }
+      I.weight[d] += pm.share[v];
+      if (pm.share[v] < 0.99) I.rigid = false;
+      if (best >= 0) I.nearVotes.set(best, (I.nearVotes.get(best) || 0) + 1);
+      nAll++;
+      if (best >= 0 && isBleed(parent, names, d, best, Math.sqrt(segDist2(x, y, z, heads[d], tails[d])), Math.sqrt(bd), S)) {
+        pm.bleed[v] = 1; I.bleed++; nBleed++; aBleed += pm.area[v];
+      }
+    }
+  }
+  // each island: the bone that dominates it, the bone it sits nearest, and whether it rides the wrong one
+  const lat = 0.03 * S;
+  for (const I of isl) {
+    let dom = -1, dw = 0, tot = 0, used = 0;
+    I.weight.forEach((x, j) => { if (x > 0) used++; tot += x; if (x > dw) { dw = x; dom = j; } });
+    let near = -1, nv = 0;
+    for (const [j, c] of I.nearVotes) if (c > nv) { nv = c; near = j; }
+    I.dom = dom; I.domShare = tot ? dw / tot : 0; I.near = near;
+    I.bleedFrac = I.glbVerts ? I.bleed / I.glbVerts : 0;
+    I.rigid = I.rigid && used === 1;
+    const why = [];
+    if (I.bleedFrac > 0.3) why.push(`${Math.round(100 * I.bleedFrac)}% of it is bleed, it sits by ${near >= 0 ? names[near] : "?"}`);
+    // a part across the middle carried by one side's bone (a collar or a belt riding one leg); the stage's
+    // model is centred on Z, its left-right axis
+    if (dom >= 0 && sideOf(names[dom]) && I.box.min.z < -lat && I.box.max.z > lat && I.domShare > 0.6)
+      why.push(`it crosses the middle, but one side's ${names[dom]} carries ${Math.round(100 * I.domShare)}%`);
+    if (!why.length && dom >= 0 && near >= 0 && I.domShare > 0.8 && hops(parent, dom, near) > 3)
+      why.push(`${names[dom]} is ${hops(parent, dom, near)} bones from ${names[near]}, which it sits by`);
+    I.why = why;
+  }
+  if (action) cur.mixer.update(0);
+  cur.analysis = { perMesh, islands: isl, nBleed, nAll, bleedPct: aAll ? 100 * aBleed / aAll : 0, names, parent };
+  return cur.analysis;
+}
+
+function paintBleed() {
+  const A = analyse();
+  for (const m of cur.meshes) m.material = cur.origMats.get(m);
+  for (const m of cur.weightMats) m.dispose();
+  cur.weightMats = [];
+  const base = new THREE.Color(0.42, 0.45, 0.52), red = new THREE.Color(1, 0.12, 0.1), hot = new THREE.Color(1, 0.9, 0.3),
+        orange = new THREE.Color(1, 0.55, 0.1), none = new THREE.Color(1, 0, 1), col = new THREE.Color();
+  for (const pm of A.perMesh) {
+    const colours = new Float32Array(pm.n * 3);
+    for (let v = 0; v < pm.n; v++) {
+      const I = A.islands[pm.offset + pm.labels[v]];
+      if (pm.dom[v] < 0) col.copy(none);
+      else if (pm.bleed[v]) col.copy(pm.dom[v] === sel ? hot : red);
+      else if (I.why.length) col.copy(pm.dom[v] === sel ? hot : orange);
+      else col.copy(base);
+      col.toArray(colours, v * 3);
+    }
+    pm.m.geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    cur.weightMats.push(mat);
+    pm.m.material = mat;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The lists: the audit's worst bones, the loose parts, the bleed
+// ---------------------------------------------------------------------------------------------------------------
+
+function listRow(ul, level, bone, title, why, onClick) {
+  const li = document.createElement("li");
+  li.className = level;
+  const b = document.createElement("span"); b.className = "b"; b.textContent = title; li.appendChild(b);
+  if (why) { const w = document.createElement("span"); w.className = "why"; w.textContent = why; li.appendChild(w); }
+  if (bone >= 0) li.dataset.bone = bone;
+  if (onClick) li.onclick = onClick; else li.classList.add("off");
+  ul.appendChild(li);
+  return li;
+}
+
+function renderWorst() {
+  const ul = $("worstList"); ul.innerHTML = "";
+  const a = cur && cur.audit;
+  if (!a) return;
+  $("worstVerdict").textContent = a.error ? "?" : a.grade;
+  $("worstVerdict").className = "v " + (a.error ? "" : a.grade.toLowerCase());
+  const bones = a.bones || [];
+  $("worstNote").textContent = a.error ? a.error : (bones.length
+    ? "worst bones, tinted on the skeleton (red: behind a failed check, amber: a warning); click one to select it"
+    : "no bone stands out") + (a.stale ? ". The audit is older than the rig: run Audit again." : "");
+  for (const r of bones) {
+    const i = boneByName(r.bone);
+    listRow(ul, r.level, i, r.bone, r.reasons.join("; "), i >= 0 ? () => selectBone(i) : null).title = r.reasons.join("\n");
+  }
+  for (const m of a.meshes || []) listRow(ul, "bad", -1, `mesh ${m.name}`, `${m.verts_over_4} vertices over 4 influences (max ${m.max_influences})`, null);
+  highlight();
+}
+
+function renderIslands() {
+  const A = analyse(), ul = $("islandList"); ul.innerHTML = "";
+  const list = A.islands.filter((I) => I.glbVerts > 0)
+    .sort((p, q) => (q.why.length > 0) - (p.why.length > 0) || q.verts - p.verts);
+  const a = cur.audit;
+  $("islandsNote").textContent = `${list.length} loose part${list.length === 1 ? "" : "s"} and the bone that carries each` +
+    (a && a.islands != null ? ` (the audit: ${a.islands}, ${a.rigid_islands} on one bone)` : "") + "; click one for its bone";
+  const shown = list.slice(0, 14);
+  for (const I of shown) {
+    const bone = I.dom >= 0 ? A.names[I.dom] : "no bone";
+    const what = I.dom < 0 ? "unweighted" : I.rigid ? `rides ${bone} whole` : `mostly ${bone} (${Math.round(100 * I.domShare)}%)`;
+    listRow(ul, I.why.length ? "warn" : "", I.dom, what, `${I.verts} verts${I.why.length ? " · " + I.why.join("; ") : ""}`,
+            I.dom >= 0 ? () => selectBone(I.dom) : null);
+  }
+  if (list.length > shown.length) listRow(ul, "", -1, `+ ${list.length - shown.length} smaller`, "", null);
+  highlight();
+}
+
+function renderBleed() {
+  const A = analyse(), ul = $("bleedList"); ul.innerHTML = "";
+  const a = cur.audit, note = $("bleedNote");
+  note.innerHTML = "";
+  const line = (c, t) => {
+    const d = document.createElement("div"), sw = document.createElement("span");
+    sw.className = "swatch"; sw.style.background = c; d.append(sw, t); note.appendChild(d);
+  };
+  line("#ff2019", `owned by a bone far from it (the audit's rule, here on the preview): ${A.bleedPct.toFixed(2)}% of the surface`);
+  line("#ff8c1a", "a loose part on the wrong bone");
+  line("#ffe64d", "either, on the selected bone");
+  if (a && a.bleed_total_pct != null) {
+    const d = document.createElement("div"); d.style.marginTop = "3px";
+    const lim = a.checks && a.checks.bleed_pct ? a.checks.bleed_pct.limit : null;
+    d.textContent = `The audit: ${a.bleed_total_pct}% of the surface${lim != null ? ` (limit ${lim}%)` : ""}. Each owner, and the bone the surface is nearer:`;
+    note.appendChild(d);
+  }
+  for (const [owner, nearer, p] of (a && a.bleed_pairs) || []) {
+    const i = boneByName(owner);
+    listRow(ul, p >= 0.25 ? "bad" : "warn", i, owner, `${p}% of the surface, nearer ${nearer}`, i >= 0 ? () => selectBone(i) : null);
+  }
+  for (const I of A.islands.filter((x) => x.why.length))
+    listRow(ul, "warn", I.dom, `loose part on ${I.dom >= 0 ? A.names[I.dom] : "no bone"}`, `${I.verts} verts · ${I.why.join("; ")}`,
+            I.dom >= 0 ? () => selectBone(I.dom) : null);
+  if (!ul.children.length) listRow(ul, "", -1, "no bleed", "", null);
+  highlight();
 }
 
 function updateOverlay() {
@@ -552,23 +856,186 @@ renderer.domElement.addEventListener("pointerup", (e) => {
 // Camera: the side view (the game's) or a free orbit
 // ---------------------------------------------------------------------------------------------------------------
 
-function frame() {
-  if (!cur) return;
-  const box = cur.box.clone();
-  const h = box.max.y - box.min.y;
-  box.max.y += h * 0.3;                       // headroom: clips rear up, leap and stretch past the bind pose
-  if (framing === "all") box.union(new THREE.Box3().setFromObject(figure));
-  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
-  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-  const dist = Math.max(s.y / 2 / t, s.x / 2 / (t * camera.aspect)) * 1.5 + s.z / 2;
-  c.y -= s.y * 0.14;                          // a little floor below: the ruler clears the controls
-  camera.near = Math.max(0.001, dist / 200); camera.far = dist * 50; camera.updateProjectionMatrix();
-  controls.target.copy(c);
-  if (view === "side") camera.position.set(c.x, c.y + dist * 0.16, c.z + dist);
-  else camera.position.set(c.x + dist * 0.62, c.y + dist * 0.35, c.z + dist * 0.72);
-  controls.update();
-  $("bFrame").textContent = framing === "all" ? "Frame: model + figure" : "Frame: model";
+// What must be in frame: the model over all its clips and the figure with its label, both whole. "model" fits
+// them tight; "all" (the stage) leaves room round them for the floor and the ruler.
+function frameBox() {
+  const box = cur.envelope.clone();
+  const fig = new THREE.Box3().setFromObject(figure);
+  fig.max.y += 0.12;                                  // the "1.8 m" label over its head
+  box.union(fig);
+  if (framing === "all") {
+    const s = box.getSize(new THREE.Vector3());
+    box.min.y -= 0.08 * s.y;
+    box.max.z = Math.max(box.max.z, Math.max(cur.box.max.z, 0.3) + 0.6);      // the ruler and its numbers
+  }
+  return box;
 }
+
+// The largest rectangle of the window no HUD panel covers, for content of aspect `aspect` (width / height): every
+// panel's edges are tried as the rectangle's edges, and the one the content fills biggest wins.
+function clearRect(aspect) {
+  const W = window.innerWidth, H = window.innerHeight, gap = 8;
+  const panels = [];
+  for (const el of document.querySelectorAll(".hud")) {
+    if (el.id === "msg" || el.offsetParent === null && getComputedStyle(el).position !== "fixed") continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    panels.push({ l: r.left - gap, r: r.right + gap, t: r.top - gap, b: r.bottom + gap });
+  }
+  const xs = [0, W, ...panels.flatMap((p) => [p.l, p.r])].filter((x) => x >= 0 && x <= W);
+  const ys = [0, H, ...panels.flatMap((p) => [p.t, p.b])].filter((y) => y >= 0 && y <= H);
+  let best = null, bestS = 0;
+  for (const l of xs) for (const r of xs) {
+    if (r - l < 60) continue;
+    for (const t of ys) for (const b of ys) {
+      if (b - t < 60) continue;
+      if (panels.some((p) => p.l < r && p.r > l && p.t < b && p.b > t)) continue;
+      const s = Math.min((r - l) / aspect, b - t);
+      if (s > bestS) { bestS = s; best = { l, r, t, b }; }
+    }
+  }
+  // a window too small for any clear rectangle: the whole of it (the HUD shrinks on a narrow window)
+  if (!best || bestS < Math.min(W / aspect, H) * 0.3) best = { l: 0, r: W, t: 0, b: H };
+  return best;
+}
+
+// Fit the box's corners into the clear rectangle with the camera looking along `dir` (from the target): move the
+// camera across and back until the projected corners fill it, less a margin, with the rectangle's centre on theirs.
+function fitCamera(box, dir, rect, margin) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const nx0 = rect.l / W * 2 - 1, nx1 = rect.r / W * 2 - 1, ny0 = 1 - rect.b / H * 2, ny1 = 1 - rect.t / H * 2;
+  const mx = (nx1 - nx0) * margin, my = (ny1 - ny0) * margin;
+  const R = { x0: nx0 + mx, x1: nx1 - mx, y0: ny0 + my, y1: ny1 - my };
+  const corners = [];
+  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+  const target = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length() || 1;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  let dist = size / t;
+  const right = new THREE.Vector3(), up = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let it = 0; it < 40; it++) {
+    camera.near = Math.max(0.001, dist / 400); camera.far = dist * 60; camera.updateProjectionMatrix();
+    camera.position.copy(target).addScaledVector(dir, dist);
+    camera.lookAt(target);
+    camera.updateMatrixWorld(true);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const c of corners) {
+      p.copy(c).project(camera);
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+    }
+    const s = Math.max((x1 - x0) / (R.x1 - R.x0), (y1 - y0) / (R.y1 - R.y0));
+    const dx = (x0 + x1) / 2 - (R.x0 + R.x1) / 2, dy = (y0 + y1) / 2 - (R.y0 + R.y1) / 2;
+    right.setFromMatrixColumn(camera.matrixWorld, 0);
+    up.setFromMatrixColumn(camera.matrixWorld, 1);
+    target.addScaledVector(right, dx * dist * t * camera.aspect).addScaledVector(up, dy * dist * t);
+    const nd = dist * (1 + (s - 1) * 0.9);
+    if (Math.abs(s - 1) < 1e-4 && Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) break;
+    dist = Math.max(1e-4, nd);
+  }
+  camera.position.copy(target).addScaledVector(dir, dist);
+  camera.near = Math.max(0.001, dist / 400); camera.far = dist * 60; camera.updateProjectionMatrix();
+  controls.target.copy(target);
+  controls.update();
+}
+
+function frame() {
+  $("bFrame").textContent = framing === "all" ? "Frame: stage" : "Frame: model";
+  if (!cur) return;
+  const box = frameBox();
+  const s = box.getSize(new THREE.Vector3());
+  const dir = view === "side" ? new THREE.Vector3(0, 0.16, 1).normalize() : new THREE.Vector3(0.62, 0.35, 0.72).normalize();
+  const aspect = view === "side" ? s.x / Math.max(s.y, 1e-6) : (s.x + s.z) / Math.max(s.y * 1.2, 1e-6);
+  fitCamera(box, dir, clearRect(aspect), framing === "all" ? 0.08 : 0.03);
+}
+
+// The lists sit under the model's name; the scrub bar shows only with a clip.
+function layoutPanels() {
+  const info = $("info").getBoundingClientRect();
+  if (window.innerWidth > 760) {
+    $("left").style.top = Math.round(info.bottom + 8) + "px";
+    const bottom = $("bottom").getBoundingClientRect(), keys = $("keys").getBoundingClientRect();
+    const floor = keys.height > 0 ? Math.min(bottom.top, keys.top) : bottom.top;
+    $("left").style.maxHeight = Math.max(80, floor - info.bottom - 20) + "px";
+    $("right").style.maxHeight = Math.max(80, bottom.top - 20) + "px";
+  } else {                                             // narrow: the checks and the audit stack under the name
+    $("left").style.top = ""; $("left").style.maxHeight = ""; $("right").style.maxHeight = "";
+    $("right").style.top = Math.round(info.bottom + 6) + "px";
+  }
+  if (window.innerWidth > 760) $("right").style.top = "";
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The scrub bar: a tick every frame (or every few when they crowd), numbered ones, the clip's keys, the playhead
+// ---------------------------------------------------------------------------------------------------------------
+
+const scrubEl = $("scrub"), scrubCanvas = $("scrubCanvas");
+let scrubbing = null;                                  // {wasPlaying} while dragging
+
+function drawScrub() {
+  const has = !!(cur && action && cur.clips.length);
+  scrubEl.style.display = has ? "block" : "none";
+  if (!has) return;
+  const clip = cur.clips[ci], dur = clip.duration, fps = cur.fps;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = scrubCanvas.clientWidth, h = scrubCanvas.clientHeight;
+  if (!w) return;
+  if (scrubCanvas.width !== Math.round(w * dpr) || scrubCanvas.height !== Math.round(h * dpr)) {
+    scrubCanvas.width = Math.round(w * dpr); scrubCanvas.height = Math.round(h * dpr);
+  }
+  const g = scrubCanvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const pad = 6, W = w - 2 * pad;
+  const X = (t) => pad + (dur > 0 ? t / dur : 0) * W;
+  const frames = dur * fps;
+  const tk = scrubTicks(frames, W);
+  g.fillStyle = "#252b36"; g.fillRect(pad, 13, W, 8);
+  const tNow = Math.min(action.time, dur);
+  g.fillStyle = "rgba(91,143,240,.45)"; g.fillRect(pad, 13, X(tNow) - pad, 8);
+  g.font = "10px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top";
+  for (let f = 0; f <= tk.last; f += tk.minor) {
+    const x = Math.round(X(Math.min(dur, f / fps))) + 0.5, major = f % tk.major === 0;
+    g.strokeStyle = major ? "#8a93a6" : "#4a5468";
+    g.beginPath(); g.moveTo(x, major ? 21 : 21); g.lineTo(x, major ? 27 : 24); g.stroke();
+    if (major) { g.fillStyle = "#8a93a6"; g.fillText(String(f), Math.min(w - 8, Math.max(8, x)), 25); }
+  }
+  // the clip's keys, as three.js holds them (the preview samples every frame, so a key a frame is normal)
+  const keys = cur.keys[ci] || [];
+  g.fillStyle = "#e8b64a";
+  const step = Math.max(1, Math.ceil(keys.length / Math.max(1, W / 3)));
+  for (let k = 0; k < keys.length; k += step) { const x = X(keys[k]); g.fillRect(x - 1, 8, 2, 4); }
+  // the playhead
+  const x = X(tNow);
+  g.fillStyle = "#ffffff"; g.fillRect(x - 1, 5, 2, 18);
+  g.beginPath(); g.moveTo(x - 5, 3); g.lineTo(x + 5, 3); g.lineTo(x, 9); g.closePath(); g.fill();
+  const fr = Math.round(tNow * fps), last = Math.round(dur * fps);
+  $("scrubLeft").textContent = `frame ${fr} / ${last}${scrubbing ? " · scrubbing (paused)" : ""}`;
+  $("scrubRight").textContent = `${keys.length} key${keys.length === 1 ? "" : "s"} · ${tNow.toFixed(2)} s / ${dur.toFixed(2)} s`;
+}
+
+function scrubAt(e) {
+  const r = scrubCanvas.getBoundingClientRect(), pad = 6;
+  seek(scrubTime(e.clientX - r.left - pad, r.width - 2 * pad, cur.clips[ci].duration, cur.fps));
+}
+scrubCanvas.addEventListener("pointerdown", (e) => {
+  if (!cur || !action) return;
+  scrubbing = { wasPlaying: playing };
+  setPlaying(false);
+  try { scrubCanvas.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer */ }
+  scrubAt(e);
+  e.preventDefault();
+});
+scrubCanvas.addEventListener("pointermove", (e) => { if (scrubbing) scrubAt(e); });
+const endScrub = (e) => {
+  if (!scrubbing) return;
+  const was = scrubbing.wasPlaying;
+  scrubbing = null;
+  try { scrubCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+  if (was) setPlaying(true);
+  drawScrub();
+};
+scrubCanvas.addEventListener("pointerup", endScrub);
+scrubCanvas.addEventListener("pointercancel", endScrub);
 
 function setView(v) {
   view = v;
@@ -609,6 +1076,22 @@ function checks() {
   else out.push(["ok", `${cur.clips.length} clip${cur.clips.length === 1 ? "" : "s"}: ${cur.clips.map((c) => c.name).join(", ")}`]);
   for (const c of cur.clips) if (!(c.duration > 0.5 / cur.fps)) out.push(["bad", `clip "${c.name}" has zero length`]);
   if (cur.item.stale) out.push(["warn", "preview.glb is older than the rig or its clips: run Preview again"]);
+
+  const a = cur.audit;
+  if (!a) out.push(["warn", "no audit yet: run Audit for its verdict and worst bones"]);
+  else if (a.error) out.push(["warn", a.error]);
+  else {
+    const NAMES = { bleed_pct: "bleed", combined_tears: "combined-pose tears", bend_tears: "bend tears", head_pct: "head share",
+                    max_influences: "influences" };
+    const failed = Object.entries(a.checks || {}).filter(([, c]) => c.ok === false).map(([k, c]) => {
+      const u = k.endsWith("_pct") ? "%" : "";
+      return `${NAMES[k] || k.replace(/_/g, " ")} ${c.value}${u} (limit ${c.limit}${u})`;
+    });
+    out.push([a.grade === "PASS" ? "ok" : a.grade === "CHECK" ? "warn" : "bad",
+              a.grade === "PASS" ? "audit PASS" + (a.warnings.length ? `, ${a.warnings.length} warning${a.warnings.length === 1 ? "" : "s"}` : "")
+                                 : `audit ${a.grade}: ` + failed.join(", ") + (a.grade === "CHECK" ? " (look at it here)" : "")]);
+    if (a.stale) out.push(["warn", "the audit is older than the rig: run Audit again"]);
+  }
   return out;
 }
 
@@ -678,6 +1161,7 @@ function hud() {
   }
   $("modeLine").textContent = cur ? `view: ${view === "side" ? "side (+X forward)" : "free orbit"} · overlay: ${OVERLAYS[overlay]}` : "";
   hudTime(); hudPlay();
+  drawScrub();
 }
 
 function hudTime() {
@@ -721,10 +1205,14 @@ const act = {
   prevModel: () => show(mi - 1), nextModel: () => show(mi + 1),
   prevClip: () => cur && cur.clips.length && playClip(ci - 1), nextClip: () => cur && cur.clips.length && playClip(ci + 1),
   play: () => setPlaying(!playing),
-  overlay: () => { overlay = (overlay + 1) % OVERLAYS.length; applyOverlay(); },
+  overlay: () => { overlay = (overlay + 1) % OVERLAYS.length; applyOverlay(); if (view === "side") frame(); },
   view: () => setView(view === "side" ? "orbit" : "side"),
   frame: () => { framing = framing === "all" ? "model" : "all"; frame(); },
   prevBone: () => selectBone(sel - 1), nextBone: () => selectBone(sel + 1),
+  loop: () => setLoop(!loop),
+  stepBack: () => stepFrame(-1), stepFwd: () => stepFrame(1),
+  start: () => { if (action) { setPlaying(false); seek(0); } },
+  end: () => { if (action) { setPlaying(false); seek(action.getClip().duration); } },
 };
 
 window.addEventListener("keydown", (e) => {
@@ -735,7 +1223,7 @@ window.addEventListener("keydown", (e) => {
     " ": act.play, r: act.overlay, R: act.overlay, v: act.view, V: act.view, f: act.frame, F: act.frame,
     "[": act.prevBone, "]": act.nextBone, l: () => setLoop(!loop), L: () => setLoop(!loop),
     "-": () => setSpeed(speed - 0.1), "=": () => setSpeed(speed + 0.1), "+": () => setSpeed(speed + 0.1),
-    ",": () => stepFrame(-1), ".": () => stepFrame(1),
+    ",": () => stepFrame(-1), ".": () => stepFrame(1), Home: act.start, End: act.end,
   };
   if (map[k]) { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); map[k](); }
 });
@@ -748,19 +1236,23 @@ $("speed").addEventListener("input", (e) => setSpeed(Number(e.target.value)));
 $("speed").addEventListener("change", (e) => e.target.blur());
 $("loop").addEventListener("change", (e) => { setLoop(e.target.checked); e.target.blur(); });
 
-// Standard gamepad mapping: 0 A, 2 X, 3 Y, 4 LB, 5 RB, 12-15 the D-pad.
-const PAD = { 0: act.play, 2: act.view, 3: act.overlay, 4: act.prevBone, 5: act.nextBone,
-              12: act.prevClip, 13: act.nextClip, 14: act.prevModel, 15: act.nextModel };
-const padPrev = new Map();
-function pollPads() {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+// Gamepads (viewer_logic.js padStep): the "standard" mapping that Xbox and PlayStation pads report, with a
+// fallback for others; the D-pad or the left stick (with a deadzone) moves through models and clips, and a held
+// direction repeats. navigator.getGamepads can be replaced to simulate a pad.
+const padState = new Map();
+function pollPads(now) {
+  let pads = [];
+  try { pads = navigator.getGamepads ? Array.from(navigator.getGamepads()) : []; } catch (e) { pads = []; }
+  const live = new Set();
   for (const p of pads) {
-    if (!p) continue;
-    const prev = padPrev.get(p.index) || [];
-    const now = p.buttons.map((b) => b.pressed);
-    for (const [i, fn] of Object.entries(PAD)) if (now[i] && !prev[i]) fn();
-    padPrev.set(p.index, now);
+    if (!p || p.connected === false) continue;
+    const key = p.index + ":" + p.id;
+    live.add(key);
+    const r = padStep(p, padState.get(key), now / 1000);
+    padState.set(key, r.state);
+    for (const name of r.fire) if (act[name]) act[name]();
   }
+  for (const k of [...padState.keys()]) if (!live.has(k)) padState.delete(k);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -770,8 +1262,8 @@ function pollPads() {
 let last = performance.now();
 function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  pollPads();
-  if (cur && action && playing) cur.mixer.update(dt);
+  pollPads(now);
+  if (cur && action && playing && !scrubbing) { cur.mixer.update(dt); drawScrub(); }
   if (cur) { cur.holder.updateMatrixWorld(true); updateOverlay(); hudTime(); }
   controls.update();
   renderer.render(scene, camera);
@@ -779,14 +1271,14 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-// A link can open the viewer on a given state: ?model=&clip=<name|index>&overlay=<off|skeleton|names|weights>
-// &bone=<name>&view=<side|orbit>&framing=<all|model>&time=<seconds, paused there>&speed=&loop=0
+// A link can open the viewer on a given state: ?model=&clip=<name|index>&overlay=<off|skeleton|names|weights|bleed>
+// &bone=<name>&view=<side|orbit>&framing=<model|all>&time=<seconds, paused there>&speed=&loop=0
 function applyParams(q) {
   if (q.get("speed")) setSpeed(Number(q.get("speed")));
   if (q.get("loop") === "0") setLoop(false);
   if (q.get("view") === "orbit") setView("orbit");
-  if (q.get("framing") === "model") { framing = "model"; frame(); }
-  if (!cur) return;
+  if (q.get("framing") === "all" || q.get("framing") === "model") framing = q.get("framing");
+  if (!cur) { frame(); return; }
   const c = q.get("clip");
   if (c !== null && cur.clips.length) {
     const i = cur.clips.findIndex((x) => x.name === c);
@@ -799,12 +1291,15 @@ function applyParams(q) {
   applyOverlay();
   if (q.get("time") !== null && action) {
     setPlaying(false);
-    action.time = Math.min(action.getClip().duration, Math.max(0, Number(q.get("time"))));
-    cur.mixer.update(0);
+    seek(Math.min(action.getClip().duration, Math.max(0, Number(q.get("time")))));
   }
   hud();
+  layoutPanels();
+  frame();
 }
 
+let ready = false;                                   // the first model is up (for a script taking pictures)
+resize();
 setView("side");
 setSpeed(1);
 applyOverlay();
@@ -817,8 +1312,12 @@ applyOverlay();
   } catch (e) {
     message("Could not reach the workbench", e.message);
   }
+  ready = true;
   requestAnimationFrame(tick);
 })();
 
 // for inspection from a console: the loaded model and the controls
-window.autorigViewer = { get model() { return cur; }, camera, act, selectBone, get overlay() { return OVERLAYS[overlay]; } };
+window.autorigViewer = { get model() { return cur; }, camera, controls, act, selectBone, seek, frame, clearRect, pollPads,
+                         get overlay() { return OVERLAYS[overlay]; }, get time() { return action ? action.time : null; },
+                         get playing() { return playing; }, get ready() { return ready; }, get selected() { return cur && sel >= 0 ? cur.bones[sel].name : null; } };
+
