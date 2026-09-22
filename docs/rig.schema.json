@@ -47,6 +47,10 @@
           "type": "string",
           "description": "Head bone name in source armature (tripo)."
         },
+        "head_to_snout": {
+          "type": "boolean",
+          "description": "Extend head bone to the front-most vertex of the face/snout (defaults to true; set false for upright bipeds)."
+        },
         "hips": {
           "type": "string",
           "description": "Root hips bone name in source armature (tripo)."
@@ -362,12 +366,11 @@
             { "type": "string" },
             {
               "type": "array",
-              "items": [
+              "prefixItems": [
                 { "type": "string" },
                 { "type": "integer" }
               ],
-              "minItems": 2,
-              "maxItems": 2
+              "items": false
             }
           ]
         }

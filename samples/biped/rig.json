@@ -1,0 +1,137 @@
+{
+  "schema": "autorig-spec/1",
+  "rig": {
+    "kind": "placed",
+    "forward": [
+      0,
+      -1,
+      0
+    ],
+    "head_to_snout": false,
+    "chains": [
+      {
+        "name": "spine",
+        "points": [
+          [
+            0.5,
+            0.5,
+            0.51
+          ],
+          [
+            0.5,
+            0.5,
+            0.68
+          ],
+          [
+            0.5,
+            0.5,
+            0.8
+          ],
+          [
+            0.5,
+            0.5,
+            0.98
+          ]
+        ],
+        "names": [
+          "spine",
+          "chest",
+          "head"
+        ]
+      },
+      {
+        "name": "arm.L",
+        "points": [
+          [
+            0.6,
+            0.5,
+            0.68
+          ],
+          [
+            0.95,
+            0.5,
+            0.56
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          1
+        ]
+      },
+      {
+        "name": "arm.R",
+        "points": [
+          [
+            0.4,
+            0.5,
+            0.68
+          ],
+          [
+            0.05,
+            0.5,
+            0.56
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          1
+        ]
+      },
+      {
+        "name": "leg.L",
+        "points": [
+          [
+            0.62,
+            0.5,
+            0.51
+          ],
+          [
+            0.62,
+            0.5,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      },
+      {
+        "name": "leg.R",
+        "points": [
+          [
+            0.38,
+            0.5,
+            0.51
+          ],
+          [
+            0.38,
+            0.5,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      }
+    ]
+  },
+  "budget": 1000,
+  "clips": {
+    "archetype": "walker",
+    "display": "Biped",
+    "category": "Characters"
+  },
+  "card": {
+    "metres": 1.8,
+    "role": "humanoid"
+  },
+  "notes": {
+    "rig": "Standard biped humanoid sample"
+  }
+}

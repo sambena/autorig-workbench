@@ -1,0 +1,166 @@
+{
+  "schema": "autorig-spec/1",
+  "rig": {
+    "kind": "placed",
+    "forward": [
+      0,
+      -1,
+      0
+    ],
+    "chains": [
+      {
+        "name": "spine",
+        "points": [
+          [
+            0.5,
+            0.65,
+            0.54
+          ],
+          [
+            0.5,
+            0.46,
+            0.54
+          ],
+          [
+            0.5,
+            0.24,
+            0.67
+          ],
+          [
+            0.5,
+            0.12,
+            0.81
+          ],
+          [
+            0.5,
+            0.02,
+            0.85
+          ]
+        ],
+        "names": [
+          "hips",
+          "chest",
+          "neck",
+          "head"
+        ]
+      },
+      {
+        "name": "wing.L",
+        "points": [
+          [
+            0.64,
+            0.46,
+            0.63
+          ],
+          [
+            0.95,
+            0.46,
+            0.79
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          1
+        ]
+      },
+      {
+        "name": "wing.R",
+        "points": [
+          [
+            0.36,
+            0.46,
+            0.63
+          ],
+          [
+            0.05,
+            0.46,
+            0.79
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          1
+        ]
+      },
+      {
+        "name": "leg.L",
+        "points": [
+          [
+            0.6,
+            0.62,
+            0.4
+          ],
+          [
+            0.6,
+            0.62,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      },
+      {
+        "name": "leg.R",
+        "points": [
+          [
+            0.4,
+            0.62,
+            0.4
+          ],
+          [
+            0.4,
+            0.62,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      },
+      {
+        "name": "tail",
+        "points": [
+          [
+            0.5,
+            0.68,
+            0.54
+          ],
+          [
+            0.5,
+            0.97,
+            0.63
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      }
+    ],
+    "audit": {
+      "bleed_pct": 3.0
+    }
+  },
+  "budget": 1200,
+  "clips": {
+    "archetype": "winged",
+    "display": "Wyvern",
+    "category": "Creatures"
+  },
+  "card": {
+    "metres": 2.2,
+    "role": "creature"
+  },
+  "notes": {
+    "rig": "Winged wyvern flier with membrane rules",
+    "rig.audit": "Allowance for wings and legs in close proximity to body"
+  }
+}

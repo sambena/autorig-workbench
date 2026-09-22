@@ -1,7 +1,11 @@
-# Outputs. The tool writes next to the models it is pointed at (AUTORIG_MODELS) and into AUTORIG_WORK; when those
-# are the repo's own samples/, none of it is source.
-samples/*
-!samples/README.md
+# Outputs. The tool writes next to the models it is pointed at (AUTORIG_MODELS) and into AUTORIG_WORK.
+samples/_autorig/
+samples/*/_autorig/
+samples/*/rigged/
+samples/*/rigged_v2/
+samples/*/clips/
+samples/*/model.json
+samples/*/pack.json
 _autorig/
 rigged/
 rigged_v2/
@@ -10,7 +14,6 @@ clips/
 *.blend1
 *.fbx
 *.fbm/
-*.glb
 *.zip
 
 __pycache__/

@@ -529,7 +529,7 @@ def head_to_snout(chains, mesh, size, spec):
     for c in chains:
         if "head" not in c.get("bones", []): continue
         i = c["bones"].index("head")
-        if i != len(c["bones"]) - 1: return None
+        if i != len(c["bones"]) - 1 or i >= len(c["points"]) - 1: return None
         h, t = c["points"][i], c["points"][i + 1]
         d = t - h
         if d.length < 1e-9 or abs(d.normalized().z) > 0.7: return None
