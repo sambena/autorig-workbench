@@ -142,12 +142,16 @@ class ServerTest(unittest.TestCase):
         self.assertIsNotNone(d["bend_test"])
         a = d["audit"]
         self.assertIsInstance(a["pass"], bool)
+        self.assertIn(a["grade"], ("PASS", "CHECK", "FAIL"))
+        self.assertEqual(a["pass"], a["grade"] == "PASS")            # pass stays the strict result
         self.assertTrue({c["check"] for c in a["checks"]} >= {"bleed_pct", "combined_tears", "max_influences"})
         self.assertTrue(d["clip_frames"].get("walk"), "no walk preview frames")
         self.assertEqual(d["clips"]["format"], "autorig-clips/1")
         card = d["card"]
         self.assertEqual((card["name"], card["group"], card["metres"], card["role"]), ("column", "Props", 2.0, "prop"))
-        self.assertEqual(card["rig"]["audit"]["pass"], a["pass"])
+        self.assertEqual((card["rig"]["audit"]["pass"], card["rig"]["audit"]["grade"]), (a["pass"], a["grade"]))
+        rows = self.call("/api/audits")["models"]
+        self.assertEqual([(r["model"], r["grade"]) for r in rows], [("column", a["grade"])])
         req = urllib.request.Request(self.base + d["bend_test"] + "?t=" + TOKEN)
         with urllib.request.urlopen(req) as r:
             self.assertEqual(r.headers["Content-Type"], "image/png")

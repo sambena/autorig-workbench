@@ -2,12 +2,13 @@
 
 Auto-rigging for sculpted and generated models, run headless in Blender, with a local GUI. Drop in a model, press
 **Run all**, and see whether the rig is good: the tool surveys the source, builds a named skeleton and skins it, trims
-it to an engine budget, audits the rig (PASS/FAIL, with pictures), authors clips for its archetype, and writes a model
+it to an engine budget, audits the rig (PASS / CHECK / FAIL, with pictures), authors clips for its archetype, and writes a model
 card an engine importer can read. Blender never opens a window.
 
 **Status: early (alpha).** The pipeline, the GUI and the 3D results viewer work. Writing a model's `rig.json` is
 still done by hand; a point-and-click spec editor (pick bones in 3D, save and re-rig, before/after audit) is being
-built next, then graded audit results (PASS / CHECK / FAIL). Expect rough edges; issues and pull requests are welcome.
+built next. Audits are graded PASS / CHECK / FAIL, and **Audit all** grades the whole collection; the viewer does not
+mark tear sites yet. Expect rough edges; issues and pull requests are welcome.
 
 ## Quick start
 
@@ -27,8 +28,13 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
 4. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
    time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process only).
 5. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
-   spec and the card. **Open output folder** shows the files.
-6. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
+   spec and the card. **Open output folder** shows the files. The model list's badge is the audit's grade: **PASS**
+   (green) within every limit, **CHECK** (amber) past a limit but inside its warn band, so look at it in the viewer,
+   **FAIL** (red) clearly broken (docs/PIPELINE.md, "Grades").
+6. **Audit all** (above the model list) audits every rigged model one after another, with the live log and Cancel,
+   then shows a table worst first: grade, tears, the widest gap, bleed, head share, the worst bone. A row opens its
+   model; **Table** shows the last results again.
+7. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
    beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), with its clips, a skeleton /
    bone names / weights overlay, and checks (real height, facing, bones, clips). Keys: Left/Right model, Up/Down clip,
    Space play, R overlay, [ ] bone, V view, F frame, L loop; a gamepad's D-pad, A, X, Y, LB and RB do the same. It
@@ -37,7 +43,8 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
 ## Command line
 
     set AUTORIG_MODELS=D:\models
-    python autorig/cli/pipeline.py wolf,moth           rig -> trim -> audit, with a PASS/FAIL table
+    python autorig/cli/pipeline.py wolf,moth           rig -> trim -> audit, with a graded table
+    python autorig/cli/run.py audit-all                 audit every rigged model, worst first (exit 1 on any FAIL)
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
     python autorig/cli/run.py preview wolf              rigged/preview.glb for the 3D viewer (pipeline.py -preview too)
     python autorig/cli/run.py help                      every step by name, for a launcher in the collection
@@ -52,7 +59,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
     autorig/gui/     server.py  index.html                 the local GUI
                      viewer.html  viewer.js  viewer_api.py  the 3D results viewer
                      vendor/three/                         three.js 0.186.0 (MIT), vendored so it works offline
-    autorig/core/    layout  spec_store  blender  source_io  geo  skeletons
+    autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades
     autorig/steps/   survey  facing  measure  probe_tips    inspect   (run inside Blender)
                      rerig  rerig_humanoid  run_builder     rig
                      decimate  audit  make_clips            trim, check, animate
@@ -60,7 +67,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
     docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN
-    tests/           test_server.py  test_viewer.py
+    tests/           test_server.py  test_viewer.py  test_grades.py
     samples/         the default models root (empty)
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
@@ -76,7 +83,9 @@ model with its `rig.json` the way the page does, runs every step through the API
 the audit and the card. The viewer test checks the viewer's page, code and vendored three.js (token and Host rules,
 no way out of the folder), the list of previews, and runs the preview step on a generated two-bone rig with two
 actions, reading the GLB back: one skin, both clips as animations. The Blender parts are skipped when Blender is not
-installed.
+installed. The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old
+audits), and the collection endpoints on made-up audit files: the table worst first, the badges, the tear sites, and
+Audit all going on past a model it cannot read.
 
 ## Licence
 
