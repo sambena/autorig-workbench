@@ -1,0 +1,106 @@
+# Contributing to Autorig Workbench
+
+Thank you for your interest in contributing to Autorig Workbench! We welcome contributions, bug reports, and suggestions.
+
+Autorig Workbench provides automated rigging, skinning, decimation, and quality audits for 3D sculpts and procedural models using headless Blender and a local web GUI.
+
+---
+
+## Design Principles
+
+1. **Pure Python & Headless Blender**: The core server and CLI are built with the Python standard library. Blender runs exclusively in the background (headless) as subprocesses and never opens an interactive window.
+2. **Zero `pip` Dependencies**: Standard library only for core and GUI. Pillow is only optional for sheet layout scripts.
+3. **Offline & Self-Contained**: `three.js` is vendored locally under [`autorig/gui/vendor/three/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/gui/vendor/three/).
+4. **Safety by Default**:
+   - The GUI server binds only to `127.0.0.1`.
+   - Requires random session token per session.
+   - Host checks prevent DNS rebinding attacks.
+   - Strict path confinement ensures files are read/written only within `AUTORIG_MODELS` and `AUTORIG_WORK`.
+   - Step cancellations kill only the specific process PID.
+5. **Audited Quality**: Every rig is measured against strict mathematical thresholds (tears, bleed percentage, surface ownership, joint bends) and graded **PASS**, **CHECK**, or **FAIL**.
+
+---
+
+## Prerequisites
+
+- **Python**: 3.9 or higher (standard library).
+- **Blender**: 5.2 LTS (tested range). Accessible via `blender` on `PATH`, `/usr/bin/blender`, `/snap/bin/blender`, or the `AUTORIG_BLENDER` environment variable.
+- **Node.js**: 18+ (used for testing the gamepad and viewer logic in [`tests/viewer_logic_test.mjs`](file:///var/home/cosmo/Work/autorig-workbench/tests/viewer_logic_test.mjs)).
+
+---
+
+## Getting Started
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sambena/autorig-workbench.git
+   cd autorig-workbench
+   ```
+
+2. **Start the local GUI**:
+   ```bash
+   python -m autorig
+   ```
+   Or with custom paths:
+   ```bash
+   python -m autorig --models /path/to/models --work /path/to/work --port 8765
+   ```
+
+3. **CLI usage**:
+   ```bash
+   # Run pipeline for specific models
+   python autorig/cli/run.py model_name
+
+   # Run audit across all models
+   python autorig/cli/run.py audit-all -strict
+   ```
+
+---
+
+## Running Tests
+
+Before submitting changes, run all test suites:
+
+```bash
+# 1. Full Python unit test suite
+python3 -m unittest discover -s tests -v
+
+# 2. Viewer & Gamepad Node logic tests
+node tests/viewer_logic_test.mjs
+
+# 3. Headless Blender audit pipeline verification
+python3 scripts/ci_audit_thresholds.py
+```
+
+All 48+ Python tests, 10 Node tests, and the headless Blender pipeline check must pass.
+
+---
+
+## Project Structure
+
+- [`autorig/core/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/core/): Pure-Python utilities (`layout`, `spec_store`, `blender`, `grades`, `suggest`, `placed_rules`). Kept free of `bpy` and `numpy` imports where possible so GUI server and tests remain fast.
+- [`autorig/steps/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest.py`).
+- [`autorig/gui/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/gui/): Local HTTP server (`server.py`), 3D results viewer (`viewer.html`, `viewer.js`), and spec editor (`spec_editor.html`, `spec_editor.js`, `spec_api.py`).
+- [`autorig/cli/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/cli/): Command-line drivers (`run.py`, `pipeline.py`, `audit_all.py`).
+- [`docs/`](file:///var/home/cosmo/Work/autorig-workbench/docs/): Architecture guides ([`PLAN.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/PLAN.md), [`PIPELINE.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/PIPELINE.md)), specs ([`SPEC.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/SPEC.md), [`FORMATS.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/FORMATS.md)), CI ([`CI.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/CI.md)), and formal schema ([`rig.schema.json`](file:///var/home/cosmo/Work/autorig-workbench/docs/rig.schema.json)).
+- [`samples/`](file:///var/home/cosmo/Work/autorig-workbench/samples/): Freely licensed CC0/CC-BY sample models for testing.
+
+---
+
+## Contributing Workflow
+
+1. Create a descriptive feature branch off `main`:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+2. Write clean, readable code preserving existing comments and documentation style.
+3. Add unit tests for your changes under `tests/`.
+4. Run all test suites and ensure all checks pass.
+5. Commit using [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat:`, `fix:`, `docs:`, `test:`).
+6. Push to your fork/branch and open a Pull Request against `main`.
+
+---
+
+## Licensing
+
+Autorig Workbench is licensed under the **GNU General Public License v3.0 or later** ([GPL-3.0-or-later](file:///var/home/cosmo/Work/autorig-workbench/LICENSE)). All contributions submitted will be covered under this license.

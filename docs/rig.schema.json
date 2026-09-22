@@ -1,0 +1,378 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autorig.dev/schemas/v1/rig.schema.json",
+  "title": "Autorig Model Spec",
+  "description": "Specification schema for Autorig Workbench model configuration (rig.json).",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "enum": ["autorig-spec/1"],
+      "description": "Schema version identifier. Must be 'autorig-spec/1'."
+    },
+    "rig": {
+      "type": "object",
+      "description": "Armature construction, skinning rules, and audit parameters.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["tripo", "build", "placed", "humanoid", "custom"],
+          "description": "Rig builder type: 'tripo' (reuse joints), 'build' (trace mesh), 'placed' (hand-placed with rules), 'humanoid' (standard biped), or 'custom' (script)."
+        },
+        "skeleton": {
+          "type": "string",
+          "description": "Target archetype name (e.g. quadruped, hexapod, winged, serpent, humanoid)."
+        },
+        "forward": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "Direction vector the model faces in source coordinates before turning to -Y (e.g. [0, -1, 0])."
+        },
+        "straighten": {
+          "type": "boolean",
+          "description": "Straighten sculpt orientation exactly rather than nearest quarter turn."
+        },
+        "origin": {
+          "type": "string",
+          "enum": ["feet", "center"],
+          "description": "Origin placement: 'feet' (ground at z=0) or 'center' (centred at origin for flyers/swimmers)."
+        },
+        "builder": {
+          "type": "string",
+          "description": "Path to custom builder script relative to model folder (required when kind is 'custom')."
+        },
+        "head": {
+          "type": "string",
+          "description": "Head bone name in source armature (tripo)."
+        },
+        "hips": {
+          "type": "string",
+          "description": "Root hips bone name in source armature (tripo)."
+        },
+        "legs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Source bone names designated as legs (tripo)."
+        },
+        "mirror": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bone names to mirror across symmetry plane (tripo)."
+        },
+        "fold": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bones to fold into their parent during re-rooting (tripo)."
+        },
+        "discard": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bones to discard with their subtrees (tripo)."
+        },
+        "chains": {
+          "description": "Bone chain definitions for build or placed kinds.",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/chainDefinition" }
+            },
+            {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          ]
+        },
+        "jaw": {
+          "type": "object",
+          "description": "Jaw bone placement and binding parameters.",
+          "properties": {
+            "hinge": { "$ref": "#/$defs/vec3" },
+            "tip": { "$ref": "#/$defs/vec3" },
+            "band": { "type": "number", "minimum": 0 }
+          },
+          "required": ["hinge", "tip"]
+        },
+        "head_line": {
+          "type": "object",
+          "description": "Head and snout guide line.",
+          "properties": {
+            "head": { "$ref": "#/$defs/vec3" },
+            "chin": { "$ref": "#/$defs/vec3" },
+            "top": { "$ref": "#/$defs/vec3" }
+          }
+        },
+        "add_tail": {
+          "type": "object",
+          "description": "Appends a segmented tail chain.",
+          "properties": {
+            "start": { "$ref": "#/$defs/vec3" },
+            "tip": { "$ref": "#/$defs/vec3" },
+            "bones": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "hard_split": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bone names with abrupt rigid step falloff rather than smooth blending."
+        },
+        "parts": {
+          "description": "Body-part bone ownership rules (placed kind).",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "array", "items": { "type": "string" } },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "bones": { "type": "array", "items": { "type": "string" } },
+                      "allow": { "type": "array", "items": { "type": "string" } },
+                      "deny": { "type": "array", "items": { "type": "string" } }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "bones": { "type": "array", "items": { "type": "string" } },
+                  "allow": { "type": "array", "items": { "type": "string" } },
+                  "deny": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["bones"]
+              }
+            }
+          ]
+        },
+        "blends": {
+          "type": "array",
+          "description": "Smooth join transition radii between body parts.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "bone": { "type": "string" },
+                  "with": { "type": "string" },
+                  "radius": { "type": "number", "minimum": 0 },
+                  "fade": { "type": "number", "minimum": 0 }
+                },
+                "required": ["bone", "with"]
+              },
+              {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            ]
+          }
+        },
+        "rip_welds": {
+          "type": "array",
+          "description": "Seams between parts to rip apart before skinning to prevent tearing.",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "membranes": {
+          "type": "array",
+          "description": "Wing or fin membrane distance gradient binding rules.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "bones": { "type": "array", "items": { "type": "string" } },
+              "root_bone": { "type": "string" },
+              "cut_flank": { "type": "boolean" },
+              "gradient": { "type": "number" },
+              "span_power": { "type": "number" }
+            },
+            "required": ["name", "bones"]
+          }
+        },
+        "rigid_islands": {
+          "type": "array",
+          "description": "Mesh disconnected components locked 100% to nearest bone (e.g. armour).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bone": { "type": "string" },
+              "box": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 6,
+                "maxItems": 6
+              },
+              "max_verts": { "type": "integer" }
+            },
+            "required": ["bone"]
+          }
+        },
+        "audit": {
+          "type": "object",
+          "description": "Audit check allowances override for this model (requires notes['rig.audit']).",
+          "properties": {
+            "bleed_pct": { "type": "number" },
+            "combined_tears": { "type": "integer" },
+            "bend_tears": { "type": "integer" },
+            "head_pct": { "type": "number" },
+            "max_influences": { "type": "integer" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["kind"]
+    },
+    "humanoid": {
+      "type": "object",
+      "description": "Measurements for standard biped skeleton (kind: 'humanoid').",
+      "properties": {
+        "forward": { "$ref": "#/$defs/vec3" },
+        "z": {
+          "type": "object",
+          "description": "Z height coordinates (0..1 of model height).",
+          "properties": {
+            "top": { "type": "number" },
+            "head": { "type": "number" },
+            "neck": { "type": "number" },
+            "arm": { "type": "number" },
+            "spine2": { "type": "number" },
+            "spine1": { "type": "number" },
+            "spine": { "type": "number" },
+            "hip": { "type": "number" },
+            "knee": { "type": "number" },
+            "ankle": { "type": "number" }
+          },
+          "required": ["top", "head", "neck", "arm", "spine2", "spine1", "spine", "hip", "knee", "ankle"]
+        },
+        "x": {
+          "type": "object",
+          "description": "X half-span coordinates (0..0.5 from centerline).",
+          "properties": {
+            "shoulder": { "type": "number" },
+            "elbow": { "type": "number" },
+            "wrist": { "type": "number" },
+            "knuckle": { "type": "number" },
+            "tip": { "type": "number" }
+          },
+          "required": ["shoulder", "elbow", "wrist", "knuckle", "tip"]
+        }
+      },
+      "required": ["z", "x"]
+    },
+    "budget": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Engine decimation triangle budget target. Null keeps full resolution."
+    },
+    "clips": {
+      "type": "object",
+      "description": "Animation clips configuration for procedural generation.",
+      "properties": {
+        "archetype": {
+          "type": "string",
+          "enum": ["walker", "flyer", "exploder", "swimmer", "turret", "winged", "machine"],
+          "description": "Clip authoring archetype."
+        },
+        "display": { "type": "string" },
+        "category": { "type": "string" },
+        "attack": { "type": "string" },
+        "windup": { "type": "string" },
+        "hit_rear": { "type": "number" },
+        "beats": { "type": "number" },
+        "flap": { "type": "number" },
+        "loop": { "type": "integer" }
+      },
+      "required": ["archetype"]
+    },
+    "card": {
+      "type": "object",
+      "description": "Engine metadata card published with the rigged assets.",
+      "properties": {
+        "metres": { "type": "number", "minimum": 0 },
+        "role": { "type": "string" },
+        "tint": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "object",
+      "description": "Explanations and rationale for allowances or non-default options.",
+      "properties": {
+        "rig.audit": { "type": "string" },
+        "budget": { "type": "string" },
+        "clips": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "required": ["schema", "rig"],
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "chainDefinition": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "slice": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "tube": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vec3" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "points": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vec3" },
+          "minItems": 2
+        },
+        "tip": { "$ref": "#/$defs/vec3" },
+        "base": { "$ref": "#/$defs/vec3" },
+        "stations": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "bones": { "type": "integer", "minimum": 1 },
+        "names": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "parent": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": [
+                { "type": "string" },
+                { "type": "integer" }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            }
+          ]
+        }
+      },
+      "required": ["name"]
+    }
+  }
+}

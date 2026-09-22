@@ -63,6 +63,10 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 - Every change is checked (a bone the source does not have, the head and hips the same bone, an audit allowance
   with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
   `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
+- **Suggest skeleton**: One click proposes an archetype and placed bone chains from geodesic extremities (`probe_tips`),
+  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies.
+- **Placed builder (`kind: "placed"`)**: Body-part rules (allowed/denied bones), join blending radii, weld seam ripping
+  to prevent stretch between limbs, distance gradient wing membranes with flank cutoffs, jaw hinges, and rigid islands.
 - **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
   next to the one before, value by value; the red balls in the view are where the audit's bends tore, each with the
   source bone it came from. **View results** opens the 3D viewer.
@@ -75,12 +79,13 @@ the spec as a form beside it. Nothing needs Blender or JSON:
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
     python autorig/cli/run.py preview wolf              rigged/preview.glb for the 3D viewer (pipeline.py -preview too)
     blender -b --python autorig/steps/source_preview.py -- -only wolf    the spec editor's view of the source
+    blender -b --python autorig/steps/suggest.py -- -only wolf           suggest archetype and skeleton
     python autorig/cli/run.py help                      every step by name, for a launcher in the collection
 
 - `AUTORIG_MODELS`: the models root (default `samples/`). A model is a folder with a source export, at the root or
   one level down in a group.
 - `AUTORIG_WORK`: QA pictures, rig logs, audits, survey results, clip frames (default `<models>/_autorig`).
-- `AUTORIG_BLENDER`: the Blender executable, when it is not found by itself.
+- `AUTORIG_BLENDER`: the Blender executable, when it is not found by itself (tested on 5.2 LTS; warns on other versions).
 
 ## Layout
 
@@ -89,21 +94,24 @@ the spec as a form beside it. Nothing needs Blender or JSON:
                                                            the 3D results viewer
                      spec_editor.html  .js  spec_api.py    the spec editor
                      vendor/three/                         three.js 0.186.0 (MIT), vendored so it works offline
-    autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades
+    autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades  suggest  placed_rules
     autorig/steps/   survey  facing  measure  probe_tips    inspect   (run inside Blender)
                      rerig  rerig_humanoid  run_builder     rig
-                     decimate  audit  make_clips            trim, check, animate
+                     decimate  audit  make_clips  suggest   trim, check, animate, suggest
                      preview_glb                           the viewer's GLB copy of a rig and its clips
                      source_preview                        the editor's GLB of the source and its own skeleton
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
-    docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN
-    tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py  viewer_logic_test.mjs
-    samples/         the default models root (empty)
+    docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN  CI  rig.schema.json
+    tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py
+                     test_suggest.py  test_placed_rules.py  test_blender_version.py
+                     test_audit_thresholds_ci.py  test_json_schema.py  viewer_logic_test.mjs
+    ci/              ci.yml                                GitHub Actions Linux workflow
+    samples/         the default models root
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
-conventions), [PLAN](docs/PLAN.md).
+conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Tests
 
