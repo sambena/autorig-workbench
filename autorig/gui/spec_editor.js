@@ -1246,9 +1246,55 @@ function fieldHtml(f) {
     const n = errsAt(["notes", "rig.audit"]); e.push(...n.e);
   } else if (t === "build_chains") {
     body = buildChains(Array.isArray(v) ? v : []);
+  } else if (t === "parts_rules") {
+    const list = Array.isArray(v) ? v : (v && typeof v === "object" ? Object.entries(v).map(([k, val]) => Array.isArray(val) ? { name: k, bones: val } : { name: k, ...val }) : []);
+    body = list.map((p, i) => `<div class="card"><div class="hd"><b>${esc(p.name || "Part " + (i + 1))}</b>` +
+           `<input type="text" data-set="text" data-path="${P([...path, i, "name"])}" value="${esc(p.name || "")}" placeholder="part name" style="width:110px">` +
+           `<span class="grow"></span><button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>` +
+           `<div class="sub-row"><span class="muted" style="width:50px">bones</span><input type="text" data-set="strlist" data-path="${P([...path, i, "bones"])}" value="${esc((p.bones || []).join(", "))}" placeholder="bone_1, bone_2" style="width:170px" title="Comma-separated bone names"></div>` +
+           `<div class="sub-row"><span class="muted" style="width:50px">allow</span><input type="text" data-set="strlist" data-path="${P([...path, i, "allow"])}" value="${esc((p.allow || []).join(", "))}" placeholder="allowed bones (e.g. spine_2)" style="width:170px" title="Allowed bones or patterns"></div>` +
+           `<div class="sub-row"><span class="muted" style="width:50px">deny</span><input type="text" data-set="strlist" data-path="${P([...path, i, "deny"])}" value="${esc((p.deny || []).join(", "))}" placeholder="denied bones, e.g. wing_*" style="width:170px" title="Denied bones or patterns"></div>` +
+           `</div>`).join("") +
+           `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='{"name": "", "bones": []}'>+ Add body part rule</button>`;
+  } else if (t === "join_blends") {
+    const list = Array.isArray(v) ? v : [];
+    body = list.map((b, i) => `<div class="sub-row"><span class="muted">bone</span>${boneInput([...path, i, "bone"], b.bone)}` +
+           `<span class="muted">with</span>${boneInput([...path, i, "with"], b.with)}` +
+           `<span class="muted">radius</span><input type="number" step="0.01" data-set="num" data-path="${P([...path, i, "radius"])}" value="${b.radius ?? ""}" placeholder="0.15" style="width:55px">` +
+           `<span class="muted">fade</span><input type="number" step="0.05" data-set="num" data-path="${P([...path, i, "fade"])}" value="${b.fade ?? ""}" placeholder="0.4" style="width:50px">` +
+           `<button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>`).join("") +
+           `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='{"bone": "", "with": "", "radius": 0.15, "fade": 0.4}'>+ Add join blend</button>`;
+  } else if (t === "rip_welds") {
+    const list = Array.isArray(v) ? v : [];
+    body = list.map((r, i) => {
+      const b0 = Array.isArray(r) ? r[0] : (r && r.bones ? r.bones[0] : "");
+      const b1 = Array.isArray(r) ? r[1] : (r && r.bones ? r.bones[1] : "");
+      const d = Array.isArray(r) ? "" : (r && r.dist !== undefined ? r.dist : "");
+      return `<div class="sub-row"><span class="muted">rip</span>${boneInput([...path, i, 0], b0)}` +
+             `<span class="muted">from</span>${boneInput([...path, i, 1], b1)}` +
+             `<span class="muted">dist</span><input type="number" step="0.01" data-set="num" data-path="${P([...path, i, "dist"])}" value="${d}" placeholder="0.15" style="width:55px">` +
+             `<button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>`;
+    }).join("") +
+    `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='["", ""]'>+ Add rip weld seam</button>`;
+  } else if (t === "membranes") {
+    const list = Array.isArray(v) ? v : [];
+    body = list.map((m, i) => `<div class="card"><div class="hd"><b>${esc(m.name || "Membrane " + (i + 1))}</b>` +
+           `<input type="text" data-set="text" data-path="${P([...path, i, "name"])}" value="${esc(m.name || "")}" placeholder="name" style="width:110px">` +
+           `<span class="grow"></span><button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>` +
+           `<div class="sub-row"><span class="muted" style="width:60px">spars</span><input type="text" data-set="strlist" data-path="${P([...path, i, "bones"])}" value="${esc((m.bones || []).join(", "))}" placeholder="wing_1.L, wing_2.L..." style="width:170px" title="Comma-separated wing spar bones"></div>` +
+           `<div class="sub-row"><span class="muted" style="width:60px">root</span>${boneInput([...path, i, "root_bone"], m.root_bone)}` +
+           `<label style="margin-left:8px"><input type="checkbox" data-set="bool" data-path="${P([...path, i, "cut_flank"])}" ${m.cut_flank !== false ? "checked" : ""}> cut flank</label></div>` +
+           `</div>`).join("") +
+           `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='{"name": "membrane.L", "bones": [], "cut_flank": true}'>+ Add membrane</button>`;
+  } else if (t === "rigid_islands") {
+    const list = Array.isArray(v) ? v : [];
+    body = list.map((r, i) => `<div class="card"><div class="hd"><span class="muted">bone</span>${boneInput([...path, i, "bone"], r.bone)}<span class="grow"></span>` +
+           `${pickBtn("point", [...path, i, "at"], "Island " + (i + 1))}<button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>` +
+           `<div class="sub-row"><span class="muted" style="width:34px">at</span>${pointInputs([...path, i, "at"], r.at)}</div></div>`).join("") +
+           `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='{"bone": "", "at": [0.5, 0.5, 0.5]}'>+ Add rigid island</button>`;
   }
   return `<div class="field ${e.length ? "err" : ""}" data-key="${esc(key)}"><div class="lab"><span>${esc(f.label)}</span><span class="grow"></span>` +
-         `${v !== undefined && !["kind"].includes(key) && t !== "build_chains" ? `<button class="small" data-act="clear" data-path="${P(path)}" title="remove the field: back to the default">reset</button>` : ""}</div>` +
+         `${v !== undefined && !["kind"].includes(key) && !["build_chains", "parts_rules", "join_blends", "rip_welds", "membranes", "rigid_islands"].includes(t) ? `<button class="small" data-act="clear" data-path="${P(path)}" title="remove the field: back to the default">reset</button>` : ""}</div>` +
          `<div class="help">${esc(f.help)}</div>${body}${e.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("")}${w.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("")}</div>`;
 }
 
@@ -1810,6 +1856,7 @@ function set(el) {
     } else setPath(path, n);
   } else if (s === "text") setPath(path, el.value.trim() || undefined);
   else if (s === "texts") setPath(path, el.value.split(",").map((x) => x.trim()).filter(Boolean));
+  else if (s === "strlist") setPath(path, el.value.split(",").map((x) => x.trim()).filter(Boolean));
   else if (s === "rolename") {
     const old = el.dataset.role, nu = el.value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
     if (!nu || nu === old) return;
@@ -1827,7 +1874,7 @@ function set(el) {
 
 function kindChanged() {
   const R = rig();
-  if (R.kind === "build" && !Array.isArray(R.chains)) { delete R.chains; R.chains = []; changed(); }
+  if (["build", "placed"].includes(R.kind) && !Array.isArray(R.chains)) { delete R.chains; R.chains = []; changed(); }
   if (R.kind === "tripo" && Array.isArray(R.chains)) { delete R.chains; changed(); }
   if (R.kind === "humanoid" && !draft.humanoid) {
     draft.humanoid = {

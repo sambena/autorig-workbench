@@ -19,6 +19,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 from spec_store import SPECS
 from layout import ROOT, source_fbx, rigged_dir, leaf, work_dir
 import source_io
+import placed_rules
 
 ROLE_COLOURS = {"tentacle": (0.8, 0.3, 0.6), "flipper": (0.0, 0.7, 0.75), "fluke": (0.95, 0.5, 0.05), "pod": (0.0, 0.7, 0.75),
                 "wisp": (0.95, 0.6, 0.1), "flame": (0.9, 0.3, 0.05), "lid": (0.75, 0.1, 0.1), "tongue": (0.85, 0.1, 0.45),
@@ -952,6 +953,9 @@ def skin(mesh, arm, chains, spec, size, log):
     height = size.z
     verts = mesh.data.vertices
     jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])} if spec["kind"] == "tripo" else {}
+    if spec.get("rip_welds"):
+        placed_rules.rip_welds_pass(mesh, arm, chains, spec, size, log)
+        verts = mesh.data.vertices
     select_only(mesh, arm)
     mesh.vertex_groups.clear()
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
@@ -1002,6 +1006,14 @@ def skin(mesh, arm, chains, spec, size, log):
     root_mask(mesh, arm, chains, spec, log)
     girdle_pass(mesh, arm, chains, spec, log)
     skin_jaw(mesh, arm, spec, size, log)
+    if spec.get("membranes"):
+        placed_rules.membrane_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("parts"):
+        placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("blends"):
+        placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("rigid_islands"):
+        placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it (a humanoid's back, behind the chest); a few
         # smoothing passes even them out. Before the rigid-piece pass, so loose pieces still end up rigid.
@@ -1304,7 +1316,7 @@ def rerig(key, spec, qa_dir, export):
         move_joints(joints, spec, lo, size)
         repair(joints, spec, size)
         chains = tripo_chains(joints, spec, bvh, size, mesh)
-    elif spec["kind"] == "build":
+    elif spec["kind"] in ("build", "placed"):
         chains = build_chains(mesh, spec, size)
     else:
         log["error"] = "unknown kind: " + spec["kind"]; return log

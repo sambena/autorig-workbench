@@ -147,8 +147,10 @@ it, and the audit delta, without touching a text file (done).
   `head_line`, `jaw` and `rigid_to` boxes, in 3D or on the flat views; drag to move a joint in 3D or flat views,
   mirroring a placed chain across symmetry ($X \to 1 - X$) in one click with intelligent renaming, `stations` placement
   by click/input, and live redrawing of the flat views as points move.
-- **`kind: "placed"`**: a hand-placed winged builder generalised. Its body-part rules become spec data: which bones
-  each part may use, which parts blend at a join, which welds to rip, membranes, the jaw line, rigid islands.
+- **`kind: "placed"`** (done): a hand-placed winged builder generalised. Its body-part rules become spec data: which bones
+  each part may use (`parts`), which parts blend at a join (`blends`), which welds to rip (`rip_welds`), membranes
+  riding only wing spar bones by distance gradients and cut free from the flank (`membranes`), the jaw line (`jaw`),
+  and rigid islands (`rigid_islands`).
 
 Done when a model with no spec goes from drop-in to a PASS audit using only clicks and the spec form.
 
