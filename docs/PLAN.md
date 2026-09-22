@@ -60,7 +60,7 @@ Checked by rebuilding a sample of models through the tool and comparing audits v
 
 ### P2: 3D view and editable spec (5-7 days)
 
-The viewer half is done; the spec form and Rig again are next.
+Done: the viewer, the spec editor (the spec form) and Save and re-rig (Rig again).
 
 - **A preview step** (`steps/preview_glb.py`, done) writes `<rig folder>/preview.glb`: the full-resolution mesh with
   its materials and textures, the armature, and every clip as a named glTF animation (sampled every frame, so IK and
@@ -113,9 +113,26 @@ The viewer half is done; the spec form and Rig again are next.
     way the preview's own export maps the rig, or fall back to `at_bbox` against the mesh's bounding box;
   - the worst bone (`tears.worst_bone`) selected and highlighted in the skeleton overlay when the viewer opens from
     a CHECK or FAIL.
-- **Spec form**, generated from a schema: kind and archetype, forward and origin; the skinning fixes and their tuning
-  knobs; audit allowances, each with its reason (required); clip settings as sliders; budget and real size.
-- **Rig again** re-runs from the form and shows the audit as a before/after delta.
+- **Source view** (`steps/source_preview.py`, done): the source export as it came, `<work>/source/<model>.glb` (mesh
+  and textures, no skin) and `.json` (every source joint: name, head, tail, parent, and the joints the rig step folds
+  into their parent), so the editor can show which `bone_N` is which. A model with no skeleton gets the mesh alone.
+- **Spec editor** (`gui/spec_editor.html`, `spec_editor.js`, `spec_api.py`, done): **Edit spec** on a model (and in its
+  Spec and card tab) opens the source model with its own skeleton drawn over it, every joint named, and the chains
+  the draft makes coloured the way the rig step will read them (rerig.repair and tripo_chains, followed live:
+  mirrored copies, folded joints, thrown-away bones, guessed limbs). Click a bone: what it is, what the spec makes of
+  it, what the last rig made from it, and one-click jobs (head, hips, a leg, throw away, mirror from here, start a
+  chain). The form is built from the schema the server sends (every `rig` field with a plain-English label and help;
+  kind, facing, origin, skin style, rigid parts, tuning, audit allowances with their required reason, budget, clips,
+  card size); **Pick** beside a field fills it by clicking bones, or points on the model (placed halfway through the
+  part under the mouse, so a click on a leg lands in the leg). The server checks every edit against the schema and
+  the source's own bones, and the Changes tab shows the diff Save will make; Save writes rig.json in the same compact
+  style, keeps every field it does not know and the previous file as `rig.json.bak`, and never overwrites a file that
+  changed on disk since the page loaded it. The audit's tears are drawn where they happened, with the source bone
+  each torn bone came from.
+- **Save and re-rig** (done) saves, keeps the current audit as "before", runs rig, trim, audit, clips (when the spec
+  names an archetype) and preview as one job with the live log, then shows the audit before and after, value by value,
+  and View results. Still to do: humanoid and custom kinds' own settings in the form (they are edited as JSON there),
+  and a clip playing in the editor itself (View results has it).
 
 Done when a user changes an option in the form, presses Rig again, and sees the new skeleton in 3D, a clip playing on
 it, and the audit delta, without touching a text file.
@@ -123,10 +140,11 @@ it, and the audit delta, without touching a text file.
 ### P3: click-to-place joints (8-10 days)
 
 - The measure sheet's three orthographic views, made interactive in the page as images with the grid drawn over them,
-  so there is no 3D picking to get wrong.
-- **Click to place** a chain's joints, or just a limb's tip and base. Drag to move a joint. The other two views update,
-  and mirroring (`.L` to `.R`) is one click. The points go straight into the spec (`points`, `tip`, `base`,
-  `stations`); a quick "sticks only" run of `measure.py` redraws the rig in about 2 s.
+  so there is no 3D picking to get wrong. Started: the editor's **Flat views** tab runs `measure.py` on the unsaved
+  draft (the rig it would build drawn over the model) and a click in a view sets two of a point's three numbers.
+- **Click to place** a chain's joints, or just a limb's tip and base. Started: Pick beside `tip`, `base`, `points`,
+  `head_line`, `jaw` and `rigid_to` boxes, in 3D or on the flat views. Still to do: drag to move a joint, mirroring a
+  placed chain in one click, `stations` by click, and redrawing the flat views as the points move.
 - **`kind: "placed"`**: a hand-placed winged builder generalised. Its body-part rules become spec data: which bones
   each part may use, which parts blend at a join, which welds to rip, membranes, the jaw line, rigid islands.
 

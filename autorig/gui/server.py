@@ -16,8 +16,10 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 try:
     from . import viewer_api                      # the results viewer's routes (gui/viewer_api.py)
+    from . import spec_api                        # the spec editor's routes (gui/spec_api.py)
 except ImportError:
     import viewer_api
+    import spec_api
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.dirname(HERE)
@@ -239,7 +241,7 @@ def availability(st, spec, d):
     if st["spec_error"]:
         why["rig"] = "rig.json cannot be read: " + st["spec_error"]
     elif not rig:
-        why["rig"] = "no rig spec yet: run Survey, read the facing and survey results, then write rig.json (docs/SPEC.md)"
+        why["rig"] = "no rig spec yet: press Edit spec (or run Survey, read the facing views, and write rig.json: docs/SPEC.md)"
     elif rig.get("kind") == "custom" and not os.path.exists(os.path.join(d, rig.get("builder", ""))):
         why["rig"] = "the custom builder %s is not in the model folder" % rig.get("builder")
     elif not st["source"]:
@@ -599,6 +601,14 @@ def make_handler(app):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 f = viewer_api.static_file(path)
                 return self._send(200, f[0], f[1]) if f else self._send(404, {"error": "not found"})
+            if path == "/spec_editor.js":                         # the spec editor (gui/spec_api.py)
+                if not self._host_ok(): return self._send(403, {"error": "bad host"})
+                f = spec_api.static_file(path)
+                return self._send(200, f[0], f[1])
+            if path == "/spec_editor.html":
+                if not self._guard(q): return
+                return self._send(200, spec_api.page(app.token), "text/html; charset=utf-8",
+                                  {"Content-Security-Policy": spec_api.CSP})
             if path == "/viewer.html":
                 if not self._guard(q): return
                 return self._send(200, viewer_api.page(app.token), "text/html; charset=utf-8",
@@ -617,6 +627,7 @@ def make_handler(app):
                     a = audit_file(name) if find_group(name) is not None else None
                     if not a: return self._send(404, {"error": "no audit for " + name})
                     with open(a) as fh: return self._send(200, json.load(fh))
+                if spec_api.get(self, app, sys.modules[__name__], path, q): return
                 if path == "/api/model":
                     name = (q.get("name") or [""])[0]
                     g = find_group(name)
@@ -708,6 +719,7 @@ def make_handler(app):
                     if not paths: return self._send(400, {"error": "no paths"})
                     name = clean_name(body.get("name") or os.path.splitext(os.path.basename(paths[0].rstrip("/\\")))[0])
                     return self._send(200, place([os.path.abspath(p) for p in paths], body.get("group", ""), name, move=False))
+                if spec_api.post(self, app, sys.modules[__name__], path, body): return
                 if path == "/api/run":
                     name, step = body.get("model", ""), body.get("step", "")
                     if step not in STEP_NAMES: return self._send(400, {"error": "unknown step"})
