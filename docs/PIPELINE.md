@@ -96,8 +96,8 @@ model gets them:
 - **E. Four influences.** Trim cleans, limits to four and normalises after the cut. Static models also get a planar
   dissolve before the collapse (flat panels kept flat, no spikes), and so do rigs of rigid parts (every vertex on one
   bone: nothing bends); other rigged ones do not, because long dissolved triangles tear across joints. On a rigged
-  mesh trim merges coincident vertices only where their weights agree, so a seam a builder cut on purpose (the
-  Dragon's hand from its thigh, its membrane from its forearm) stays cut; the plain merge it used before re-welded
+  mesh trim merges coincident vertices only where their weights agree, so a seam a builder cut on purpose (a winged
+  creature's hand from its thigh, its membrane from its forearm) stays cut; the plain merge it used before re-welded
   them with averaged weights. The FBX is written at the rest pose, whatever clips the `.blend` holds.
 - **F. Mirrored chains match.** The audit warns when a chain and its mirror differ in bone count.
 

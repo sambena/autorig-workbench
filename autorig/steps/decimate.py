@@ -31,10 +31,10 @@ def tri_count(mesh):
 def weld_same_weights(mesh, threshold, tol=0.05):
     """Merges coincident vertices, but only those that carry the same weights.
 
-    A plain merge by distance re-welded seams a rig builder had cut on purpose: the Dragon's builder splits the
-    welds where its hand is fused to its thigh and its wing membrane to its forearm, so each side follows its own
-    bones, and the merge before the collapse joined them again with averaged weights (8 hand-and-thigh and 83
-    arm-and-wing vertices at 12,000 triangles: most of its 99 combined-pose tears). Doubles left by an export's UV
+    A plain merge by distance re-welded seams a rig builder had cut on purpose: a winged creature's builder splits
+    the welds where a hand is fused to a thigh and a wing membrane to a forearm, so each side follows its own bones,
+    and the merge before the collapse joined them again with averaged weights (on one such model, 91 vertices at
+    12,000 triangles: most of its 99 combined-pose tears). Doubles left by an export's UV
     seams have identical weights and still merge."""
     import bmesh
     from mathutils import kdtree
@@ -157,9 +157,9 @@ def run(key):
                 live.add(mesh.vertex_groups[ge.group].name)
     lost = sorted(groups - live)
 
-    # The engine FBX carries the rest pose. A rig .blend that also holds clips (the Dragon's: every clip as an NLA
+    # The engine FBX carries the rest pose. A rig .blend that also holds clips (a builder's: every clip as an NLA
     # track) evaluates, with no action set, to all its tracks stacked, and that pose went into the file as the
-    # bones' pose: a game or tool that shows the pose it was given, not the bind, saw the Dragon mid-clip.
+    # bones' pose: a game or tool that shows the pose it was given, not the bind, saw the model mid-clip.
     for a in arms:
         if a.animation_data:
             a.animation_data.action = None
