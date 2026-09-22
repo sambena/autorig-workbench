@@ -1917,6 +1917,22 @@ function doUndo() {
 }
 $("bUndo").onclick = doUndo;
 $("bRevert").onclick = () => { if (!checked.changed || confirm("Throw away every change since the last save?")) { pushUndo(); draft = startDraft(); changed(); } };
+$("bSuggest").onclick = async () => {
+  try {
+    flashTop("Analyzing model and suggesting skeleton…");
+    const res = await api("/api/spec/suggest", { model: MODEL });
+    if (!res || !res.rig) {
+      flashTop("Could not determine suggested skeleton.");
+      return;
+    }
+    pushUndo();
+    draft.rig = Object.assign({}, draft.rig || {}, res.rig);
+    changed();
+    flashTop(`Suggested ${res.archetype || "skeleton"} (${(res.reasons || []).join("; ")})`);
+  } catch (e) {
+    flashTop("Error: " + e.message);
+  }
+};
 
 async function save(rerig) {
   endPick(false);

@@ -371,6 +371,35 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(set(b["before"]["checks"]), set(b["audit"]["checks"]))
         self.assertGreater(b["audit_time"], b["before"]["time"])
 
+    def test_4_suggest_api(self):
+        # Suggestion using source from boned
+        sug = self.call("/api/spec/suggest", {"model": "boned"})
+        self.assertIn("spec", sug)
+        self.assertIn("archetype", sug)
+        self.assertEqual(sug["spec"]["schema"], "autorig-spec/1")
+        self.assertIn("rig", sug["spec"])
+
+        # Suggestion with direct survey payload
+        payload = {
+            "model": "boned",
+            "source": {
+                "format": "autorig-source/1",
+                "survey": {
+                    "probe_tips": [
+                        {"pos": [0.0, 0.4, 0.9], "name": "snout"},
+                        {"pos": [0.0, -0.5, 0.4], "name": "tail"},
+                        {"pos": [0.25, 0.2, 0.0], "name": "foot_FL"},
+                        {"pos": [-0.25, 0.2, 0.0], "name": "foot_FR"},
+                        {"pos": [0.25, -0.3, 0.0], "name": "foot_BL"},
+                        {"pos": [-0.25, -0.3, 0.0], "name": "foot_BR"}
+                    ]
+                }
+            }
+        }
+        res = self.call("/api/spec/suggest", payload)
+        self.assertEqual(res["archetype"], "quadruped")
+        self.assertEqual(res["spec"]["rig"]["kind"], "placed")
+
 
 if __name__ == "__main__":
     unittest.main()

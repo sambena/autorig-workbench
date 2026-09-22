@@ -158,6 +158,13 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 | `body` | the body bone, when it is not the one the card names |
 | `rig`, `triangles`, `flySpeed`, `splitWalkSpeed` | winged: the rig folder, the export's triangle budget, the fly loop's speed in metres a second, and the `walkSpeed` written with `--split-clips` |
 
+### Suggesting a skeleton
+
+The tool can propose a full `rig` spec and archetype automatically:
+- **From an existing bone hierarchy**: Tripo skeletons (`bone_0`...) or Mixamo humanoids are recognized and mapped into `tripo` or `humanoid` specs.
+- **From mesh heuristics**: For boneless models, survey's `probe_tips` (geodesic tips from the mesh extremities) are grouped across the symmetry plane $X=0.5$ into centerline features (snout, jaw, tail) and paired limbs. Proportions and tip positions propose an archetype (`quadruped`, `hexapod`, `octopod`, `serpent`, `winged`, `floater`, `rigid`, `humanoid`) and placed chains with tip/base coordinates, jaw rules, and wing membranes.
+- **Access**: Via CLI (`blender -b --python autorig/steps/suggest.py -- <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton** button in the spec editor.
+
 ### `card`
 
 Fields copied onto the model card by publish: `metres` (the real size of the longest axis: generated models come in a

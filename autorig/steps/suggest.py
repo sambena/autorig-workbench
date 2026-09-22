@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Autorig Workbench: CLI step to suggest an archetype and placed skeleton for a model.
+#
+#   blender -b --python autorig/steps/suggest.py -- <model> [-out <dir>]
+#
+import bpy, sys, os, json
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
+import rerig, geo, suggest, layout
+
+
+def run_suggest(key):
+    path = rerig.find_fbx(key)
+    if not path:
+        return {"model": key, "error": "no source export found"}
+
+    mesh, joints = rerig.load(path)
+    rerig.normalise(mesh, {}, {"kind": "build", "forward": [0, -1, 0]})
+    s = geo.Surface(mesh)
+
+    raw_tips = s.tips(most=18, least=0.12)
+    norm_tips = [s.norm(s.co[v]) for v, _ in raw_tips]
+
+    res = suggest.suggest_skeleton(
+        name=key,
+        source_data={"size": [float(v) for v in s.size], "lo": [float(v) for v in s.lo], "hi": [float(v) for v in s.hi]},
+        tips=norm_tips,
+        proportions=[float(v) for v in s.size]
+    )
+    res["model"] = key
+    res["tips_count"] = len(norm_tips)
+    return res
+
+
+def main():
+    a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if not a:
+        sys.exit("usage: blender -b --python suggest.py -- <model>")
+    key = a[0]
+    out_dir = a[a.index("-out") + 1] if "-out" in a else None
+
+    res = run_suggest(key)
+    out_json = json.dumps(res, indent=2)
+    print("SUGGEST " + out_json)
+
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, key + "_suggest.json"), "w", encoding="utf-8") as fh:
+            fh.write(out_json)
+
+
+if __name__ == "__main__":
+    main()
