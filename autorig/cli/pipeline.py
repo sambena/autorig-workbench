@@ -11,7 +11,7 @@
 # kind="custom" -> its `builder` (a script beside the model, run through run_builder.py), anything else ->
 # rerig.py. The rig step writes <rig folder>/<model>.blend and .fbx; decimate rewrites the .fbx at the engine budget
 # with at most four influences; audit.py judges that .fbx, the one an engine imports. Run publish.py afterwards for
-# the cards. Exit code 1 if anything failed or any audit failed.
+# the cards. Exit code 1 if anything failed or any audit graded FAIL (CHECK is reported, not failed).
 #
 # Folders come from AUTORIG_MODELS / AUTORIG_WORK (see autorig/core/layout.py and spec_store.py).
 import os, re, subprocess, sys

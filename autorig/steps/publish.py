@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 from layout import ROOT, rig_folder, work_dir, SOURCE_EXTS
 import spec_store
+import grades
 
 EXPORT_FORMAT = "autorig-export/"   # the winged export's manifest (make_clips.py, docs/FORMATS.md)
 
@@ -62,7 +63,8 @@ def card(group, folder):
         audit = os.path.join(work_dir("audit"), folder + ".json")
         if os.path.exists(audit):
             v = json.load(open(audit)).get("verdict")
-            if v: rig["audit"] = {"pass": v["pass"], **{k: c["value"] for k, c in v["checks"].items()}}
+            # grade: PASS / CHECK / FAIL (core/grades.py); pass stays the strict result, grade == PASS
+            if v: rig["audit"] = {"pass": v["pass"], "grade": grades.grade_of(v), **{k: c["value"] for k, c in v["checks"].items()}}
         clips = os.path.join(d, "clips", folder + "_clips.json")
         if os.path.exists(clips):
             rig["clips"] = {"fbx": "clips/%s.fbx" % folder, "blend": "clips/%s_clips.blend" % folder,

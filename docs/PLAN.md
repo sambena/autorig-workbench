@@ -38,7 +38,7 @@ From P2, three.js draws the model, skeleton and clips from a GLB the tool export
 - **Buttons:** Survey (survey and facing views), Rig (the builder the spec's kind picks), Trim, Audit, Make clips (with
   preview frames), Publish, and Run all. A button without what it needs is greyed out and says why.
 - **Live log** from the running step, with Cancel.
-- **Results:** the audit as a PASS/FAIL table (each check, its threshold, any allowance and its reason, the warnings)
+- **Results:** the audit as a graded table (each check, its threshold, any allowance and its reason, the warnings)
   with the skin and bend sheets; the bend test; the clip frames as one strip per clip; the survey facts and facing
   views; the spec, its notes and the card. **Open output folder** opens the model's folder.
 - Specs are data: one `rig.json` per model and an `autorig.json` for the collection (SPEC.md). Formats: FORMATS.md.
@@ -76,7 +76,19 @@ The viewer half is done; the spec form and Rig again are next.
   the figure, facing (+X by the head, toes or tail), bone count, clips, zero-length clips, a preview older than its rig.
   A model with no clips shows its bind pose; one with no preview offers to run Preview. `/api/previews` lists them,
   and **View results** opens it from a model and from a finished run. Still to do: the audit's worst bones
-  highlighted, and a scrub bar.
+  highlighted, the tear sites marked (below), and a scrub bar.
+- **Graded audits** (done): PASS / CHECK / FAIL from tear counts, the gap the worst tear opens, bleed and head share
+  (PIPELINE.md, "Grades"); the model list's badges show the grade; **Audit all** audits every rigged model in turn
+  (live log, Cancel) and shows a table worst first, each row opening its model (`run.py audit-all` from the command
+  line). For the viewer to draw next, from `/api/audit?name=<model>` (the audit JSON):
+  - an overlay "Tears" that puts a marker at each of `tear_sites[].clusters[].at`, sized by `edges` and coloured by
+    `gap_pct` (amber under the pose's CHECK gap, red over), labelled with the cluster's `bone`; the combined pose
+    first, and a list of the posed bones to step through (`bone`, `rotation_deg`) that poses that one bone as the
+    audit did (40 degrees about its own X, or a 60-degree twist about Y) so the tear opens on screen;
+  - `at` is in the imported FBX's world space (Blender Z up, the FBX's units); map it into the preview's space the
+    way the preview's own export maps the rig, or fall back to `at_bbox` against the mesh's bounding box;
+  - the worst bone (`tears.worst_bone`) selected and highlighted in the skeleton overlay when the viewer opens from
+    a CHECK or FAIL.
 - **Spec form**, generated from a schema: kind and archetype, forward and origin; the skinning fixes and their tuning
   knobs; audit allowances, each with its reason (required); clip settings as sliders; budget and real size.
 - **Rig again** re-runs from the form and shows the audit as a before/after delta.

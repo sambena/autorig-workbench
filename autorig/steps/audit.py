@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: the rig audit, the pipeline's QA step. Measures one rigged FBX and says PASS or FAIL against the thresholds below.
+# Autorig Workbench: the rig audit, the pipeline's QA step. Measures one rigged FBX and grades it PASS, CHECK or FAIL.
 #
 #   blender -b --python autorig/steps/audit.py -- -model wolf               the model's rigged/<model>.fbx
 #   blender -b --python autorig/steps/audit.py -- -fbx <path> -slug <name>  any FBX
 #   options: -out <dir> (default <AUTORIG_WORK>/audit)   -render 0 (numbers only, no sheets)
 #   python autorig/cli/audit_all.py wolf,moth ...                           several, one Blender each, and a table
+#   python autorig/cli/audit_all.py all                                     every rigged model
 #
 # Written because rigs that passed a visual bend test were still broken in ways a number catches: a head bone owning 0.4% of the surface, leg bones owning the shell.
 # What it measures, per vertex and per bone:
@@ -12,14 +13,17 @@
 #   ownership   each bone's share of the surface, and its reach (90th percentile distance of what it owns)
 #   joints      how smoothly each joint blends parent into child
 #   bends       each bone turned 40 degrees about its own X ("bend") and twisted 60 ("twist"): edges stretched past
-#               2x ("tear edges") and surface outside the bone's subtree that moves ("collateral")
+#               2x ("tear edges"), the widest gap they open, and surface outside the bone's subtree that moves
+#               ("collateral")
 #   combined    every joint at once (limbs 30, spine 12, tail 14): the pose the old bend test only showed as a picture
-# Writes <out>/<slug>.json with a "verdict" block, and (unless -render 0) <slug>_skin.png and <slug>_bend.png.
+# Writes <out>/<slug>.json with a "verdict" block (grade, pass, checks), "tears" (per bone) and "tear_sites" (where the
+# tear edges are, clustered, for a viewer to mark), and (unless -render 0) <slug>_skin.png and <slug>_bend.png.
 #
-# THRESHOLDS (fail): bleed <= 2%; no tear edges in the combined pose or any single-joint bend; head (+ jaw) owns at
-# least 2.5% of the surface where there is a head; at most 4 influences per vertex. A model can tighten or loosen
-# these in its spec with audit={...} (same keys as THRESHOLDS), and says why beside it.
-# Warnings (reported, not failed): twist tears, a limb bone reaching over 0.2 of the model, mirrored chains that
+# THRESHOLDS and the warn bands live in autorig/core/grades.py (docs/PIPELINE.md, "Grades"). Pass limits: bleed <= 2%;
+# no tear edges in the combined pose or any single-joint bend; head (+ jaw) owns at least 2.5% of the surface where
+# there is a head; at most 4 influences per vertex. A model can tighten or loosen these in its spec with audit={...}
+# (same keys as THRESHOLDS), and says why beside it.
+# Warnings (reported, not graded): twist tears, a limb bone reaching over 0.2 of the model, mirrored chains that
 # differ in bone count (docs/PIPELINE.md, rule F).
 import bpy, sys, os, math, json, re, time
 import numpy as np
@@ -30,8 +34,10 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 # A tear is an edge stretched past 2x that also opens a real gap: more than 0.4% of the model's size. A micro-edge
 # (0.03% of the model, left where two surfaces of the sculpt meet) reaches 10x on a weight difference of 0.05 and opens
 # a gap far under a pixel at any normal camera distance; tear_edges_raw keeps the plain 2x count.
-GAP = 0.004
-THRESHOLDS = {"bleed_pct": 2.0, "combined_tears": 0, "bend_tears": 0, "head_pct": 2.5, "max_influences": 4}
+from grades import GAP, THRESHOLDS, grade_audit
+SITE_CAP = 12        # tear clusters kept per pose
+POINT_CAP = 40       # tear edges kept per pose (the widest), for a viewer to mark one by one
+CLUSTER_R = 0.05     # tear edges closer than this x the model's size are one site
 
 A = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 def arg(n, d=None): return A[A.index(n) + 1] if n in A else d
@@ -275,6 +281,46 @@ def posed_coords():
     return np.concatenate(out)
 def clear_pose():
     for pb in arm.pose.bones: pb.rotation_euler = (0, 0, 0); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
+def tears_in(Q):
+    """Edge lengths of a posed mesh, their stretch, which are tears, and the gap each opens (a fraction of S)."""
+    L = np.linalg.norm(Q[E[:, 0]] - Q[E[:, 1]], axis=1)
+    ratio = np.where(valid, L / np.maximum(rest_len, 1e-9), 1.0)
+    gap = np.where(valid, L - rest_len, 0.0) / S
+    return L, ratio, (ratio > 2.0) & (gap > GAP), gap
+def gap_pct(tear, gap):
+    """The widest gap the tears open, in % of the model's size (0 with no tears)."""
+    return round(100 * float(gap[tear].max()), 2) if tear.any() else 0.0
+def at_bbox(p): return [round(float((p[k] - lo[k]) / max(size[k], 1e-9)), 3) for k in range(3)]
+def tear_site(tear, gap, pose, bone=None, rotation=None):
+    """Where one pose's tear edges are, for a viewer to mark: the edges' midpoints at rest (world space of the
+    imported FBX, and as fractions of its bounding box), greedily clustered widest gap first, the widest kept as
+    points too. Each cluster names the bone that owns most of its vertices."""
+    idx = np.nonzero(tear)[0]
+    if not len(idx): return None
+    idx = idx[np.argsort(-gap[idx])]
+    mid = (P[E[idx, 0]] + P[E[idx, 1]]) * 0.5
+    R = CLUSTER_R * S
+    cl = []
+    for j in range(len(idx)):
+        d = [float(np.linalg.norm(mid[j] - c["seed"])) for c in cl]
+        k = int(np.argmin(d)) if d else -1
+        if k < 0 or (d[k] > R and len(cl) < SITE_CAP): cl.append({"seed": mid[j], "m": [j]})
+        else: cl[k]["m"].append(j)
+    clusters = []
+    for c in cl:
+        m = np.array(c["m"]); e = idx[m]
+        owners = {}
+        for v in np.concatenate([E[e, 0], E[e, 1]]):
+            if dom[v] >= 0: owners[BN[dom[v]]] = owners.get(BN[dom[v]], 0) + 1
+        own = sorted(owners, key=lambda b: -owners[b])
+        at = mid[m].mean(0)
+        clusters.append(dict(at=[round(float(x), 4) for x in at], at_bbox=at_bbox(at), edges=int(len(m)),
+                             gap_pct=round(100 * float(gap[e].max()), 2), bone=own[0] if own else None, owners=own[:3]))
+    clusters.sort(key=lambda c: (-c["edges"], -c["gap_pct"]))
+    pts = [[round(float(x), 4) for x in mid[j]] + [round(100 * float(gap[idx[j]]), 2)] for j in range(min(POINT_CAP, len(idx)))]
+    return dict(pose=pose, bone=bone, rotation_deg=rotation, edges=int(len(idx)), worst_gap_pct=gap_pct(tear, gap),
+                clusters=clusters, points=pts)
+tear_sites = []
 def subtree(i):
     s = {i}; st = [i]
     while st:
@@ -291,9 +337,9 @@ for c in deform:
         pb.rotation_euler = (math.radians(ang), 0, 0) if mode == "bend" else (0, math.radians(ang), 0)
         bpy.context.view_layer.update()
         Q = posed_coords()
-        L = np.linalg.norm(Q[E[:, 0]] - Q[E[:, 1]], axis=1)
-        ratio = np.where(valid, L / np.maximum(rest_len, 1e-9), 1.0)
-        tear = (ratio > 2.0) & (L - rest_len > GAP * S)
+        L, ratio, tear, gap = tears_in(Q)
+        site = tear_site(tear, gap, mode, BN[c], [ang, 0, 0] if mode == "bend" else [0, ang, 0])
+        if site: tear_sites.append(site)
         disp = np.linalg.norm(Q - P, axis=1)
         moved = disp > 0.01 * S
         outside = np.array([d not in sub and d >= 0 for d in dom])
@@ -305,12 +351,37 @@ for c in deform:
         bends.append(dict(bone=BN[c], mode=mode, max_stretch=round(float(ratio.max()), 2),
                           worst_at=[round(float((mid[k] - lo[k]) / max(size[k], 1e-9)), 2) for k in range(3)],
                           worst_edge_owners=sorted({BN[dom[E[worst, 0]]], BN[dom[E[worst, 1]]]}),
-                          tear_edges=int(tear.sum()), tear_edges_raw=int((ratio > 2.0).sum()),
+                          tear_edges=int(tear.sum()), tear_edges_raw=int((ratio > 2.0).sum()), worst_gap_pct=gap_pct(tear, gap),
                           stretch_edges=int((ratio > 1.5).sum()),
                           crush_edges=int((ratio < 0.3).sum()),
                           collateral_pct=round(100 * float(VA[coll].sum()) / area_total, 2),
                           moved_pct=round(100 * float(VA[moved].sum()) / area_total, 2)))
 clear_pose(); bpy.context.view_layer.update()
+
+# ---------------------------------------------------------------- combined pose (graded; also drawn on the bend sheet)
+def combined_angles():
+    """Each weighted bone's bend about its own X in the combined pose, in degrees."""
+    out = {}
+    for i in deform:
+        if parent[i] < 0: continue
+        r = role_of(BN[i])
+        ang = {"spine": 12, "neck": 20, "head": 15, "tail": 14, "jaw": 25, "finger": 0, "root": 0}.get(r, 30)
+        if r == "unnamed": ang = 20
+        out[BN[i]] = ang
+    return out
+COMBINED = combined_angles()
+def pose_combined():
+    """Poses the combined bend, measures it into result["combined_pose"] (and its tear site), returns the stretch."""
+    for n, ang in COMBINED.items(): arm.pose.bones[n].rotation_euler = (math.radians(ang), 0, 0)
+    bpy.context.view_layer.update()
+    L, ratio, tear, gap = tears_in(posed_coords())
+    result["combined_pose"] = dict(max_stretch=round(float(ratio.max()), 2), tear_edges=int(tear.sum()),
+                                   tear_edges_raw=int((ratio > 2).sum()), worst_gap_pct=gap_pct(tear, gap),
+                                   stretch_edges=int((ratio > 1.5).sum()), crush_edges=int((ratio < 0.3).sum()),
+                                   angles_deg=COMBINED)
+    site = tear_site(tear, gap, "combined")
+    if site: tear_sites.insert(0, site)
+    return ratio
 
 # ---------------------------------------------------------------- rest pose
 def find_bone(*cands):
@@ -444,16 +515,7 @@ def render_sheets():
     bot = [shot(v, "s%d" % k, True, 0.35) for k, v in enumerate(VIEWS)]
     save(np.concatenate([np.concatenate(bot, 1), np.concatenate(top, 1)], 0), SLUG + "_skin.png")
     # combined bend pose
-    for i in deform:
-        if parent[i] < 0: continue
-        r = role_of(BN[i])
-        ang = {"spine": 12, "neck": 20, "head": 15, "tail": 14, "jaw": 25, "finger": 0, "root": 0}.get(r, 30)
-        if r == "unnamed": ang = 20
-        arm.pose.bones[BN[i]].rotation_euler = (math.radians(ang), 0, 0)
-    bpy.context.view_layer.update()
-    Q = posed_coords()
-    L = L_ = np.linalg.norm(Q[E[:, 0]] - Q[E[:, 1]], axis=1)
-    ratio = np.where(valid, L / np.maximum(rest_len, 1e-9), 1.0)
+    ratio = pose_combined()
     vs = np.ones(NV)
     np.maximum.at(vs, E[:, 0], ratio); np.maximum.at(vs, E[:, 1], ratio)
     vc = np.ones(NV)
@@ -463,9 +525,6 @@ def render_sheets():
     heat = heat * (1 - s1) + np.array([0.95, 0.05, 0.05]) * s1
     c1 = np.clip((0.5 - vc) / 0.3, 0, 1)[:, None]    # crushed below 0.5: blue
     heat = heat * (1 - c1) + np.array([0.1, 0.3, 1.0]) * c1
-    result["combined_pose"] = dict(max_stretch=round(float(ratio.max()), 2),
-                                   tear_edges=int(((ratio > 2) & (L_ - rest_len > GAP * S)).sum()), tear_edges_raw=int((ratio > 2).sum()),
-                                   stretch_edges=int((ratio > 1.5).sum()), crush_edges=int((ratio < 0.3).sum()))
     set_attr(heat, "heat")
     top = [shot(v, "b%d" % k, False) for k, v in enumerate(VIEWS)]
     set_attr(dcol, "dom")
@@ -482,33 +541,35 @@ if RENDER:
     bpy.ops.object.mode_set(mode='OBJECT')
     render_sheets()
 # ---------------------------------------------------------------- verdict
-if "combined_pose" not in result:  # the numbers-only run still poses it; it is a threshold
-    for i in deform:
-        if parent[i] < 0: continue
-        r = role_of(BN[i])
-        ang = {"spine": 12, "neck": 20, "head": 15, "tail": 14, "jaw": 25, "finger": 0, "root": 0}.get(r, 30)
-        arm.pose.bones[BN[i]].rotation_euler = (math.radians(ang), 0, 0)
-    bpy.context.view_layer.update()
-    Q = posed_coords()
-    L_ = np.linalg.norm(Q[E[:, 0]] - Q[E[:, 1]], axis=1)
-    ratio = np.where(valid, L_ / np.maximum(rest_len, 1e-9), 1.0)
-    result["combined_pose"] = dict(max_stretch=round(float(ratio.max()), 2),
-                                   tear_edges=int(((ratio > 2) & (L_ - rest_len > GAP * S)).sum()), tear_edges_raw=int((ratio > 2).sum()),
-                                   stretch_edges=int((ratio > 1.5).sum()), crush_edges=int((ratio < 0.3).sum()))
+if "combined_pose" not in result:  # the numbers-only run still poses it; it is graded
+    pose_combined()
     clear_pose(); bpy.context.view_layer.update()
-th = dict(THRESHOLDS); th.update(SPEC_AUDIT.get("thresholds", SPEC_AUDIT))
 head_pct = sum(x["area_pct"] for x in share if x["bone"].split(":")[-1].lower() in ("head", "jaw"))
 has_head = any(n.split(":")[-1].lower() == "head" for n in BN)
 max_inf = max(m["max_influences"] for m in per_mesh) if per_mesh else 0
-bend_tears = max([b["tear_edges"] for b in bends if b["mode"] == "bend"] or [0])
+single = [b for b in bends if b["mode"] == "bend"]
+bend_tears = max([b["tear_edges"] for b in single] or [0])
+bend_gap = max([b["worst_gap_pct"] for b in single] or [0.0])
 twist_tears = max([b["tear_edges"] for b in bends if b["mode"] == "twist"] or [0])
-checks = {
-    "bleed_pct": (bleed_total, bleed_total <= th["bleed_pct"]),
-    "combined_tears": (result["combined_pose"]["tear_edges"], result["combined_pose"]["tear_edges"] <= th["combined_tears"]),
-    "bend_tears": (bend_tears, bend_tears <= th["bend_tears"]),
-    "head_pct": (round(head_pct, 2) if has_head else None, (not has_head) or head_pct >= th["head_pct"]),
-    "max_influences": (max_inf, max_inf <= th["max_influences"]),
-}
+values = {"bleed_pct": bleed_total, "combined_tears": result["combined_pose"]["tear_edges"], "bend_tears": bend_tears,
+          "head_pct": round(head_pct, 2) if has_head else None, "max_influences": max_inf}
+graded = grade_audit(values, SPEC_AUDIT, {"combined_tears": result["combined_pose"]["worst_gap_pct"], "bend_tears": bend_gap})
+# per bone: how many edges each bone's own bend and twist tear, and the widest gap each opens
+by_bone = {}
+for b in bends:
+    if not b["tear_edges"]: continue
+    r = by_bone.setdefault(b["bone"], dict(bone=b["bone"], bend=0, bend_gap_pct=0.0, twist=0, twist_gap_pct=0.0))
+    r[b["mode"]] = b["tear_edges"]; r[b["mode"] + "_gap_pct"] = b["worst_gap_pct"]
+by_bone = sorted(by_bone.values(), key=lambda r: (-r["bend"], -r["bend_gap_pct"], -r["twist"], r["bone"]))
+comb_site = next((t for t in tear_sites if t["pose"] == "combined"), None)
+if by_bone and by_bone[0]["bend"]: worst_bone = by_bone[0]["bone"]
+elif comb_site: worst_bone = comb_site["clusters"][0]["bone"]
+else: worst_bone = None                      # twist tears alone are a warning, not graded
+result["tears"] = dict(combined=values["combined_tears"], bend_max=bend_tears,
+                       bones_tearing=sum(1 for r in by_bone if r["bend"]),
+                       worst_gap_pct=max(result["combined_pose"]["worst_gap_pct"], bend_gap), worst_bone=worst_bone,
+                       by_bone=by_bone)
+result["tear_sites"] = tear_sites
 warn = []
 if twist_tears: warn.append("twist tears %d (%s)" % (twist_tears, max((b for b in bends if b["mode"] == "twist"), key=lambda b: b["tear_edges"])["bone"]))
 for x in share:
@@ -520,10 +581,8 @@ for ch in chains:
     if s: sides.setdefault(base_of(BN[ch[0]]), {}).setdefault(s, []).append(len(ch))
 for b, d in sides.items():
     if "L" in d and "R" in d and sorted(d["L"]) != sorted(d["R"]): warn.append("%s: L %s vs R %s bones" % (b, d["L"], d["R"]))
-ok = all(v[1] for v in checks.values())
-result["verdict"] = {"pass": ok, "checks": {k: {"value": v[0], "ok": v[1], "limit": th[k]} for k, v in checks.items()},
-                     "warnings": warn}
-print("AUDIT_%s %s %s" % ("PASS" if ok else "FAIL", SLUG, json.dumps({k: v[0] for k, v in checks.items()})))
+result["verdict"] = dict(graded, warnings=warn)
+print("AUDIT_%s %s %s" % (graded["grade"], SLUG, json.dumps(values)))
 result["seconds"] = round(time.time() - t0, 1)
 json.dump(result, open(os.path.join(OUT, SLUG + ".json"), "w"), indent=1)
 print("AUDIT_DONE", SLUG, result["seconds"])
