@@ -654,7 +654,10 @@ def make_handler(app):
             spec_store.reload()
             models = [status(g, n) for g, n in layout.all_models()]
             cur = app.runner.current
-            return {"root": layout.ROOT, "work": layout.WORK, "blender": blender.find(required=False),
+            b_path = blender.find(required=False)
+            return {"root": layout.ROOT, "work": layout.WORK, "blender": b_path,
+                    "blender_version": blender.version_string(b_path) if b_path else None,
+                    "blender_warning": blender.version_warning(b_path) if b_path else None,
                     "models": models, "groups": layout.groups(),
                     "jobs": [j.info() for j in sorted(app.runner.jobs.values(), key=lambda j: -j.id)[:20]],
                     "running": cur.info() if cur else None}
@@ -776,10 +779,15 @@ def main(argv=None):
     if a.token: app.token = a.token
     httpd.RequestHandlerClass = make_handler(app)
     url = "http://127.0.0.1:%d/?t=%s" % (app.port, app.token)
+    b_exe = blender.find(required=False)
+    b_ver = blender.version_string(b_exe) if b_exe else ""
     print("Autorig Workbench")
     print("  models  %s" % layout.ROOT)
     print("  work    %s" % layout.WORK)
-    print("  blender %s" % (blender.find(required=False) or "NOT FOUND (set AUTORIG_BLENDER)"))
+    print("  blender %s%s" % (b_exe or "NOT FOUND (set AUTORIG_BLENDER)", f" ({b_ver})" if b_ver else ""))
+    b_warn = blender.version_warning(b_exe) if b_exe else None
+    if b_warn:
+        print("  WARNING: %s" % b_warn)
     print("  open    %s" % url, flush=True)
     url_file = os.environ.get("AUTORIG_URL_FILE")
     if url_file:

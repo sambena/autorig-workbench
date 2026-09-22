@@ -163,8 +163,8 @@ Done when a model with no spec goes from drop-in to a PASS audit using only clic
 - **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
   a flier and a prop.
 - **Docs:** screenshots in the README, CONTRIBUTING, and a JSON schema for `rig.json`.
-- **CI:** GitHub Actions running headless Blender on Linux against the samples, with the audit thresholds as the test.
-- **Blender version check:** at start-up the tool warns outside the tested range (5.2).
+- **CI** (done): GitHub Actions workflow on Linux (`ci/ci.yml`, documented in `docs/CI.md`) with cached Blender 5.2.2 LTS, running full unit test suites, Node tests, and headless Blender audit pipeline verifying audit thresholds via `scripts/ci_audit_thresholds.py` and `autorig/cli/audit_all.py`.
+- **Blender version check** (done): at start-up in `autorig/gui/server.py` and `autorig/cli/run.py`, warns outside tested range (5.2 LTS); inspection functions, state reporting, and tested-range checks in `autorig/core/blender.py` with tests in `tests/test_blender_version.py`.
 
 Done when a fresh clone on a machine with only Python and Blender rigs every sample to PASS through the GUI, and CI
 is green.

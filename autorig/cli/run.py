@@ -24,6 +24,8 @@ def blender_step(script, *args):
 
 
 def main(argv):
+    import blender
+    blender.warn_if_untested()
     if not argv or argv[0] == "gui" or argv[0].startswith("--"):
         sys.path.insert(0, PKG)
         from gui import server
