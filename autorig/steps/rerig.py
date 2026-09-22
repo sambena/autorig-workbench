@@ -125,6 +125,20 @@ def repair(joints, spec, size):
             p = joints[n]["pos"]
             joints[n + "_m"] = {"pos": Vector((-p.x, p.y, p.z)), "parent": prev}
             prev = n + "_m"
+    # reparent={joint: new parent joint}: a chain the source hung from the wrong place. A moth's wing tails (its
+    # streamers) hung from the hips, so a wingbeat tore the wing from its own tail; hung from the hind wing, they beat
+    # with it. After mirror, so a mirrored joint (<joint>_m) can be named.
+    for n, par in spec.get("reparent", {}).items():
+        if n in joints and par in joints: joints[n]["parent"] = par
+
+def move_joints(joints, spec, lo, size):
+    """move={joint: [x, y, z]}: a source joint put where it belongs, in 0..1 of the turned model's bounds (measured
+    with measure.py). A Tripo-style skeleton sometimes plants a joint outside the body: the Lurker's scapulae start
+    on the spikes above its withers, next to the spine, so the girdles could not own the shoulder blades without
+    also owning the back."""
+    for n, u in spec.get("move", {}).items():
+        if n in joints:
+            joints[n]["pos"] = Vector(tuple(lo[k] + size[k] * u[k] for k in range(3)))
 
 def tip_of(bvh, at, direction, lo_len, hi_len):
     """Where a chain's last bone should end: at the surface it points to, within sensible lengths."""
@@ -376,7 +390,7 @@ def build_chains(mesh, spec, size):
 
 # ---------------------------------------------------------------- naming
 
-def name_chains(chains, size, girdles=()):
+def name_chains(chains, size, girdles=(), neck=None):
     eps = size.x * 0.03
     for c in chains:
         x = c["points"][-2].x if len(c["points"]) > 1 else c["points"][0].x
@@ -416,6 +430,10 @@ def name_chains(chains, size, girdles=()):
             if n == 1: c["bones"] = ["body" if c.get("single") else "hips"]
             elif n == 2: c["bones"] = ["hips", "head"]
             elif n == 3: c["bones"] = ["hips", "spine_1", "head"]
+            elif neck and neck > 1 and n - 1 - neck >= 1:
+                # spec neck=k: the last k links before the head are the neck (a quadruped's long neck: SKELETONS.md
+                # neck_1..k), so the card names them and a game that lowers the neck lowers all of it
+                c["bones"] = ["hips"] + ["spine_%d" % (i + 1) for i in range(n - 2 - neck)] +                              ["neck_%d" % (i + 1) for i in range(neck)] + ["head"]
             else: c["bones"] = ["hips"] + ["spine_%d" % (i + 1) for i in range(n - 3)] + ["neck", "head"]
         elif c.get("girdle"):
             c["bones"] = ["%s_%d%s" % (c["base"], i, c["side"]) for i in range(n)]
@@ -567,7 +585,7 @@ def skin_jaw(mesh, arm, spec, size, log):
     b = arm.data.bones["jaw"]
     hinge, tip = np.array(b.head_local[:]), np.array(b.tail_local[:])
     vg = mesh.vertex_groups
-    donors = [g for g in (vg.get("head"), vg.get("neck")) if g]
+    donors = [g for g in vg if g.name == "head" or g.name == "neck" or g.name.startswith("neck_")]
     jg = vg.get("jaw") or vg.new(name="jaw")
     along = tip - hinge; L = float(np.linalg.norm(along)); ax = along / max(L, 1e-9)
     up = np.cross(ax, np.array((1.0, 0.0, 0.0))); up /= max(np.linalg.norm(up), 1e-9)
@@ -1093,8 +1111,25 @@ def skin(mesh, arm, chains, spec, size, log):
         body_name = chains[0]["bones"][0]
         def seg(p, a, b):
             ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-12, ab.dot(ab)))); return (p - (a + ab * t)).length
+        # parts=[{"bone", "at": [x, y, z], "verts": n}, ...]: the loose piece of n vertices whose bounds centre is
+        # nearest `at` (0..1 of the bounds, as the chains' points) rides that bone. A machine's moving part is often
+        # one piece inside another (a fan's rotor in its duct: their centres all but coincide), so nearest-bone
+        # guesses the duct as readily as the rotor. With rigid_parts "listed", every piece not listed rides the body.
+        listed = {}
+        lo3 = Vector([min(v.co[k] for v in verts) for k in range(3)])
+        span3 = Vector([max(1e-9, max(v.co[k] for v in verts) - lo3[k]) for k in range(3)])
+        def centre(idx):
+            cs = [verts[i].co for i in idx]
+            return Vector([((min(p[k] for p in cs) + max(p[k] for p in cs)) * 0.5 - lo3[k]) / span3[k] for k in range(3)])
+        for part in spec.get("parts", []):
+            cands = [k for k, idx in enumerate(isl) if abs(len(idx) - part["verts"]) <= max(2, 0.02 * part["verts"])]
+            if not cands: log.setdefault("parts_missing", []).append(part["bone"]); continue
+            k = min(cands, key=lambda k: (centre(isl[k]) - Vector(part["at"])).length)
+            listed[k] = part["bone"]
+        only_listed = spec.get("rigid_parts") == "listed"
         for k, idx in enumerate(isl):
-            if k == main_i: owner = body_name
+            if k in listed: owner = listed[k]
+            elif k == main_i or only_listed: owner = body_name
             else:
                 mid = sum((verts[i].co for i in idx), Vector()) / len(idx)
                 owner = min(dbones, key=lambda b: seg(mid, b.head_local, b.tail_local)).name
@@ -1103,6 +1138,7 @@ def skin(mesh, arm, chains, spec, size, log):
                 for ge in list(verts[i].groups): mesh.vertex_groups[ge.group].remove([i])
             g.add(idx, 1.0, 'REPLACE')
         log["rigid_parts"] = len(isl)
+        if listed: log["parts"] = {b: sum(1 for v in listed.values() if v == b) for b in set(listed.values())}
 
     hs = spec.get("hard_split")
     if hs:  # a lid: everything above a height belongs to one bone, everything below to the other
@@ -1206,7 +1242,7 @@ def qa_pictures(key, mesh, arm, chains, size, out_dir, log):
         elif role == "spine":
             for bn in c["bones"]:
                 if bn in ("hips", "body"): continue
-                turn(arm.pose.bones[bn], Vector((0, 0, 1)), 18 if bn in ("neck", "head") else 6)
+                turn(arm.pose.bones[bn], Vector((0, 0, 1)), 18 if bn == "head" or bn.startswith("neck") else 6)
             if "head" in c["bones"]: turn(arm.pose.bones["head"], Vector((1, 0, 0)), 14)
         elif role == "tail":
             for bn in c["bones"]: turn(arm.pose.bones[bn], Vector((0, 0, 1)), 14)
@@ -1265,6 +1301,7 @@ def rerig(key, spec, qa_dir, export):
     me = mesh.data
     bvh = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
     if spec["kind"] == "tripo":
+        move_joints(joints, spec, lo, size)
         repair(joints, spec, size)
         chains = tripo_chains(joints, spec, bvh, size, mesh)
     elif spec["kind"] == "build":
@@ -1272,7 +1309,7 @@ def rerig(key, spec, qa_dir, export):
     else:
         log["error"] = "unknown kind: " + spec["kind"]; return log
     head_line(chains, mesh, spec)
-    name_chains(chains, size, spec.get("girdle", ()))
+    name_chains(chains, size, spec.get("girdle", ()), spec.get("neck"))
     log["head_extended"] = head_to_snout(chains, mesh, size, spec) if not spec.get("head_line") else "head_line"
     add_jaw(chains, mesh, size, spec)
     jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])}

@@ -81,6 +81,8 @@ root
   ear.L / ear.R, horn_*, from head
 ```
 
+- A long neck is `neck_1..k` (spec `neck: k`): every link from the withers to the skull, so a game lowering "the neck"
+  lowers all of it.
 - `hips` is the pelvis and the body's root bone; the spine runs **forward** from it to the neck. The front legs hang
   from the spine bone at the shoulders, the hind legs from `hips`, the tail runs **backward** from `hips`.
 - Legs: link 0 is the girdle (scapula / pelvis side), from the spine out to where the leg leaves the body; then upper
@@ -151,8 +153,12 @@ A rooted floater (a plant pod) is `base` > `stalk` > `pod`, tendrils from `base`
 
 ## Rigid
 
-`root` > `body`, one bone, whole mesh: a crystal creature, a rock that hops. A machine with moving parts is better not
-rigged at all: split it into separately named meshes and let the engine turn them.
+`root` > `body`, one bone, whole mesh: a crystal creature, a rock that hops.
+
+A machine with moving parts is `body` plus one bone per part, each part a loose piece riding its bone whole
+(`rigid_parts` and `parts` in the spec): the bone's head is the part's hub and its length the axle, so turning it about
+its own Y spins the part in place, in any engine. Names say what the part is (`drill`, `fan.L`, `rotor.L`); the clip
+archetype `machine` writes `idle` (what always turns) and `work` (what also turns while it works) as whole-turn loops.
 
 ## Winged
 

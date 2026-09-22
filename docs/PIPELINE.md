@@ -16,9 +16,9 @@ from the front quarter; bottom row: posed). `qa_overview.py` puts all of them on
 | Survey | `survey.py`, `facing.py` | Blender | what the source holds (skeleton kind, bones, size, how much is skinned) and four views to read `forward` from |
 | Measure | `measure.py`, `probe_tips.py` | Blender | orthographic sheets on the spec's 0..1 grid with the current rig drawn over them; where a boneless model's limbs end |
 | Rig | `rerig.py`, `rerig_humanoid.py`, or a custom builder | Blender | builds the armature from the spec, skins it, writes the `.blend`, the `.fbx` and the bend test |
-| Trim | `decimate.py` | Blender | cuts the FBX to the budget, at most four influences per vertex |
+| Trim | `decimate.py` | Blender | cuts the FBX to the budget, at most four influences per vertex, and writes it at the rest pose |
 | Audit | `audit.py` | Blender | PASS, CHECK or FAIL on the engine FBX (below) |
-| Clips | `make_clips.py` | Blender | authors the archetype's clips and writes them for engines (FORMATS.md) |
+| Clips | `make_clips.py` | Blender | authors the archetype's clips and writes them for engines (FORMATS.md). A standing model's `death` / `explode` ends with its lowest point on the floor, measured on the skinned mesh frame by frame (never under it on the way down) |
 | Publish | `publish.py` | Python | writes the model card and the group's index |
 | Preview | `preview_glb.py` | Blender | `<rig folder>/preview.glb` (mesh, armature, every clip) and `preview.json`, for the GUI's 3D viewer only |
 | Source view | `source_preview.py` | Blender | `<work>/source/<model>.glb` (the source mesh as it came, no skin) and `.json` (its own joints), for the spec editor only |
@@ -94,8 +94,11 @@ model gets them:
 - **D. Names.** A chain near the centre plane gets no side suffix (`tail_3`, not `tail_3.R`); `centre` overrides.
   `root` is reserved for the armature's root, so a spine bone can never become `root.001`.
 - **E. Four influences.** Trim cleans, limits to four and normalises after the cut. Static models also get a planar
-  dissolve before the collapse (flat panels kept flat, no spikes); rigged ones do not, because long dissolved
-  triangles tear across joints.
+  dissolve before the collapse (flat panels kept flat, no spikes), and so do rigs of rigid parts (every vertex on one
+  bone: nothing bends); other rigged ones do not, because long dissolved triangles tear across joints. On a rigged
+  mesh trim merges coincident vertices only where their weights agree, so a seam a builder cut on purpose (the
+  Dragon's hand from its thigh, its membrane from its forearm) stays cut; the plain merge it used before re-welded
+  them with averaged weights. The FBX is written at the rest pose, whatever clips the `.blend` holds.
 - **F. Mirrored chains match.** The audit warns when a chain and its mirror differ in bone count.
 
 ## QA: audit.py

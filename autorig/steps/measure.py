@@ -45,10 +45,12 @@ def main():
                 from mathutils.bvhtree import BVHTree
                 me = mesh.data
                 bvh = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+                rerig.move_joints(joints, spec, lo, size)
                 rerig.repair(joints, spec, size)
                 chains = rerig.tripo_chains(joints, spec, bvh, size, mesh)
             else:
                 chains = rerig.build_chains(mesh, spec, size)
+            rerig.head_line(chains, mesh, spec)   # the sheet shows the rig the rig step builds, head line included
             sticks = rerig.sticks(chains, None, max(size) * 0.008)
         except Exception as e:
             print("MEASURE no bones:", repr(e))
