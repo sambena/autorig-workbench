@@ -162,7 +162,7 @@ Done when a model with no spec goes from drop-in to a PASS audit using only clic
   **Suggest skeleton** button in the spec editor (`gui/spec_editor.html` / `gui/spec_editor.js`).
 - **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
   a flier and a prop.
-- **Docs:** screenshots in the README, CONTRIBUTING, and a JSON schema for `rig.json`.
+- **Docs** (done): architecture guides, CONTRIBUTING.md, and formal JSON schema for `rig.json` (`docs/rig.schema.json`).
 - **CI** (done): GitHub Actions workflow on Linux (`ci/ci.yml`, documented in `docs/CI.md`) with cached Blender 5.2.2 LTS, running full unit test suites, Node tests, and headless Blender audit pipeline verifying audit thresholds via `scripts/ci_audit_thresholds.py` and `autorig/cli/audit_all.py`.
 - **Blender version check** (done): at start-up in `autorig/gui/server.py` and `autorig/cli/run.py`, warns outside tested range (5.2 LTS); inspection functions, state reporting, and tested-range checks in `autorig/core/blender.py` with tests in `tests/test_blender_version.py`.
 
