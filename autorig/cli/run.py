@@ -6,6 +6,7 @@
 #   python autorig/cli/run.py wolf,moth [options]      rig -> trim -> audit (cli/pipeline.py and its options)
 #   python autorig/cli/run.py rig wolf,moth            one step: rig, survey, facing, trim, audit, clips, measure, probe
 #   python autorig/cli/run.py preview wolf,moth        the 3D viewer's rigged/preview.glb (steps/preview_glb.py)
+#   python autorig/cli/run.py audit-all [-render 0] [-strict]   audit every rigged model, then a table worst first
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #
@@ -36,6 +37,8 @@ def main(argv):
         # a group name, or a comma list of models
         args = rest if rest[0].startswith("-") or "," not in rest[0] and not model_exists(rest[0]) else ["-only"] + rest
         return blender_step(script, *args)
+    if cmd == "audit-all":
+        return subprocess.call([sys.executable, os.path.join(HERE, "audit_all.py"), "all"] + rest)
     if cmd == "audit" and rest:
         return subprocess.call([sys.executable, os.path.join(HERE, "audit_all.py")] + rest)
     if cmd == "clips" and rest:

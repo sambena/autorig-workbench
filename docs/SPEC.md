@@ -60,7 +60,7 @@ Common to all kinds:
 | `origin` | `"center"`: centre the model on the origin (swimmers, fliers). Default: feet on z=0. |
 | `skeleton` | the archetype written on the card (`quadruped`, `hexapod`, `octopod`, `serpent`, `winged`, `floater`, `rigid`, `humanoid`) |
 | `rig_folder` | where the rig is written and read (default `rigged`) |
-| `audit` | allowances: `{"combined_tears": 8, "bend_tears": 4}` loosens (or tightens) audit.py's thresholds for this model. Always say why in `notes["rig.audit"]`. |
+| `audit` | allowances: `{"combined_tears": 8, "bend_tears": 4}` loosens (or tightens) audit.py's pass limits for this model, and moves its CHECK band with them (PIPELINE.md, "Grades"). Always say why in `notes["rig.audit"]`. |
 
 `kind: "tripo"`:
 

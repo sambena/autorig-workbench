@@ -89,6 +89,7 @@ def audit_digest(layout, name, rig_mtime=0):
     v = full.get("verdict") or {}
     return {
         "pass": v.get("pass"),
+        "grade": v.get("grade") or ("PASS" if v.get("pass") else "FAIL"),
         "checks": v.get("checks", {}),
         "warnings": v.get("warnings", []),
         "stale": _mtime(p) + 1 < rig_mtime,

@@ -32,7 +32,7 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all")
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
-layout = spec_store = blender = None             # imported in main(), once the environment names the folders
+layout = spec_store = blender = grades = None    # imported in main(), once the environment names the folders
 
 
 def _quiet(fn, *a):
@@ -79,6 +79,7 @@ class Job:
         self.proc = None
         self.pid = None
         self.cancelled = False
+        self.keep_going = False
         self.started = self.ended = None
         self.cond = threading.Condition()
 
@@ -154,7 +155,9 @@ class Runner:
                 job.proc = None
                 if job.cancelled: break
                 if rc != 0 or failed:
-                    job.add("!! %s failed (exit code %s)" % (label, rc)); ok = False; break
+                    job.add("!! %s failed (exit code %s)" % (label, rc)); ok = False
+                    if job.keep_going: continue
+                    break
                 job.add("== %s done" % label)
             job.finish("cancelled" if job.cancelled else "done" if ok else "failed")
             self.current = None
@@ -219,7 +222,7 @@ def status(group, name):
     a = audit_file(name)
     if a:
         try:
-            out["audit"] = "PASS" if json.load(open(a))["verdict"]["pass"] else "FAIL"
+            out["audit"] = grades.grade_of(json.load(open(a))["verdict"], rig.get("audit")) or "?"
         except Exception:
             out["audit"] = "?"
     out["preview"] = viewer_api.has_preview(layout, name)          # results viewer
@@ -312,11 +315,44 @@ def commands(group, name, step, spec):
 
 
 def default_thresholds():
-    """audit.py's THRESHOLDS, read from its source (it runs inside Blender, so it cannot be imported here)."""
-    import ast
-    src = open(os.path.join(STEPS, "audit.py"), encoding="utf-8").read()
-    m = re.search(r"^THRESHOLDS = (\{.*?\})$", src, re.M)
-    return ast.literal_eval(m.group(1)) if m else {}
+    """The audit's pass limits before any allowance (core/grades.py, which audit.py grades with too)."""
+    return dict(grades.THRESHOLDS)
+
+
+# ---- Audit all: every rigged model through audit.py, one Blender each, then a table worst first
+
+def rigged_models():
+    return [(g, n) for g, n in layout.all_models() if os.path.exists(os.path.join(_quiet(layout.rigged_dir, n), n + ".fbx"))]
+
+
+def audit_all_job():
+    work = os.path.join(layout.WORK, "audit")
+    ms = rigged_models()
+    if not ms: raise ValueError("no rigged models yet: rig one first")
+    def forget(n):                                    # an audit that fails leaves no stale grade in the table
+        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
+    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n))
+            for k, (g, n) in enumerate(ms, 1)]
+    job = Job("(all rigged models)", "", "audit-all", cmds)
+    job.keep_going = True
+    return job
+
+
+def audit_table():
+    """One row per rigged model (cli/audit_all.py's columns), worst first; a model never audited has no grade."""
+    rows = []
+    for g, n in rigged_models():
+        a = audit_file(n)
+        try:
+            full = json.load(open(a)) if a else None
+        except Exception:
+            full = None
+        try:
+            allow = (spec_store.model(n).get("rig") or {}).get("audit")
+        except Exception:
+            allow = None
+        rows.append(dict(grades.summary(n, full, allow), group=g))
+    return sorted(rows, key=grades.severity)
 
 
 def details(group, name):
@@ -354,9 +390,15 @@ def details(group, name):
         rows, base = [], default_thresholds()
         for k, c in v.get("checks", {}).items():
             rows.append({"check": k, "value": c.get("value"), "limit": c.get("limit"), "ok": c.get("ok"),
+                         "grade": c.get("grade") or ("PASS" if c.get("ok") else "FAIL"), "check_limit": c.get("check_limit"),
+                         "gap_pct": c.get("gap_pct"),
                          "threshold": base.get(k, c.get("limit")),
                          "allowance": spec_allow.get(k), "reason": reason if k in spec_allow else None})
-        out["audit"] = {"pass": v.get("pass"), "checks": rows, "warnings": v.get("warnings", []),
+        t = full.get("tears") or {}
+        out["audit"] = {"pass": v.get("pass"), "grade": grades.grade_of(v, spec_allow), "checks": rows,
+                        "warnings": v.get("warnings", []),
+                        "tears": {k: t.get(k) for k in ("worst_gap_pct", "worst_bone", "bones_tearing", "by_bone")} if t else None,
+                        "tear_sites": len(full.get("tear_sites") or []),
                         "skin": url(os.path.join(work, "audit", name + "_skin.png")) if os.path.exists(os.path.join(work, "audit", name + "_skin.png")) else None,
                         "bend": url(os.path.join(work, "audit", name + "_bend.png")) if os.path.exists(os.path.join(work, "audit", name + "_bend.png")) else None,
                         "fbx": full.get("fbx"),
@@ -567,6 +609,14 @@ def make_handler(app):
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
                 if path == "/api/state": return self._send(200, self.state())
+                if path == "/api/audits":                           # the collection table (Audit all)
+                    spec_store.reload()
+                    return self._send(200, {"models": audit_table()})
+                if path == "/api/audit":                            # one model's whole audit: tear sites for a viewer
+                    name = (q.get("name") or [""])[0]
+                    a = audit_file(name) if find_group(name) is not None else None
+                    if not a: return self._send(404, {"error": "no audit for " + name})
+                    with open(a) as fh: return self._send(200, json.load(fh))
                 if path == "/api/model":
                     name = (q.get("name") or [""])[0]
                     g = find_group(name)
@@ -668,6 +718,9 @@ def make_handler(app):
                     if st["steps"].get(step): return self._send(409, {"error": st["steps"][step]})
                     job = app.runner.submit(Job(name, g, step, commands(g, name, step, spec_store.model(name))))
                     return self._send(200, job.info())
+                if path == "/api/audit-all":
+                    if app.runner.current: return self._send(409, {"error": "a step is running"})
+                    return self._send(200, app.runner.submit(audit_all_job()).info())
                 if path == "/api/cancel":
                     j = app.runner.jobs.get(int(body.get("job", 0)))
                     if not j: return self._send(404, {"error": "no such job"})
@@ -698,10 +751,10 @@ def main(argv=None):
     if a.models: os.environ["AUTORIG_MODELS"] = os.path.abspath(a.models)
     if a.work: os.environ["AUTORIG_WORK"] = os.path.abspath(a.work)
 
-    global layout, spec_store, blender
+    global layout, spec_store, blender, grades
     sys.path.insert(0, CORE)
-    import layout as _l, spec_store as _s, blender as _b
-    layout, spec_store, blender = _l, _s, _b
+    import layout as _l, spec_store as _s, blender as _b, grades as _g
+    layout, spec_store, blender, grades = _l, _s, _b, _g
     os.makedirs(layout.ROOT, exist_ok=True)
     os.makedirs(layout.WORK, exist_ok=True)
 

@@ -18,7 +18,8 @@ Facing: Blender -Y, written to FBX as Y up, facing +Z (Unity's forward; Godot's 
   "rig": {
     "kind": "build", "bones": 31, "deform_bones": 24, "rest_shift": 0.0,
     "skeleton": { "archetype": "quadruped", ... },     // which bone plays which role: SKELETONS.md, "The card"
-    "audit": { "pass": true, "bleed_pct": 1.2, "combined_tears": 0, "bend_tears": 0, "head_pct": 9.1, "max_influences": 4 },
+    "audit": { "pass": true, "grade": "PASS", "bleed_pct": 1.2, "combined_tears": 0, "bend_tears": 0, "head_pct": 9.1, "max_influences": 4 },
+    //          grade PASS / CHECK / FAIL (PIPELINE.md, "Grades"); pass is the strict result, grade == "PASS"
     "clips": { "fbx": "clips/wolf.fbx", "blend": "clips/wolf_clips.blend", "json": "clips/wolf_clips.json", "names": [...] },
     "qa": "rigged/wolf_qa.png",
     "builder": "my_builder.py"       // only for kind "custom"
@@ -100,7 +101,8 @@ spec's `splitWalkSpeed`, `windUpEnd`).
 | Folder | Holds |
 |---|---|
 | `qa/<model>.json`, `qa/<model>.png` | the rig log and the bend test (top row: the skeleton at rest; bottom: posed) |
-| `audit/<model>.json`, `_skin.png`, `_bend.png` | the audit: every measure, and `verdict` (`pass`, `checks` with `value`, `limit`, `ok`, and `warnings`) |
+| `audit/<model>.json`, `_skin.png`, `_bend.png` | the audit: every measure; `verdict` (`grade`, `pass`, `checks` with `value`, `limit`, `check_limit`, `ok`, `grade` and for tears `gap_pct`, and `warnings`); `tears` and `tear_sites`, where the tears are (PIPELINE.md) |
+| `audit/_collection.json` | the last `audit_all.py` table, worst first |
 | `survey/<model>.json` | what the source export holds |
 | `facing/<model>__<view>.png` | four views, for reading `forward` |
 | `measure/` | measuring sheets |

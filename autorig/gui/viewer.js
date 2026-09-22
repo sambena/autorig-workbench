@@ -753,8 +753,8 @@ function renderWorst() {
   const ul = $("worstList"); ul.innerHTML = "";
   const a = cur && cur.audit;
   if (!a) return;
-  $("worstVerdict").textContent = a.error ? "?" : a.pass ? "PASS" : "FAIL";
-  $("worstVerdict").className = "v " + (a.error ? "" : a.pass ? "pass" : "fail");
+  $("worstVerdict").textContent = a.error ? "?" : a.grade;
+  $("worstVerdict").className = "v " + (a.error ? "" : a.grade.toLowerCase());
   const bones = a.bones || [];
   $("worstNote").textContent = a.error ? a.error : (bones.length
     ? "worst bones, tinted on the skeleton (red: behind a failed check, amber: a warning); click one to select it"
@@ -1087,8 +1087,9 @@ function checks() {
       const u = k.endsWith("_pct") ? "%" : "";
       return `${NAMES[k] || k.replace(/_/g, " ")} ${c.value}${u} (limit ${c.limit}${u})`;
     });
-    out.push([a.pass ? "ok" : "bad", a.pass ? "audit PASS" + (a.warnings.length ? `, ${a.warnings.length} warning${a.warnings.length === 1 ? "" : "s"}` : "")
-                                            : "audit FAIL: " + failed.join(", ")]);
+    out.push([a.grade === "PASS" ? "ok" : a.grade === "CHECK" ? "warn" : "bad",
+              a.grade === "PASS" ? "audit PASS" + (a.warnings.length ? `, ${a.warnings.length} warning${a.warnings.length === 1 ? "" : "s"}` : "")
+                                 : `audit ${a.grade}: ` + failed.join(", ") + (a.grade === "CHECK" ? " (look at it here)" : "")]);
     if (a.stale) out.push(["warn", "the audit is older than the rig: run Audit again"]);
   }
   return out;

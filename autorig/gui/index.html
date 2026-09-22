@@ -52,6 +52,7 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 6px 0 2px;
 .chip { font-size: 10.5px; padding: 1px 6px; border-radius: 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
 .chip.pass { background: var(--pass-bg); color: var(--pass); font-weight: 600; }
 .chip.fail { background: var(--fail-bg); color: var(--fail); font-weight: 600; }
+.chip.check { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
 .chip.on { color: var(--ink); }
 .steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .why { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
@@ -66,6 +67,8 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: 
 td.num { font-variant-numeric: tabular-nums; }
 .verdict { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 6px; margin-right: 8px; }
 .verdict.pass { background: var(--pass-bg); color: var(--pass); } .verdict.fail { background: var(--fail-bg); color: var(--fail); }
+.verdict.check { background: var(--warn-bg); color: var(--warn); }
+tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--chip); }
 .warns { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin-top: 8px; }
 .pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .pics figure { margin: 0; }
@@ -113,7 +116,9 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
       <div class="msg" id="addMsg"></div>
     </div>
     <div class="panel">
-      <h2>Models</h2>
+      <div class="row" style="margin-bottom:8px"><h2 style="margin:0">Models</h2><span style="flex:1"></span>
+        <button id="auditAll" title="audit every rigged model, one after another, then show the table worst first">Audit all</button>
+        <button id="auditTable" title="the latest audit of every rigged model, worst first">Table</button></div>
       <ul class="models" id="models"></ul>
     </div>
   </section>
@@ -141,6 +146,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const fileUrl = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
 let state = null, selected = null, job = null, es = null, logFrom = 0, tab = "audit";
+// the audit's grades (core/grades.py): PASS green, CHECK amber (look at it in the viewer), FAIL red
+const gradeClass = (g) => ({PASS: "pass", CHECK: "check", FAIL: "fail"}[g] || "");
 
 async function api(path, body) {
   const opt = {headers: {"X-Autorig-Token": TOKEN}};
@@ -156,13 +163,14 @@ async function refresh() {
   $("#meta").textContent = "models " + state.root + "  ·  work " + state.work + "  ·  blender " + (state.blender || "NOT FOUND");
   renderModels();
   const busy = state.running;
+  $("#auditAll").disabled = !!busy || !state.models.some((m) => m.rigged_fbx);
   if (busy && (!job || job.id !== busy.id)) follow(busy);
   if (selected) renderModel();
 }
 
 function chips(m) {
   const c = [];
-  if (m.audit) c.push(`<span class="chip ${m.audit === "PASS" ? "pass" : "fail"}">${m.audit}</span>`);
+  if (m.audit) c.push(`<span class="chip ${gradeClass(m.audit)}" title="audit grade">${esc(m.audit)}</span>`);
   else if (m.rigged) c.push(`<span class="chip on">rig</span>`);
   else if (m.spec) c.push(`<span class="chip on">spec</span>`);
   else c.push(`<span class="chip">no spec</span>`);
@@ -241,7 +249,8 @@ function follow(j) {
   };
   es.addEventListener("end", async (ev) => {
     es.close(); es = null; job = JSON.parse(ev.data); showJob(); await refresh(); showJob();
-    if (job.model === selected) loadDetails();
+    if (job.step === "audit-all") showCollection();
+    else if (job.model === selected) loadDetails();
   });
   es.onerror = () => { /* the server closes the stream when the job ends; EventSource retries otherwise */ };
 }
@@ -287,15 +296,26 @@ function body(d) {
   if (tab === "audit") {
     const a = d.audit;
     if (!a) return `<div class="empty">No audit yet. Rig the model, then press Audit (or Run all).</div>`;
-    let h = `<div><span class="verdict ${a.pass ? "pass" : "fail"}">${a.pass ? "PASS" : "FAIL"}</span><span class="meta">audit of ${esc(a.fbx_rel || a.fbx || "")}</span></div>`;
-    h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Check</th><th>Value</th><th>Threshold</th><th>Allowance</th><th>Result</th></tr>`;
+    const g = a.grade || (a.pass ? "PASS" : "FAIL");
+    let h = `<div><span class="verdict ${gradeClass(g)}">${esc(g)}</span><span class="meta">audit of ${esc(a.fbx_rel || a.fbx || "")}` +
+            `${g === "CHECK" ? " · past a limit but inside its warn band: look at it in the viewer" : ""}</span></div>`;
+    h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Check</th><th>Value</th><th>Threshold</th><th>Allowance</th><th>Check band</th><th>Result</th></tr>`;
     for (const c of a.checks) {
-      const higher = c.check === "head_pct";
+      const higher = c.check === "head_pct", cg = c.grade || (c.ok ? "PASS" : "FAIL");
+      const band = c.check_limit !== undefined && c.check_limit !== null && c.check_limit !== c.limit
+        ? (higher ? "≥ " : "≤ ") + esc(c.check_limit) + (c.gap_pct !== undefined && c.gap_pct !== null && c.value ? `<div class="why">widest gap ${esc(c.gap_pct)}% of the model</div>` : "") : "";
       h += `<tr><td>${esc(CHECKS[c.check] || c.check)}</td><td class="num">${esc(c.value)}</td><td class="num">${higher ? "≥ " : "≤ "}${esc(c.threshold)}</td>` +
            `<td>${c.allowance !== undefined && c.allowance !== null ? (higher ? "≥ " : "≤ ") + esc(c.allowance) + (c.reason ? `<div class="why">${esc(c.reason)}</div>` : "") : ""}</td>` +
-           `<td><span class="chip ${c.ok ? "pass" : "fail"}">${c.ok ? "PASS" : "FAIL"}</span></td></tr>`;
+           `<td class="num">${band}</td><td><span class="chip ${gradeClass(cg)}">${esc(cg)}</span></td></tr>`;
     }
     h += `</table></div>`;
+    const t = a.tears;
+    if (t && t.by_bone && t.by_bone.length) {
+      h += `<h3>Tears by bone</h3><div class="meta">Each bone bent 40° and twisted 60° on its own; the gap is how far the worst edge opens, in % of the model's size. ` +
+           `${a.tear_sites} tear site(s) are in the audit JSON for the viewer.</div><div class="scroll"><table style="margin-top:4px"><tr><th>Bone</th><th>Bend tears</th><th>Gap %</th><th>Twist tears</th><th>Gap %</th></tr>` +
+           t.by_bone.slice(0, 12).map((b) => `<tr><td>${esc(b.bone)}</td><td class="num">${esc(b.bend)}</td><td class="num">${esc(b.bend_gap_pct)}</td><td class="num">${esc(b.twist)}</td><td class="num">${esc(b.twist_gap_pct)}</td></tr>`).join("") +
+           `</table></div>${t.by_bone.length > 12 ? `<div class="meta">and ${t.by_bone.length - 12} more</div>` : ""}`;
+    }
     if (a.warnings && a.warnings.length) h += `<div class="warns"><b>Warnings</b> (reported, not failed): ${a.warnings.map(esc).join("; ")}</div>`;
     h += `<h3>Audit sheets</h3><div class="pics">${img(a.skin, "Skin: which bone owns each part") + img(a.bend, "Bends: each joint turned, tears marked")}</div>`;
     return h;
@@ -331,6 +351,32 @@ function body(d) {
   }
   return "";
 }
+
+// ---- Audit all: every rigged model audited in turn (live in the log, Cancel stops it), then a table worst first
+async function showCollection() {
+  selected = null; renderModels(); renderModel();
+  try { history.replaceState(null, "", "#collection"); } catch (e) {}
+  let d;
+  const r = $("#modelPanel");                                       // the table takes the model's place, above the log
+  $("#results").innerHTML = `<div class="empty">Click a row to see that model's audit.</div>`;
+  try { d = await api("/api/audits"); } catch (e) { r.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
+  const f = (v) => v === null || v === undefined ? "–" : esc(v);
+  let h = `<h2>Collection audit</h2><div class="meta">Every rigged model's latest audit, worst first. PASS is within every limit; CHECK is past a limit but inside its warn band ` +
+          `(look at it in the viewer); FAIL is clearly broken. Click a row to open the model.</div>`;
+  if (!d.models.length) h += `<div class="empty">No rigged models yet.</div>`;
+  else h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Model</th><th>Grade</th><th>Tears combined</th><th>Tears bend</th><th>Worst gap %</th><th>Bleed %</th><th>Head %</th><th>Worst bone</th></tr>` +
+    d.models.map((r) => `<tr class="pick" data-name="${esc(r.model)}"><td>${esc(r.model)}<div class="why">${esc(r.group || "")}</div></td>` +
+      `<td>${r.grade ? `<span class="chip ${gradeClass(r.grade)}">${esc(r.grade)}</span>` : `<span class="chip">not audited</span>`}</td>` +
+      `<td class="num">${f(r.combined_tears)}</td><td class="num">${f(r.bend_tears)}</td><td class="num">${f(r.worst_gap_pct)}</td>` +
+      `<td class="num">${f(r.bleed_pct)}</td><td class="num">${f(r.head_pct)}</td><td>${f(r.worst_bone)}</td></tr>`).join("") + `</table></div>`;
+  if (selected) return;                                              // a model was picked while it loaded
+  r.innerHTML = h;
+  r.querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => { tab = "audit"; select(tr.dataset.name); });
+}
+$("#auditAll").onclick = async () => {
+  try { const j = await api("/api/audit-all", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
+};
+$("#auditTable").onclick = () => showCollection();
 
 // ---- adding models
 function addMsg(t, ok) { const m = $("#addMsg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
@@ -396,7 +442,7 @@ function from_hash() {
   return h.get("model");
 }
 const wanted = from_hash();
-refresh().then(() => { if (wanted && state.models.some((m) => m.name === wanted)) select(wanted); }).catch((e) => { document.body.insertAdjacentHTML("afterbegin", `<div class="msg err" style="padding:10px">${esc(e.message)}</div>`); });
+refresh().then(() => { if (location.hash === "#collection") showCollection(); else if (wanted && state.models.some((m) => m.name === wanted)) select(wanted); }).catch((e) => { document.body.insertAdjacentHTML("afterbegin", `<div class="msg err" style="padding:10px">${esc(e.message)}</div>`); });
 setInterval(() => { if (state && state.running) refresh().catch(() => {}); }, 4000);
 </script>
 </body>
