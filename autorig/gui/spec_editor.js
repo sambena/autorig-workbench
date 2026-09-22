@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { mirrorName, mirrorChainData, generateStations } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const MODEL = new URLSearchParams(location.search).get("model") || "";
@@ -622,28 +623,153 @@ function pointFields() {
   if (Array.isArray(R.chains)) R.chains.forEach((c, i) => {
     const col = i === 0 ? SPINE : PALETTE[i % PALETTE.length];
     const nm = c.name || "chain " + (i + 1);
-    if (Array.isArray(c.points)) out.push({ pts: c.points, col, name: nm, line: true });
-    if (c.tip) out.push({ pts: c.base ? [c.base, c.tip] : [c.tip], col, name: nm + (c.base ? "" : " tip"), line: !!c.base });
-    if (Array.isArray(c.tube)) out.push({ pts: c.tube, col, name: nm, line: true });
-    if (Array.isArray(c.slice)) out.push({ pts: [[0.5, c.slice[0], 0.5], [0.5, c.slice[1], 0.5]], col, name: nm + " (slice)", line: true, approx: true });
-    if (c.first) out.push({ pts: [c.first], col, name: nm + " first" });
+    const cp = ["rig", "chains", i];
+    if (Array.isArray(c.points)) {
+      out.push({
+        pts: c.points,
+        paths: c.points.map((_, k) => [...cp, "points", k]),
+        col,
+        name: nm,
+        line: true,
+        type: "point"
+      });
+    }
+    if (c.tip) {
+      if (c.base) {
+        out.push({
+          pts: [c.base, c.tip],
+          paths: [[...cp, "base"], [...cp, "tip"]],
+          col,
+          name: nm,
+          line: true,
+          type: "point"
+        });
+      } else {
+        out.push({
+          pts: [c.tip],
+          paths: [[...cp, "tip"]],
+          col,
+          name: nm + " tip",
+          line: false,
+          type: "point"
+        });
+      }
+    }
+    if (Array.isArray(c.tube)) {
+      out.push({
+        pts: c.tube,
+        paths: [[...cp, "tube", 0], [...cp, "tube", 1]],
+        col,
+        name: nm,
+        line: true,
+        type: "point"
+      });
+    }
+    if (Array.isArray(c.slice)) {
+      if (Array.isArray(c.stations) && c.stations.length) {
+        c.stations.forEach((y, k) => {
+          if (typeof y === "number") {
+            out.push({
+              pts: [[0.35, y, 0.5], [0.65, y, 0.5]],
+              paths: [[...cp, "stations", k], [...cp, "stations", k]],
+              col,
+              name: `${nm} st${k + 1} (${y.toFixed(2)})`,
+              line: true,
+              approx: true,
+              type: "station"
+            });
+          }
+        });
+        const validStations = c.stations.map((y, k) => ({ y, k })).filter((x) => typeof x.y === "number");
+        const spinePts = validStations.map((x) => [0.5, x.y, 0.5]);
+        const spinePaths = validStations.map((x) => [...cp, "stations", x.k]);
+        if (spinePts.length >= 2) {
+          out.push({
+            pts: spinePts,
+            paths: spinePaths,
+            col,
+            name: nm + " spine",
+            line: true,
+            type: "station"
+          });
+        }
+      } else {
+        out.push({
+          pts: [[0.5, c.slice[0], 0.5], [0.5, c.slice[1], 0.5]],
+          paths: [[...cp, "slice", 0], [...cp, "slice", 1]],
+          col,
+          name: nm + " (slice)",
+          line: true,
+          approx: true,
+          type: "slice_y"
+        });
+      }
+    }
+    if (c.first) {
+      out.push({
+        pts: [c.first],
+        paths: [[...cp, "first"]],
+        col,
+        name: nm + " first",
+        type: "point"
+      });
+    }
   });
-  if (Array.isArray(R.head_line)) out.push({ pts: R.head_line, col: 0xd070ff, name: "head line", line: true });
-  if (R.jaw && R.jaw.hinge) out.push({ pts: [R.jaw.hinge, R.jaw.tip].filter(Boolean), col: 0xe0508a, name: "jaw", line: true });
+  if (Array.isArray(R.head_line)) {
+    out.push({
+      pts: R.head_line,
+      paths: [["rig", "head_line", 0], ["rig", "head_line", 1]],
+      col: 0xd070ff,
+      name: "head line",
+      line: true,
+      type: "point"
+    });
+  }
+  if (R.jaw && R.jaw.hinge) {
+    const pts = [R.jaw.hinge, R.jaw.tip].filter(Boolean);
+    const paths = [["rig", "jaw", "hinge"], R.jaw.tip ? ["rig", "jaw", "tip"] : null].filter(Boolean);
+    out.push({
+      pts,
+      paths,
+      col: 0xe0508a,
+      name: "jaw",
+      line: true,
+      type: "point"
+    });
+  }
   if (draft.humanoid) {
     const H = draft.humanoid;
     if (H.z && typeof H.z === "object") {
       const armZ = typeof H.z.arm === "number" ? H.z.arm : 0.77;
       for (const [k, lv] of Object.entries(H.z)) {
         if (typeof lv === "number") {
-          out.push({ pts: [[0.35, 0.5, lv], [0.65, 0.5, lv]], col: 0x5b8ff0, name: k + " (" + lv.toFixed(2) + ")", line: true });
+          out.push({
+            pts: [[0.35, 0.5, lv], [0.65, 0.5, lv]],
+            paths: [["humanoid", "z", k], ["humanoid", "z", k]],
+            col: 0x5b8ff0,
+            name: k + " (" + lv.toFixed(2) + ")",
+            line: true,
+            type: "height"
+          });
         }
       }
       if (H.x && typeof H.x === "object") {
         for (const [k, sp] of Object.entries(H.x)) {
           if (typeof sp === "number") {
-            out.push({ pts: [[sp, 0.5, armZ]], col: 0x4cc9f0, name: k + ".R (" + sp.toFixed(2) + ")" });
-            out.push({ pts: [[1 - sp, 0.5, armZ]], col: 0x4cc9f0, name: k + ".L (" + sp.toFixed(2) + ")" });
+            out.push({
+              pts: [[sp, 0.5, armZ]],
+              paths: [["humanoid", "x", k]],
+              col: 0x4cc9f0,
+              name: k + ".R (" + sp.toFixed(2) + ")",
+              type: "span"
+            });
+            out.push({
+              pts: [[1 - sp, 0.5, armZ]],
+              paths: [["humanoid", "x", k]],
+              col: 0x4cc9f0,
+              name: k + ".L (" + sp.toFixed(2) + ")",
+              type: "span"
+            });
           }
         }
       }
@@ -658,10 +784,22 @@ function drawMarks() {
   for (const f of pointFields()) {
     const P = f.pts.filter((p) => Array.isArray(p) && p.length === 3).map((u) => F.fromUnit(u));
     P.forEach((p, i) => {
-      marks.add(ball(p, f.col, r * (i === P.length - 1 ? 1.2 : 0.9)));
-      if (i === 0 || i === P.length - 1) { const t = tag(f.name + (P.length > 2 ? " " + (i + 1) : ""), "", f.col); t.position.copy(V(p)); marks.add(t); }
+      const b = ball(p, f.col, r * (i === P.length - 1 ? 1.2 : 0.9));
+      if (f.paths && f.paths[i]) {
+        b.userData.pointPath = f.paths[i];
+        b.userData.pointType = f.type || "point";
+      }
+      marks.add(b);
+      if (i === 0 || i === P.length - 1 || f.type === "station") {
+        const t = tag(f.name + (P.length > 2 ? " " + (i + 1) : ""), "", f.col);
+        t.position.copy(V(p));
+        marks.add(t);
+      }
     });
-    if (f.line) for (let i = 0; i + 1 < P.length; i++) { const s = stick(P[i], P[i + 1], f.col, r * 0.4, f.approx ? 0.5 : 0.9); if (s) marks.add(s); }
+    if (f.line) for (let i = 0; i + 1 < P.length; i++) {
+      const s = stick(P[i], P[i + 1], f.col, r * 0.4, f.approx ? 0.5 : 0.9);
+      if (s) marks.add(s);
+    }
   }
   // rigid parts: each box as a wire box, with its bone
   (rig().rigid_to || []).forEach((b, i) => {
@@ -724,10 +862,70 @@ function legend() {
 // Clicking: bones, the model, the flat views
 // ---------------------------------------------------------------------------------------------------------------
 
+function applyPointEdit(path, type, u) {
+  if (!path || !path.length) return;
+  if (type === "station" || type === "slice_y") {
+    setPath(path, Math.round(u[1] * 1000) / 1000, { noUndo: true });
+  } else if (type === "height") {
+    setPath(path, Math.round(u[2] * 1000) / 1000, { noUndo: true });
+  } else if (type === "span") {
+    setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000, { noUndo: true });
+  } else {
+    setPath(path, u, { noUndo: true });
+  }
+}
+
 const ray = new THREE.Raycaster();
 let downAt = null;
-renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
+let drag3D = null;
+const dragPlane = new THREE.Plane();
+const planeIntersect = new THREE.Vector3();
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  downAt = [e.clientX, e.clientY];
+  if (!pick) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    ray.setFromCamera(m, camera);
+    const markHits = ray.intersectObjects(marks.children, false);
+    const hitWithPoint = markHits.find((h) => h.object.userData && h.object.userData.pointPath);
+    if (hitWithPoint) {
+      pushUndo();
+      const hitObj = hitWithPoint.object;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      dragPlane.setFromNormalAndCoplanarPoint(camDir.negate(), hitObj.position);
+      controls.enabled = false;
+      drag3D = {
+        path: hitObj.userData.pointPath,
+        type: hitObj.userData.pointType,
+        obj: hitObj
+      };
+    }
+  }
+});
+
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (drag3D) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    ray.setFromCamera(m, camera);
+    if (ray.ray.intersectPlane(dragPlane, planeIntersect)) {
+      const u = r3(F.toUnit(fromV(planeIntersect)));
+      applyPointEdit(drag3D.path, drag3D.type, u);
+      drawMarks();
+      if (tab === "flat") drawFlat();
+    }
+  }
+});
+
 renderer.domElement.addEventListener("pointerup", (e) => {
+  if (drag3D) {
+    drag3D = null;
+    controls.enabled = true;
+    changed();
+    return;
+  }
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;   // a drag turns the view
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
@@ -832,6 +1030,40 @@ const pickers = {
     point: (u) => { setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000); endPick(); },
     flat: (u) => setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000),
     current: () => [getPath(path) ?? 0.2, 0.5, 0.7]
+  }),
+  station: (path, label) => ({
+    label,
+    text: label + ": click on the model or flat views to set station position (Y)",
+    point: (u) => { setPath(path, Math.round(u[1] * 1000) / 1000); endPick(); },
+    flat: (u) => setPath(path, Math.round(u[1] * 1000) / 1000),
+    current: () => [0.5, getPath(path) ?? 0.5, 0.5]
+  }),
+  stations: (path, label) => ({
+    label,
+    many: true,
+    text: label + ": click along the body in 3D or flat views to place stations (Y)",
+    point: (u) => {
+      const cur = [...(getPath(path) || [])];
+      cur.push(Math.round(u[1] * 1000) / 1000);
+      cur.sort((a, b) => a - b);
+      setPath(path, cur, { keepEmpty: true });
+    },
+    flat: (u) => {
+      const cur = [...(getPath(path) || [])];
+      if (cur.length) cur[cur.length - 1] = Math.round(u[1] * 1000) / 1000;
+      else cur.push(Math.round(u[1] * 1000) / 1000);
+      setPath(path, cur);
+    },
+    next: () => {
+      const cur = [...(getPath(path) || [])];
+      const last = cur.length ? cur[cur.length - 1] : 0.5;
+      cur.push(Math.round(Math.min(1.0, last + 0.1) * 1000) / 1000);
+      setPath(path, cur, { keepEmpty: true });
+    },
+    current: () => {
+      const cur = getPath(path) || [];
+      return [0.5, cur.length ? cur[cur.length - 1] : 0.5, 0.5];
+    }
   }),
 };
 
@@ -1025,6 +1257,17 @@ function boneInput(path, v) {
 }
 function defaultThreshold(k) { return { bleed_pct: 2, combined_tears: 0, bend_tears: 0, head_pct: 2.5, max_influences: 4 }[k]; }
 
+function mirrorChain(idx) {
+  const chains = rig().chains;
+  if (!Array.isArray(chains) || !chains[idx]) return;
+  pushUndo();
+  const orig = chains[idx];
+  const copy = mirrorChainData(orig, chains);
+  chains.splice(idx + 1, 0, copy);
+  changed();
+  flash(`Mirrored ${orig.name || "chain"} → ${copy.name || "chain"}`);
+}
+
 function buildChains(chains) {
   const path = ["rig", "chains"];
   let h = "";
@@ -1035,7 +1278,9 @@ function buildChains(chains) {
     h += `<div class="card" style="border-left:4px solid ${hex(col)}"><div class="hd"><b>${i === 0 ? "Body" : "Chain " + (i + 1)}</b>` +
          `<input type="text" data-set="text" data-path="${P([...cp, "name"])}" value="${esc(c.name || "")}" placeholder="name" style="width:100px">` +
          `<input type="text" list="roles" data-set="text" data-path="${P([...cp, "role"])}" value="${esc(c.role || "")}" placeholder="role (= name)" style="width:100px">` +
-         `<span class="grow"></span><button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>` +
+         `<span class="grow"></span>` +
+         (i > 0 ? `<button class="small" data-act="mirrorchain" data-i="${i}" title="Mirror this placed chain across the symmetry plane (X -> 1 - X)">+ Mirror chain</button>` : "") +
+         `<button class="small" data-act="rmrow" data-path="${P(path)}" data-i="${i}">×</button></div>` +
          `<div class="sub-row"><span class="muted">placed by</span><select data-set="how" data-path="${P(cp)}">${[["tip", "its tip (a limb)"], ["points", "its joints"], ["slice", "a slice along the body"], ["tube", "two ends (a tube)"]].map(([k, l]) => `<option value="${k}" ${how === k ? "selected" : ""}>${l}</option>`).join("")}</select>` +
          `<span class="muted">bones</span><input type="number" min="1" step="1" data-set="num" data-path="${P([...cp, "bones"])}" value="${c.bones ?? ""}" placeholder="1" style="width:50px"></div>`;
     if (how === "tip") {
@@ -1046,6 +1291,27 @@ function buildChains(chains) {
     } else if (how === "slice") {
       h += `<div class="sub-row"><span class="muted">from y</span><input type="number" step="0.01" data-set="num" data-path="${P([...cp, "slice", 0])}" value="${(c.slice || [])[0] ?? ""}">` +
            `<span class="muted">to y</span><input type="number" step="0.01" data-set="num" data-path="${P([...cp, "slice", 1])}" value="${(c.slice || [])[1] ?? ""}"><span class="muted">(0 nose .. 1 tail)</span></div>`;
+      if (Array.isArray(c.stations)) {
+        h += `<div class="sub-row"><span class="muted" style="width:50px">stations</span><div class="chips grow">` +
+             c.stations.map((stVal, sIdx) =>
+               `<span class="chip" style="padding:2px 5px" title="Station ${sIdx + 1}: Y = ${Number(stVal).toFixed(2)}">` +
+               `<span class="muted" style="font-size:10px">#${sIdx + 1}</span> ` +
+               `<input type="number" step="0.01" min="0" max="1" data-set="num" data-path="${P([...cp, "stations", sIdx])}" value="${stVal ?? ""}" style="width:54px;padding:1px 3px">` +
+               pickBtn("station", [...cp, "stations", sIdx], `${c.name || "body"} station ${sIdx + 1}`) +
+               `<span class="x" data-act="rm" data-path="${P([...cp, "stations"])}" data-i="${sIdx}" title="remove station">×</span></span>`
+             ).join("") +
+             `</div></div>` +
+             `<div class="chips" style="margin-top:3px;margin-bottom:4px">` +
+             pickBtn("stations", [...cp, "stations"], `${c.name || "body"} stations`, "+ Pick stations") +
+             `<button class="small" data-act="genstations" data-path="${P(cp)}" title="Evenly space stations between slice endpoints">Even spacing</button>` +
+             `<button class="small" data-act="clearstations" data-path="${P(cp)}" title="Remove custom stations (revert to uniform slice)">Clear stations</button>` +
+             `</div>`;
+      } else {
+        h += `<div class="chips" style="margin-top:3px;margin-bottom:4px">` +
+             `<button class="small" data-act="addstations" data-path="${P(cp)}" title="Set custom joint positions along the body instead of even spacing">+ Custom stations</button>` +
+             pickBtn("stations", [...cp, "stations"], `${c.name || "body"} stations`, "Pick stations") +
+             `</div>`;
+      }
     } else {
       h += [0, 1].map((k) => `<div class="sub-row"><span class="muted" style="width:34px">${k ? "end" : "start"}</span>${pointInputs([...cp, "tube", k], (c.tube || [])[k])}</div>`).join("") + `<div class="chips">${pickBtn("pair", [...cp, "tube"], (c.name || "chain") + " ends")}</div>`;
     }
@@ -1257,6 +1523,114 @@ function flatPix(tile, u) {
   if (tile === 1) return [f(u[0], 0), 1 - f(u[2], 2)];
   return [1 - f(u[0], 0), f(u[1], 1)];
 }
+let dragTarget = null;
+let draggingPick = false;
+
+function findNearestFlatPoint(clientX, clientY, img) {
+  const r = img.getBoundingClientRect();
+  const tw = r.width / 3, th = r.height;
+  const mx = clientX - r.left, my = clientY - r.top;
+  let best = null, bestDist = 16;
+
+  const fields = pointFields();
+  for (const f of fields) {
+    if (!f.paths) continue;
+    for (let i = 0; i < f.pts.length; i++) {
+      const u = f.pts[i];
+      const pth = f.paths[i];
+      if (!Array.isArray(u) || !pth) continue;
+      for (let t = 0; t < 3; t++) {
+        const [px, py] = flatPix(t, u);
+        const sx = t * tw + px * tw, sy = py * th;
+        const d = Math.hypot(mx - sx, my - sy);
+        if (d < bestDist) {
+          bestDist = d;
+          best = { field: f, ptIdx: i, pt: [...u], path: pth, type: f.type || "point", tile: t };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function wireFlatEvents(img, cv) {
+  if (img._flatWired) return;
+  img._flatWired = true;
+
+  const getTileAndU = (e, currentPt) => {
+    const r = img.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 3;
+    const t = Math.min(2, Math.max(0, Math.floor(x)));
+    const fx = Math.min(1, Math.max(0, x - t));
+    const fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    return { tile: t, u: flatMap(t, fx, fy, currentPt) };
+  };
+
+  img.addEventListener("pointerdown", (e) => {
+    if (pick && pick.flat) {
+      draggingPick = true;
+      try { img.setPointerCapture(e.pointerId); } catch (_) {}
+      const { u } = getTileAndU(e, pick.current && pick.current());
+      pick.flat(u);
+      drawFlat();
+      drawMarks();
+      const banner = $("bannerText");
+      if (banner && pick.label) banner.textContent = `${pick.label}: ${pointText(u)}`;
+      return;
+    }
+    const near = findNearestFlatPoint(e.clientX, e.clientY, img);
+    if (near) {
+      pushUndo();
+      dragTarget = near;
+      dragTarget.currentPt = [...near.pt];
+      try { img.setPointerCapture(e.pointerId); } catch (_) {}
+      drawFlat();
+      drawMarks();
+    } else {
+      flash("Press Pick beside a point field, or drag an existing joint.");
+      $("banner").style.display = "block";
+      setTimeout(() => { if (!pick && !dragTarget) $("banner").style.display = "none"; }, 1800);
+    }
+  });
+
+  img.addEventListener("pointermove", (e) => {
+    if (draggingPick && pick && pick.flat) {
+      const { u } = getTileAndU(e, pick.current && pick.current());
+      pick.flat(u);
+      drawFlat();
+      drawMarks();
+      const banner = $("bannerText");
+      if (banner && pick.label) banner.textContent = `${pick.label}: ${pointText(u)}`;
+      return;
+    }
+    if (dragTarget) {
+      const { u } = getTileAndU(e, dragTarget.currentPt);
+      dragTarget.currentPt = u;
+      applyPointEdit(dragTarget.path, dragTarget.type, u);
+      drawFlat();
+      drawMarks();
+      return;
+    }
+  });
+
+  const onPointerUp = (e) => {
+    if (draggingPick) {
+      draggingPick = false;
+      try { img.releasePointerCapture(e.pointerId); } catch (_) {}
+      renderPane();
+      return;
+    }
+    if (dragTarget) {
+      dragTarget = null;
+      try { img.releasePointerCapture(e.pointerId); } catch (_) {}
+      changed();
+    }
+  };
+
+  img.addEventListener("pointerup", onPointerUp);
+  img.addEventListener("pointercancel", onPointerUp);
+}
+
 function drawFlat() {
   const img = $("flatImg"), cv = $("flatCv");
   if (!img || !cv) return;
@@ -1264,27 +1638,46 @@ function drawFlat() {
     cv.width = img.clientWidth; cv.height = img.clientHeight;
     const g = cv.getContext("2d"), tw = cv.width / 3, th = cv.height;
     g.clearRect(0, 0, cv.width, cv.height);
-    const dot = (u, col, r) => { for (let t = 0; t < 3; t++) { const [x, y] = flatPix(t, u); g.fillStyle = col; g.beginPath(); g.arc(t * tw + x * tw, y * th, r, 0, 7); g.fill(); } };
+    const dot = (u, col, r) => {
+      for (let t = 0; t < 3; t++) {
+        const [x, y] = flatPix(t, u);
+        g.fillStyle = col;
+        g.beginPath();
+        g.arc(t * tw + x * tw, y * th, r, 0, 7);
+        g.fill();
+      }
+    };
     for (const f of pointFields()) {
-      if (f.line && f.pts.length === 2 && Array.isArray(f.pts[0]) && Array.isArray(f.pts[1])) {
-        g.strokeStyle = hex(f.col); g.lineWidth = 1.5;
+      if (f.line && f.pts.length >= 2) {
+        g.strokeStyle = hex(f.col);
+        g.lineWidth = 1.5;
         for (let t = 0; t < 3; t++) {
-          const [x0, y0] = flatPix(t, f.pts[0]), [x1, y1] = flatPix(t, f.pts[1]);
-          g.beginPath(); g.moveTo(t * tw + x0 * tw, y0 * th); g.lineTo(t * tw + x1 * tw, y1 * th); g.stroke();
+          g.beginPath();
+          let started = false;
+          for (let i = 0; i < f.pts.length; i++) {
+            if (!Array.isArray(f.pts[i])) continue;
+            const [x, y] = flatPix(t, f.pts[i]);
+            if (!started) { g.moveTo(t * tw + x * tw, y * th); started = true; }
+            else g.lineTo(t * tw + x * tw, y * th);
+          }
+          if (started) g.stroke();
         }
       }
       for (const u of f.pts) if (Array.isArray(u)) dot(u, hex(f.col), 3.5);
     }
-    for (const b of rig().rigid_to || []) if (Array.isArray(b[1]) && Array.isArray(b[2])) { dot(b[1], "#ff9f1c", 3); dot(b[2], "#ff9f1c", 3); }
+    for (const b of rig().rigid_to || []) if (Array.isArray(b[1]) && Array.isArray(b[2])) {
+      dot(b[1], "#ff9f1c", 3);
+      dot(b[2], "#ff9f1c", 3);
+    }
     const cur = pick && pick.current && pick.current();
     if (Array.isArray(cur)) { dot(cur, "#000", 6); dot(cur, "#fff", 3.5); }
+    if (dragTarget && dragTarget.currentPt) {
+      dot(dragTarget.currentPt, "#ffeb3b", 6.5);
+      dot(dragTarget.currentPt, "#000", 3.5);
+    }
   };
   if (img.complete) go(); else img.onload = go;
-  img.onclick = (e) => {
-    if (!pick || !pick.flat) { flash("Press Pick beside a point field first."); $("banner").style.display = "block"; setTimeout(() => { if (!pick) $("banner").style.display = "none"; }, 1800); return; }
-    const r = img.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 3, t = Math.min(2, Math.floor(x));
-    pick.flat(flatMap(t, x - t, (e.clientY - r.top) / r.height, pick.current && pick.current()));
-  };
+  wireFlatEvents(img, cv);
 }
 
 // ---- changes: problems, the diff, the JSON itself
@@ -1372,6 +1765,22 @@ function act(el) {
     changed();
   } else if (a === "playclip") {
     setViewMode("rigged");
+  } else if (a === "mirrorchain") {
+    mirrorChain(Number(el.dataset.i));
+  } else if (a === "addstations" || a === "genstations") {
+    pushUndo();
+    const c = getPath(path);
+    if (c) {
+      c.stations = generateStations(c.slice, c.bones);
+      setPath(path, c);
+    }
+  } else if (a === "clearstations") {
+    pushUndo();
+    const c = clone(getPath(path));
+    if (c && "stations" in c) {
+      delete c.stations;
+      setPath(path, c);
+    }
   } else if (a === "spot") { const s = B.spots.find((x) => x.bone === el.dataset.bone && x.mode === el.dataset.mode); if (s) showSpot(s); }
   else if (a === "measure") runMeasure();
   else if (a === "flatbig") { flatBig = !flatBig; renderPane(); }

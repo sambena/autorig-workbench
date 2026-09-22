@@ -143,9 +143,10 @@ it, and the audit delta, without touching a text file (done).
 - The measure sheet's three orthographic views, made interactive in the page as images with the grid drawn over them,
   so there is no 3D picking to get wrong. Started: the editor's **Flat views** tab runs `measure.py` on the unsaved
   draft (the rig it would build drawn over the model) and a click in a view sets two of a point's three numbers.
-- **Click to place** a chain's joints, or just a limb's tip and base. Started: Pick beside `tip`, `base`, `points`,
-  `head_line`, `jaw` and `rigid_to` boxes, in 3D or on the flat views. Still to do: drag to move a joint, mirroring a
-  placed chain in one click, `stations` by click, and redrawing the flat views as the points move.
+- **Click to place** a chain's joints, or just a limb's tip and base (done). Pick beside `tip`, `base`, `points`,
+  `head_line`, `jaw` and `rigid_to` boxes, in 3D or on the flat views; drag to move a joint in 3D or flat views,
+  mirroring a placed chain across symmetry ($X \to 1 - X$) in one click with intelligent renaming, `stations` placement
+  by click/input, and live redrawing of the flat views as points move.
 - **`kind: "placed"`**: a hand-placed winged builder generalised. Its body-part rules become spec data: which bones
   each part may use, which parts blend at a join, which welds to rip, membranes, the jaw line, rigid islands.
 

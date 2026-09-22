@@ -404,6 +404,24 @@ def _check_build(rig, E, W):
             if k in c and _vec(c[k]) and any(not -0.05 <= x <= 1.05 for x in c[k]): W(p + "." + k, "outside the model's 0..1 box")
         if "bones" in c and not (_num(c["bones"]) and int(c["bones"]) == c["bones"] and c["bones"] >= 1):
             E(p + ".bones", "a whole number of bones, 1 or more")
+        if "stations" in c:
+            st = c["stations"]
+            if not (isinstance(st, list) and len(st) >= 2 and all(_num(x) for x in st)):
+                E(p + ".stations", "stations must be a list of numbers along the body, e.g. [0.15, 0.4, 0.85]")
+            else:
+                for j, x in enumerate(st):
+                    if not (-0.05 <= x <= 1.05):
+                        W("%s.stations.%d" % (p, j), "station outside the model's 0..1 range")
+                if "bones" in c and _num(c["bones"]) and len(st) != int(c["bones"]) + 1:
+                    W(p + ".stations", "stations count (%d) should match bones + 1 (%d)" % (len(st), int(c["bones"]) + 1))
+                if len(st) >= 2:
+                    diffs = [st[k + 1] - st[k] for k in range(len(st) - 1)]
+                    if any(d == 0 for d in diffs) or (any(d > 0 for d in diffs) and any(d < 0 for d in diffs)):
+                        W(p + ".stations", "stations should be strictly in order along the body")
+                if "slice" in c and isinstance(c["slice"], list) and len(c["slice"]) == 2 and all(_num(x) for x in c["slice"]):
+                    s0, s1 = min(c["slice"]), max(c["slice"])
+                    if any(x < s0 - 0.05 or x > s1 + 0.05 for x in st):
+                        W(p + ".stations", "stations outside the chain's slice range [%.2f, %.2f]" % (s0, s1))
         if c.get("parent"):
             pr = c["parent"]
             if not (isinstance(pr, list) and len(pr) == 2 and pr[0] in names):

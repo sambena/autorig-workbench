@@ -158,5 +158,53 @@ test("tears overlay: gap thresholds, marker sizing, and mapping", () => {
   assert.equal(L.defaultCombinedAngle("finger"), 0);
 });
 
+test("chain mirroring and stations generation", () => {
+  // mirrorName
+  assert.equal(L.mirrorName("wing.R"), "wing.L");
+  assert.equal(L.mirrorName("wing.L"), "wing.R");
+  assert.equal(L.mirrorName("leg_right"), "leg_left");
+  assert.equal(L.mirrorName("leg_left"), "leg_right");
+  assert.equal(L.mirrorName("arm_r"), "arm_l");
+  assert.equal(L.mirrorName("arm_l"), "arm_r");
+  assert.equal(L.mirrorName("fin_m"), "fin");
+  assert.equal(L.mirrorName("horn", false), "horn.L");
+  assert.equal(L.mirrorName("horn", true), "horn.R");
+
+  // mirrorChainData (X -> 1 - X)
+  const rightLimb = {
+    name: "leg.R",
+    role: "leg",
+    tip: [0.2, 0.4, 0.1],
+    base: [0.35, 0.4, 0.5],
+    parent: ["hip.R", 0]
+  };
+  const existing = [{ name: "spine" }, { name: "hip.R" }, { name: "hip.L" }, rightLimb];
+  const leftLimb = L.mirrorChainData(rightLimb, existing);
+  assert.equal(leftLimb.name, "leg.L");
+  assert.equal(leftLimb.role, "leg");
+  assert.deepEqual(leftLimb.tip, [0.8, 0.4, 0.1]);
+  assert.deepEqual(leftLimb.base, [0.65, 0.4, 0.5]);
+  assert.deepEqual(leftLimb.parent, ["hip.L", 0]);
+
+  // Polyline points mirroring
+  const polyChain = {
+    name: "antenna_right",
+    role: "antenna",
+    points: [[0.4, 0.2, 0.8], [0.3, 0.15, 0.9], [0.1, 0.1, 1.0]]
+  };
+  const mirroredPoly = L.mirrorChainData(polyChain, []);
+  assert.equal(mirroredPoly.name, "antenna_left");
+  assert.deepEqual(mirroredPoly.points, [[0.6, 0.2, 0.8], [0.7, 0.15, 0.9], [0.9, 0.1, 1.0]]);
+
+  // generateStations
+  const st = L.generateStations([0.1, 0.9], 4);
+  assert.equal(st.length, 5);
+  assert.deepEqual(st, [0.1, 0.3, 0.5, 0.7, 0.9]);
+
+  const customSt = L.generateStations([0.2, 0.8], 3);
+  assert.equal(customSt.length, 4);
+  assert.deepEqual(customSt, [0.2, 0.4, 0.6, 0.8]);
+});
+
 console.log(`${n} passed`);
 

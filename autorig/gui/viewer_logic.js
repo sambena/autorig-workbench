@@ -251,3 +251,82 @@ export function defaultCombinedAngle(role) {
   return DEFAULT_COMBINED_ANGLES[role] ?? (role === "unnamed" ? 20 : 30);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Build chains: intelligent mirroring and stations generation
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Mirrors a chain or bone name across symmetry (.R <-> .L, _right <-> _left, _r <-> _l, or fallback). */
+export function mirrorName(s, isLeftSide = false) {
+  if (!s || typeof s !== "string") return s;
+  if (/\.R\b/.test(s)) return s.replace(/\.R\b/, ".L");
+  if (/\.L\b/.test(s)) return s.replace(/\.L\b/, ".R");
+  if (/\.r\b/.test(s)) return s.replace(/\.r\b/, ".l");
+  if (/\.l\b/.test(s)) return s.replace(/\.l\b/, ".r");
+  if (/_right\b/i.test(s)) {
+    return s.replace(/_right\b/i, (m) => m === "_Right" ? "_Left" : m === "_RIGHT" ? "_LEFT" : "_left");
+  }
+  if (/_left\b/i.test(s)) {
+    return s.replace(/_left\b/i, (m) => m === "_Left" ? "_Right" : m === "_LEFT" ? "_RIGHT" : "_right");
+  }
+  if (/_R\b/.test(s)) return s.replace(/_R\b/, "_L");
+  if (/_L\b/.test(s)) return s.replace(/_L\b/, "_R");
+  if (/_r\b/.test(s)) return s.replace(/_r\b/, "_l");
+  if (/_l\b/.test(s)) return s.replace(/_l\b/, "_r");
+  if (/\bright\b/i.test(s)) {
+    return s.replace(/\bright\b/i, (m) => m[0] === "R" ? "Left" : "left");
+  }
+  if (/\bleft\b/i.test(s)) {
+    return s.replace(/\bleft\b/i, (m) => m[0] === "L" ? "Right" : "right");
+  }
+  if (s.endsWith("_m")) return s.slice(0, -2);
+  return isLeftSide ? s + ".R" : s + ".L";
+}
+
+/** Checks if a name contains an explicit side indicator (.R, .L, _right, _left, etc.) */
+export function hasSideIndicator(s) {
+  if (!s || typeof s !== "string") return false;
+  return /\.(R|L|r|l)\b/.test(s) || /_(R|L|r|l)\b/.test(s) || /_(right|left)\b/i.test(s) || /\b(right|left)\b/i.test(s) || s.endsWith("_m");
+}
+
+/** Mirrors a chain object across the symmetry plane (X -> 1 - X), updating names and parent references. */
+export function mirrorChainData(orig, existingChains = []) {
+  if (!orig || typeof orig !== "object") return orig;
+  const copy = JSON.parse(JSON.stringify(orig));
+  const mx = (p) => Array.isArray(p) && p.length === 3 ? [Math.round((1 - p[0]) * 1000) / 1000, p[1], p[2]] : p;
+
+  const allPts = [];
+  if (copy.tip) allPts.push(copy.tip);
+  if (copy.base) allPts.push(copy.base);
+  if (Array.isArray(copy.tube)) allPts.push(...copy.tube);
+  if (Array.isArray(copy.points)) allPts.push(...copy.points);
+  const avgX = allPts.length ? allPts.reduce((acc, p) => acc + (Array.isArray(p) ? p[0] : 0.5), 0) / allPts.length : 0.5;
+  const isLeftSide = avgX > 0.5;
+
+  if (copy.name) copy.name = mirrorName(copy.name, isLeftSide);
+  if (copy.role && copy.role !== "spine") {
+    if (hasSideIndicator(copy.role)) copy.role = mirrorName(copy.role, isLeftSide);
+  }
+
+  if (copy.tip) copy.tip = mx(copy.tip);
+  if (copy.base) copy.base = mx(copy.base);
+  if (copy.first) copy.first = mx(copy.first);
+  if (Array.isArray(copy.tube)) copy.tube = copy.tube.map(mx);
+  if (Array.isArray(copy.points)) copy.points = copy.points.map(mx);
+
+  if (Array.isArray(copy.parent) && copy.parent[0]) {
+    const parentMirrored = mirrorName(copy.parent[0], isLeftSide);
+    if (existingChains.some((c) => c && c.name === parentMirrored)) {
+      copy.parent[0] = parentMirrored;
+    }
+  }
+  return copy;
+}
+
+/** Generates N+1 evenly spaced stations along Y between slice[0] and slice[1]. */
+export function generateStations(slice = [0.1, 0.9], bones = 4) {
+  const n = Math.max(1, Number(bones) || 1);
+  const s0 = (Array.isArray(slice) && typeof slice[0] === "number") ? slice[0] : 0.1;
+  const s1 = (Array.isArray(slice) && typeof slice[1] === "number") ? slice[1] : 0.9;
+  return Array.from({ length: n + 1 }, (_, k) => Math.round((s0 + (s1 - s0) * k / n) * 1000) / 1000);
+}
+
