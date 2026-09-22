@@ -134,4 +134,29 @@ test("islands weld across seams", () => {
   assert.equal(flat.count, 1);
 });
 
+test("tears overlay: gap thresholds, marker sizing, and mapping", () => {
+  // Severity based on GAP_CHECK_PCT: 8% for combined, 5% for bend
+  assert.equal(L.tearSeverity(4.5, "bend"), "warn");
+  assert.equal(L.tearSeverity(5.2, "bend"), "bad");
+  assert.equal(L.tearSeverity(7.5, "combined"), "warn");
+  assert.equal(L.tearSeverity(8.1, "combined"), "bad");
+
+  // Marker sizing grows with edge count
+  const r1 = L.tearMarkerRadius(1, 0.1);
+  const r10 = L.tearMarkerRadius(10, 0.1);
+  const r100 = L.tearMarkerRadius(100, 0.1);
+  assert.ok(r1 < r10 && r10 < r100);
+  assert.ok(r100 <= 0.25);                                            // capped at 2.5x base
+
+  // Point mapping: [x, y, z] Blender (+Z up, -Y forward) -> [x, z, -y] glTF (Y up, +Z forward)
+  assert.deepEqual(L.mapTearPoint([1, 2, 3]), [1, 3, -2]);
+
+  // Combined pose angle heuristics
+  assert.equal(L.defaultCombinedAngle("spine"), 12);
+  assert.equal(L.defaultCombinedAngle("neck"), 20);
+  assert.equal(L.defaultCombinedAngle("leg"), 30);
+  assert.equal(L.defaultCombinedAngle("finger"), 0);
+});
+
 console.log(`${n} passed`);
+

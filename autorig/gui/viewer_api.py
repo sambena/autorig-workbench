@@ -87,9 +87,11 @@ def audit_digest(layout, name, rig_mtime=0):
     except Exception as e:
         return {"error": "the audit cannot be read: %r" % e}
     v = full.get("verdict") or {}
+    tears = full.get("tears") or {}
     return {
         "pass": v.get("pass"),
         "grade": v.get("grade") or ("PASS" if v.get("pass") else "FAIL"),
+        "worst_bone": tears.get("worst_bone"),
         "checks": v.get("checks", {}),
         "warnings": v.get("warnings", []),
         "stale": _mtime(p) + 1 < rig_mtime,

@@ -212,3 +212,42 @@ export function islands(positions, index, tol) {
   for (const i of seen.values()) sizes[labels[i]]++;
   return { labels, count: ids.size, sizes };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Tears overlay: gap thresholds (CHECK vs FAIL), marker sizing and coordinate mapping
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The CHECK gap threshold in % of the model size: under it is CHECK (amber), over it is FAIL (red).
+ * Calibrated in autorig/core/grades.py GAP_CHECK_PCT (8% for combined pose, 5% for single-joint bend/twist). */
+export const TEAR_CHECK_GAP_PCT = { combined: 8.0, bend: 5.0, twist: 5.0 };
+
+/** Severity level for a tear gap: "bad" (red) if over the pose's CHECK gap, else "warn" (amber). */
+export function tearSeverity(gapPct, pose = "bend") {
+  const limit = TEAR_CHECK_GAP_PCT[pose] ?? 5.0;
+  return gapPct > limit ? "bad" : "warn";
+}
+
+/** Marker radius scaled by edge count so clusters with more torn edges stand out. */
+export function tearMarkerRadius(edges, baseRadius) {
+  return baseRadius * Math.min(2.5, 0.7 + Math.log10(1 + Math.max(1, edges)) * 0.6);
+}
+
+/** Maps Blender world coordinates [x, y, z] (+Z up, -Y forward) to glTF space [x, z, -y] (Y up, +Z forward).
+ * If `at` is missing, falls back to `at_bbox` [fx, fy, fz] relative to the bounding box if provided. */
+export function mapTearPoint(at, atBbox, box) {
+  if (Array.isArray(at) && at.length === 3 && at.every((x) => typeof x === "number" && !isNaN(x))) {
+    return [at[0], at[2], -at[1]];
+  }
+  if (Array.isArray(atBbox) && atBbox.length === 3 && box) {
+    const szX = box.max.x - box.min.x, szY = box.max.y - box.min.y, szZ = box.max.z - box.min.z;
+    return [box.min.x + atBbox[0] * szX, box.min.y + atBbox[2] * szY, -(box.min.z + atBbox[1] * szZ)];
+  }
+  return [0, 0, 0];
+}
+
+/** Default joint bend angles for the combined pose (in degrees about bone local X). */
+export const DEFAULT_COMBINED_ANGLES = { spine: 12, neck: 20, head: 15, tail: 14, jaw: 25, finger: 0, root: 0 };
+export function defaultCombinedAngle(role) {
+  return DEFAULT_COMBINED_ANGLES[role] ?? (role === "unnamed" ? 20 : 30);
+}
+
