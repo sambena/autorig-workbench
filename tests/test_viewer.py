@@ -40,6 +40,7 @@ AUDIT = {
     "meshes": [{"name": "body", "verts": 100, "max_influences": 4, "verts_over_4": 0}],
     "islands": 3, "rigid_islands": 1, "largest_islands": [{"verts": 90, "rigid": False, "bone": "hips", "area_pct": 95.0}],
     "bleed_total_pct": 1.2, "unweighted_verts": 0,
+    "tears": {"worst_bone": "leg_1.L"},
 }
 
 def glb(path, doc, binary=b""):
@@ -159,6 +160,7 @@ class ViewerTest(unittest.TestCase):
         self.assertFalse(a["checks"]["bend_tears"]["ok"])
         self.assertEqual(a["bleed_pairs"][0], ["leg_2.L", "neck", 0.9])
         self.assertEqual((a["islands"], a["rigid_islands"]), (3, 1))
+        self.assertEqual(a["worst_bone"], "leg_1.L")
         self.assertEqual(a["bones"][0]["bone"], "leg_1.L")                     # the failed check's bone, first
         self.assertEqual(a["bones"][0]["level"], "bad")
         code, _, data = self.get(s["preview"])

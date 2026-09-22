@@ -13,11 +13,12 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { padStep, scrubTicks, scrubTime, keyTimes, isBleed, segDist2, islands as meshIslands, sideOf, hops } from "./viewer_logic.js";
+import { padStep, scrubTicks, scrubTime, keyTimes, isBleed, segDist2, islands as meshIslands, sideOf, hops,
+         tearSeverity, tearMarkerRadius, mapTearPoint, defaultCombinedAngle } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const REF_HEIGHT = 1.8;
-const OVERLAYS = ["off", "skeleton", "names", "weights", "bleed"];
+const OVERLAYS = ["off", "skeleton", "names", "weights", "bleed", "tears"];
 const AUDIT_BAD = new THREE.Color(1.0, 0.16, 0.16), AUDIT_WARN = new THREE.Color(1.0, 0.62, 0.1);
 // Bone colours by role, as the rig step's QA pictures draw them (steps/rerig.py ROLE_COLOURS).
 const ROLE_COLOURS = {
@@ -197,6 +198,7 @@ function unload() {
   if (!cur) return;
   cur.mixer && cur.mixer.stopAllAction();
   for (const b of cur.bones) { b.label.removeFromParent(); }
+  clearTearMarkers();
   scene.remove(cur.holder, cur.overlay);
   disposeTree(cur.holder);
   cur.overlay.traverse((n) => { if (n.material) n.material.dispose(); });     // the bone shapes are shared
@@ -334,10 +336,12 @@ function setup(item, gltf) {
   const clips = gltf.animations.slice();
   cur = { item, info, gltf, holder, root, overlay: overlayGroup, mixer, clips, bones, skinned, meshes, box, scale,
           fileSize, fps: info.fps || 24, weightMats: [], origMats: new Map(), audit: item.audit || null,
-          analysis: null, keys: clips.map((c) => keyTimes(c.tracks.map((t) => t.times))) };
+          analysis: null, keys: clips.map((c) => keyTimes(c.tracks.map((t) => t.times))),
+          fullAudit: undefined, tearSites: null, tearPoseIndex: 0, tearsGroup: null, tearLabels: [], _inTearPose: false };
   for (const m of meshes) cur.origMats.set(m, m.material);
   const blame = new Map(((cur.audit && cur.audit.bones) || []).map((r) => [r.bone, r]));
   for (const b of bones) b.audit = blame.get(b.name) || null;
+  fetchFullAudit(item.name);
 
   cur.envelope = envelope();                     // where the model goes over all its clips
   buildStage(cur.envelope);
@@ -419,6 +423,14 @@ function roleOf(name) {
 
 function pickDefaultBone() {
   if (!cur.bones.length) return -1;
+  const a = cur.audit;
+  if (a && (a.grade === "CHECK" || a.grade === "FAIL" || a.pass === false)) {
+    const wb = a.worst_bone || (a.bones && a.bones.length ? a.bones[0].bone : null);
+    if (wb) {
+      const idx = boneByName(wb);
+      if (idx >= 0) return idx;
+    }
+  }
   // the head when there is one (what the audit's head share measures), else the bone with the most weight
   const head = cur.bones.findIndex((b) => /^head$|(^|[^a-z])head$/i.test(b.name));
   if (head >= 0) return head;
@@ -510,19 +522,31 @@ function applyOverlay() {
   const mode = OVERLAYS[overlay];
   $("bOverlay").textContent = "Overlay: " + mode;
   $("bOverlay").classList.toggle("on", overlay > 0);
-  for (const id of ["boneinfo", "worst", "islands", "bleed"]) $(id).style.display = "none";
+  for (const id of ["boneinfo", "worst", "islands", "bleed", "tears"]) $(id).style.display = "none";
   if (!cur) { layoutPanels(); return; }
   cur.overlay.visible = mode !== "off";
   for (const b of cur.bones) b.label.visible = mode === "names";
   if (mode === "weights" || mode === "bleed") analyse();
   paintWeights(mode === "weights");
   if (mode === "bleed") paintBleed();
+  if (mode !== "tears") {
+    clearTearMarkers();
+    if (cur._inTearPose) {
+      for (const s of cur.skinned) s.skeleton.pose();
+      cur.holder.updateMatrixWorld(true);
+      updateOverlay();
+      cur._inTearPose = false;
+    }
+  }
+  if (mode === "tears") setupTears();
   $("boneinfo").style.display = mode === "weights" && sel >= 0 ? "block" : "none";
   $("worst").style.display = mode !== "off" && cur.audit ? "block" : "none";
   $("islands").style.display = mode === "weights" ? "block" : "none";
   $("bleed").style.display = mode === "bleed" ? "block" : "none";
+  $("tears").style.display = mode === "tears" ? "block" : "none";
   if (mode === "weights") renderIslands();
   if (mode === "bleed") renderBleed();
+  if (mode === "tears") renderTears();
   renderWorst();
   hud();
   layoutPanels();
@@ -542,7 +566,7 @@ function highlight() {
     b.mesh.material.opacity = on ? 0.95 : blamed ? 0.85 : (mode === "weights" || mode === "bleed" ? 0.3 : 0.55);
     b.label.element.classList.toggle("sel", on);
   });
-  for (const id of ["worstList", "islandList", "bleedList"]) {
+  for (const id of ["worstList", "islandList", "bleedList", "tearsList"]) {
     for (const li of $(id).children) li.classList.toggle("sel", li.dataset.bone !== undefined && Number(li.dataset.bone) === sel);
   }
 }
@@ -596,6 +620,10 @@ function selectBone(i) {
   const mode = OVERLAYS[overlay];
   if (mode === "weights") { paintWeights(true); $("boneinfo").style.display = "block"; }
   else if (mode === "bleed") paintBleed();
+  else if (mode === "tears" && cur.tearSites) {
+    const ti = cur.tearSites.findIndex((s) => s.bone === cur.bones[sel].name);
+    if (ti >= 0 && ti !== cur.tearPoseIndex) applyTearPose(ti);
+  }
   highlight();
 }
 const boneByName = (n) => cur ? cur.bones.findIndex((b) => b.name === n) : -1;
@@ -813,6 +841,166 @@ function renderBleed() {
   highlight();
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Tears overlay: audit tear markers in 3D and test poses
+// ---------------------------------------------------------------------------------------------------------------
+
+async function fetchFullAudit(name) {
+  if (!cur) return null;
+  if (cur.fullAudit !== undefined) return cur.fullAudit;
+  try {
+    const res = await fetch(withToken("/api/audit?name=" + encodeURIComponent(name)));
+    cur.fullAudit = res.ok ? await res.json() : null;
+  } catch (e) {
+    cur.fullAudit = null;
+  }
+  return cur.fullAudit;
+}
+
+function clearTearMarkers() {
+  if (!cur) return;
+  if (cur.tearsGroup) {
+    cur.tearsGroup.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) n.material.dispose(); });
+    cur.tearsGroup.clear();
+  }
+  if (cur.tearLabels) {
+    for (const l of cur.tearLabels) l.removeFromParent();
+    cur.tearLabels = [];
+  }
+}
+
+async function setupTears() {
+  if (!cur) return;
+  if (playing) { playing = false; $("bPlay").textContent = "Play"; }
+  if (action) { action.stop(); action = null; }
+  const full = await fetchFullAudit(cur.item.name);
+  if (!cur) return;
+  cur.tearSites = (full && full.tear_sites) || [];
+  if (cur.tearPoseIndex === undefined || cur.tearPoseIndex >= cur.tearSites.length) cur.tearPoseIndex = 0;
+  renderTears();
+  applyTearPose(cur.tearPoseIndex);
+}
+
+function applyTearPose(index) {
+  if (!cur) return;
+  for (const s of cur.skinned) s.skeleton.pose();
+  if (!cur.tearSites || !cur.tearSites.length) {
+    clearTearMarkers();
+    cur.holder.updateMatrixWorld(true);
+    updateOverlay();
+    cur._inTearPose = false;
+    return;
+  }
+  cur._inTearPose = true;
+  cur.tearPoseIndex = Math.max(0, Math.min(index, cur.tearSites.length - 1));
+  const site = cur.tearSites[cur.tearPoseIndex];
+  if (site.pose === "combined") {
+    const angles = (cur.fullAudit && cur.fullAudit.combined_pose && cur.fullAudit.combined_pose.angles_deg) || site.angles_deg;
+    if (angles) {
+      for (const [boneName, deg] of Object.entries(angles)) {
+        const bi = boneByName(boneName);
+        if (bi >= 0 && deg) cur.bones[bi].bone.rotateX(deg * Math.PI / 180);
+      }
+    } else {
+      for (const b of cur.bones) {
+        if (b.deform && b.parent >= 0) {
+          const deg = defaultCombinedAngle(b.role);
+          if (deg) b.bone.rotateX(deg * Math.PI / 180);
+        }
+      }
+    }
+    if (site.clusters && site.clusters.length && site.clusters[0].bone) {
+      const bi = boneByName(site.clusters[0].bone);
+      if (bi >= 0) selectBone(bi);
+    }
+  } else {
+    const bi = boneByName(site.bone);
+    if (bi >= 0) {
+      const rot = site.rotation_deg || (site.pose === "twist" ? [0, 60, 0] : [40, 0, 0]);
+      const b = cur.bones[bi];
+      if (rot[0]) b.bone.rotateX(rot[0] * Math.PI / 180);
+      if (rot[1]) b.bone.rotateY(rot[1] * Math.PI / 180);
+      if (rot[2]) b.bone.rotateZ(rot[2] * Math.PI / 180);
+      selectBone(bi);
+    }
+  }
+  cur.holder.updateMatrixWorld(true);
+  updateOverlay();
+  drawTearMarkers(site);
+  for (let k = 0; k < $("tearsList").children.length; k++) {
+    $("tearsList").children[k].classList.toggle("sel", k === cur.tearPoseIndex);
+  }
+}
+
+function drawTearMarkers(site) {
+  if (!cur) return;
+  if (!cur.tearsGroup) {
+    cur.tearsGroup = new THREE.Group();
+    cur.tearsGroup.renderOrder = 14;
+    cur.root.add(cur.tearsGroup);
+  }
+  clearTearMarkers();
+  if (!site || !site.clusters || !site.clusters.length) return;
+  const longest = Math.max(cur.fileSize.x, cur.fileSize.y, cur.fileSize.z) || 1;
+  const r0 = longest * 0.015;
+  for (const c of site.clusters) {
+    const p = mapTearPoint(c.at, c.at_bbox, cur.box);
+    const pos = new THREE.Vector3(p[0], p[1], p[2]);
+    const r = tearMarkerRadius(c.edges, r0);
+    const isBad = tearSeverity(c.gap_pct, site.pose) === "bad";
+    const col = isBad ? AUDIT_BAD : AUDIT_WARN;
+    const geo = new THREE.SphereGeometry(r, 14, 10);
+    const mat = new THREE.MeshBasicMaterial({ color: col, depthTest: false, transparent: true, opacity: 0.85 });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(pos);
+    m.renderOrder = 14;
+    cur.tearsGroup.add(m);
+
+    const boneName = c.bone || site.bone || "tear";
+    const t = label(`${boneName} · ${c.edges} tear${c.edges === 1 ? "" : "s"} (${c.gap_pct}%)`, "teartag " + (isBad ? "bad" : "warn"));
+    t.element.title = `${c.edges} edge${c.edges === 1 ? "" : "s"} tore (${c.gap_pct}% gap) on ${boneName}` +
+      (c.owners && c.owners.length ? ` · owners: ${c.owners.join(", ")}` : "");
+    t.position.copy(pos);
+    t.element.onclick = (e) => {
+      e.stopPropagation();
+      if (c.bone) {
+        const bi = boneByName(c.bone);
+        if (bi >= 0) selectBone(bi);
+      }
+    };
+    cur.root.add(t);
+    cur.tearLabels.push(t);
+  }
+}
+
+function renderTears() {
+  const ul = $("tearsList"); ul.innerHTML = "";
+  const a = cur && cur.audit;
+  if (!a) {
+    $("tearsVerdict").textContent = "";
+    $("tearsNote").textContent = "no audit for this model yet";
+    return;
+  }
+  $("tearsVerdict").textContent = a.error ? "?" : a.grade;
+  $("tearsVerdict").className = "v " + (a.error ? "" : a.grade.toLowerCase());
+  const sites = cur.tearSites || [];
+  if (!sites.length) {
+    $("tearsNote").textContent = "no tears in the audit";
+    return;
+  }
+  $("tearsNote").textContent = `${sites.length} tear site${sites.length === 1 ? "" : "s"} · click a pose to test`;
+  sites.forEach((site, idx) => {
+    const isComb = site.pose === "combined";
+    const title = isComb ? "Combined pose" : `${site.bone} (${site.pose === "twist" ? "twist 60°" : "bend 40°"})`;
+    const isBad = tearSeverity(site.worst_gap_pct, site.pose) === "bad";
+    const bi = site.bone ? boneByName(site.bone) : -1;
+    const li = listRow(ul, isBad ? "bad" : "warn", bi, title,
+      `${site.edges} edge${site.edges === 1 ? "" : "s"} · worst gap ${site.worst_gap_pct}%`,
+      () => applyTearPose(idx));
+    if (idx === cur.tearPoseIndex) li.classList.add("sel");
+  });
+}
+
 function updateOverlay() {
   if (!cur || !cur.overlay.visible) return;
   const s = new THREE.Matrix4(), mid = new THREE.Vector3();
@@ -843,6 +1031,25 @@ function pickBone(x, y) {
       if (d < bestD) { bestD = d; best = i; }
     }
   });
+  if (OVERLAYS[overlay] === "tears" && cur.tearSites && cur.tearsGroup) {
+    const site = cur.tearSites[cur.tearPoseIndex];
+    if (site && site.clusters) {
+      site.clusters.forEach((c) => {
+        const cp = mapTearPoint(c.at, c.at_bbox, cur.box);
+        const v = new THREE.Vector3(cp[0], cp[1], cp[2]);
+        cur.root.localToWorld(v);
+        v.project(camera);
+        if (v.z >= -1 && v.z <= 1) {
+          const sx = (v.x + 1) / 2 * rect.width + rect.left, sy = (1 - v.y) / 2 * rect.height + rect.top;
+          const d = (sx - x) ** 2 + (sy - y) ** 2;
+          if (d < 28 * 28 && c.bone) {
+            const bi = boneByName(c.bone);
+            if (bi >= 0 && d < bestD) { best = bi; bestD = d; }
+          }
+        }
+      });
+    }
+  }
   if (best >= 0) selectBone(best);
 }
 let down = null;
@@ -1208,7 +1415,20 @@ const act = {
   overlay: () => { overlay = (overlay + 1) % OVERLAYS.length; applyOverlay(); if (view === "side") frame(); },
   view: () => setView(view === "side" ? "orbit" : "side"),
   frame: () => { framing = framing === "all" ? "model" : "all"; frame(); },
-  prevBone: () => selectBone(sel - 1), nextBone: () => selectBone(sel + 1),
+  prevBone: () => {
+    if (OVERLAYS[overlay] === "tears" && cur && cur.tearSites && cur.tearSites.length > 1) {
+      applyTearPose((cur.tearPoseIndex - 1 + cur.tearSites.length) % cur.tearSites.length);
+    } else {
+      selectBone(sel - 1);
+    }
+  },
+  nextBone: () => {
+    if (OVERLAYS[overlay] === "tears" && cur && cur.tearSites && cur.tearSites.length > 1) {
+      applyTearPose((cur.tearPoseIndex + 1) % cur.tearSites.length);
+    } else {
+      selectBone(sel + 1);
+    }
+  },
   loop: () => setLoop(!loop),
   stepBack: () => stepFrame(-1), stepFwd: () => stepFrame(1),
   start: () => { if (action) { setPlaying(false); seek(0); } },
