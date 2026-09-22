@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Blender 5.2.2
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: /opt/blender
+          key: blender-5.2.2-linux-x64
+
+      - name: Install Blender 5.2.2
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /opt/blender
+          curl -sSL https://download.blender.org/release/Blender5.2/blender-5.2.2-linux-x64.tar.xz | tar -xJ -C /opt/blender --strip-components=1
+
+      - name: Configure Blender PATH
+        run: |
+          echo "/opt/blender" >> $GITHUB_PATH
+          sudo ln -sf /opt/blender/blender /usr/local/bin/blender
+
+      - name: Verify Blender Version and Tested Range
+        run: |
+          blender --version
+          python3 -c "import sys; sys.path.insert(0, 'autorig/core'); import blender; print('Detected version:', blender.version_string()); assert blender.is_tested_version(), f'Expected 5.2 LTS, got {blender.version_string()}'"
+
+      - name: Run Test Suite
+        run: |
+          python3 -m unittest discover -s tests -v
+
+      - name: Run Node Tests
+        run: |
+          node tests/viewer_logic_test.mjs
+
+      - name: Verify Headless Blender Audit Thresholds
+        run: |
+          python3 scripts/ci_audit_thresholds.py

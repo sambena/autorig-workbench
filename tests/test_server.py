@@ -105,7 +105,9 @@ class ServerTest(unittest.TestCase):
     def test_1_token_and_confinement(self):
         self.assertEqual(self.status("/api/state", token=None), 403)
         self.assertEqual(self.status("/api/state", token="wrong"), 403)
-        self.assertEqual(self.call("/api/state")["models"], [])
+        st = self.call("/api/state")
+        self.assertEqual(st["models"], [])
+        self.assertIn("blender_version", st)
         self.assertIn(self.status("/files/models/../../etc/passwd"), (400, 403, 404))
         self.assertEqual(self.status("/api/run", body={"model": "x", "step": "rm -rf"}), 400)
         self.assertEqual(self.status("/api/upload?batch=abcdefgh12&path=../evil.py", raw=b"x"), 400)
