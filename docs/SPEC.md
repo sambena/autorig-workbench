@@ -69,7 +69,8 @@ Common to all kinds:
 | `origin` | `"center"`: centre the model on the origin (swimmers, fliers). Default: feet on z=0. |
 | `skeleton` | the archetype written on the card (`quadruped`, `hexapod`, `octopod`, `serpent`, `winged`, `floater`, `rigid`, `humanoid`) |
 | `rig_folder` | where the rig is written and read (default `rigged`) |
-| `audit` | allowances: `{"combined_tears": 8, "bend_tears": 4}` loosens (or tightens) audit.py's pass limits for this model, and moves its CHECK band with them (PIPELINE.md, "Grades"). Always say why in `notes["rig.audit"]`. |
+| `audit` | allowances: `{"combined_tears": 8, "bend_tears": 4}` loosens (or tightens) audit.py's pass limits for this model, and moves its CHECK band with them (PIPELINE.md, "Grades"). Always say why in `notes["rig.audit"]`. A model with no `rig` section of its own (lifted from another pack, rigged there and only cut to budget here) puts `audit` at the top level of its rig.json, with the reason in `notes["audit"]`. |
+| `neck` | `k`: the last `k` links of the body chain before the head are the neck, named `neck_1..k` (SKELETONS.md, quadruped), so the card lists all of them as the neck. Without it only the top link is `neck`, and the rest count as spine. |
 
 `kind: "tripo"`:
 
@@ -88,6 +89,8 @@ Common to all kinds:
 | `head_line` | `[start, tip]`: the head bone runs from `start` (the spine is cut there) to `tip` (rule A) |
 | `jaw` | `{"hinge": [x,y,z], "tip": [x,y,z], "band": 0.15}`: a jaw bone; under the mouth line ahead of the hinge moves from the head to the jaw |
 | `girdle`, `girdle_reach` | roles whose first bone is really a girdle (scapula): `["leg_front"]` |
+| `move` | `{joint: [x, y, z]}`: a source joint put where it belongs (measured), before anything is built from it. For a joint the generator planted outside the body (a scapula's top on the spikes over the withers) |
+| `reparent` | `{joint: parent joint}`: a chain the source hung from the wrong joint (a moth's wing tails hung from the hips). Applied after `mirror`, so `<joint>_m` can be named |
 
 `kind: "build"`: `chains` is a list; the first chain is the body. Each chain is one of
 
@@ -110,7 +113,8 @@ Skinning options (both kinds):
 | `rigid_pieces` | loose pieces up to this fraction of the largest ride one bone whole (default 0.12) |
 | `rigid_single`, `soft` | every loose piece on one bone; chains exempt from rigid pieces |
 | `rigid_to` | `[[bone, [x0,y0,z0], [x1,y1,z1]], ...]`: a loose piece whose middle is in the box rides that bone |
-| `rigid_parts` | a machine of parts: the main piece rides the body, every other piece its nearest bone |
+| `rigid_parts` | a machine of parts: the main piece rides the body, every other piece its nearest bone. `"listed"`: only the pieces in `parts` ride their bones, everything else the body |
+| `parts` | `[{"bone", "at": [x, y, z], "verts": n}, ...]`: the loose piece of `n` vertices (within 2%) whose bounds centre is nearest `at` rides `bone` whole. For a moving part inside another (a fan's rotor in its duct), where nearest-bone cannot tell them apart. Give each part its own chain, head at its hub and length along its axle, so turning the bone about its own Y spins the part in place |
 | `hard_split` | `{"bone", "else", "above"}`: everything above a height on one bone, the rest on another (a lid) |
 | `smooth` | weight smoothing passes (a thick body's patchy bone heat) |
 | tuning | `joint_blend`, `girdle_blend`, `limb_radius`, `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
@@ -130,9 +134,11 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 
 | Field | Meaning |
 |---|---|
-| `archetype` | `walker`, `flyer`, `exploder`, `swimmer`, `turret` (write `clips/`) or `winged` (writes an export beside the rig) |
+| `archetype` | `walker`, `flyer`, `exploder`, `swimmer`, `turret`, `machine` (write `clips/`) or `winged` (writes an export beside the rig) |
 | `display`, `category` | a display name and a category, carried into the clip files |
 | `attack` | walker: `bite` (rear with forelegs raised, lunge), `discharge` (rear onto planted legs, tail arched over, a crackle, a whip forward), `shoot` / `smash` (humanoids) |
+| `windup`, `hit_rear` | walker: `windup: "head_down"` braces for a bite with the front end dropped and the whole neck (the card's neck bones) and head low, then lunges low, instead of rearing; `hit_rear` scales how far a hit rocks it back and up (default 1) |
+| `spin`, `work`, `loop` | machine: `{bone: whole turns per loop}` turned always (`spin`, clip `idle`) and also while working (`work`, clip `work`), about each bone's own length; `loop` frames (default 24) |
 | `beats`, `flap` | flyer: wingbeats per loop, the wing root's swing in degrees |
 | `loop`, `ripple`, `flicker`, `pulse` | flyer: loop length in frames, rippling wings, flickering flames, the bone that pulses (a bell) |
 | `body` | the body bone, when it is not the one the card names |

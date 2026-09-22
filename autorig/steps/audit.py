@@ -47,8 +47,10 @@ if MODEL:
     from layout import rigged_dir, leaf
     FBX = os.path.join(rigged_dir(MODEL), leaf(MODEL) + ".fbx")
     try:
-        from spec_store import SPECS
-        SPEC_AUDIT = dict(SPECS.get(MODEL, {}).get("audit", {}))
+        from spec_store import SPECS, model as spec_of
+        # rig.audit; or, for a model with no rig section of its own (one lifted from another pack, rigged there and
+        # cut to this one's budget here), a top-level "audit" in its rig.json
+        SPEC_AUDIT = dict(SPECS.get(MODEL, {}).get("audit") or spec_of(MODEL).get("audit", {}))
     except Exception:
         pass
 else:

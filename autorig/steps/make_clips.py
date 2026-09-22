@@ -109,6 +109,9 @@ class Pose:
         self.moves[bone] = self.moves.get(bone, Vector()) + Vector(delta)
 
 
+_LAST_Q = {}
+
+
 def apply(rig, pose, frame):
     """Poses every bone and keys it at this frame. Every bone is keyed on every frame: a channel an action does not
     key keeps whatever the last action left there, in Blender and in the exporter."""
@@ -125,7 +128,13 @@ def apply(rig, pose, frame):
         m = rig.rest3[name]
         pb = rig.pose[name]
         pb.rotation_mode = 'QUATERNION'
-        pb.rotation_quaternion = (m.inverted() @ total.to_matrix() @ m).to_quaternion()
+        q = (m.inverted() @ total.to_matrix() @ m).to_quaternion()
+        # keep each bone's keys on one side of the quaternion sphere: a part spinning whole turns would otherwise
+        # flip sign at every half turn, and anything interpolating between the keys would spin it back
+        prev = _LAST_Q.get(name)
+        if prev is not None and prev.dot(q) < 0: q = -q
+        _LAST_Q[name] = q.copy()
+        pb.rotation_quaternion = q
         pb.location = m.inverted() @ pose.moves[name] if name in pose.moves else Vector()
         pb.scale = pose.scales.get(name, Vector((1, 1, 1)))
     for pb in rig.pose:
@@ -575,6 +584,7 @@ class CreatureRig:
         has = lambda n: isinstance(n, str) and n in names
         self.body = body if has(body) else sk.get("body") if has(sk.get("body")) else first(names, ("body", "spine", "hips", "chest"))
         self.head = sk.get("head") if has(sk.get("head")) else first(names, ("head",))
+        self.neck = [b for b in sk.get("neck", []) if has(b)]
         self.root = "root" if "root" in names else None
         self.abdomen = [b for b in sk.get("abdomen", []) if has(b)] or sorted(n for n in names if n.startswith("abdomen"))
         # mandibles spread (yaw, by side); a jaw opens (pitch). Both are "jaws" to the clips.
@@ -638,15 +648,21 @@ def walker_clips(rig, spec):
     style = spec.get("attack", "bite")
     if rig.humanoid:
         return humanoid_walker(rig, style)
-    return creature_walker(rig, style)
+    return creature_walker(rig, style, spec)
 
 
-def creature_walker(rig, style):
+def creature_walker(rig, style, spec=None):
     L = rig.size
     stride = 0.26 * L      # how far a planted foot travels back in one stance
     lift = 0.06 * L        # how high a swinging foot clears the ground
     legless = not rig.feet
     discharge = style == "discharge"
+    spec = spec or {}
+    # windup: "rear" (up on the hind legs, forelegs raised: the default bite) or "head_down" (a big beast bracing to
+    # charge: front end dropped, neck and head lowered, then the lunge); hit_rear scales how far a hit rocks it
+    # back and up (a heavy animal barely rears)
+    head_down = spec.get("windup") == "head_down"
+    hit_rear = float(spec.get("hit_rear", 1.0))
 
     clips = {}
 
@@ -720,6 +736,8 @@ def creature_walker(rig, style):
     def attack(f, n):
         if discharge:
             return discharge_attack(f, n)
+        if head_down:
+            return charge_attack(f, n)
 
         p = Pose()
         rear = over(f, 0, windup_end - 2)
@@ -751,6 +769,32 @@ def creature_walker(rig, style):
             side = 1.0 if j.endswith(".L") else -1.0
             spread = 18.0 * rear * (1 - strike) - 8.0 * strike * (1 - recover)
             turn_jaw(p, j, side * spread)
+        return p
+
+    def charge_attack(f, n):
+        """Brace head-down, then lunge. The front end drops and the neck and head go low, the whole neck, link by
+        link, not just the face; the feet stay planted, so the legs fold under the lowered chest. On the strike it
+        drives forward low, the head coming up only into the bite: rearing on the strike read as a flinch."""
+        p = Pose()
+        rear = over(f, 0, windup_end - 2)
+        strike = over(f, windup_end, strike_end)
+        recover = over(f, strike_end, n)
+        hold = rear * (1 - strike)
+        lunge = strike * (1 - recover)
+        shiver = math.sin(f * 2.4) * over(f, windup_end - 5, windup_end) * (1 - strike)
+        p.move(rig.body, -FORWARD * (0.05 * L * hold) - UP * (0.04 * L * hold) + FORWARD * (0.14 * L * lunge))
+        p.turn(rig.body, LATERAL, 7.0 * hold - 1.5 * lunge + 0.8 * shiver)
+        necks = rig.neck or []
+        for i, b in enumerate(necks):
+            p.turn(b, LATERAL, (12.0 + 3.0 * i) * hold - 1.5 * lunge)
+        p.turn(rig.head, LATERAL, 10.0 * hold - 5.0 * lunge)
+        for a in rig.abdomen:
+            p.turn(a, LATERAL, -3.0 * hold)
+        for i, bone in enumerate(rig.tail):
+            p.turn(bone, LATERAL, (4.0 + 2.0 * i) * hold - 3.0 * lunge)
+        for j in rig.jaws:
+            side = 1.0 if j.endswith(".L") else -1.0
+            turn_jaw(p, j, side * (6.0 * hold + 20.0 * lunge))
         return p
 
     def discharge_attack(f, n):
@@ -794,9 +838,9 @@ def creature_walker(rig, style):
     def hit(f, n):
         p = Pose()
         k = math.sin(math.pi * min(1.0, f / float(n))) * (1.0 - 0.3 * f / float(n))
-        p.move(rig.body, -FORWARD * (0.05 * L * k) + UP * (0.02 * L * k))
-        p.turn(rig.body, LATERAL, -12.0 * k)
-        p.turn(rig.head, LATERAL, -14.0 * k)
+        p.move(rig.body, -FORWARD * (0.05 * L * k) + UP * (0.02 * L * k * hit_rear))
+        p.turn(rig.body, LATERAL, -12.0 * k * hit_rear)
+        p.turn(rig.head, LATERAL, -14.0 * k * hit_rear)
         for a in rig.abdomen:
             p.turn(a, LATERAL, 3.0 * k)
         for i, bone in enumerate(rig.tail):
@@ -1306,8 +1350,10 @@ def exploder_clips(rig, spec):
             p.move(body, UP * (0.10 * L * burst) - UP * (h * (0.7 * slump - bounce)))
             p.turn(body, LATERAL, -18.0 * burst + 6.0 * slump)
             p.turn(rig.head, LATERAL, -25.0 * burst + 20.0 * slump)
+            # The tail is lifted as the body sinks, so it ends lying out along the floor behind: curled down under a
+            # sunk body it went through the floor, and a corpse lifted out of the floor rested on its tip.
             for i, b in enumerate(rig.tail):
-                p.turn(b, LATERAL, (18.0 + 4.0 * i) * burst - (6.0 + 2.0 * i) * slump)
+                p.turn(b, LATERAL, (18.0 + 4.0 * i) * burst + (TAIL_LIE + 2.0 * i) * slump)
             # Legs thrown out and left splayed, so the collapse reads as flat, not crouched.
             for foot in rig.feet:
                 ahead = 1.0 if foot["name"] in rig.front else -1.0
@@ -1433,6 +1479,11 @@ def swimmer_clips(rig, spec):
 
 
 
+TOPPLE = 80.0     # the whole plant goes over from its root
+SAG = 25.0        # the stalk sags toward the floor as it lands
+POD_LIE = 40.0    # and the pod turns back onto its side, so the stalk lies between pod and roots
+
+
 def turret_clips(rig, spec):
     """A rooted thing that attacks from where it stands (a plant pod: base > stalk > pod, tendrils at its foot).
 
@@ -1481,9 +1532,16 @@ def turret_clips(rig, spec):
         return p
 
     def die(f, n):
+        """Over backwards onto its side, the whole plant, roots and all; the stalk sags and the pod shrinks.
+
+        Wilting the stalk alone from a planted base left the pod hanging on a bent trunk, and a game that keeps a
+        corpse's lowest point on the floor then stood it on its crown with the trunk in the air. Toppled from the
+        root, trunk and pod lie along the floor (make_clips' grounding puts the lowest point on it)."""
         p = Pose(); wilt = over(f, 2, 18); bounce = math.sin(math.pi * over(f, 18, 22)) * 0.08
-        for i, s in enumerate(stalk): p.turn(s, LATERAL, -(35.0 + 15.0 * i) * (wilt - bounce))
-        p.turn(pod, LATERAL, -30.0 * wilt)
+        if rig.root:
+            p.turn(rig.root, LATERAL, -TOPPLE * (wilt - bounce))
+        for i, s in enumerate(stalk): p.turn(s, LATERAL, -(SAG + 4.0 * i) * wilt)
+        p.turn(pod, LATERAL, POD_LIE * wilt)
         sh = 1.0 - 0.2 * wilt
         p.grow(pod, (sh, sh, sh))
         for bones, side in tendrils:
@@ -1516,8 +1574,29 @@ def side_fall(rig):
     return die
 
 
+def machine_clips(rig, spec):
+    """A machine of rigid parts (rig.json rigid_parts): each moving part spins about its own bone, whose head is the
+    part's hub and whose length is its axle. `spin` {bone: turns per loop} turns all the time (fans); `work` {bone:
+    turns per loop} turns as well while it works (a drill). Whole turns a loop, so the loops are seamless. Clips:
+    idle (spin), work (spin and work), both loops of `loop` frames (default 24)."""
+    n = int(spec.get("loop", 24))
+    spin = {b: float(t) for b, t in spec.get("spin", {}).items() if b in rig.names}
+    work = {b: float(t) for b, t in spec.get("work", {}).items() if b in rig.names}
+
+    def turning(parts):
+        def fn(f, frames):
+            p = Pose()
+            for b, turns in parts.items():
+                p.turn(b, rig.direction(b), 360.0 * turns * f / float(frames))
+            return p
+        return fn
+    both = dict(spin); both.update({b: both.get(b, 0.0) + t for b, t in work.items()})
+    clips = {"idle": (n, turning(spin), True), "work": (n, turning(both), True)}
+    return clips, {"windUpEnd": 0.0, "stride": 0.0, "walkFrames": n}
+
+
 CREATURE = {"walker": walker_clips, "flyer": flyer_clips, "exploder": exploder_clips, "swimmer": swimmer_clips,
-            "turret": turret_clips}
+            "turret": turret_clips, "machine": machine_clips}
 
 
 class Authored:
@@ -1599,6 +1678,9 @@ def author(key, spec, argv):
     arche = Authored(rig, spec)
     clips = arche.clips()
     made = build(rig, clips)          # IK stays live: feet are placed by their targets and the export bakes the result
+    grounded = ground_deaths(rig, mesh, clips, made)
+    if grounded:
+        made = build(rig, clips)
 
     out = os.path.join(pack, "clips")
     os.makedirs(out, exist_ok=True)
@@ -1682,6 +1764,64 @@ def build(rig, clips):
         tr.mute = False
     rest(rig)
     return made
+
+
+TAIL_LIE = 18.0
+RESTING = ("death", "explode")   # clips whose last frame is how the body lies, and stays
+
+
+def lowest_point(mesh):
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = mesh.evaluated_get(dg); me = ev.to_mesh()
+    z = min((mesh.matrix_world @ v.co).z for v in me.vertices)
+    ev.to_mesh_clear()
+    return z
+
+
+def ground_deaths(rig, mesh, clips, made):
+    """A standing creature's death ends lying on the floor it stood on: its lowest point, measured on the skinned mesh
+    in the last frame, where its lowest point was at rest. Poses are authored from bones, and a body lowered by its
+    hip height with a tail curled under it ended with the tail tip 0.19 of its size under the floor (the Exploder);
+    a game that lifts a corpse out of the floor then stood it on that tail tip. Clips that end off the floor get the
+    difference as a root move. Only for models that stand on z=0 (flyers are centred and fall
+    in the engine). Returns the clips it changed; `clips` is updated in place, to be built again."""
+    if not rig.root:
+        return {}
+    ad = rig.arm.animation_data
+    muted = [(t, t.mute) for t in ad.nla_tracks]     # the NLA tracks would stack every clip on the one measured
+    for t, _ in muted: t.mute = True
+    rest(rig)
+    floor = lowest_point(mesh)
+    size = rig.size or 1.0
+    changed = {}
+    for name, last, loops in made:
+        if abs(floor) > 0.02 * size: break
+        if name not in RESTING or loops:
+            continue
+        ad.action = bpy.data.actions[name]
+        under = []
+        for f in range(last + 1):
+            bpy.context.scene.frame_set(f)
+            bpy.context.view_layer.update()
+            under.append(floor - lowest_point(mesh))
+        d = under[-1]
+        if abs(d) < 0.005 * size:
+            continue
+        # Frame by frame: a body going under the floor is lifted as far as it has gone under, so it never sinks on
+        # the way down either; one that would end above the floor is lowered onto it, eased in over the clip.
+        lift = [max(0.0, u) if d > 0 else d * over(f, 0, last) for f, u in enumerate(under)]
+        frames, fn, lp = clips[name]
+        def lifted(f, n, fn=fn, lift=lift):
+            p = fn(f, n)
+            p.move(rig.root, UP * lift[min(f, len(lift) - 1)])
+            return p
+        clips[name] = (frames, lifted, lp)
+        changed[name] = round(d / size, 4)
+    for t, m in muted: t.mute = m
+    rest(rig)
+    if changed:
+        print("GROUNDED " + json.dumps(changed))
+    return changed
 
 
 def rest(rig):
