@@ -553,7 +553,7 @@ def make_handler(app):
             if path == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
             # ---- results viewer (gui/viewer_api.py): its code and vendored three.js need only the Host check
-            if path == "/viewer.js" or path.startswith("/vendor/"):
+            if path in viewer_api.CODE or path.startswith("/vendor/"):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 f = viewer_api.static_file(path)
                 return self._send(200, f[0], f[1]) if f else self._send(404, {"error": "not found"})
