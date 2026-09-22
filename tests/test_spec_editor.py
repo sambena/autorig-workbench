@@ -83,6 +83,29 @@ class WriterAndChecks(unittest.TestCase):
         paths = {e["path"] for e in spec_api.check(s)[0]}
         self.assertEqual(paths, {"rig.chains.1", "rig.chains.2.parent"})
 
+        # Valid stations
+        good_st = {"schema": "autorig-spec/1", "rig": {"kind": "build", "chains": [
+            {"name": "spine", "slice": [0.1, 0.9], "bones": 3, "stations": [0.1, 0.35, 0.65, 0.9]}
+        ]}}
+        errs, warns = spec_api.check(good_st)
+        self.assertEqual(errs, [])
+        self.assertEqual(warns, [])
+
+        # Invalid stations (wrong type, out of order, outside range)
+        bad_st = {"schema": "autorig-spec/1", "rig": {"kind": "build", "chains": [
+            {"name": "spine", "slice": [0.1, 0.9], "bones": 3, "stations": "invalid"}
+        ]}}
+        errs, _ = spec_api.check(bad_st)
+        self.assertIn("rig.chains.0.stations", {e["path"] for e in errs})
+
+        warn_st = {"schema": "autorig-spec/1", "rig": {"kind": "build", "chains": [
+            {"name": "spine", "slice": [0.1, 0.9], "bones": 3, "stations": [0.1, 0.8, 0.4, 1.2]}
+        ]}}
+        _, warns = spec_api.check(warn_st)
+        warn_paths = {w["path"] for w in warns}
+        self.assertIn("rig.chains.0.stations", warn_paths)
+        self.assertIn("rig.chains.0.stations.3", warn_paths)
+
     def test_check_humanoid_spec(self):
         s = {
             "schema": "autorig-spec/1",
