@@ -156,9 +156,10 @@ Done when a model with no spec goes from drop-in to a PASS audit using only clic
 
 ### P4: suggest a skeleton, and open-source readiness (5-7 days)
 
-- **Suggest a skeleton**, optional: from survey (Tripo-style or Mixamo bones, if any), `probe_tips` (the geodesic
-  tips), the model's symmetry plane and its proportions, propose an archetype and chains with tips. Heuristics first,
-  no ML or network. Success means fewer clicks, not zero.
+- **Suggest a skeleton** (done): from survey (Tripo-style or Mixamo bones, if any), `probe_tips` (geodesic tips),
+  the model's symmetry plane, and its proportions, propose an archetype and chains with tips. Pure-Python heuristics
+  in `autorig/core/suggest.py`, standalone step `autorig/steps/suggest.py`, `POST /api/spec/suggest` endpoint, and
+  **Suggest skeleton** button in the spec editor (`gui/spec_editor.html` / `gui/spec_editor.js`).
 - **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
   a flier and a prop.
 - **Docs:** screenshots in the README, CONTRIBUTING, and a JSON schema for `rig.json`.

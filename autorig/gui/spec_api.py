@@ -769,6 +769,15 @@ def post(h, app, srv, path, body):
             with open(draft, "w", encoding="utf-8") as fh: fh.write(dumps(spec))
             h._send(200, _job(app, srv, name, "flat views",
                               [("flat views of the draft", srv.blender_cmd("measure.py", name, "-out", ed, "-spec", draft), None)]))
+        elif what == "suggest":
+            try:
+                import suggest
+            except ImportError:
+                from autorig.core import suggest
+            src = body.get("source") or _load(os.path.join(layout.WORK, "source", name + ".json"))
+            surv = body.get("survey") or _load(os.path.join(layout.WORK, "survey", name + ".json"))
+            proposal = suggest.suggest_skeleton(name, source_data=src, survey_data=surv)
+            h._send(200, proposal)
         else:
             h._send(404, {"error": "not found"})
     except Conflict as e:
