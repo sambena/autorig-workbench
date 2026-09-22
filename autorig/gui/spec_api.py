@@ -52,6 +52,8 @@ RIG_FIELDS = [
       "origin. Left empty, it stands with its feet on the floor.", options=["", "center"], group="Basics"),
     F("skeleton", "Archetype on the card", "enum", "Which standard skeleton this is (docs/SKELETONS.md). Only "
       "written on the card.", options=[""] + list(ARCHETYPES), group="Basics"),
+    F("builder", "Builder script", "text", "The Python script in the model folder that rigs this model (e.g. rig_boss.py).",
+      kinds=["custom"], group="Basics", required=True),
 
     F("head", "Head bone", "joint", "The bone at the front end of the body: click the head's bone. The spine runs "
       "from the hips bone to this one.", kinds=["tripo"], group="Body", required=True),
@@ -138,11 +140,48 @@ OTHER_FIELDS = [
 ]
 KNOWN_RIG = {f.get("store", f["key"]) for f in RIG_FIELDS} | {"builder", "centre"}
 KNOWN_TOP = {"schema", "rig", "humanoid", "budget", "clips", "card", "notes"}
+HUMANOID_Z_KEYS = ("ankle", "knee", "hip", "spine", "spine1", "spine2", "arm", "neck", "head", "top")
+HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
+
+HUMANOID_FIELDS = [
+    F("forward", "Facing", "vec3", "The way the model faces in its source file (e.g. [0, -1, 0] or [0, 1, 0]).",
+      group="Humanoid"),
+    F("z.top", "Top of head", "number", "Height of the top of the head (0 floor .. 1 top).", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.head", "Head height", "number", "Height of the head joint.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.neck", "Neck height", "number", "Height of the neck joint.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.arm", "Arm height", "number", "Height of the arm / shoulder line.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.spine2", "Spine 2 height", "number", "Height of the upper spine (chest).", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.spine1", "Spine 1 height", "number", "Height of the mid spine.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.spine", "Spine height", "number", "Height of the lower spine (waist).", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.hip", "Hip height", "number", "Height of the hip joint (pelvis).", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.knee", "Knee height", "number", "Height of the knee joint.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("z.ankle", "Ankle height", "number", "Height of the ankle joint.", min=0, max=1,
+      group="Humanoid Heights", step=0.005),
+    F("x.shoulder", "Shoulder span", "number", "Span from center to shoulder (0 tip .. 0.5 center).", min=0, max=0.5,
+      group="Humanoid Spans", step=0.005),
+    F("x.elbow", "Elbow span", "number", "Span from center to elbow.", min=0, max=0.5,
+      group="Humanoid Spans", step=0.005),
+    F("x.wrist", "Wrist span", "number", "Span from center to wrist.", min=0, max=0.5,
+      group="Humanoid Spans", step=0.005),
+    F("x.knuckle", "Knuckle span", "number", "Span from center to knuckles.", min=0, max=0.5,
+      group="Humanoid Spans", step=0.005),
+    F("x.tip", "Fingertip span", "number", "Span to fingertips (0 outermost .. 0.5 center).", min=0, max=0.5,
+      group="Humanoid Spans", step=0.005),
+]
 
 
 def schema():
-    return {"schema": SCHEMA_ID, "rig": RIG_FIELDS, "other": OTHER_FIELDS, "thresholds": list(THRESHOLD_KEYS),
-            "build_chain_fields": sorted(BUILD_CHAIN_FIELDS)}
+    return {"schema": SCHEMA_ID, "rig": RIG_FIELDS, "other": OTHER_FIELDS, "humanoid": HUMANOID_FIELDS,
+            "thresholds": list(THRESHOLD_KEYS), "build_chain_fields": sorted(BUILD_CHAIN_FIELDS)}
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -275,8 +314,16 @@ def check(spec, source=None):
         _check_tripo(rig, source, E, W)
     elif kind == "build":
         _check_build(rig, E, W)
-    elif kind == "custom" and not rig.get("builder"):
-        E("rig.builder", "a custom rig names its builder script")
+    elif kind == "humanoid":
+        _check_humanoid(spec, E, W)
+    elif kind == "custom":
+        if not rig.get("builder"):
+            E("rig.builder", "a custom rig names its builder script")
+        elif not isinstance(rig["builder"], str):
+            E("rig.builder", "builder script must be a filename (e.g. rig_boss.py)")
+
+    if kind != "humanoid" and "humanoid" in spec and spec["humanoid"] is not None:
+        _check_humanoid(spec, E, W)
 
     b = spec.get("budget", "absent")
     if b != "absent" and b is not None and not (_num(b) and int(b) == b and b > 0):
@@ -366,6 +413,62 @@ def _check_build(rig, E, W):
         names.append(c.get("name"))
 
 
+def _check_humanoid(spec, E, W):
+    h = spec.get("humanoid")
+    if h is None:
+        E("humanoid", "a humanoid rig needs a humanoid section with z heights and x spans")
+        return
+    if not isinstance(h, dict):
+        E("humanoid", "humanoid must be an object")
+        return
+    for k in h:
+        if k not in ("forward", "z", "x"):
+            W("humanoid." + k, "not a humanoid setting the editor knows; kept as it is")
+    if "forward" in h and not (_vec(h["forward"]) and any(h["forward"])):
+        E("humanoid.forward", "a direction [x, y, z], e.g. [0, -1, 0]")
+    if "z" not in h or not isinstance(h["z"], dict):
+        E("humanoid.z", "z must be an object of heights: " + ", ".join(HUMANOID_Z_KEYS))
+    else:
+        z = h["z"]
+        for k in HUMANOID_Z_KEYS:
+            if k not in z:
+                E("humanoid.z." + k, "missing height %s" % k)
+            elif not _num(z[k]):
+                E("humanoid.z." + k, "a number (0 floor .. 1 top)")
+            elif not (-0.01 <= z[k] <= 1.01):
+                W("humanoid.z." + k, "outside the model's 0..1 box")
+        for k in z:
+            if k not in HUMANOID_Z_KEYS:
+                W("humanoid.z." + k, "not a standard humanoid height")
+        if all(k in z and _num(z[k]) for k in ("ankle", "knee", "hip")):
+            if not (z["ankle"] < z["knee"] < z["hip"]):
+                W("humanoid.z", "ankle should be below knee, and knee below hip")
+        if all(k in z and _num(z[k]) for k in ("hip", "spine", "spine1", "spine2", "neck", "head", "top")):
+            if not (z["hip"] <= z["spine"] < z["spine1"] < z["spine2"] < z["neck"] < z["head"] <= z["top"]):
+                W("humanoid.z", "spine heights should increase from hip to top of head")
+        if all(k in z and _num(z[k]) for k in ("spine1", "arm", "top")):
+            if not (z["spine1"] <= z["arm"] <= z["top"]):
+                W("humanoid.z.arm", "arm height is usually near the shoulders, between spine1 and neck")
+
+    if "x" not in h or not isinstance(h["x"], dict):
+        E("humanoid.x", "x must be an object of spans: " + ", ".join(HUMANOID_X_KEYS))
+    else:
+        x = h["x"]
+        for k in HUMANOID_X_KEYS:
+            if k not in x:
+                E("humanoid.x." + k, "missing span %s" % k)
+            elif not _num(x[k]):
+                E("humanoid.x." + k, "a number (0 tip .. 0.5 center)")
+            elif not (-0.01 <= x[k] <= 0.55):
+                W("humanoid.x." + k, "spans are measured from outer tip (0) towards center (0.5)")
+        for k in x:
+            if k not in HUMANOID_X_KEYS:
+                W("humanoid.x." + k, "not a standard humanoid span")
+        if all(k in x and _num(x[k]) for k in ("tip", "knuckle", "wrist", "elbow", "shoulder")):
+            if not (x["tip"] <= x["knuckle"] <= x["wrist"] <= x["elbow"] <= x["shoulder"]):
+                W("humanoid.x", "spans should increase inward: tip <= knuckle <= wrist <= elbow <= shoulder")
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Files: where the editor's own things live
 # ---------------------------------------------------------------------------------------------------------------
@@ -440,12 +543,23 @@ def bundle(srv, name):
     before = _load(os.path.join(ed, "before.json"))
     measure = os.path.join(ed, name + ".png")
     survey = _load(os.path.join(layout.WORK, "survey", name + ".json"))
+    rd = srv._quiet(layout.rigged_dir, name)
+    preview_url, preview_info = None, None
+    if rd:
+        glb = os.path.join(rd, "preview.glb")
+        if os.path.exists(glb):
+            rel = os.path.relpath(glb, layout.ROOT).replace("\\", "/")
+            preview_url = "/files/models/" + rel + "?v=%d" % int(os.path.getmtime(glb))
+            pj = os.path.join(rd, "preview.json")
+            if os.path.exists(pj):
+                preview_info = _load(pj)
     return {"name": name, "group": g, "path": path, "text": text, "base": text_hash(text), "spec": spec,
             "parse_error": parse_error, "schema": schema(), "source": source, "source_file": src_file and os.path.basename(src_file),
             "survey": survey, "rig_bones": rig_bones, "bone_from": bone_from, "rig_error": rig_log.get("error"),
             "audit": audit_summary(audit), "audit_time": audit and os.path.getmtime(os.path.join(layout.WORK, "audit", name + ".json")),
             "spots": spots, "share": share, "before": before,
             "measure": work_url(layout, measure) + "?v=%d" % int(os.path.getmtime(measure)) if os.path.exists(measure) else None,
+            "preview_url": preview_url, "preview_info": preview_info,
             "backup": os.path.exists(path + ".bak")}
 
 

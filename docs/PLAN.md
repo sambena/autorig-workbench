@@ -101,16 +101,16 @@ Done: the viewer, the spec editor (the spec form) and Save and re-rig (Rig again
     axes 6/7 or one hat axis), the left stick with a radial deadzone moving through models and clips like the
     D-pad, held directions repeating, triggers stepping frames. The logic is `gui/viewer_logic.js`, plain and
     tested under Node (`tests/viewer_logic_test.mjs`); a page can replace `navigator.getGamepads` to simulate a pad.
-- **Graded audits** (done): PASS / CHECK / FAIL from tear counts, the gap the worst tear opens, bleed and head share
-  (PIPELINE.md, "Grades"); the model list's badges show the grade; **Audit all** audits every rigged model in turn
-  (live log, Cancel) and shows a table worst first, each row opening its model (`run.py audit-all` from the command
-  line). For the viewer to draw next, from `/api/audit?name=<model>` (the audit JSON):
-  - an overlay "Tears" that puts a marker at each of `tear_sites[].clusters[].at`, sized by `edges` and coloured by
+- **Graded audits and Tears overlay** (done): PASS / CHECK / FAIL from tear counts, the gap the worst tear opens, bleed
+  and head share (PIPELINE.md, "Grades"); the model list's badges show the grade; **Audit all** audits every rigged model
+  in turn (live log, Cancel) and shows a table worst first, each row opening its model (`run.py audit-all` from the
+  command line). In the 3D viewer (`viewer.html`, `viewer.js`, `viewer_logic.js`):
+  - an overlay "Tears" puts a marker at each of `tear_sites[].clusters[].at`, sized by `edges` and coloured by
     `gap_pct` (amber under the pose's CHECK gap, red over), labelled with the cluster's `bone`; the combined pose
     first, and a list of the posed bones to step through (`bone`, `rotation_deg`) that poses that one bone as the
     audit did (40 degrees about its own X, or a 60-degree twist about Y) so the tear opens on screen;
-  - `at` is in the imported FBX's world space (Blender Z up, the FBX's units); map it into the preview's space the
-    way the preview's own export maps the rig, or fall back to `at_bbox` against the mesh's bounding box;
+  - `at` is in the imported FBX's world space (Blender Z up, the FBX's units), mapped into the preview's glTF space,
+    with a fallback to `at_bbox` against the mesh's bounding box;
   - the worst bone (`tears.worst_bone`) selected and highlighted in the skeleton overlay when the viewer opens from
     a CHECK or FAIL.
 - **Source view** (`steps/source_preview.py`, done): the source export as it came, `<work>/source/<model>.glb` (mesh
@@ -131,11 +131,12 @@ Done: the viewer, the spec editor (the spec form) and Save and re-rig (Rig again
   each torn bone came from.
 - **Save and re-rig** (done) saves, keeps the current audit as "before", runs rig, trim, audit, clips (when the spec
   names an archetype) and preview as one job with the live log, then shows the audit before and after, value by value,
-  and View results. Still to do: humanoid and custom kinds' own settings in the form (they are edited as JSON there),
-  and a clip playing in the editor itself (View results has it).
+  and View results. Form settings for `humanoid` (facing, Z heights, X spans with 3D/flat picking) and `custom` (builder
+  script) are directly editable in the form with schema validation; and animated clip playback is embedded directly
+  in the editor with Source/Rigged view switching, clip selection, play/pause, and scrub bar.
 
 Done when a user changes an option in the form, presses Rig again, and sees the new skeleton in 3D, a clip playing on
-it, and the audit delta, without touching a text file.
+it, and the audit delta, without touching a text file (done).
 
 ### P3: click-to-place joints (8-10 days)
 

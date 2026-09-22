@@ -311,13 +311,164 @@ const spotsG = new THREE.Group(); scene.add(spotsG);
 const pickables = [];                   // joint spheres (userData.joint)
 const labels = {};                      // joint name -> CSS2DObject
 
+let riggedScene = null;
+let riggedClips = [];
+let mixer = null;
+let action = null;
+let curClip = 0;
+let isPlaying = true;
+let viewMode = "source";
+let scrubbing = false;
+const clock = new THREE.Clock();
+
 function tick() {
   requestAnimationFrame(tick);
+  const delta = clock.getDelta();
+  if (mixer && isPlaying && viewMode === "rigged") {
+    mixer.update(delta);
+    updateClipUI();
+  }
   controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
 tick();
+
+function updateClipUI() {
+  if (!action || !riggedClips.length) return;
+  const clip = riggedClips[curClip];
+  if (!clip) return;
+  const dur = clip.duration;
+  const t = (action.time % dur + dur) % dur;
+  const elTime = $("clipTime");
+  if (elTime) elTime.textContent = `${t.toFixed(2)} / ${dur.toFixed(2)} s`;
+  const elScrub = $("clipScrub");
+  if (elScrub && !scrubbing) {
+    elScrub.value = dur > 0 ? Math.round((t / dur) * 1000) : 0;
+  }
+}
+
+async function loadRigged(url) {
+  if (riggedScene) {
+    scene.remove(riggedScene);
+    clearGroup(riggedScene);
+    riggedScene = null;
+  }
+  if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
+  action = null;
+  riggedClips = [];
+  try {
+    const gltf = await new GLTFLoader().loadAsync(withToken(url));
+    riggedScene = gltf.scene;
+    riggedClips = gltf.animations || [];
+    riggedScene.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) { m.side = THREE.DoubleSide; m.transparent = true; }
+      }
+      if (o.isSkinnedMesh) {
+        o.frustumCulled = false;
+      }
+    });
+    scene.add(riggedScene);
+    mixer = new THREE.AnimationMixer(riggedScene);
+    populateClips();
+    if (riggedClips.length > 0) {
+      playClip(0);
+    }
+    riggedScene.visible = viewMode === "rigged";
+    setOpacity();
+  } catch (e) {
+    console.error("Could not load rigged preview:", e);
+  }
+}
+
+function populateClips() {
+  const sel = $("clipSelect");
+  if (!sel) return;
+  if (!riggedClips.length) {
+    sel.innerHTML = `<option value="0">bind pose (no clips)</option>`;
+    sel.disabled = true;
+    $("clipPlay").disabled = true;
+    $("clipScrub").disabled = true;
+    $("clipTime").textContent = "bind pose";
+    return;
+  }
+  sel.disabled = false;
+  $("clipPlay").disabled = false;
+  $("clipScrub").disabled = false;
+  sel.innerHTML = riggedClips.map((c, i) => `<option value="${i}">${esc(c.name || "clip " + (i + 1))} (${c.duration.toFixed(2)}s)</option>`).join("");
+  sel.value = String(curClip);
+}
+
+function playClip(idx) {
+  if (!mixer || !riggedClips.length) return;
+  curClip = Math.max(0, Math.min(idx, riggedClips.length - 1));
+  const clip = riggedClips[curClip];
+  if (!clip) return;
+  if (action) action.stop();
+  action = mixer.clipAction(clip);
+  action.reset();
+  action.play();
+  isPlaying = true;
+  $("clipPlay").textContent = "❚❚";
+  $("clipPlay").title = "Pause (Space)";
+  const sel = $("clipSelect");
+  if (sel) sel.value = String(curClip);
+  updateClipUI();
+}
+
+function togglePlay() {
+  if (!action) {
+    if (riggedClips.length) playClip(curClip);
+    return;
+  }
+  isPlaying = !isPlaying;
+  $("clipPlay").textContent = isPlaying ? "❚❚" : "▶";
+  $("clipPlay").title = isPlaying ? "Pause (Space)" : "Play (Space)";
+}
+
+function seekClip(frac) {
+  if (!action || !riggedClips.length) return;
+  const clip = riggedClips[curClip];
+  if (!clip) return;
+  action.time = frac * clip.duration;
+  mixer.update(0);
+  updateClipUI();
+}
+
+async function setViewMode(mode) {
+  viewMode = mode;
+  $("vSource").classList.toggle("on", mode === "source");
+  $("vRigged").classList.toggle("on", mode === "rigged");
+  $("clipBar").style.display = mode === "rigged" ? "inline-flex" : "none";
+
+  if (mode === "rigged") {
+    if (model) model.visible = false;
+    skel.visible = false;
+    marks.visible = false;
+    spotsG.visible = false;
+    if (!riggedScene && B && B.preview_url) {
+      await loadRigged(B.preview_url);
+    }
+    if (riggedScene) {
+      riggedScene.visible = true;
+      if (riggedClips.length && (!action || !action.isRunning())) {
+        playClip(curClip);
+      }
+    }
+  } else {
+    if (model) model.visible = true;
+    skel.visible = true;
+    marks.visible = true;
+    spotsG.visible = true;
+    if (riggedScene) riggedScene.visible = false;
+    if (action) action.stop();
+    isPlaying = false;
+  }
+}
 
 async function loadModel(url) {
   const gltf = await new GLTFLoader().loadAsync(withToken(url));
@@ -340,6 +491,11 @@ async function loadModel(url) {
 function setOpacity() {
   const a = Number($("opacity").value);
   for (const o of meshes) for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m.opacity = a; m.depthWrite = a > 0.95; }
+  if (riggedScene) {
+    riggedScene.traverse((o) => {
+      if (o.isMesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m.opacity = a; m.depthWrite = a > 0.95; m.transparent = a < 1; }
+    });
+  }
 }
 $("opacity").oninput = setOpacity;
 
@@ -474,6 +630,25 @@ function pointFields() {
   });
   if (Array.isArray(R.head_line)) out.push({ pts: R.head_line, col: 0xd070ff, name: "head line", line: true });
   if (R.jaw && R.jaw.hinge) out.push({ pts: [R.jaw.hinge, R.jaw.tip].filter(Boolean), col: 0xe0508a, name: "jaw", line: true });
+  if (draft.humanoid) {
+    const H = draft.humanoid;
+    if (H.z && typeof H.z === "object") {
+      const armZ = typeof H.z.arm === "number" ? H.z.arm : 0.77;
+      for (const [k, lv] of Object.entries(H.z)) {
+        if (typeof lv === "number") {
+          out.push({ pts: [[0.35, 0.5, lv], [0.65, 0.5, lv]], col: 0x5b8ff0, name: k + " (" + lv.toFixed(2) + ")", line: true });
+        }
+      }
+      if (H.x && typeof H.x === "object") {
+        for (const [k, sp] of Object.entries(H.x)) {
+          if (typeof sp === "number") {
+            out.push({ pts: [[sp, 0.5, armZ]], col: 0x4cc9f0, name: k + ".R (" + sp.toFixed(2) + ")" });
+            out.push({ pts: [[1 - sp, 0.5, armZ]], col: 0x4cc9f0, name: k + ".L (" + sp.toFixed(2) + ")" });
+          }
+        }
+      }
+    }
+  }
   return out;
 }
 
@@ -644,6 +819,20 @@ const pickers = {
       cur[1] = r3(lo); cur[2] = r3(hi); setPath(path, cur); endPick();
     } };
   },
+  height: (path, label) => ({
+    label,
+    text: label + ": click on the model or flat views to pick height (Z)",
+    point: (u) => { setPath(path, Math.round(u[2] * 1000) / 1000); endPick(); },
+    flat: (u) => setPath(path, Math.round(u[2] * 1000) / 1000),
+    current: () => [0.5, 0.5, getPath(path) ?? 0.5]
+  }),
+  span: (path, label) => ({
+    label,
+    text: label + ": click on an arm/hand or flat views to pick span (X)",
+    point: (u) => { setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000); endPick(); },
+    flat: (u) => setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000),
+    current: () => [getPath(path) ?? 0.2, 0.5, 0.7]
+  }),
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -871,17 +1060,100 @@ function buildChains(chains) {
   return h + `<button class="small" data-act="addrow" data-path="${P(path)}" data-v='${esc(JSON.stringify(chains.length ? { name: "", tip: [0.5, 0.5, 0.5] } : { name: "spine", slice: [0.1, 0.9], bones: 4 }))}'>+ Add a chain</button>`;
 }
 
+function humanoidHtml() {
+  const H = draft.humanoid || {};
+  let h = `<div class="group" data-group="Humanoid"><h3>Humanoid</h3><div class="fields">`;
+  if (!draft.humanoid) {
+    h += `<div class="note info">This rig is kind: humanoid but has no humanoid section yet.</div>` +
+         `<div style="margin:6px 0"><button class="small primary" data-act="inithumanoid">+ Initialize standard humanoid proportions</button></div>`;
+    return h + `</div></div>`;
+  }
+  // Facing
+  const dirs = [["[0,-1,0]", "-Y (facing front)"], ["[0,1,0]", "+Y (facing back)"], ["[1,0,0]", "+X"], ["[-1,0,0]", "-X"]];
+  const curF = H.forward ? JSON.stringify(H.forward) : "";
+  const { e: fe } = errsAt(["humanoid", "forward"]);
+  h += `<div class="field ${fe.length ? "err" : ""}"><div class="lab">Facing</div>` +
+       `<div class="help">The direction the source sculpt faces. Standard humanoid rigs expect -Y.</div>` +
+       `<div class="chips">${dirs.map(([d, l]) => `<button class="small ${curF === d ? "on" : ""}" data-act="setjson" data-path="${P(["humanoid", "forward"])}" data-v="${esc(d)}">${l}</button>`).join("")}</div>` +
+       fe.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") + `</div>`;
+
+  // Heights (Z)
+  const zKeys = [
+    ["top", "Top of head", "top of skull / helmet (usually 1.0)"],
+    ["head", "Head joint", "base of skull / chin level"],
+    ["neck", "Neck joint", "base of neck"],
+    ["arm", "Arm height", "shoulder level where arms attach"],
+    ["spine2", "Spine 2 (chest)", "upper chest"],
+    ["spine1", "Spine 1 (mid spine)", "mid-back / ribcage"],
+    ["spine", "Spine (waist)", "narrowest part of waist"],
+    ["hip", "Hip (pelvis)", "hip joints / pelvis"],
+    ["knee", "Knee joint", "kneecap level"],
+    ["ankle", "Ankle joint", "ankle bones / top of foot"]
+  ];
+  const { e: ze, w: zw } = errsAt(["humanoid", "z"]);
+  h += `<div class="field ${ze.length ? "err" : ""}"><div class="lab">Heights (Z)</div>` +
+       `<div class="help">Heights as 0 (floor) to 1 (top of head). Click Pick to click points in 3D or flat views.</div>` +
+       ze.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") +
+       zw.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("");
+  for (const [k, lbl, desc] of zKeys) {
+    const val = (H.z || {})[k];
+    const path = ["humanoid", "z", k];
+    const { e: ke } = errsAt(path);
+    h += `<div class="sub-row ${ke.length ? "err" : ""}"><span style="width:115px" title="${esc(desc)}"><b>${esc(lbl)}</b></span>` +
+         `<input type="number" step="0.005" min="0" max="1" data-set="num" data-path="${P(path)}" value="${val ?? ""}" style="width:70px">` +
+         pickBtn("height", path, lbl) +
+         `<span class="muted grow" style="font-size:11px">${esc(desc)}</span>` +
+         ke.map((x) => `<div class="ferr" style="width:100%">${esc(x.message)}</div>`).join("") +
+         `</div>`;
+  }
+  h += `</div>`;
+
+  // Spans (X)
+  const xKeys = [
+    ["shoulder", "Shoulder span", "center to shoulder joint"],
+    ["elbow", "Elbow span", "center to elbow"],
+    ["wrist", "Wrist span", "center to wrist joint"],
+    ["knuckle", "Knuckle span", "center to base of fingers"],
+    ["tip", "Fingertip span", "outermost fingertips (usually 0.0)"]
+  ];
+  const { e: xe, w: xw } = errsAt(["humanoid", "x"]);
+  h += `<div class="field ${xe.length ? "err" : ""}"><div class="lab">Spans (X)</div>` +
+       `<div class="help">Distance from center (0 outermost tip .. 0.5 center). Click Pick to click an arm/hand in 3D or flat views.</div>` +
+       xe.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") +
+       xw.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("");
+  for (const [k, lbl, desc] of xKeys) {
+    const val = (H.x || {})[k];
+    const path = ["humanoid", "x", k];
+    const { e: ke } = errsAt(path);
+    h += `<div class="sub-row ${ke.length ? "err" : ""}"><span style="width:115px" title="${esc(desc)}"><b>${esc(lbl)}</b></span>` +
+         `<input type="number" step="0.005" min="0" max="0.5" data-set="num" data-path="${P(path)}" value="${val ?? ""}" style="width:70px">` +
+         pickBtn("span", path, lbl) +
+         `<span class="muted grow" style="font-size:11px">${esc(desc)}</span>` +
+         ke.map((x) => `<div class="ferr" style="width:100%">${esc(x.message)}</div>`).join("") +
+         `</div>`;
+  }
+  h += `</div>`;
+
+  h += `</div></div>`;
+  return h;
+}
+
 function paneRig() {
   const S = B.schema;
   let h = "";
   if (B.parse_error) h += `<div class="note">rig.json on disk cannot be read (${esc(B.parse_error)}). The form starts from an empty spec; Save replaces the file (the old one is kept as rig.json.bak).</div>`;
   if (!B.text) h += `<div class="note info">This model has no rig.json yet. Fill in the fields and press Save.</div>`;
-  if (kind() === "humanoid" || kind() === "custom") h += `<div class="note info">The ${esc(kind())} kind's own settings (the humanoid section, or the builder script) are edited in the Changes tab for now.</div>`;
   const groups = {};
   for (const f of S.rig) if (!f.kinds || f.kinds.includes(kind())) (groups[f.group] ||= []).push(f);
   const shut = JSON.parse(sessionStorage.getItem("shut") || '["Tuning"]');
   for (const [g, fs] of Object.entries(groups)) {
     h += `<div class="group ${shut.includes(g) ? "shut" : ""}" data-group="${esc(g)}"><h3>${esc(g)}</h3><div class="fields">${fs.map(fieldHtml).join("")}</div></div>`;
+    if (g === "Basics" && kind() === "humanoid") {
+      h += humanoidHtml();
+    }
+  }
+  if (!groups["Basics"] && kind() === "humanoid") {
+    h += humanoidHtml();
   }
   h += `<div class="group ${shut.includes("Output") ? "shut" : ""}" data-group="Output"><h3>Output</h3><div class="fields">${S.other.map(otherHtml).join("")}</div></div>`;
   h += `<datalist id="roles">${ROLES.map((r) => `<option value="${r}">`).join("")}</datalist>`;
@@ -993,7 +1265,16 @@ function drawFlat() {
     const g = cv.getContext("2d"), tw = cv.width / 3, th = cv.height;
     g.clearRect(0, 0, cv.width, cv.height);
     const dot = (u, col, r) => { for (let t = 0; t < 3; t++) { const [x, y] = flatPix(t, u); g.fillStyle = col; g.beginPath(); g.arc(t * tw + x * tw, y * th, r, 0, 7); g.fill(); } };
-    for (const f of pointFields()) for (const u of f.pts) if (Array.isArray(u)) dot(u, hex(f.col), 3.5);
+    for (const f of pointFields()) {
+      if (f.line && f.pts.length === 2 && Array.isArray(f.pts[0]) && Array.isArray(f.pts[1])) {
+        g.strokeStyle = hex(f.col); g.lineWidth = 1.5;
+        for (let t = 0; t < 3; t++) {
+          const [x0, y0] = flatPix(t, f.pts[0]), [x1, y1] = flatPix(t, f.pts[1]);
+          g.beginPath(); g.moveTo(t * tw + x0 * tw, y0 * th); g.lineTo(t * tw + x1 * tw, y1 * th); g.stroke();
+        }
+      }
+      for (const u of f.pts) if (Array.isArray(u)) dot(u, hex(f.col), 3.5);
+    }
     for (const b of rig().rigid_to || []) if (Array.isArray(b[1]) && Array.isArray(b[2])) { dot(b[1], "#ff9f1c", 3); dot(b[2], "#ff9f1c", 3); }
     const cur = pick && pick.current && pick.current();
     if (Array.isArray(cur)) { dot(cur, "#000", 6); dot(cur, "#fff", 3.5); }
@@ -1039,7 +1320,9 @@ function paneRun() {
   if (job && job.state === "done" && job.step === "save and re-rig") {
     const pair = B.before && B.audit_time > B.before.time;
     h += `<h3 style="margin:8px 0 4px">${pair ? "Before and after" : "The audit (the first one: nothing to compare with yet)"}</h3>` + (pair ? verdictTable(B.audit, B.before) : verdictTable(B.audit));
-    h += `<div class="chips" style="margin-top:6px"><button class="primary" data-act="view">View results</button><button data-act="tab" data-tab="audit">Where it tears</button></div>`;
+    h += `<div class="chips" style="margin-top:6px">` +
+         (B.preview_url ? `<button class="primary" data-act="playclip">▶ Play clip in editor</button>` : "") +
+         `<button class="${B.preview_url ? "" : "primary"}" data-act="view">View results</button><button data-act="tab" data-tab="audit">Where it tears</button></div>`;
   }
   return h;
 }
@@ -1080,6 +1363,15 @@ function act(el) {
     o[role] ||= [];
     setPath(["rig", "chains"], o, { keepEmpty: true });
     const p = pickers.joints(["rig", "chains", role], "Chain " + role); p.path = ["rig", "chains", role]; startPick(p);
+  } else if (a === "inithumanoid") {
+    draft.humanoid = {
+      forward: [0, -1, 0],
+      z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
+      x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
+    };
+    changed();
+  } else if (a === "playclip") {
+    setViewMode("rigged");
   } else if (a === "spot") { const s = B.spots.find((x) => x.bone === el.dataset.bone && x.mode === el.dataset.mode); if (s) showSpot(s); }
   else if (a === "measure") runMeasure();
   else if (a === "flatbig") { flatBig = !flatBig; renderPane(); }
@@ -1128,6 +1420,14 @@ function kindChanged() {
   const R = rig();
   if (R.kind === "build" && !Array.isArray(R.chains)) { delete R.chains; R.chains = []; changed(); }
   if (R.kind === "tripo" && Array.isArray(R.chains)) { delete R.chains; changed(); }
+  if (R.kind === "humanoid" && !draft.humanoid) {
+    draft.humanoid = {
+      forward: [0, -1, 0],
+      z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
+      x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
+    };
+    changed();
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1198,7 +1498,12 @@ function follow(j) {
     redraw();
     if (job.step === "source view" && SRC && !model) await loadModel(SRC.glb_url).catch(() => {});
     if (job.step === "source view") { redraw(); frameView([0.35, -1, 0.3]); }
-    if (job.step === "save and re-rig" && job.state === "done") tab = "run";
+    if (job.step === "save and re-rig" && job.state === "done") {
+      tab = "run";
+      if (B.preview_url) {
+        await loadRigged(B.preview_url);
+      }
+    }
     if (job.step === "flat views") tab = "flat";
     renderTabs(); renderPane(); runCheck();
   });
@@ -1225,7 +1530,16 @@ $("back").href = "/?t=" + encodeURIComponent(TOKEN) + "#model=" + encodeURICompo
 function startDraft() {
   if (B.spec) return clone(B.spec);
   const sk = B.source ? B.source.skeleton : B.survey ? B.survey.skeleton : "none";
-  return { schema: "autorig-spec/1", rig: { kind: sk === "tripo" ? "tripo" : sk === "mixamo" ? "humanoid" : "build" } };
+  const k = sk === "tripo" ? "tripo" : sk === "mixamo" ? "humanoid" : "build";
+  const d = { schema: "autorig-spec/1", rig: { kind: k } };
+  if (k === "humanoid") {
+    d.humanoid = {
+      forward: [0, -1, 0],
+      z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
+      x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
+    };
+  }
+  return d;
 }
 
 async function reload(fresh) {
@@ -1237,6 +1551,14 @@ async function reload(fresh) {
   $("sub").textContent = `${B.group || "(root)"} · ${B.source_file || "no source"} · ${B.text ? "rig.json" : "no rig.json yet"}` +
                          (SRC ? ` · ${SRC.skeleton === "none" ? "no skeleton" : SRC.joints.length + " source bones"}` : "");
   $("bView").disabled = !B.audit && !B.rig_bones.length;
+  const btnRigged = $("vRigged");
+  if (btnRigged) {
+    btnRigged.disabled = !B.preview_url;
+    btnRigged.title = B.preview_url ? "Rigged mesh and animated clips" : "Rig the model first to see preview and clips";
+  }
+  if (B.preview_url && viewMode === "rigged") {
+    await loadRigged(B.preview_url);
+  }
 }
 
 function message(big, sub, act) {
@@ -1263,10 +1585,27 @@ async function main() {
     redraw();
     frameView([0.35, -1, 0.3]);
   }
+  if (B.preview_url) {
+    loadRigged(B.preview_url).catch(() => {});
+  }
+  $("vSource").onclick = () => setViewMode("source");
+  $("vRigged").onclick = () => setViewMode("rigged");
+  $("clipPlay").onclick = togglePlay;
+  $("clipSelect").onchange = (e) => playClip(Number(e.target.value));
+  const scrubEl = $("clipScrub");
+  if (scrubEl) {
+    scrubEl.onpointerdown = () => { scrubbing = true; };
+    scrubEl.onpointerup = () => { scrubbing = false; };
+    scrubEl.oninput = (e) => seekClip(Number(e.target.value) / 1000);
+  }
   document.body.dataset.ready = "1";            // for tests and screenshots: the page has what it needs
   // for tests and screenshots: the draft, and where a 0..1 point or a joint is on the screen
   window.specEditor = {
     draft: () => clone(draft),
+    viewMode: () => viewMode,
+    setViewMode,
+    clips: () => riggedClips.map((c) => c.name),
+    playClip,
     screen: (u, isJoint) => {
       const p = V(isJoint ? (joint(u) || L.virtual[u]).head || L.virtual[u].pos : F.fromUnit(u)).project(camera);
       const r = renderer.domElement.getBoundingClientRect();
