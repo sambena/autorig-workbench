@@ -33,6 +33,15 @@ A model is named by its folder, and names are unique across the root.
 Every section is optional. A model with no `rig` section can still be surveyed and its facing rendered; the GUI greys
 out Rig and says why.
 
+**The spec editor** (Edit spec in the GUI, README) edits this file by clicking: bones on the source model's own
+skeleton, points on the model or on the flat views. Its form is built from the schema in `gui/spec_api.py`
+(`RIG_FIELDS`, with a label and help for each field below), which also checks a spec before it is saved: the
+`schema` line, each field's type and range, the source's own bone names (with the `<bone>_m` copies `mirror` makes),
+a head and hips that are two bones, a build chain placed exactly one way, and an audit allowance with its reason in
+`notes["rig.audit"]`. Fields it does not know are kept and only warned about. It writes the file two-space indented,
+one key a line for the top level and each section, anything that fits in 160 columns on one line, and a list of
+chains one chain a line (the style of the files in this document); the file it replaces is kept as `rig.json.bak`.
+
 ### Coordinates
 
 Points in a spec are `[x, y, z]` in 0..1 of the model's bounds **after** the tool has turned it to face -Y
@@ -67,10 +76,10 @@ Common to all kinds:
 | Field | Meaning |
 |---|---|
 | `head`, `hips` | joints at the two ends of the body (which way it faces; the spine runs between them) |
+| `chains` | `{role: [first joints]}`: each role lists the first joint of every limb that plays it (both wings' first joints for a pair); a chain runs from its first joint down the deepest line of joints below it, and stops at another named chain or a leg. Chains not named are guessed: off the head an ear or a jaw, off the rump a tail, otherwise an extra chain |
 | `delete` | joints (with everything under them) to throw away |
 | `mirror` | chains to copy across the centre plane (the new joints are named `<joint>_m`) |
 | `legs` | joints at the top of each leg; these get IK foot controls |
-| `chains` | `{role: [top joints]}` to name other chains (tail, ear, jaw, wing...); unnamed ones are guessed |
 | `shell` | a rigid body on legs: everything the legs do not own goes to this joint's bone |
 | `nodeform` | joints whose bones carry no skin |
 | `body: "single"` | a shell on legs: one rigid body bone with the listed limbs hanging off it; needs `forward` |

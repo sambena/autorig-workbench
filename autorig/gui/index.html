@@ -206,7 +206,7 @@ function renderModel() {
   const running = state.running;
   let h = `<div class="row"><h3 style="margin:0;font-size:17px">${esc(m.name)}</h3><span class="meta">${esc(m.group || "(root)")}` +
           ` · ${esc(m.kind || "no spec")}${m.source ? " · " + esc(m.source) : ""}${m.budget ? " · budget " + m.budget : " · full resolution"}</span>` +
-          `<span style="flex:1"></span>${viewButton(m)}<button id="open">Open output folder</button></div>`;
+          `<span style="flex:1"></span>${editButton(m)}${viewButton(m)}<button id="open">Open output folder</button></div>`;
   h += `<div class="steps">`;
   for (const [k, label] of STEPS) {
     const why = m.steps[k];
@@ -220,6 +220,13 @@ function renderModel() {
   p.querySelectorAll("button[data-step]").forEach((b) => b.onclick = () => run(b.dataset.step));
   $("#open").onclick = () => api("/api/open", {model: m.name}).catch((e) => alert(e.message));
   p.querySelectorAll("button[data-view]").forEach((b) => b.onclick = () => window.open(viewerUrl(b.dataset.view), "_blank"));
+  p.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
+}
+
+// ---- spec editor (spec_editor.html): rig.json as a form beside the source model and its own skeleton
+function editorUrl(name) { return "/spec_editor.html?model=" + encodeURIComponent(name) + "&t=" + encodeURIComponent(TOKEN); }
+function editButton(m) {
+  return `<button class="${m.spec ? "" : "primary"}" data-edit="${esc(m.name)}" title="${m.spec ? "edit rig.json by clicking bones on the source model" : "no rig.json yet: make one by clicking bones on the source model"}">Edit spec</button>`;
 }
 
 // ---- results viewer (viewer.html): the model in 3D with its clips; it says "run Preview first" when it has no preview.glb
@@ -289,6 +296,7 @@ function renderResults(d) {
   const r = $("#results"); r.innerHTML = h;
   r.querySelectorAll("button[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderResults(d); select_hash(); });
   r.querySelectorAll("img").forEach((i) => i.onclick = () => { $("#zoom img").src = i.src; $("#zoom").style.display = "flex"; });
+  r.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
 }
 $("#zoom").onclick = () => $("#zoom").style.display = "none";
 
@@ -342,7 +350,7 @@ function body(d) {
     return h;
   }
   if (tab === "spec") {
-    let h = `<div class="meta">${esc(d.dir)}</div>`;
+    let h = `<div class="row"><span class="meta grow">${esc(d.dir)}</span><button class="primary" data-edit="${esc(d.status.name)}">Edit spec</button></div>`;
     const notes = d.notes || {};
     if (Object.keys(notes).length) h += `<h3>Notes</h3><table class="kv">${Object.entries(notes).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>`;
     h += `<h3>rig.json</h3><pre class="log" style="height:auto;max-height:340px">${esc(d.spec ? JSON.stringify(d.spec, null, 1) : "none yet")}</pre>`;

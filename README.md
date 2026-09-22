@@ -5,10 +5,11 @@ Auto-rigging for sculpted and generated models, run headless in Blender, with a 
 it to an engine budget, audits the rig (PASS / CHECK / FAIL, with pictures), authors clips for its archetype, and writes a model
 card an engine importer can read. Blender never opens a window.
 
-**Status: early (alpha).** The pipeline, the GUI and the 3D results viewer work. Writing a model's `rig.json` is
-still done by hand; a point-and-click spec editor (pick bones in 3D, save and re-rig, before/after audit) is being
-built next. Audits are graded PASS / CHECK / FAIL, and **Audit all** grades the whole collection; the viewer does not
-mark tear sites yet. Expect rough edges; issues and pull requests are welcome.
+**Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
+3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
+grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. Expect
+rough edges; issues and pull requests are welcome.
+
 
 ## Quick start
 
@@ -24,7 +25,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
    or choose files or a folder; or paste paths on this computer (copied, never moved). It lands in
    `<models>/<group>/<name>/`.
 2. **Survey** shows what the source holds and renders four views to read its facing from.
-3. Write its **`rig.json`** (docs/SPEC.md) beside it: the kind of rig, the way it faces, its chains.
+3. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
 4. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
    time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process only).
 5. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
@@ -45,6 +46,27 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
    overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
    (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
 
+## The spec editor
+
+**Edit spec** (on a model, and in its Spec and card tab) opens `spec_editor.html`: the source model as it came, with its
+own skeleton drawn over it and every bone named (the first time, a few seconds' Blender step makes that view), and
+the spec as a form beside it. Nothing needs Blender or JSON:
+
+- **Click a bone** to see what it is and what the spec makes of it, with one-click jobs: make it the head or the hips,
+  a leg, throw it away (with everything under it), mirror a one-sided limb from it, or start a chain (wing, leg,
+  tail...) at it. The chains the spec makes are coloured on the skeleton the way the rig step will read them; limbs
+  it would only guess are grey.
+- **Pick** beside a field, then click bones (Head bone, Chains, Legs, Mirror...) or points on the model (a head line,
+  a jaw, a limb's tip, the corners of a rigid part). A point lands halfway through the part under the mouse. The
+  **Flat views** tab draws the side, front and top of the model on the 0..1 grid with the rig the draft would build,
+  and clicks there set points exactly.
+- Every change is checked (a bone the source does not have, the head and hips the same bone, an audit allowance
+  with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
+  `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
+- **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
+  next to the one before, value by value; the red balls in the view are where the audit's bends tore, each with the
+  source bone it came from. **View results** opens the 3D viewer.
+
 ## Command line
 
     set AUTORIG_MODELS=D:\models
@@ -52,6 +74,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
     python autorig/cli/run.py audit-all                 audit every rigged model, worst first (exit 1 on any FAIL)
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
     python autorig/cli/run.py preview wolf              rigged/preview.glb for the 3D viewer (pipeline.py -preview too)
+    blender -b --python autorig/steps/source_preview.py -- -only wolf    the spec editor's view of the source
     python autorig/cli/run.py help                      every step by name, for a launcher in the collection
 
 - `AUTORIG_MODELS`: the models root (default `samples/`). A model is a folder with a source export, at the root or
@@ -64,16 +87,18 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
     autorig/gui/     server.py  index.html                 the local GUI
                      viewer.html  viewer.js  viewer_logic.js  viewer_api.py
                                                            the 3D results viewer
+                     spec_editor.html  .js  spec_api.py    the spec editor
                      vendor/three/                         three.js 0.186.0 (MIT), vendored so it works offline
     autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades
     autorig/steps/   survey  facing  measure  probe_tips    inspect   (run inside Blender)
                      rerig  rerig_humanoid  run_builder     rig
                      decimate  audit  make_clips            trim, check, animate
                      preview_glb                           the viewer's GLB copy of a rig and its clips
+                     source_preview                        the editor's GLB of the source and its own skeleton
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
     docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN
-    tests/           test_server.py  test_viewer.py  test_grades.py  viewer_logic_test.mjs
+    tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py  viewer_logic_test.mjs
     samples/         the default models root (empty)
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
@@ -92,7 +117,10 @@ preview step on a generated two-bone rig with two actions, reading the GLB back:
 With Node it also runs `tests/viewer_logic_test.mjs`: gamepad mapping and deadzone, the scrub bar, the bleed rule and
 mesh islands. The Blender and Node parts are skipped when either is not installed. The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old
 audits), and the collection endpoints on made-up audit files: the table worst first, the badges, the tear sites, and
-Audit all going on past a model it cannot read.
+Audit all going on past a model it cannot read. The spec editor test checks the rig.json writer (a hand-written file comes back byte for byte) and
+the schema checks, then the editor's API: the token, the diff, a stale or broken save refused, `.bak` and unknown
+fields kept; with Blender, a generated model with a `bone_N` skeleton goes through the source view and Save and
+re-rig twice, the second run carrying the first one's audit as "before".
 
 ## Licence
 

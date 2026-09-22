@@ -21,6 +21,7 @@ from the front quarter; bottom row: posed). `qa_overview.py` puts all of them on
 | Clips | `make_clips.py` | Blender | authors the archetype's clips and writes them for engines (FORMATS.md) |
 | Publish | `publish.py` | Python | writes the model card and the group's index |
 | Preview | `preview_glb.py` | Blender | `<rig folder>/preview.glb` (mesh, armature, every clip) and `preview.json`, for the GUI's 3D viewer only |
+| Source view | `source_preview.py` | Blender | `<work>/source/<model>.glb` (the source mesh as it came, no skin) and `.json` (its own joints), for the spec editor only |
 
 `cli/pipeline.py` chains rig, trim and audit for several models (`-preview` adds the preview); the GUI's Run all adds
 publish, clips and the preview.
