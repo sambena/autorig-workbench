@@ -154,6 +154,16 @@ kbd { font: 11px ui-monospace, Consolas, monospace; background: var(--chip); bor
     <div class="hud" id="banner"><span id="bannerText"></span><button id="bannerNext" class="small" title="In the flat views: go on to the next point">Next point</button><button id="bannerDone" class="small">Done</button></div>
     <div class="hud" id="msg"><div class="big" id="msgBig"></div><div class="muted" id="msgSub"></div><div id="msgAct" style="margin-top:10px"></div></div>
     <div class="hud" id="viewbar">
+      <span style="display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;">
+        <button id="vSource" class="small on" title="Source mesh and skeleton to edit the spec">Source</button>
+        <button id="vRigged" class="small" title="Rigged mesh and animated clips">Rigged &amp; Clips</button>
+      </span>
+      <span id="clipBar" style="display:none; align-items:center; gap:6px;">
+        <select id="clipSelect" class="small"></select>
+        <button id="clipPlay" class="small" title="Play / Pause">▶</button>
+        <span id="clipTime" class="meta" style="font-size:11px"></span>
+        <input type="range" id="clipScrub" min="0" max="1000" step="1" value="0" style="width:90px" title="Scrub frame">
+      </span>
       <button id="vFront" class="small" title="Look at its face">Front</button>
       <button id="vSide" class="small" title="From its left side">Side</button>
       <button id="vTop" class="small" title="From above">Top</button>

@@ -83,6 +83,55 @@ class WriterAndChecks(unittest.TestCase):
         paths = {e["path"] for e in spec_api.check(s)[0]}
         self.assertEqual(paths, {"rig.chains.1", "rig.chains.2.parent"})
 
+    def test_check_humanoid_spec(self):
+        s = {
+            "schema": "autorig-spec/1",
+            "rig": {"kind": "humanoid"},
+            "humanoid": {
+                "forward": [0, -1, 0],
+                "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72,
+                      "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
+                "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
+            }
+        }
+        errs, warns = spec_api.check(s)
+        self.assertEqual(errs, [])
+
+        # Missing humanoid section
+        bad = {"schema": "autorig-spec/1", "rig": {"kind": "humanoid"}}
+        errs, _ = spec_api.check(bad)
+        self.assertEqual({e["path"] for e in errs}, {"humanoid"})
+
+        # Missing a required height
+        missing = json.loads(json.dumps(s))
+        del missing["humanoid"]["z"]["knee"]
+        errs, _ = spec_api.check(missing)
+        self.assertIn("humanoid.z.knee", {e["path"] for e in errs})
+
+        # Out-of-order heights
+        out_of_order = json.loads(json.dumps(s))
+        out_of_order["humanoid"]["z"]["ankle"] = 0.99
+        _, warns = spec_api.check(out_of_order)
+        self.assertIn("humanoid.z", {w["path"] for w in warns})
+
+    def test_check_custom_spec(self):
+        s = {"schema": "autorig-spec/1", "rig": {"kind": "custom", "builder": "rig_boss.py"}}
+        errs, warns = spec_api.check(s)
+        self.assertEqual(errs, [])
+
+        # Missing builder
+        bad = {"schema": "autorig-spec/1", "rig": {"kind": "custom"}}
+        errs, _ = spec_api.check(bad)
+        self.assertEqual({e["path"] for e in errs}, {"rig.builder"})
+
+    def test_schema_includes_humanoid_and_custom(self):
+        sch = spec_api.schema()
+        self.assertIn("humanoid", sch)
+        self.assertTrue(any(f["key"] == "z.top" for f in sch["humanoid"]))
+        self.assertTrue(any(f["key"] == "x.shoulder" for f in sch["humanoid"]))
+        custom_fields = [f for f in sch["rig"] if f.get("kinds") and "custom" in f["kinds"]]
+        self.assertTrue(any(f["key"] == "builder" for f in custom_fields))
+
 
 class EditorServer(unittest.TestCase):
     @classmethod
@@ -153,6 +202,9 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(b["text"], HAND_WRITTEN)
         self.assertEqual(b["schema"]["schema"], "autorig-spec/1")
         self.assertTrue(any(f["key"] == "head" for f in b["schema"]["rig"]))
+        self.assertTrue(any(f["key"] == "builder" for f in b["schema"]["rig"]))
+        self.assertIn("humanoid", b["schema"])
+        self.assertIn("preview_url", b)
         spec = b["spec"]
         spec["rig"]["legs"] = ["bone_5"]
         c = self.call("/api/spec/check", {"model": "flat", "spec": spec})
