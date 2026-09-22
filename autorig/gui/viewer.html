@@ -1,0 +1,123 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Autorig Workbench: the results viewer. A rigged model's preview.glb on a stage, side-on as a game shows it,
+     with its clips, a skeleton / bone names / weights overlay, and a few checks. Served by gui/server.py
+     (gui/viewer_api.py); three.js is vendored under gui/vendor/three (MIT), so it works offline. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autorig Workbench - viewer</title>
+<style>
+:root {
+  --bg: #15181e; --ink: #e6e9ef; --muted: #98a2b3; --panel: rgba(20, 23, 30, .82); --line: #2c3340; --accent: #5b8ff0;
+  --warn: #e8b64a; --warn-bg: rgba(58, 47, 20, .9); --ok: #4cc17e; --bad: #f07070;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+             font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; }
+.hud { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+       backdrop-filter: blur(4px); }
+#info { top: 12px; left: 12px; min-width: 240px; max-width: 46vw; }
+#info .model { font-size: 18px; font-weight: 650; letter-spacing: .2px; }
+#info .group { color: var(--muted); font-size: 12px; margin-left: 6px; font-weight: 400; }
+#info .clip { font-size: 15px; margin-top: 2px; }
+#info .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+#checks { top: 12px; right: 12px; max-width: 380px; padding: 6px 10px; }
+#checks h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 4px; }
+#checks ul { list-style: none; margin: 0; padding: 0; }
+#checks li { padding: 2px 0 2px 16px; position: relative; font-size: 12.5px; }
+#checks li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+#checks li.warn { color: var(--warn); }
+#checks li.warn::before { background: var(--warn); }
+#checks li.bad { color: var(--bad); }
+#checks li.bad::before { background: var(--bad); }
+#bar { left: 50%; transform: translateX(-50%); bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+       justify-content: center; max-width: calc(100vw - 24px); }
+#bar button { font: inherit; color: var(--ink); background: #252b36; border: 1px solid var(--line); border-radius: 6px;
+              padding: 4px 10px; cursor: pointer; }
+#bar button:hover { border-color: var(--accent); }
+#bar button.on { background: var(--accent); color: #0b0e14; border-color: var(--accent); }
+#bar label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
+#bar input[type=range] { width: 110px; }
+#bar .sep { width: 1px; height: 22px; background: var(--line); }
+#keys { left: 12px; bottom: 12px; color: var(--muted); font-size: 11.5px; line-height: 1.5; max-width: 250px; }
+#keys b { color: var(--ink); font-weight: 600; }
+#msg { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; display: none;
+       max-width: 460px; padding: 18px 22px; }
+#msg .big { font-size: 17px; margin-bottom: 6px; }
+#msg .sub { color: var(--muted); }
+#msg button { margin-top: 12px; font: inherit; color: #0b0e14; background: var(--accent); border: none; border-radius: 6px;
+              padding: 6px 14px; cursor: pointer; }
+#msg pre { text-align: left; max-height: 160px; overflow: auto; font-size: 11px; color: var(--muted); white-space: pre-wrap; }
+#boneinfo { top: 50%; left: 12px; transform: translateY(-50%); display: none; font-size: 12.5px; max-width: 240px; }
+#boneinfo .n { font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
+#boneinfo .ramp { height: 8px; border-radius: 4px; margin: 6px 0 2px;
+                  background: linear-gradient(90deg, #1a1f4d, #2040ff, #00d0ff, #20e060, #f0e020, #ff2020); }
+#boneinfo .rl { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.lbl { font: 11px/1 system-ui, sans-serif; color: #dfe6f3; background: rgba(10, 12, 18, .72); padding: 2px 4px;
+       border-radius: 3px; white-space: nowrap; pointer-events: none; }
+.lbl.sel { background: #5b8ff0; color: #0b0e14; font-weight: 650; }
+.tick { font: 10.5px/1 system-ui, sans-serif; color: #8a93a6; pointer-events: none; }
+.ref { font: 11px/1 system-ui, sans-serif; color: #aab3c5; pointer-events: none; }
+a { color: var(--accent); }
+@media (max-width: 760px) {
+  #keys { display: none; }
+  .hud { padding: 5px 8px; font-size: 11.5px; }
+  #info { max-width: calc(100vw - 24px); right: 12px; } #info .model { font-size: 15px; } #info .clip { font-size: 13px; }
+  #info { min-width: 0; }
+  #checks { top: 116px; left: 12px; right: 12px; max-width: none; max-height: 17vh; overflow: auto; }
+  #checks li { font-size: 11px; }
+  #bar { gap: 4px; left: 12px; right: 12px; transform: none; max-width: none; } #bar button { padding: 3px 7px; } #bar input[type=range] { width: 70px; } #bar .sep { display: none; }
+  #boneinfo { top: calc(128px + 17vh); transform: none; font-size: 11px; max-width: 150px; }
+}
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div class="hud" id="info">
+  <div class="model"><span id="modelName">…</span><span class="group" id="modelGroup"></span></div>
+  <div class="sub" id="modelIndex"></div>
+  <div class="clip" id="clipName"></div>
+  <div class="sub" id="clipTime"></div>
+  <div class="sub" id="modeLine"></div>
+</div>
+<div class="hud" id="checks"><h2>Checks</h2><ul id="checkList"></ul></div>
+<div class="hud" id="boneinfo">
+  <div class="sub">weights of</div>
+  <div class="n" id="boneName"></div>
+  <div class="sub" id="boneShare"></div>
+  <div class="ramp"></div><div class="rl"><span>0</span><span>0.5</span><span>1</span></div>
+  <div class="sub" style="margin-top:6px">click a bone, or <b>[</b> <b>]</b></div>
+</div>
+<div class="hud" id="bar">
+  <button id="bPrevModel" title="Previous model (Left, D-pad left)">◀ model</button>
+  <button id="bNextModel" title="Next model (Right, D-pad right)">model ▶</button>
+  <span class="sep"></span>
+  <button id="bPrevClip" title="Previous clip (Up, D-pad up)">▲ clip</button>
+  <button id="bNextClip" title="Next clip (Down, D-pad down)">clip ▼</button>
+  <button id="bPlay" title="Play / pause (Space, A)">Pause</button>
+  <label title="Playback speed (- and =)">speed <input type="range" id="speed" min="0.05" max="2" step="0.05" value="1"><span id="speedVal">1.00×</span></label>
+  <label title="Loop (L)"><input type="checkbox" id="loop" checked> loop</label>
+  <span class="sep"></span>
+  <button id="bOverlay" title="Rig overlay: off, skeleton, bone names, weights (R, Y)">Overlay: off</button>
+  <button id="bView" title="Side view or free orbit (V, X)">Side view</button>
+  <button id="bFrame" title="Frame the model, or the model and the figure (F)">Frame</button>
+  <a id="back" href="#" title="Back to the workbench">workbench</a>
+</div>
+<div class="hud" id="keys">
+  <b>←/→</b> model · <b>↑/↓</b> clip · <b>Space</b> play/pause<br>
+  <b>R</b> overlay · <b>[ ]</b> bone · <b>V</b> side/orbit · <b>F</b> frame<br>
+  <b>L</b> loop · <b>- =</b> speed · <b>, .</b> step a frame<br>
+  Gamepad: D-pad model/clip · <b>A</b> play · <b>Y</b> overlay · <b>X</b> view · <b>LB/RB</b> bone
+</div>
+<div class="hud" id="msg"><div class="big" id="msgBig"></div><div class="sub" id="msgSub"></div><div id="msgAct"></div></div>
+<script>window.AUTORIG_TOKEN = "__AUTORIG_TOKEN__";</script>
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Outputs. The tool writes next to the models it is pointed at (AUTORIG_MODELS) and into AUTORIG_WORK; when those
+# are the repo's own samples/, none of it is source.
+samples/*
+!samples/README.md
+_autorig/
+rigged/
+rigged_v2/
+clips/
+*.blend
+*.blend1
+*.fbx
+*.fbm/
+*.glb
+*.zip
+
+__pycache__/
+*.pyc
+
+# Local editor and preview settings (paths on one machine).
+.claude/

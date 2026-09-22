@@ -1,0 +1,403 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Autorig Workbench: the one page of the local GUI (served by gui/server.py). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autorig Workbench</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2230; --muted: #667085; --line: #d9dde5; --accent: #2f6fdb;
+  --accent-ink: #ffffff; --pass: #1f8a4c; --pass-bg: #e3f4ea; --fail: #c62f2f; --fail-bg: #fbe5e5; --warn: #9a6a00;
+  --warn-bg: #fff3d6; --log-bg: #11151d; --log-ink: #cfd6e4; --chip: #eef1f6; --sel: #e7efff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --panel: #1b1f27; --ink: #e6e9ef; --muted: #98a2b3; --line: #2c3340; --accent: #5b8ff0;
+    --accent-ink: #0b0e14; --pass: #4cc17e; --pass-bg: #173323; --fail: #f07070; --fail-bg: #3a1a1a; --warn: #e8b64a;
+    --warn-bg: #3a2f14; --log-bg: #0b0d12; --log-ink: #c9d1e0; --chip: #252b36; --sel: #22304a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+header { display: flex; align-items: baseline; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+header .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+main { display: grid; grid-template-columns: 320px 1fr; gap: 14px; padding: 14px; align-items: start; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+main > section { min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.panel + .panel { margin-top: 14px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 8px; }
+h3 { font-size: 14px; margin: 14px 0 6px; }
+button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.danger { color: var(--fail); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+input[type=text], textarea { font: inherit; width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+textarea { font-family: ui-monospace, Consolas, monospace; font-size: 12px; min-height: 52px; }
+label { font-size: 12px; color: var(--muted); display: block; margin: 6px 0 2px; }
+.drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); transition: .15s; }
+.drop.over { border-color: var(--accent); background: var(--sel); color: var(--ink); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1; min-width: 0; }
+.models { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+.models .group { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 8px 6px 2px; }
+.models li.m { padding: 5px 6px; border-radius: 6px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+.models li.m:hover { background: var(--chip); }
+.models li.m.sel { background: var(--sel); }
+.models .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { font-size: 10.5px; padding: 1px 6px; border-radius: 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.chip.pass { background: var(--pass-bg); color: var(--pass); font-weight: 600; }
+.chip.fail { background: var(--fail-bg); color: var(--fail); font-weight: 600; }
+.chip.on { color: var(--ink); }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.why { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
+.why li { margin: 1px 0; }
+pre.log { background: var(--log-bg); color: var(--log-ink); border-radius: 6px; padding: 10px; height: 260px; overflow: auto; margin: 0; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jobline { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+.state { font-weight: 600; }
+.state.done { color: var(--pass); } .state.failed, .state.cancelled { color: var(--fail); } .state.running, .state.queued { color: var(--warn); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; }
+.verdict { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 6px; margin-right: 8px; }
+.verdict.pass { background: var(--pass-bg); color: var(--pass); } .verdict.fail { background: var(--fail-bg); color: var(--fail); }
+.warns { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin-top: 8px; }
+.pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.pics figure { margin: 0; }
+.pics img, .strip img { width: 100%; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.cliprow { margin-bottom: 10px; }
+.cliprow .cn { font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
+.empty { color: var(--muted); font-size: 13px; }
+.kv td:first-child { color: var(--muted); width: 38%; }
+.scroll { overflow-x: auto; }
+.meta, .why, td { overflow-wrap: anywhere; }
+.msg { font-size: 12.5px; margin-top: 6px; }
+.msg.err { color: var(--fail); } .msg.ok { color: var(--pass); }
+#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; align-items: center; justify-content: center; z-index: 10; cursor: zoom-out; }
+#zoom img { max-width: 95vw; max-height: 95vh; background: #fff; border-radius: 6px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 8px; flex-wrap: wrap; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: var(--muted); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Autorig Workbench</h1>
+  <span class="meta" id="meta"></span>
+</header>
+<main>
+  <section>
+    <div class="panel">
+      <h2>Add a model</h2>
+      <div class="drop" id="drop">Drop an FBX (with its .fbm folder), GLB, glTF, OBJ, a zip, or a model's folder here</div>
+      <div class="row" style="margin-top:8px">
+        <button id="pickFiles">Choose files</button>
+        <button id="pickFolder">Choose folder</button>
+        <input type="file" id="files" multiple hidden>
+        <input type="file" id="folder" webkitdirectory hidden>
+      </div>
+      <label for="paths">Or paths on this computer, one per line (copied, never moved)</label>
+      <textarea id="paths" placeholder="C:\models\wolf\wolf.zip&#10;C:\models\wolf\rig.json"></textarea>
+      <div class="row">
+        <div class="grow"><label for="group">Group (optional)</label><input type="text" id="group" placeholder="e.g. Creatures"></div>
+        <div class="grow"><label for="name">Name</label><input type="text" id="name" placeholder="from the file"></div>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="primary" id="addPaths">Add from paths</button></div>
+      <div class="msg" id="addMsg"></div>
+    </div>
+    <div class="panel">
+      <h2>Models</h2>
+      <ul class="models" id="models"></ul>
+    </div>
+  </section>
+  <section>
+    <div class="panel" id="modelPanel">
+      <div class="empty">Pick a model on the left, or add one.</div>
+    </div>
+    <div class="panel">
+      <div class="jobline"><h2 style="margin:0">Log</h2><span id="jobInfo" class="meta"></span><span style="flex:1"></span>
+        <button class="danger" id="cancel" disabled>Cancel</button></div>
+      <pre class="log" id="log"></pre>
+    </div>
+    <div class="panel" id="results"></div>
+  </section>
+</main>
+<div id="zoom"><img alt=""></div>
+<script>
+"use strict";
+const TOKEN = "__AUTORIG_TOKEN__";
+const STEPS = [["survey", "Survey"], ["rig", "Rig"], ["trim", "Trim"], ["audit", "Audit"], ["clips", "Make clips"],
+               ["publish", "Publish"], ["preview", "Preview"], ["all", "Run all"]];
+const CHECKS = {bleed_pct: "Bleed %", combined_tears: "Tears, combined pose", bend_tears: "Tears, single bends",
+                head_pct: "Head share %", max_influences: "Influences per vertex"};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const fileUrl = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
+let state = null, selected = null, job = null, es = null, logFrom = 0, tab = "audit";
+
+async function api(path, body) {
+  const opt = {headers: {"X-Autorig-Token": TOKEN}};
+  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({error: r.statusText}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function refresh() {
+  state = await api("/api/state");
+  $("#meta").textContent = "models " + state.root + "  ·  work " + state.work + "  ·  blender " + (state.blender || "NOT FOUND");
+  renderModels();
+  const busy = state.running;
+  if (busy && (!job || job.id !== busy.id)) follow(busy);
+  if (selected) renderModel();
+}
+
+function chips(m) {
+  const c = [];
+  if (m.audit) c.push(`<span class="chip ${m.audit === "PASS" ? "pass" : "fail"}">${m.audit}</span>`);
+  else if (m.rigged) c.push(`<span class="chip on">rig</span>`);
+  else if (m.spec) c.push(`<span class="chip on">spec</span>`);
+  else c.push(`<span class="chip">no spec</span>`);
+  if (m.clips) c.push(`<span class="chip on">clips</span>`);
+  if (m.card) c.push(`<span class="chip on">card</span>`);
+  return c.join("");
+}
+
+function renderModels() {
+  const ul = $("#models"); const byGroup = {};
+  for (const m of state.models) (byGroup[m.group] ||= []).push(m);
+  let h = "";
+  for (const g of Object.keys(byGroup).sort()) {
+    h += `<li class="group">${esc(g || "(root)")}</li>`;
+    for (const m of byGroup[g]) h += `<li class="m ${m.name === selected ? "sel" : ""}" data-name="${esc(m.name)}"><span class="nm">${esc(m.name)}</span>${chips(m)}</li>`;
+  }
+  ul.innerHTML = h || `<li class="empty">No models yet in ${esc(state.root)}.</li>`;
+  ul.querySelectorAll("li.m").forEach((li) => li.onclick = () => select(li.dataset.name));
+}
+
+function current() { return state && state.models.find((m) => m.name === selected); }
+
+async function select(name) {
+  selected = name; renderModels(); renderModel(); loadDetails();
+  try { history.replaceState(null, "", "#model=" + encodeURIComponent(name) + "&tab=" + tab); } catch (e) {}
+  const last = state.jobs.find((j) => j.model === name);
+  if (last && (!job || job.model !== name)) follow(last);
+}
+
+function renderModel() {
+  const m = current(); const p = $("#modelPanel");
+  if (!m) { p.innerHTML = `<div class="empty">Pick a model on the left, or add one.</div>`; return; }
+  const running = state.running;
+  let h = `<div class="row"><h3 style="margin:0;font-size:17px">${esc(m.name)}</h3><span class="meta">${esc(m.group || "(root)")}` +
+          ` · ${esc(m.kind || "no spec")}${m.source ? " · " + esc(m.source) : ""}${m.budget ? " · budget " + m.budget : " · full resolution"}</span>` +
+          `<span style="flex:1"></span>${viewButton(m)}<button id="open">Open output folder</button></div>`;
+  h += `<div class="steps">`;
+  for (const [k, label] of STEPS) {
+    const why = m.steps[k];
+    h += `<button class="${k === "all" ? "primary" : ""}" data-step="${k}" aria-label="${label}" ${why || running ? "disabled" : ""} title="${esc(why || (running ? "a step is running" : ""))}">${label}</button>`;
+  }
+  h += `</div>`;
+  const reasons = STEPS.filter(([k]) => m.steps[k]).map(([k, l]) => `<li><b>${l}</b>: ${esc(m.steps[k])}</li>`);
+  if (reasons.length) h += `<ul class="why">${reasons.join("")}</ul>`;
+  if (m.spec_error) h += `<div class="msg err">${esc(m.spec_error)}</div>`;
+  p.innerHTML = h;
+  p.querySelectorAll("button[data-step]").forEach((b) => b.onclick = () => run(b.dataset.step));
+  $("#open").onclick = () => api("/api/open", {model: m.name}).catch((e) => alert(e.message));
+  p.querySelectorAll("button[data-view]").forEach((b) => b.onclick = () => window.open(viewerUrl(b.dataset.view), "_blank"));
+}
+
+// ---- results viewer (viewer.html): the model in 3D with its clips; it says "run Preview first" when it has no preview.glb
+function viewerUrl(name) { return "/viewer.html?model=" + encodeURIComponent(name) + "&t=" + encodeURIComponent(TOKEN); }
+function viewButton(m) {
+  const can = m.rigged || m.rigged_fbx;
+  return `<button class="${m.preview ? "primary" : ""}" ${can ? "" : "disabled"} title="${can ? (m.preview ? "open the 3D viewer" : "no preview.glb yet: the viewer will offer to run Preview") : "no rig yet: run Rig"}"` +
+         ` data-view="${esc(m.name)}">View results</button>`;
+}
+
+async function run(step) {
+  try {
+    const j = await api("/api/run", {model: selected, step});
+    follow(j); await refresh();
+  } catch (e) { alert(e.message); }
+}
+
+function follow(j) {
+  if (es) es.close();
+  job = j; logFrom = 0; $("#log").textContent = "";
+  showJob();
+  es = new EventSource(fileUrl(`/api/jobs/${j.id}/events?from=0`));
+  es.onmessage = (ev) => {
+    const log = $("#log"); const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+    log.textContent += JSON.parse(ev.data) + "\n"; logFrom = Number(ev.lastEventId) + 1;
+    if (stick) log.scrollTop = log.scrollHeight;
+  };
+  es.addEventListener("end", async (ev) => {
+    es.close(); es = null; job = JSON.parse(ev.data); showJob(); await refresh(); showJob();
+    if (job.model === selected) loadDetails();
+  });
+  es.onerror = () => { /* the server closes the stream when the job ends; EventSource retries otherwise */ };
+}
+
+function showJob() {
+  if (!job) { $("#jobInfo").textContent = ""; $("#cancel").disabled = true; return; }
+  const st = job.state;
+  $("#jobInfo").innerHTML = `job ${job.id}: <b>${esc(job.step)}</b> on ${esc(job.model)} · <span class="state ${st}">${st}</span>` +
+                            (job.pid ? ` · PID ${job.pid}` : "");
+  $("#cancel").disabled = !(st === "running" || st === "queued");
+  // a finished run with a preview: straight to the 3D viewer
+  const done = st === "done" && state && state.models.find((m) => m.name === job.model && m.preview);
+  if (done) {
+    $("#jobInfo").insertAdjacentHTML("beforeend", ` · <button class="primary" id="jobView">View results</button>`);
+    $("#jobView").onclick = () => window.open(viewerUrl(job.model), "_blank");
+  }
+}
+$("#cancel").onclick = async () => { if (job) { try { job = await api("/api/cancel", {job: job.id}); showJob(); } catch (e) { alert(e.message); } } };
+setInterval(async () => { if (job && (job.state === "running" || job.state === "queued")) { try { const j = await api(`/api/jobs/${job.id}`); job = Object.assign(job, j); delete job.log; showJob(); } catch (e) {} } }, 2000);
+
+async function loadDetails() {
+  if (!selected) return;
+  const name = selected;
+  let d;
+  try { d = await api("/api/model?name=" + encodeURIComponent(name)); } catch (e) { $("#results").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
+  if (name !== selected) return;
+  renderResults(d);
+}
+
+function img(u, cap) { return u ? `<figure><img src="${esc(fileUrl(u))}" alt="${esc(cap)}" loading="lazy"><figcaption>${esc(cap)}</figcaption></figure>` : ""; }
+
+function renderResults(d) {
+  const tabs = [["audit", "Audit"], ["pictures", "Bend test"], ["clips", "Clips"], ["survey", "Survey"], ["spec", "Spec and card"]];
+  let h = `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  h += `<div id="tabBody">${body(d)}</div>`;
+  const r = $("#results"); r.innerHTML = h;
+  r.querySelectorAll("button[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderResults(d); select_hash(); });
+  r.querySelectorAll("img").forEach((i) => i.onclick = () => { $("#zoom img").src = i.src; $("#zoom").style.display = "flex"; });
+}
+$("#zoom").onclick = () => $("#zoom").style.display = "none";
+
+function body(d) {
+  if (tab === "audit") {
+    const a = d.audit;
+    if (!a) return `<div class="empty">No audit yet. Rig the model, then press Audit (or Run all).</div>`;
+    let h = `<div><span class="verdict ${a.pass ? "pass" : "fail"}">${a.pass ? "PASS" : "FAIL"}</span><span class="meta">audit of ${esc(a.fbx_rel || a.fbx || "")}</span></div>`;
+    h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Check</th><th>Value</th><th>Threshold</th><th>Allowance</th><th>Result</th></tr>`;
+    for (const c of a.checks) {
+      const higher = c.check === "head_pct";
+      h += `<tr><td>${esc(CHECKS[c.check] || c.check)}</td><td class="num">${esc(c.value)}</td><td class="num">${higher ? "≥ " : "≤ "}${esc(c.threshold)}</td>` +
+           `<td>${c.allowance !== undefined && c.allowance !== null ? (higher ? "≥ " : "≤ ") + esc(c.allowance) + (c.reason ? `<div class="why">${esc(c.reason)}</div>` : "") : ""}</td>` +
+           `<td><span class="chip ${c.ok ? "pass" : "fail"}">${c.ok ? "PASS" : "FAIL"}</span></td></tr>`;
+    }
+    h += `</table></div>`;
+    if (a.warnings && a.warnings.length) h += `<div class="warns"><b>Warnings</b> (reported, not failed): ${a.warnings.map(esc).join("; ")}</div>`;
+    h += `<h3>Audit sheets</h3><div class="pics">${img(a.skin, "Skin: which bone owns each part") + img(a.bend, "Bends: each joint turned, tears marked")}</div>`;
+    return h;
+  }
+  if (tab === "pictures") {
+    return d.bend_test ? `<div class="pics" style="grid-template-columns:1fr">${img(d.bend_test, "Top: the new skeleton at rest. Bottom: the bend test.")}</div>`
+                       : `<div class="empty">No bend test yet: run Rig.</div>`;
+  }
+  if (tab === "clips") {
+    const f = d.clip_frames || {};
+    const order = d.clips ? d.clips.clips.map((c) => c.name) : [];
+    const names = Object.keys(f).sort((x, y) => (order.indexOf(x) + 1 || 999) - (order.indexOf(y) + 1 || 999) || x.localeCompare(y));
+    let h = "";
+    if (d.clips) h += `<div class="meta">${esc(d.clips.format || "")} · ${d.clips.clips.map((c) => `${esc(c.name)} ${c.seconds}s${c.loops ? " loop" : ""}`).join(" · ")}</div>`;
+    if (!names.length) return h + `<div class="empty">No clip frames yet: press Make clips (needs a clip archetype in rig.json).</div>`;
+    for (const n of names) h += `<div class="cliprow"><div class="cn">${esc(n)}</div><div class="strip">${f[n].map((u) => `<img src="${esc(fileUrl(u))}" alt="${esc(n)}" loading="lazy">`).join("")}</div></div>`;
+    return h;
+  }
+  if (tab === "survey") {
+    let h = "";
+    if (d.survey) h += `<table class="kv">${Object.entries(d.survey).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(Array.isArray(v) ? v.join(" × ") : v)}</td></tr>`).join("")}</table>`;
+    else h += `<div class="empty">No survey yet: press Survey.</div>`;
+    if (d.facing && d.facing.length) h += `<h3>Facing views</h3><div class="meta">Which way it faces in its file: read <code>forward</code> for rig.json off these.</div><div class="pics">${d.facing.map((u) => img(u, u.split("__").pop().replace(".png", "").replace("m", "-").replace("p", "+") + " view")).join("")}</div>`;
+    return h;
+  }
+  if (tab === "spec") {
+    let h = `<div class="meta">${esc(d.dir)}</div>`;
+    const notes = d.notes || {};
+    if (Object.keys(notes).length) h += `<h3>Notes</h3><table class="kv">${Object.entries(notes).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>`;
+    h += `<h3>rig.json</h3><pre class="log" style="height:auto;max-height:340px">${esc(d.spec ? JSON.stringify(d.spec, null, 1) : "none yet")}</pre>`;
+    h += `<h3>Card (model.json)</h3><pre class="log" style="height:auto;max-height:340px">${esc(d.card ? JSON.stringify(d.card, null, 1) : "not published yet")}</pre>`;
+    return h;
+  }
+  return "";
+}
+
+// ---- adding models
+function addMsg(t, ok) { const m = $("#addMsg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
+function stem(p) { const b = p.split(/[\\/]/).filter(Boolean).pop() || ""; return b.replace(/\.[^.]+$/, ""); }
+function suggest(name) { return name.toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, ""); }
+
+async function upload(entries) {
+  if (!entries.length) return;
+  const top = entries[0].path.split("/");
+  const name = $("#name").value.trim() || suggest(top.length > 1 ? top[0] : stem(entries.find((e) => /\.(fbx|glb|gltf|obj|zip)$/i.test(e.path))?.path || top[0]));
+  const batch = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  addMsg(`Uploading ${entries.length} file(s) as ${name}…`, true);
+  try {
+    for (const e of entries) {
+      const r = await fetch(`/api/upload?batch=${batch}&path=${encodeURIComponent(e.path)}`, {method: "POST", headers: {"X-Autorig-Token": TOKEN}, body: e.file});
+      if (!r.ok) throw new Error((await r.json()).error);
+    }
+    const res = await api("/api/upload/done", {batch, group: $("#group").value.trim(), name});
+    addMsg(`Added ${res.name} (${res.files.length} files).`, true); $("#name").value = "";
+    await refresh(); select(res.name);
+  } catch (e) { addMsg(e.message, false); }
+}
+
+async function walk(entry, prefix, out) {
+  if (entry.isFile) { out.push({path: prefix + entry.name, file: await new Promise((ok, no) => entry.file(ok, no))}); return; }
+  const reader = entry.createReader();
+  for (;;) {
+    const batch = await new Promise((ok, no) => reader.readEntries(ok, no));
+    if (!batch.length) break;
+    for (const e of batch) await walk(e, prefix + entry.name + "/", out);
+  }
+}
+
+const drop = $("#drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = async (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  const out = [];
+  const items = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (items.length) { for (const it of items) await walk(it, "", out); }
+  else for (const f of e.dataTransfer.files) out.push({path: f.name, file: f});
+  upload(out);
+};
+$("#pickFiles").onclick = () => $("#files").click();
+$("#pickFolder").onclick = () => $("#folder").click();
+$("#files").onchange = (e) => { upload([...e.target.files].map((f) => ({path: f.name, file: f}))); e.target.value = ""; };
+$("#folder").onchange = (e) => { upload([...e.target.files].map((f) => ({path: f.webkitRelativePath || f.name, file: f}))); e.target.value = ""; };
+$("#addPaths").onclick = async () => {
+  const paths = $("#paths").value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (!paths.length) return addMsg("Type at least one path.", false);
+  try {
+    const res = await api("/api/import", {paths, group: $("#group").value.trim(), name: $("#name").value.trim()});
+    addMsg(`Added ${res.name} (${res.files.length} files).`, true); $("#paths").value = ""; $("#name").value = "";
+    await refresh(); select(res.name);
+  } catch (e) { addMsg(e.message, false); }
+};
+
+function select_hash() { try { history.replaceState(null, "", "#model=" + encodeURIComponent(selected || "") + "&tab=" + tab); } catch (e) {} }
+function from_hash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("tab")) tab = h.get("tab");
+  return h.get("model");
+}
+const wanted = from_hash();
+refresh().then(() => { if (wanted && state.models.some((m) => m.name === wanted)) select(wanted); }).catch((e) => { document.body.insertAdjacentHTML("afterbegin", `<div class="msg err" style="padding:10px">${esc(e.message)}</div>`); });
+setInterval(() => { if (state && state.running) refresh().catch(() => {}); }, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+three.js 0.186.0 (MIT, see LICENSE), vendored for the results viewer (gui/viewer.html) so it works offline.
+
+Source: the npm package, `npm pack three@0.186.0`
+  https://registry.npmjs.org/three/-/three-0.186.0.tgz
+  integrity sha512-cr/fIM2ddMSVbYVgkfD4jLJv7Fh/8ZTjvo+7gQeSVGUZHxpx9FDwoL5iC7hUz/LiRA8wMbqfnb90xKfm1/HHkQ==
+  shasum    08f70ce80dffa9247a567b421165bec630e86f8d
+
+Files copied unchanged, at their paths in the package:
+  LICENSE
+  build/three.module.js
+  build/three.core.js
+  examples/jsm/loaders/GLTFLoader.js
+  examples/jsm/controls/OrbitControls.js
+  examples/jsm/renderers/CSS2DRenderer.js
+  examples/jsm/utils/BufferGeometryUtils.js     (GLTFLoader imports it)
+  examples/jsm/utils/SkeletonUtils.js           (GLTFLoader imports it)
+
+To update: `npm pack three@<version>`, unpack, copy the same files over these, change the version here, and open
+the viewer on a model with clips.
