@@ -75,8 +75,32 @@ The viewer half is done; the spec form and Rig again are next.
   and weights (the mesh coloured by one bone's influence; click a bone or step with [ ]). Checks: real height against
   the figure, facing (+X by the head, toes or tail), bone count, clips, zero-length clips, a preview older than its rig.
   A model with no clips shows its bind pose; one with no preview offers to run Preview. `/api/previews` lists them,
-  and **View results** opens it from a model and from a finished run. Still to do: the audit's worst bones
-  highlighted, and a scrub bar.
+  and **View results** opens it from a model and from a finished run.
+- **Viewer polish** (done):
+  - *Framing:* the side view and **Frame: model** fit the model, over every clip (each sampled through, not only
+    the bind pose), and the whole figure with its label into the largest part of the window the HUD leaves clear
+    (every panel's edges are tried as the frame's), for any size of model and on a narrow window. The figure stands
+    a short gap to the model's left, the gap scaled to the larger of the two. **Frame: stage** adds the floor and
+    the ruler round them. The side view refits when the window changes.
+  - *Scrub bar* over the controls: a tick a frame (sparser when they crowd), numbered ticks, the clip's keys, the
+    playhead; drag to any frame, and it pauses while dragging (and plays on after if it was playing). Home and End
+    too.
+  - *The audit:* its PASS/FAIL and the failed checks in the checks panel; the worst bones listed (`viewer_api.py`
+    `worst_bones`: a bend that tears, a bleed pair's owner, a head that owns too little, twist tears, collateral,
+    reach, hard joints) and tinted on the skeleton, red where a failed check blames them and amber for a warning;
+    click one to select it, which also drives the weights overlay. Too many influences is per mesh in the audit, so
+    it is listed by mesh.
+  - *Bleed view* (an overlay): the audit's bleed rule run again on the preview, vertex by vertex (owned by a bone
+    that is neither its nearest, next to it, nor upstream of it, and clearly further away), area-weighted as the
+    audit weighs it, so its figure matches the audit's; plus the loose parts that ride the wrong bone, and the
+    audit's bleed pairs to click.
+  - *Loose parts* in the weights view: every mesh island (welded across UV seams), the bone that carries it and
+    how much, flagged when a lot of it is bleed, when one side's bone carries a part that crosses the middle (a
+    collar on one leg), or when it rides a bone far from the one it sits by.
+  - *Gamepad:* the Gamepad API's standard mapping (Xbox and PlayStation pads), a fallback for other pads (a hat on
+    axes 6/7 or one hat axis), the left stick with a radial deadzone moving through models and clips like the
+    D-pad, held directions repeating, triggers stepping frames. The logic is `gui/viewer_logic.js`, plain and
+    tested under Node (`tests/viewer_logic_test.mjs`); a page can replace `navigator.getGamepads` to simulate a pad.
 - **Spec form**, generated from a schema: kind and archetype, forward and origin; the skinning fixes and their tuning
   knobs; audit allowances, each with its reason (required); clip settings as sliders; budget and real size.
 - **Rig again** re-runs from the form and shows the audit as a before/after delta.
