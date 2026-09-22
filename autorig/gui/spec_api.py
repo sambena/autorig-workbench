@@ -25,7 +25,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8"}
 CSP = ("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; "
        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 SCHEMA_ID = "autorig-spec/1"
-KINDS = ("tripo", "build", "humanoid", "custom")
+KINDS = ("tripo", "build", "placed", "humanoid", "custom")
 ARCHETYPES = ("quadruped", "hexapod", "octopod", "serpent", "winged", "floater", "rigid", "humanoid")
 CLIP_ARCHETYPES = ("walker", "flyer", "exploder", "swimmer", "turret", "winged")
 THRESHOLD_KEYS = ("bleed_pct", "combined_tears", "bend_tears", "head_pct", "max_influences")
@@ -35,14 +35,15 @@ ROLE = re.compile(r"^[a-z][a-z0-9_]*$")
 # The schema: every rig.json field the editor offers, with a label and plain-English help. The page builds its form
 # from this; check() validates against it. `kinds` limits a field to those rig kinds. Types:
 #   enum bool number int text texts joint joints joint_chains role_joints vec3 point point_pair box_list bone
-#   build_chains allowances jaw add_tail hard_split
+#   build_chains allowances jaw add_tail hard_split parts_rules join_blends rip_welds membranes rigid_islands
 # ---------------------------------------------------------------------------------------------------------------
 
 F = lambda key, label, type_, help_, **kw: dict(key=key, label=label, type=type_, help=help_, **kw)
 RIG_FIELDS = [
     F("kind", "Kind of rig", "enum", "How the skeleton is made. Tripo-style: the model came with a skeleton "
       "(bone_0, bone_1...) and its joints are reused. Build: the model has no skeleton, so chains are traced through "
-      "the mesh from points you place. Humanoid: a person. Custom: a script of your own.", options=list(KINDS),
+      "the mesh from points you place. Placed: hand-placed chains with body-part rules (winged/creatures: membranes, "
+      "rip welds, blends). Humanoid: a person. Custom: a script of your own.", options=list(KINDS),
       group="Basics", required=True),
     F("forward", "Facing", "vec3", "The way the model faces in its source file. Read it off the survey's facing "
       "views. Left empty on a Tripo-style rig, it is worked out from the head and hips bones.", group="Basics"),
@@ -84,15 +85,26 @@ RIG_FIELDS = [
     F("add_tail", "Add a tail", "add_tail", "A tail the source skeleton gave no bones: from (0..1 along the body) "
       "to the tip, in this many bones.", kinds=["tripo"], group="Chains"),
     F("head_line", "Head line", "point_pair", "The head bone runs from the first point (the spine is cut there) to "
-      "the second (rule A). Click the two points on the model.", kinds=["tripo"], group="Head"),
+      "the second (rule A). Click the two points on the model.", kinds=["tripo", "placed"], group="Head"),
     F("jaw", "Jaw", "jaw", "A jaw bone: the hinge and the chin tip. Everything under the mouth line ahead of the "
-      "hinge moves with it.", kinds=["tripo"], group="Head"),
+      "hinge moves with it.", kinds=["tripo", "build", "placed"], group="Head"),
     F("head_to_snout", "Stretch the head to the snout", "bool", "On (the default): a forward-facing head bone is "
-      "extended to the front of the face. Off: it stays where it is.", default=True, group="Head"),
+      "extended to the front of the face. Off: it stays where it is.", default=True, kinds=["tripo", "placed"], group="Head"),
 
     F("chains_build", "Chains", "build_chains", "The first chain is the body. Each chain is placed by clicking on "
       "the model: a limb by its tip (and where it leaves the body), a spine by a slice along its length, or "
-      "joints given outright.", kinds=["build"], group="Chains", store="chains"),
+      "joints given outright.", kinds=["build", "placed"], group="Chains", store="chains"),
+
+    F("parts", "Body parts", "parts_rules", "Which bones each part may use. Enforces rules like arm bones only on "
+      "forelimbs, preventing wing bone cross-bleed.", kinds=["placed"], group="Parts"),
+    F("blends", "Blended joins", "join_blends", "Which parts blend at a join: child bone, parent bone, transition "
+      "radius and fade.", kinds=["placed"], group="Parts"),
+    F("rip_welds", "Rip welds", "rip_welds", "Welds to split along seams between parts that move apart (e.g. forearm "
+      "to thigh, wing tip to tail) so bone heat does not pull across.", kinds=["placed"], group="Parts"),
+    F("membranes", "Membranes", "membranes", "Wing and web membranes riding only wing bones by distance gradients "
+      "and cut free from the flank.", kinds=["placed"], group="Parts"),
+    F("rigid_islands", "Rigid islands", "rigid_islands", "Loose pieces or armour plates (pauldrons) that ride a "
+      "bone whole and never bend.", kinds=["placed", "build", "tripo"], group="Skin"),
 
     F("envelope", "Skin style", "enum", "full: the torso belongs to the spine and each limb to a capsule round it "
       "(creatures). root: bone heat kept, but no limb weight behind where the limb starts (people). false: plain "
@@ -309,11 +321,74 @@ def check(spec, source=None):
                     elif not _num(x): E(p + "." + k2, "a number")
                 if inner and not str(notes.get("rig.audit", "")).strip():
                     E("notes.rig.audit", "an audit allowance needs its reason: write it in the note")
+        elif t == "parts_rules":
+            if not isinstance(v, (dict, list)):
+                E(p, "body parts must be a list of parts or a mapping of part name to rules/bones")
+            elif isinstance(v, dict):
+                for pname, pval in v.items():
+                    if not isinstance(pval, (list, dict)):
+                        E(p + "." + pname, "bones list or object with bones/allow/deny")
+                    elif isinstance(pval, list) and not all(isinstance(x, str) for x in pval):
+                        E(p + "." + pname, "list of bone names")
+            elif isinstance(v, list):
+                for i, r in enumerate(v):
+                    if not isinstance(r, dict):
+                        E("%s.%d" % (p, i), "part rule must be an object")
+                    elif "bones" in r and not (isinstance(r["bones"], list) and all(isinstance(x, str) for x in r["bones"])):
+                        E("%s.%d.bones" % (p, i), "list of bone names")
+        elif t == "join_blends":
+            if not isinstance(v, list):
+                E(p, "a list of join blends: [{\"bone\": \"wing_1.L\", \"with\": \"spine_2\", \"radius\": 0.15}]")
+            else:
+                for i, b in enumerate(v):
+                    if isinstance(b, dict):
+                        if not (isinstance(b.get("bone"), str) and isinstance(b.get("with"), str)):
+                            E("%s.%d" % (p, i), "blend must have 'bone' and 'with' bone names")
+                        if "radius" in b and not _num(b["radius"]):
+                            E("%s.%d.radius" % (p, i), "radius must be a number")
+                        if "fade" in b and not _num(b["fade"]):
+                            E("%s.%d.fade" % (p, i), "fade must be a number")
+                    elif isinstance(b, (list, tuple)):
+                        if len(b) < 2 or not all(isinstance(x, str) for x in b[:2]):
+                            E("%s.%d" % (p, i), "blend must specify [bone, with]")
+                    else:
+                        E("%s.%d" % (p, i), "join blend must be an object or pair")
+        elif t == "rip_welds":
+            if not isinstance(v, list):
+                E(p, "a list of weld seams to rip: [[\"arm_3.L\", \"leg_1.L\"]]")
+            else:
+                for i, r in enumerate(v):
+                    if isinstance(r, (list, tuple)):
+                        if len(r) != 2 or not all(isinstance(x, str) for x in r):
+                            E("%s.%d" % (p, i), "rip weld pair must be two bone names: [boneA, boneB]")
+                    elif isinstance(r, dict):
+                        if "bones" not in r or not (isinstance(r["bones"], list) and len(r["bones"]) == 2 and all(isinstance(x, str) for x in r["bones"])):
+                            E("%s.%d" % (p, i), "rip weld object must have 'bones': [boneA, boneB]")
+                    else:
+                        E("%s.%d" % (p, i), "rip weld must be a pair or object")
+        elif t == "membranes":
+            if not isinstance(v, list):
+                E(p, "a list of membrane definitions")
+            else:
+                for i, m in enumerate(v):
+                    if not isinstance(m, dict):
+                        E("%s.%d" % (p, i), "membrane must be an object")
+                    elif "bones" in m and not (isinstance(m["bones"], list) and all(isinstance(x, str) for x in m["bones"])):
+                        E("%s.%d.bones" % (p, i), "bones must be a list of spar bone names")
+        elif t == "rigid_islands":
+            if not isinstance(v, list):
+                E(p, "a list of rigid island rules: [{\"bone\": \"spine_2\", \"at\": [x, y, z]}]")
+            else:
+                for i, r in enumerate(v):
+                    if not isinstance(r, dict) or not isinstance(r.get("bone"), str):
+                        E("%s.%d" % (p, i), "rigid island must specify target 'bone'")
 
     if kind == "tripo":
         _check_tripo(rig, source, E, W)
     elif kind == "build":
         _check_build(rig, E, W)
+    elif kind == "placed":
+        _check_placed(rig, E, W)
     elif kind == "humanoid":
         _check_humanoid(spec, E, W)
     elif kind == "custom":
@@ -429,6 +504,14 @@ def _check_build(rig, E, W):
         for k in c:
             if k not in BUILD_CHAIN_FIELDS: W(p + "." + k, "not a chain field the editor knows; kept as it is")
         names.append(c.get("name"))
+
+
+def _check_placed(rig, E, W):
+    chains = rig.get("chains")
+    if not isinstance(chains, list) or not chains:
+        E("rig.chains", "a placed rig needs at least one chain (the body)")
+    else:
+        _check_build(rig, E, W)
 
 
 def _check_humanoid(spec, E, W):

@@ -57,6 +57,7 @@ points are read.
 |---|---|---|
 | `tripo` | a model that came with a Tripo-style animal skeleton (`bone_0`, `bone_1`...): its joints are reused as positions only, and a new armature is built from them, re-rooted at the hips | `rerig.py` |
 | `build` | a model with no skeleton (or a useless one): chains are traced through the mesh | `rerig.py` |
+| `placed` | hand-placed chains with body-part rules: which bones each part may use, blending at joins, welds to rip, membranes riding only wing spar bones and cut free from the flank, jaw line, rigid islands | `rerig.py` |
 | `humanoid` | a person: the standard humanoid skeleton (SKELETONS.md), joints measured at the heights in the `humanoid` section | `rerig_humanoid.py` |
 | `custom` | a hand-written builder for one model, `builder`: a script in the model's folder, run through `run_builder.py` | yours |
 
@@ -118,6 +119,19 @@ Skinning options (both kinds):
 | `hard_split` | `{"bone", "else", "above"}`: everything above a height on one bone, the rest on another (a lid) |
 | `smooth` | weight smoothing passes (a thick body's patchy bone heat) |
 | tuning | `joint_blend`, `girdle_blend`, `limb_radius`, `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
+
+### `placed` body-part rules
+
+For `kind: "placed"`, hand-placed chains (like `build`) are augmented with body-part rules that stop bone heat from bleeding across limbs and membranes:
+
+| Field | Meaning |
+|---|---|
+| `parts` | `{"<part>": {"bones": [...], "allow": [...], "deny": [...]}}` or `{"<part>": ["bone1", "bone2"]}`: which bones each part may use. Disallows cross-bleed (e.g. forelimbs never take wing weights, torso limited to spine) |
+| `blends` | `[{"bone": child, "with": parent, "radius": r, "fade": f}, ...]`: smooth weight blending across specified joins (e.g. limb root to torso capsule) |
+| `rip_welds` | `[["boneA", "boneB"], ...]`: splits coincident welded vertices along seams between parts that move apart (forearm to thigh, wing tips to tail) so bone heat and mesh trim do not pull across the gap |
+| `membranes` | `[{"name", "bones": [...], "root_bone": root, "cut_flank": true}, ...]`: wing and web membranes riding only wing spar bones by distance gradients, cut free from the flank outside the wing root |
+| `rigid_islands` | `[{"bone", "at": [x,y,z]}, ...]`: loose pieces or armour plates (pauldrons) that ride a bone 100% rigid without bending |
+| `jaw` | `{"hinge": [x,y,z], "tip": [x,y,z], "band": 0.08}`: jaw hinge and chin line |
 
 ### `humanoid`
 

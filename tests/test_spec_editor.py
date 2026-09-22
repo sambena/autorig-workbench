@@ -147,6 +147,71 @@ class WriterAndChecks(unittest.TestCase):
         errs, _ = spec_api.check(bad)
         self.assertEqual({e["path"] for e in errs}, {"rig.builder"})
 
+    def test_check_placed_spec(self):
+        s = {
+            "schema": "autorig-spec/1",
+            "rig": {
+                "kind": "placed",
+                "chains": [
+                    {"name": "spine", "slice": [0.1, 0.9], "bones": 4},
+                    {"name": "wing_arm.L", "tube": [[0.3, 0.3, 0.5], [0.8, 0.4, 0.8]], "bones": 3},
+                    {"name": "wing_spar1.L", "points": [[0.8, 0.4, 0.8], [0.95, 0.3, 0.9]], "bones": 2, "parent": ["wing_arm.L", 2]},
+                    {"name": "arm.L", "points": [[0.3, 0.2, 0.4], [0.35, 0.15, 0.2]], "bones": 2, "parent": ["spine", 2]},
+                ],
+                "parts": {
+                    "forelimb.L": {"bones": ["arm_1.L", "arm_2.L"], "deny": ["wing_*"]},
+                    "wing.L": {"bones": ["wing_1.L", "wing_2.L", "wing_3.L"], "deny": ["arm_*"]},
+                },
+                "blends": [
+                    {"bone": "wing_1.L", "with": "spine_2", "radius": 0.15, "fade": 0.4}
+                ],
+                "rip_welds": [
+                    ["arm_2.L", "leg_1.L"],
+                    {"bones": ["wing_3.L", "tail_2"], "dist": 0.05}
+                ],
+                "membranes": [
+                    {
+                        "name": "wing_membrane.L",
+                        "bones": ["wing_1.L", "wing_2.L", "wing_3.L", "wing_spar1_1.L", "wing_spar1_2.L"],
+                        "root_bone": "wing_1.L",
+                        "cut_flank": True
+                    }
+                ],
+                "rigid_islands": [
+                    {"bone": "spine_2", "at": [0.5, 0.3, 0.7]}
+                ],
+                "jaw": {
+                    "hinge": [0.5, 0.15, 0.6],
+                    "tip": [0.5, 0.05, 0.55],
+                    "band": 0.08
+                }
+            }
+        }
+        errs, warns = spec_api.check(s)
+        self.assertEqual(errs, [])
+
+        # Missing chains
+        bad = {"schema": "autorig-spec/1", "rig": {"kind": "placed"}}
+        errs, _ = spec_api.check(bad)
+        self.assertIn("rig.chains", {e["path"] for e in errs})
+
+        # Invalid rip_welds and blends
+        bad_rules = {
+            "schema": "autorig-spec/1",
+            "rig": {
+                "kind": "placed",
+                "chains": [{"name": "spine", "slice": [0.1, 0.9]}],
+                "rip_welds": ["invalid_pair"],
+                "blends": [{"radius": "not_a_num"}],
+                "membranes": [{"bones": "not_a_list"}],
+            }
+        }
+        errs, _ = spec_api.check(bad_rules)
+        err_paths = {e["path"] for e in errs}
+        self.assertIn("rig.rip_welds.0", err_paths)
+        self.assertIn("rig.blends.0", err_paths)
+        self.assertIn("rig.membranes.0.bones", err_paths)
+
     def test_schema_includes_humanoid_and_custom(self):
         sch = spec_api.schema()
         self.assertIn("humanoid", sch)
@@ -154,6 +219,9 @@ class WriterAndChecks(unittest.TestCase):
         self.assertTrue(any(f["key"] == "x.shoulder" for f in sch["humanoid"]))
         custom_fields = [f for f in sch["rig"] if f.get("kinds") and "custom" in f["kinds"]]
         self.assertTrue(any(f["key"] == "builder" for f in custom_fields))
+        placed_fields = [f for f in sch["rig"] if f.get("kinds") and "placed" in f["kinds"]]
+        placed_keys = {f["key"] for f in placed_fields}
+        self.assertTrue({"parts", "blends", "rip_welds", "membranes", "rigid_islands"}.issubset(placed_keys))
 
 
 class EditorServer(unittest.TestCase):
