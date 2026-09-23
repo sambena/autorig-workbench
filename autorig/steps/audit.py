@@ -46,6 +46,11 @@ SPEC_AUDIT = {}
 if MODEL:
     from layout import rigged_dir, leaf
     FBX = os.path.join(rigged_dir(MODEL), leaf(MODEL) + ".fbx")
+    if not os.path.exists(FBX):
+        blend = os.path.join(rigged_dir(MODEL), leaf(MODEL) + ".blend")
+        if os.path.exists(blend):
+            import decimate
+            decimate.run(MODEL)
     try:
         from spec_store import SPECS, model as spec_of
         # rig.audit; or, for a model with no rig section of its own (one lifted from another pack, rigged there and
@@ -63,20 +68,33 @@ t0 = time.time()
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.fbx(filepath=FBX, ignore_leaf_bones=False, automatic_bone_orientation=False)
-arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
-meshes = [o for o in bpy.data.objects if o.type == 'MESH' and any(m.type == 'ARMATURE' for m in o.modifiers)]
-unskinned_meshes = [o.name for o in bpy.data.objects if o.type == 'MESH' and o not in meshes]
-for o in bpy.data.objects:
-    if o.type == 'MESH' and o not in meshes: o.hide_render = True
-M = arm.matrix_world
-bones = list(arm.data.bones)
-BN = [b.name for b in bones]
-BI = {n: i for i, n in enumerate(BN)}
-nb = len(bones)
-heads = np.array([tuple(M @ b.head_local) for b in bones])
-tails = np.array([tuple(M @ b.tail_local) for b in bones])
-parent = [BI[b.parent.name] if b.parent else -1 for b in bones]
-children = [[BI[c.name] for c in b.children] for b in bones]
+arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
+if arm is not None:
+    meshes = [o for o in bpy.data.objects if o.type == 'MESH' and any(m.type == 'ARMATURE' for m in o.modifiers)]
+    unskinned_meshes = [o.name for o in bpy.data.objects if o.type == 'MESH' and o not in meshes]
+    for o in bpy.data.objects:
+        if o.type == 'MESH' and o not in meshes: o.hide_render = True
+    M = arm.matrix_world
+    bones = list(arm.data.bones)
+    BN = [b.name for b in bones]
+    BI = {n: i for i, n in enumerate(BN)}
+    nb = len(bones)
+    heads = np.array([tuple(M @ b.head_local) for b in bones])
+    tails = np.array([tuple(M @ b.tail_local) for b in bones])
+    parent = [BI[b.parent.name] if b.parent else -1 for b in bones]
+    children = [[BI[c.name] for c in b.children] for b in bones]
+else:
+    meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+    unskinned_meshes = []
+    M = np.eye(4)
+    bones = []
+    BN = []
+    BI = {}
+    nb = 0
+    heads = np.empty((0, 3))
+    tails = np.empty((0, 3))
+    parent = []
+    children = []
 
 # ---------------------------------------------------------------- mesh + weights (all skinned meshes, stacked)
 P, W, E, F_area, island_of, groups_unmatched = [], [], [], [], [], set()
@@ -124,16 +142,27 @@ for o in meshes:
     per_mesh.append(dict(name=o.name, verts=n, max_influences=int(ninf.max()) if n else 0,
                          verts_over_4=int((ninf > 4).sum())))
     off += n
-P = np.concatenate(P); W = np.concatenate(W); E = np.concatenate(E); VA = np.concatenate(F_area); ISL = np.concatenate(island_of)
+P = np.concatenate(P) if P else np.empty((0, 3))
+W = np.concatenate(W) if W else np.empty((0, nb))
+E = np.concatenate(E) if E else np.empty((0, 2), int)
+VA = np.concatenate(F_area) if F_area else np.empty(0)
+ISL = np.concatenate(island_of) if island_of else np.empty(0, int)
 NV = len(P)
-lo, hi = P.min(0), P.max(0); size = hi - lo; S = float(size.max())
-area_total = float(VA.sum())
-wsum = W.sum(1)
-unweighted = wsum < 1e-4
-dom = np.where(unweighted, -1, W.argmax(1))
-domw = np.where(unweighted, 0, W.max(1) / np.maximum(wsum, 1e-9))
-
-deform = [i for i in range(nb) if W[:, i].sum() > 0]
+lo, hi = (P.min(0), P.max(0)) if NV else (np.zeros(3), np.zeros(3))
+size = hi - lo; S = float(size.max()) if NV else 1.0
+area_total = float(VA.sum()) if NV else 1.0
+if nb > 0:
+    wsum = W.sum(1)
+    unweighted = wsum < 1e-4
+    dom = np.where(unweighted, -1, W.argmax(1))
+    domw = np.where(unweighted, 0, W.max(1) / np.maximum(wsum, 1e-9))
+    deform = [i for i in range(nb) if W[:, i].sum() > 0]
+else:
+    wsum = np.zeros(NV)
+    unweighted = np.zeros(NV, bool)
+    dom = np.full(NV, -1, int)
+    domw = np.zeros(NV)
+    deform = []
 weighted_set = set(deform)
 
 # ---------------------------------------------------------------- naming / chains
@@ -236,13 +265,18 @@ for i in deform:
 share.sort(key=lambda r: -r["area_pct"])
 
 # ---------------------------------------------------------------- rigid islands
-isl_ids = np.unique(ISL)
+isl_ids = np.unique(ISL) if len(ISL) else []
 isl_info = []
 for k in isl_ids:
     m = ISL == k
     ws = W[m]
-    single = bool(((ws.max(1) / np.maximum(ws.sum(1), 1e-9)) > 0.99).all() and len(set(dom[m])) == 1)
-    isl_info.append((int(m.sum()), single, BN[dom[m][0]] if dom[m][0] >= 0 else None, float(VA[m].sum())))
+    if nb > 0 and ws.shape[1] > 0:
+        single = bool(((ws.max(1) / np.maximum(ws.sum(1), 1e-9)) > 0.99).all() and len(set(dom[m])) == 1)
+        bone_name = BN[dom[m][0]] if dom[m][0] >= 0 else None
+    else:
+        single = True
+        bone_name = None
+    isl_info.append((int(m.sum()), single, bone_name, float(VA[m].sum())))
 isl_info.sort(key=lambda r: -r[0])
 rigid_islands = [r for r in isl_info if r[1]]
 
@@ -268,10 +302,11 @@ for c in deform:
     joints.append(dict(joint=BN[c], parent=BN[p], verts=int(m.sum()), blend=round(blend, 2), hard_edges=hard))
 
 # ---------------------------------------------------------------- bend tests
-bpy.context.view_layer.objects.active = arm
-bpy.ops.object.mode_set(mode='POSE')
-for pb in arm.pose.bones: pb.rotation_mode = 'XYZ'
-rest_len = np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1)
+if arm is not None:
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='POSE')
+    for pb in arm.pose.bones: pb.rotation_mode = 'XYZ'
+rest_len = np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1) if len(E) else np.empty(0)
 valid = rest_len > 1e-7
 def posed_coords():
     dg = bpy.context.evaluated_depsgraph_get()
@@ -280,9 +315,10 @@ def posed_coords():
         ev = o.evaluated_get(dg); me = ev.to_mesh()
         n = len(me.vertices); co = np.empty(n * 3); me.vertices.foreach_get("co", co); co = co.reshape(n, 3)
         mw = np.array(ev.matrix_world); out.append(co @ mw[:3, :3].T + mw[:3, 3]); ev.to_mesh_clear()
-    return np.concatenate(out)
+    return np.concatenate(out) if out else np.empty((0, 3))
 def clear_pose():
-    for pb in arm.pose.bones: pb.rotation_euler = (0, 0, 0); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
+    if arm is not None:
+        for pb in arm.pose.bones: pb.rotation_euler = (0, 0, 0); pb.location = (0, 0, 0); pb.scale = (1, 1, 1)
 def tears_in(Q):
     """Edge lengths of a posed mesh, their stretch, which are tears, and the gap each opens (a fraction of S)."""
     L = np.linalg.norm(Q[E[:, 0]] - Q[E[:, 1]], axis=1)
@@ -330,35 +366,36 @@ def subtree(i):
             if c not in s: s.add(c); st.append(c)
     return s
 bends = []
-for c in deform:
-    if parent[c] < 0: continue
-    sub = subtree(c)
-    for mode, ang in (("bend", 40), ("twist", 60)):
-        clear_pose()
-        pb = arm.pose.bones[BN[c]]
-        pb.rotation_euler = (math.radians(ang), 0, 0) if mode == "bend" else (0, math.radians(ang), 0)
-        bpy.context.view_layer.update()
-        Q = posed_coords()
-        L, ratio, tear, gap = tears_in(Q)
-        site = tear_site(tear, gap, mode, BN[c], [ang, 0, 0] if mode == "bend" else [0, ang, 0])
-        if site: tear_sites.append(site)
-        disp = np.linalg.norm(Q - P, axis=1)
-        moved = disp > 0.01 * S
-        outside = np.array([d not in sub and d >= 0 for d in dom])
-        # vertices the bone should not carry: dominated by a bone outside its subtree and nearest to one too
-        near_out = np.array([nn not in sub for nn in nearest])
-        coll = moved & outside & near_out & (disp > 0.03 * S)
-        worst = int(np.where(tear, ratio, 0).argmax()) if tear.any() else int(ratio.argmax())
-        mid = (P[E[worst, 0]] + P[E[worst, 1]]) * 0.5
-        bends.append(dict(bone=BN[c], mode=mode, max_stretch=round(float(ratio.max()), 2),
-                          worst_at=[round(float((mid[k] - lo[k]) / max(size[k], 1e-9)), 2) for k in range(3)],
-                          worst_edge_owners=sorted({BN[dom[E[worst, 0]]], BN[dom[E[worst, 1]]]}),
-                          tear_edges=int(tear.sum()), tear_edges_raw=int((ratio > 2.0).sum()), worst_gap_pct=gap_pct(tear, gap),
-                          stretch_edges=int((ratio > 1.5).sum()),
-                          crush_edges=int((ratio < 0.3).sum()),
-                          collateral_pct=round(100 * float(VA[coll].sum()) / area_total, 2),
-                          moved_pct=round(100 * float(VA[moved].sum()) / area_total, 2)))
-clear_pose(); bpy.context.view_layer.update()
+if arm is not None:
+    for c in deform:
+        if parent[c] < 0: continue
+        sub = subtree(c)
+        for mode, ang in (("bend", 40), ("twist", 60)):
+            clear_pose()
+            pb = arm.pose.bones[BN[c]]
+            pb.rotation_euler = (math.radians(ang), 0, 0) if mode == "bend" else (0, math.radians(ang), 0)
+            bpy.context.view_layer.update()
+            Q = posed_coords()
+            L, ratio, tear, gap = tears_in(Q)
+            site = tear_site(tear, gap, mode, BN[c], [ang, 0, 0] if mode == "bend" else [0, ang, 0])
+            if site: tear_sites.append(site)
+            disp = np.linalg.norm(Q - P, axis=1)
+            moved = disp > 0.01 * S
+            outside = np.array([d not in sub and d >= 0 for d in dom])
+            # vertices the bone should not carry: dominated by a bone outside its subtree and nearest to one too
+            near_out = np.array([nn not in sub for nn in nearest])
+            coll = moved & outside & near_out & (disp > 0.03 * S)
+            worst = int(np.where(tear, ratio, 0).argmax()) if tear.any() else int(ratio.argmax())
+            mid = (P[E[worst, 0]] + P[E[worst, 1]]) * 0.5
+            bends.append(dict(bone=BN[c], mode=mode, max_stretch=round(float(ratio.max()), 2),
+                              worst_at=[round(float((mid[k] - lo[k]) / max(size[k], 1e-9)), 2) for k in range(3)],
+                              worst_edge_owners=sorted({BN[dom[E[worst, 0]]], BN[dom[E[worst, 1]]]}),
+                              tear_edges=int(tear.sum()), tear_edges_raw=int((ratio > 2.0).sum()), worst_gap_pct=gap_pct(tear, gap),
+                              stretch_edges=int((ratio > 1.5).sum()),
+                              crush_edges=int((ratio < 0.3).sum()),
+                              collateral_pct=round(100 * float(VA[coll].sum()) / area_total, 2),
+                              moved_pct=round(100 * float(VA[moved].sum()) / area_total, 2)))
+    clear_pose(); bpy.context.view_layer.update()
 
 # ---------------------------------------------------------------- combined pose (graded; also drawn on the bend sheet)
 def combined_angles():
@@ -374,12 +411,27 @@ def combined_angles():
 COMBINED = combined_angles()
 def pose_combined():
     """Poses the combined bend, measures it into result["combined_pose"] (and its tear site), returns the stretch."""
-    for n, ang in COMBINED.items(): arm.pose.bones[n].rotation_euler = (math.radians(ang), 0, 0)
-    bpy.context.view_layer.update()
-    L, ratio, tear, gap = tears_in(posed_coords())
-    result["combined_pose"] = dict(max_stretch=round(float(ratio.max()), 2), tear_edges=int(tear.sum()),
-                                   tear_edges_raw=int((ratio > 2).sum()), worst_gap_pct=gap_pct(tear, gap),
-                                   stretch_edges=int((ratio > 1.5).sum()), crush_edges=int((ratio < 0.3).sum()),
+    if arm is not None:
+        for n, ang in COMBINED.items(): arm.pose.bones[n].rotation_euler = (math.radians(ang), 0, 0)
+        bpy.context.view_layer.update()
+    Q = posed_coords()
+    if len(Q) and len(E):
+        L, ratio, tear, gap = tears_in(Q)
+        max_s = round(float(ratio.max()), 2)
+        worst_g = gap_pct(tear, gap)
+        s_edges = int((ratio > 1.5).sum())
+        c_edges = int((ratio < 0.3).sum())
+    else:
+        ratio = np.ones(len(E))
+        tear = np.zeros(len(E), bool)
+        gap = np.zeros(len(E))
+        max_s = 1.0
+        worst_g = 0.0
+        s_edges = 0
+        c_edges = 0
+    result["combined_pose"] = dict(max_stretch=max_s, tear_edges=int(tear.sum()),
+                                   tear_edges_raw=int((ratio > 2).sum()), worst_gap_pct=worst_g,
+                                   stretch_edges=s_edges, crush_edges=c_edges,
                                    angles_deg=COMBINED)
     site = tear_site(tear, gap, "combined")
     if site: tear_sites.insert(0, site)
@@ -454,7 +506,7 @@ def render_sheets():
     scene.render.image_settings.file_format = 'PNG'
     sh = scene.display.shading
     sh.light = 'STUDIO'; sh.color_type = 'VERTEX'; sh.show_cavity = False; sh.show_object_outline = True
-    arm.hide_render = True
+    if arm is not None: arm.hide_render = True
     # dominant colour attribute (per mesh)
     def set_attr(values_rgb, name):
         o_ = 0
@@ -465,7 +517,10 @@ def render_sheets():
             a.data.foreach_set("color", rgba.ravel()); me.color_attributes.active_color = a
             me.attributes.active_color = a
             o_ += n
-    dcol = np.where(dom[:, None] >= 0, col[np.maximum(dom, 0)], np.array([1.0, 0.0, 1.0]))
+    if arm is not None and nb > 0:
+        dcol = np.where(dom[:, None] >= 0, col[np.maximum(dom, 0)], np.array([1.0, 0.0, 1.0]))
+    else:
+        dcol = np.tile(np.array([0.72, 0.75, 0.78]), (NV, 1))
     # unweighted = magenta; mismatched = darkened a touch so bleed reads
     set_attr(dcol, "dom")
     cd = bpy.data.cameras.new("c"); cd.type = 'ORTHO'; cd.clip_start = 0.0001
@@ -483,10 +538,13 @@ def render_sheets():
         for j in range(4):
             a_, b_ = k + 1 + j, k + 1 + (j + 1) % 4; sfaces += [(k, b_, a_), (k + 5, a_, b_)]
         scols += [col[i]] * 6
-    sme = bpy.data.meshes.new("sticks"); sme.from_pydata([tuple(v) for v in sverts], [], sfaces)
-    sob = bpy.data.objects.new("sticks", sme); scene.collection.objects.link(sob)
-    sa = sme.color_attributes.new("dom", 'FLOAT_COLOR', 'POINT'); rgba = np.ones((len(sverts), 4)); rgba[:, :3] = scols
-    sa.data.foreach_set("color", rgba.ravel()); sme.attributes.active_color = sa
+    if sverts:
+        sme = bpy.data.meshes.new("sticks"); sme.from_pydata([tuple(v) for v in sverts], [], sfaces)
+        sob = bpy.data.objects.new("sticks", sme); scene.collection.objects.link(sob)
+        sa = sme.color_attributes.new("dom", 'FLOAT_COLOR', 'POINT'); rgba = np.ones((len(sverts), 4)); rgba[:, :3] = scols
+        sa.data.foreach_set("color", rgba.ravel()); sme.attributes.active_color = sa
+    else:
+        sob = None
     def grab(tag):
         fp = os.path.join(OUT, "_tmp_%s_%s.png" % (SLUG, tag)); scene.render.filepath = fp
         bpy.ops.render.render(write_still=True)
@@ -497,13 +555,13 @@ def render_sheets():
         d = Vector(direction).normalized()
         cam.location = centre + d * dist
         cam.rotation_euler = (-d).to_track_quat('-Z', 'Y').to_euler()
-        sob.hide_render = True
+        if sob is not None: sob.hide_render = True
         for o in meshes: o.hide_render = False
         body = grab(tag + "m")
         tile = np.ones_like(body); tile[..., :3] = 0.97
         a = body[..., 3:4] * mesh_alpha
         tile[..., :3] = tile[..., :3] * (1 - a) + body[..., :3] * a
-        if sticks:
+        if sticks and sob is not None:
             sob.hide_render = False
             for o in meshes: o.hide_render = True
             sk = grab(tag + "s"); a = sk[..., 3:4]
@@ -514,7 +572,7 @@ def render_sheets():
         return tile
     VIEWS = [(1, 0, 0.05), (0, -1, 0.05), (0, 0, 1), (-0.8, -1, 0.55)]  # side (+X), front (-Y), top, quarter
     top = [shot(v, "r%d" % k, False) for k, v in enumerate(VIEWS)]
-    bot = [shot(v, "s%d" % k, True, 0.35) for k, v in enumerate(VIEWS)]
+    bot = [shot(v, "s%d" % k, True if deform else False, 0.35) for k, v in enumerate(VIEWS)]
     save(np.concatenate([np.concatenate(bot, 1), np.concatenate(top, 1)], 0), SLUG + "_skin.png")
     # combined bend pose
     ratio = pose_combined()
@@ -540,15 +598,18 @@ def save(arr, name):
     im.filepath_raw = os.path.join(OUT, name); im.file_format = 'PNG'; im.save()
 
 if RENDER:
-    bpy.ops.object.mode_set(mode='OBJECT')
+    if bpy.context.object and bpy.context.object.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
     render_sheets()
 # ---------------------------------------------------------------- verdict
 if "combined_pose" not in result:  # the numbers-only run still poses it; it is graded
     pose_combined()
-    clear_pose(); bpy.context.view_layer.update()
-head_pct = sum(x["area_pct"] for x in share if x["bone"].split(":")[-1].lower() in ("head", "jaw"))
-has_head = any(n.split(":")[-1].lower() == "head" for n in BN)
-max_inf = max(m["max_influences"] for m in per_mesh) if per_mesh else 0
+    clear_pose()
+    if arm is not None:
+        bpy.context.view_layer.update()
+head_pct = sum(x["area_pct"] for x in share if x["bone"].split(":")[-1].lower() in ("head", "jaw")) if share else 0.0
+has_head = any(n.split(":")[-1].lower() == "head" for n in BN) if BN else False
+max_inf = max((m["max_influences"] for m in per_mesh), default=0) if per_mesh else 0
 single = [b for b in bends if b["mode"] == "bend"]
 bend_tears = max([b["tear_edges"] for b in single] or [0])
 bend_gap = max([b["worst_gap_pct"] for b in single] or [0.0])

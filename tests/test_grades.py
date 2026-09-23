@@ -189,6 +189,20 @@ class CollectionApi(unittest.TestCase):
         # an audit that did not finish leaves no grade behind, rather than the one before it
         self.assertEqual({r["grade"] for r in self.call("/api/audits")["models"]}, {None})
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
+    def test_5_audit_failed(self):
+        audit_dir = os.path.join(self.models, "_autorig", "audit")
+        with open(os.path.join(audit_dir, "broken.json"), "w") as fh:
+            json.dump(fake_audit(20, 20, 15.0), fh)
+        job = self.call("/api/audit-failed", {})
+        self.assertEqual(job["step"], "audit-failed")
+        self.assertEqual(job["model"], "(all failed models)")
+        t0 = time.time()
+        while time.time() - t0 < 300:
+            j = self.call("/api/jobs/%d" % job["id"])
+            if j["state"] not in ("queued", "running"): break
+            time.sleep(0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

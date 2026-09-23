@@ -332,7 +332,36 @@ def default_thresholds():
 # ---- Audit all: every rigged model through audit.py, one Blender each, then a table worst first
 
 def rigged_models():
-    return [(g, n) for g, n in layout.all_models() if os.path.exists(os.path.join(_quiet(layout.rigged_dir, n), n + ".fbx"))]
+    out = []
+    for g, n in layout.all_models():
+        rd = _quiet(layout.rigged_dir, n)
+        if not rd: continue
+        if os.path.exists(os.path.join(rd, n + ".fbx")) or os.path.exists(os.path.join(rd, n + ".blend")):
+            out.append((g, n))
+    return out
+
+
+def riggable_models():
+    """All models ready to rig: has a rig spec, source exists, and no spec error."""
+    out = []
+    for g, n in layout.all_models():
+        st = status(g, n)
+        if st["steps"].get("rig") is None:
+            out.append((g, n))
+    return out
+
+
+def rig_all_job():
+    ms = riggable_models()
+    if not ms: raise ValueError("no models with a valid rig spec to rig")
+    cmds = []
+    for k, (g, n) in enumerate(ms, 1):
+        model_cmds = commands(g, n, "rig", spec_store.model(n))
+        for lbl, argv, prep in model_cmds:
+            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep))
+    job = Job("(all rig-ready models)", "", "rig-all", cmds)
+    job.keep_going = True
+    return job
 
 
 def audit_all_job():
@@ -348,10 +377,38 @@ def audit_all_job():
     return job
 
 
+def failed_models():
+    """All models whose latest audit failed (grade is FAIL or verdict pass is False)."""
+    out = []
+    for row in audit_table():
+        if row.get("grade") == "FAIL" or row.get("pass") is False:
+            out.append((row.get("group", ""), row["model"]))
+    return out
+
+
+def audit_failed_job():
+    work = os.path.join(layout.WORK, "audit")
+    os.makedirs(work, exist_ok=True)
+    ms = failed_models()
+    if not ms: raise ValueError("no failed models to audit: all audited models pass or check")
+    def forget(n):
+        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
+    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n))
+            for k, (g, n) in enumerate(ms, 1)]
+    job = Job("(all failed models)", "", "audit-failed", cmds)
+    job.keep_going = True
+    return job
+
+
 def audit_table():
-    """One row per rigged model (cli/audit_all.py's columns), worst first; a model never audited has no grade."""
+    """One row per model (cli/audit_all.py's columns), worst first; a model never audited has no grade."""
     rows = []
-    for g, n in rigged_models():
+    for g, n in layout.all_models():
+        rd = _quiet(layout.rigged_dir, n)
+        fbx = os.path.join(rd, n + ".fbx") if rd else None
+        blend = os.path.join(rd, n + ".blend") if rd else None
+        has_fbx = bool(fbx and os.path.exists(fbx))
+        has_blend = bool(blend and os.path.exists(blend))
         a = audit_file(n)
         try:
             full = json.load(open(a)) if a else None
@@ -361,7 +418,16 @@ def audit_table():
             allow = (spec_store.model(n).get("rig") or {}).get("audit")
         except Exception:
             allow = None
-        rows.append(dict(grades.summary(n, full, allow), group=g))
+
+        if not has_fbx and not has_blend:
+            row_status = "unrigged"
+        elif not a or full is None:
+            row_status = "not audited"
+        else:
+            row_status = "audited"
+
+        row = dict(grades.summary(n, full, allow), group=g, status=row_status)
+        rows.append(row)
     return sorted(rows, key=grades.severity)
 
 
@@ -864,9 +930,15 @@ def make_handler(app):
                     if st["steps"].get(step): return self._send(409, {"error": st["steps"][step]})
                     job = app.runner.submit(Job(name, g, step, commands(g, name, step, spec_store.model(name))))
                     return self._send(200, job.info())
+                if path == "/api/rig-all":
+                    if app.runner.current: return self._send(409, {"error": "a step is running"})
+                    return self._send(200, app.runner.submit(rig_all_job()).info())
                 if path == "/api/audit-all":
                     if app.runner.current: return self._send(409, {"error": "a step is running"})
                     return self._send(200, app.runner.submit(audit_all_job()).info())
+                if path in ("/api/audit-failed", "/api/audit-all-failed"):
+                    if app.runner.current: return self._send(409, {"error": "a step is running"})
+                    return self._send(200, app.runner.submit(audit_failed_job()).info())
                 if path == "/api/cancel":
                     j = app.runner.jobs.get(int(body.get("job", 0)))
                     if not j: return self._send(404, {"error": "no such job"})

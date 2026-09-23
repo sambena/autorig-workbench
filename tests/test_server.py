@@ -259,6 +259,11 @@ class ServerTest(unittest.TestCase):
         self.assertIn("faces", diag)
         self.assertIn(diag["grade"], ("HEALTHY", "WARN", "CRITICAL"))
 
+    def test_8_rig_all_api(self):
+        job = self.call("/api/rig-all", {})
+        self.assertEqual(job["step"], "rig-all")
+        self.assertEqual(job["model"], "(all rig-ready models)")
+
 
 def alive(pid):
     if os.name == "nt":

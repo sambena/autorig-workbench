@@ -127,9 +127,11 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
       </div>
     </div>
     <div class="panel">
-      <div class="row" style="margin-bottom:8px"><h2 style="margin:0">Models</h2><span style="flex:1"></span>
+      <div class="row" style="margin-bottom:8px; gap:4px; flex-wrap:wrap"><h2 style="margin:0">Models</h2><span style="flex:1"></span>
+        <button id="rigAll" title="rig every model that has a rig spec, one after another">Rig all</button>
         <button id="auditAll" title="audit every rigged model, one after another, then show the table worst first">Audit all</button>
-        <button id="auditTable" title="the latest audit of every rigged model, worst first">Table</button></div>
+        <button id="auditFailed" title="audit only models whose latest audit failed (FAIL grade)">Audit failed</button>
+        <button id="auditTable" title="the latest audit of every model, worst first">Table</button></div>
       <ul class="models" id="models"></ul>
     </div>
   </section>
@@ -185,7 +187,12 @@ async function refresh() {
   $("#helpLink").href = fileUrl("/help.html");
   renderModels();
   const busy = state.running;
-  $("#auditAll").disabled = !!busy || !state.models.some((m) => m.rigged_fbx);
+  const hasRigged = state.models.some((m) => m.rigged_fbx || m.rigged);
+  const hasRiggable = state.models.some((m) => !m.steps || m.steps.rig === null);
+  const hasFailed = state.models.some((m) => m.audit === "FAIL");
+  if ($("#rigAll")) $("#rigAll").disabled = !!busy || !hasRiggable;
+  if ($("#auditAll")) $("#auditAll").disabled = !!busy || !hasRigged;
+  if ($("#auditFailed")) $("#auditFailed").disabled = !!busy || !hasFailed;
   if (busy && (!job || job.id !== busy.id)) follow(busy);
   if (selected) renderModel();
 }
@@ -286,7 +293,7 @@ function follow(j) {
   };
   es.addEventListener("end", async (ev) => {
     es.close(); es = null; job = JSON.parse(ev.data); showJob(); await refresh(); showJob();
-    if (job.step === "audit-all") showCollection();
+    if (job.step === "audit-all" || job.step === "audit-failed") showCollection();
     else if (job.model === selected) loadDetails();
   });
   es.onerror = () => { /* the server closes the stream when the job ends; EventSource retries otherwise */ };
@@ -473,20 +480,33 @@ async function showCollection() {
   $("#results").innerHTML = `<div class="empty">Click a row to see that model's audit.</div>`;
   try { d = await api("/api/audits"); } catch (e) { r.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
   const f = (v) => v === null || v === undefined ? "–" : esc(v);
-  let h = `<h2>Collection audit</h2><div class="meta">Every rigged model's latest audit, worst first. PASS is within every limit; CHECK is past a limit but inside its warn band ` +
-          `(look at it in the viewer); FAIL is clearly broken. Click a row to open the model.</div>`;
-  if (!d.models.length) h += `<div class="empty">No rigged models yet.</div>`;
+  const hasFailed = d.models.some((r) => r.grade === "FAIL" || r.pass === false);
+  let h = `<h2>Collection audit</h2><div class="meta">Every model's latest audit, worst first. PASS is within every limit; CHECK is past a limit but inside its warn band ` +
+          `(look at it in the viewer); FAIL is clearly broken. Click a row to open the model.</div>` +
+          `<div class="row" style="margin-top:8px; gap:8px"><button class="small" id="colRigAll">Rig all</button>` +
+          `<button class="small" id="colAuditAll">Audit all</button>` +
+          `<button class="small" id="colAuditFailed"${hasFailed ? "" : " disabled"}>Audit failed</button></div>`;
+  if (!d.models.length) h += `<div class="empty">No models found.</div>`;
   else h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Model</th><th>Grade</th><th>Tears combined</th><th>Tears bend</th><th>Worst gap %</th><th>Bleed %</th><th>Head %</th><th>Worst bone</th></tr>` +
     d.models.map((r) => `<tr class="pick" data-name="${esc(r.model)}"><td>${esc(r.model)}<div class="why">${esc(r.group || "")}</div></td>` +
-      `<td>${r.grade ? `<span class="chip ${gradeClass(r.grade)}">${esc(r.grade)}</span>` : `<span class="chip">not audited</span>`}</td>` +
+      `<td>${r.grade ? `<span class="chip ${gradeClass(r.grade)}">${esc(r.grade)}</span>` : `<span class="chip">${esc(r.status || "not audited")}</span>`}</td>` +
       `<td class="num">${f(r.combined_tears)}</td><td class="num">${f(r.bend_tears)}</td><td class="num">${f(r.worst_gap_pct)}</td>` +
       `<td class="num">${f(r.bleed_pct)}</td><td class="num">${f(r.head_pct)}</td><td>${f(r.worst_bone)}</td></tr>`).join("") + `</table></div>`;
   if (selected) return;                                              // a model was picked while it loaded
   r.innerHTML = h;
   r.querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => { tab = "audit"; select(tr.dataset.name); });
+  if ($("#colRigAll")) $("#colRigAll").onclick = () => $("#rigAll").click();
+  if ($("#colAuditAll")) $("#colAuditAll").onclick = () => $("#auditAll").click();
+  if ($("#colAuditFailed")) $("#colAuditFailed").onclick = () => $("#auditFailed").click();
 }
+$("#rigAll").onclick = async () => {
+  try { const j = await api("/api/rig-all", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
+};
 $("#auditAll").onclick = async () => {
   try { const j = await api("/api/audit-all", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
+};
+$("#auditFailed").onclick = async () => {
+  try { const j = await api("/api/audit-failed", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
 };
 $("#auditTable").onclick = () => showCollection();
 

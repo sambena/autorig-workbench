@@ -119,7 +119,8 @@ def run(key):
     # A group listed in full_resolution_groups ships its rigged FBX at full resolution (rerig.py's export) and each
     # consumer cuts its own copy; only a model with a budget of its own is cut here.
     target = budget(key)
-    if target is None:
+    out = os.path.join(rigged_dir(key), leaf(key) + ".fbx")
+    if target is None and os.path.exists(out):
         return {"model": key, "skipped": "kept at full resolution (no budget for %s)" % (group_of(key) or "the root")}
 
     if rigged:
@@ -139,7 +140,7 @@ def run(key):
     mesh = meshes[0]
     before = tri_count(mesh)
 
-    if before > target:
+    if target is not None and before > target:
         # A rig of rigid parts (a machine: every vertex on one bone) bends nowhere, so the flat-panel dissolve is as
         # safe on it as on a static prop, and it is what keeps a machine's plates from turning to spikes.
         rigid = bool(arms) and all(sum(1 for g in v.groups if g.weight > 1e-4) <= 1 for v in mesh.data.vertices)
