@@ -109,8 +109,16 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(st["models"], [])
         self.assertIn("blender_version", st)
         self.assertIn(self.status("/files/models/../../etc/passwd"), (400, 403, 404))
+        self.assertIn(self.status("/samples/../../etc/passwd"), (400, 403, 404))
         self.assertEqual(self.status("/api/run", body={"model": "x", "step": "rm -rf"}), 400)
         self.assertEqual(self.status("/api/upload?batch=abcdefgh12&path=../evil.py", raw=b"x"), 400)
+
+        # /help.html requires token and serves HTML guide
+        self.assertEqual(self.status("/help.html", token=None), 403)
+        req = urllib.request.Request(self.base + "/help.html?t=" + TOKEN)
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.status, 200)
+            self.assertIn("Autorig Workbench", r.read().decode("utf-8"))
 
     # ---- the pipeline, through the API
 

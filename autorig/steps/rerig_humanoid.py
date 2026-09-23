@@ -228,10 +228,18 @@ def rerig_humanoid(key, h, qa_dir, export):
     return log
 
 
+DEFAULT_HUMANOID = {
+    "forward": [0, -1, 0],
+    "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72, "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
+    "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
+}
+
+
 def main():
     only, qa, no_export = args()
     for k in (only.split(",") if only else list(HUMANOIDS)):
-        try: r = rerig_humanoid(k, HUMANOIDS[k], qa, not no_export)
+        spec_h = HUMANOIDS.get(k) or DEFAULT_HUMANOID
+        try: r = rerig_humanoid(k, spec_h, qa, not no_export)
         except Exception as e:
             import traceback; traceback.print_exc(); r = {"model": k, "error": repr(e)}
         json.dump(r, open(os.path.join(qa, k + ".json"), "w"), indent=1, default=str)

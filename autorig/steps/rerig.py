@@ -363,6 +363,12 @@ def build_chains(mesh, spec, size):
             # old base_f fraction of the way from the spine is kept only for specs that have not been measured, and
             # it is what ran an insect's legs up through its shell.
             base = s.point(c["base"]) if c.get("base") else loose_limb_root(tip)
+            if base is None and pi is not None and chains[pi].get("points"):
+                body_ref = on_polyline(chains[pi]["points"], tip)
+                if body_ref is not None:
+                    junc = s.junction(tip, body_ref)
+                    if junc is not None:
+                        base = junc[0]
             if base is None:
                 base = on_polyline(chains[pi]["points"], tip).lerp(tip, c.get("base_f", 0.45))
             pts = [base, tip] if n == 1 else s.tube(base, tip, n, first=base)

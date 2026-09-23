@@ -94,6 +94,8 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <header>
   <h1>Autorig Workbench</h1>
   <span class="meta" id="meta"></span>
+  <span style="flex:1"></span>
+  <a id="helpLink" href="/help.html" target="_blank" style="text-decoration:none"><button type="button" style="font-size:12px;padding:3px 9px" title="Comprehensive guide with diagrams, button walkthroughs, bone placement, and troubleshooting">Help &amp; Guide ↗</button></a>
 </header>
 <main>
   <section>
@@ -142,6 +144,16 @@ const STEPS = [["survey", "Survey"], ["rig", "Rig"], ["trim", "Trim"], ["audit",
                ["publish", "Publish"], ["preview", "Preview"], ["all", "Run all"]];
 const CHECKS = {bleed_pct: "Bleed %", combined_tears: "Tears, combined pose", bend_tears: "Tears, single bends",
                 head_pct: "Head share %", max_influences: "Influences per vertex"};
+const STEP_DESCRIPTIONS = {
+  survey: "Survey source mesh, detect armature kind, and render 4 facing views to find forward direction.",
+  rig: "Build standard armature from rig.json, skin mesh with bone heat & voxel proxy, and render QA bend test.",
+  trim: "Decimate geometry to triangle budget, clamp to max 4 influences per vertex, and normalize weights.",
+  audit: "Run automated QA checks: test for tears in extreme poses, weight bleed, head share, and influence limits.",
+  clips: "Author procedural animation clips (walk, idle, attack, etc.) for the model's archetype.",
+  publish: "Write engine model card (model.json) with bounding measurements and index collection.",
+  preview: "Compile preview.glb with skinned mesh and baked clips for interactive 3D results viewer.",
+  all: "Execute entire pipeline in sequence: Survey -> Rig -> Trim -> Audit -> Clips -> Publish -> Preview."
+};
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const fileUrl = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
@@ -161,6 +173,7 @@ async function api(path, body) {
 async function refresh() {
   state = await api("/api/state");
   $("#meta").textContent = "models " + state.root + "  ·  work " + state.work + "  ·  blender " + (state.blender || "NOT FOUND");
+  $("#helpLink").href = fileUrl("/help.html");
   renderModels();
   const busy = state.running;
   $("#auditAll").disabled = !!busy || !state.models.some((m) => m.rigged_fbx);
@@ -210,8 +223,10 @@ function renderModel() {
   h += `<div class="steps">`;
   for (const [k, label] of STEPS) {
     const why = m.steps[k];
-    h += `<button class="${k === "all" ? "primary" : ""}" data-step="${k}" aria-label="${label}" ${why || running ? "disabled" : ""} title="${esc(why || (running ? "a step is running" : ""))}">${label}</button>`;
+    const tip = why ? `${label} (unavailable): ${why}` : (running ? `${label} (a step is running)` : `${label}: ${STEP_DESCRIPTIONS[k] || ""}`);
+    h += `<button class="${k === "all" ? "primary" : ""}" data-step="${k}" aria-label="${label}" ${why || running ? "disabled" : ""} title="${esc(tip)}">${label}</button>`;
   }
+  h += `<span class="meta" style="margin-left:auto;align-self:center"><a href="${fileUrl('/help.html#buttons-all')}" target="_blank" style="color:var(--muted);font-size:12px;text-decoration:none">Button Guide ↗</a></span>`;
   h += `</div>`;
   const reasons = STEPS.filter(([k]) => m.steps[k]).map(([k, l]) => `<li><b>${l}</b>: ${esc(m.steps[k])}</li>`);
   if (reasons.length) h += `<ul class="why">${reasons.join("")}</ul>`;

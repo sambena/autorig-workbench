@@ -613,6 +613,15 @@ def make_handler(app):
                 if not self._guard(q): return
                 return self._send(200, viewer_api.page(app.token), "text/html; charset=utf-8",
                                   {"Content-Security-Policy": viewer_api.CSP})
+            if path in ("/help.html", "/help"):
+                if not self._guard(q): return
+                help_path = os.path.join(HERE, "help.html")
+                if os.path.exists(help_path):
+                    with open(help_path, "r", encoding="utf-8") as fh:
+                        page = fh.read().replace("__AUTORIG_TOKEN__", app.token)
+                    return self._send(200, page, "text/html; charset=utf-8",
+                                      {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
+                return self._send(404, {"error": "help page not found"})
             if not self._guard(q): return
             try:
                 if path == "/api/previews":
@@ -646,6 +655,18 @@ def make_handler(app):
                     return self._send(200, dict(j.info(), log=j.lines))
                 m = re.match(r"^/files/(models|work)/(.+)$", path)
                 if m: return self.file(m.group(1), unquote(m.group(2)))
+                m_sample = re.match(r"^/samples/(.+)$", path)
+                if m_sample:
+                    samples_root = os.path.join(REPO, "samples")
+                    rel = safe_rel(unquote(m_sample.group(1)))
+                    if not rel: return self._send(400, {"error": "bad path"})
+                    p = os.path.realpath(os.path.join(samples_root, *rel.split("/")))
+                    if os.path.commonpath([os.path.normcase(p), os.path.normcase(os.path.realpath(samples_root))]) != os.path.normcase(os.path.realpath(samples_root)):
+                        return self._send(403, {"error": "outside samples folder"})
+                    if not os.path.isfile(p): return self._send(404, {"error": "no such file"})
+                    ctype = mimetypes.guess_type(p)[0] or "application/octet-stream"
+                    with open(p, "rb") as fh:
+                        return self._send(200, fh.read(), ctype)
                 self._send(404, {"error": "not found"})
             except Exception as e:
                 self._send(500, {"error": repr(e)})

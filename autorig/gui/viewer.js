@@ -91,11 +91,14 @@ let stage = null, stageLabels = [];
 const figure = makeFigure();
 scene.add(figure);
 
-function label(text, cls) {
+function label(text, cls, place = "above") {
   const d = document.createElement("div");
   d.className = cls;
   d.textContent = text;
-  return new CSS2DObject(d);
+  const obj = new CSS2DObject(d);
+  if (place === "above") obj.center.set(0.5, 1.45);
+  else if (place === "below") obj.center.set(0.5, -0.45);
+  return obj;
 }
 
 function makeFigure() {
@@ -236,6 +239,7 @@ async function show(i) {
   const item = models[mi];
   try { history.replaceState(null, "", "?model=" + encodeURIComponent(item.name) + "&t=" + encodeURIComponent(TOKEN)); } catch (e) { /* file: or sandboxed */ }
   $("back").href = "/?t=" + encodeURIComponent(TOKEN) + "#model=" + encodeURIComponent(item.name);
+  if ($("helpLink")) $("helpLink").href = "/help.html?t=" + encodeURIComponent(TOKEN) + "#preview-button";
   const token = ++loadToken;
   unload();
   hud();

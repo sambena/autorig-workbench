@@ -311,6 +311,8 @@ const marks = new THREE.Group(); scene.add(marks);
 const spotsG = new THREE.Group(); scene.add(spotsG);
 const pickables = [];                   // joint spheres (userData.joint)
 const labels = {};                      // joint name -> CSS2DObject
+let showHeightLabels = true;
+let showSpanLabels = true;
 
 let riggedScene = null;
 let riggedClips = [];
@@ -538,12 +540,15 @@ function ball(p, colour, radius, opacity = 1) {
   m.position.copy(V(p)); m.renderOrder = 12;
   return m;
 }
-function tag(text, cls, colour) {
+function tag(text, cls, colour, place = "above") {
   const d = document.createElement("div");
   d.className = "lbl " + (cls || "");
   d.textContent = text;
   if (colour !== undefined) d.style.borderLeftColor = hex(colour);
-  return new CSS2DObject(d);
+  const obj = new CSS2DObject(d);
+  if (place === "above") obj.center.set(0.5, 1.45);
+  else if (place === "below") obj.center.set(0.5, -0.45);
+  return obj;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -595,7 +600,7 @@ function drawSkeleton() {
     const col = L.dropped.has(n) ? DROP : UNUSED;
     if (p) { const s = stick(p.pos, j.pos, col, rad * 0.4, 0.55); if (s) { s.userData.joint = n; skel.add(s); pickables.push(s); } }
   }
-  const showNames = $("showLabels").checked;
+  const showSource = $("showSourceLabels") ? $("showSourceLabels").checked : false;
   for (const [n, j] of Object.entries(all)) {
     if (n === "__body") continue;
     const folded = L.alias[n];
@@ -605,7 +610,7 @@ function drawSkeleton() {
     // a bigger, invisible ball: an easier target
     const hit = new THREE.Mesh(new THREE.SphereGeometry(jr * 2.2, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.copy(V(j.pos)); hit.userData.joint = n; skel.add(hit); pickables.push(hit);
-    if (showNames || n === selected) {
+    if (showSource || n === selected) {
       const o = L.of[n];
       const role = o && o.index === 0 && o.how !== "spine" ? "  " + o.role : (n === rig().head ? "  head" : n === rig().hips ? "  hips" : "");
       const t = tag(n + role, (n === selected ? "sel" : "") + (L.of[n] || j.virtual ? "" : " dim"), col);
@@ -781,7 +786,10 @@ function pointFields() {
 function drawMarks() {
   clearGroup(marks);
   const r = F.max * 0.012;
+  const showSuggested = $("showSuggestedLabels") ? $("showSuggestedLabels").checked : true;
+  const showGuides = $("showGuides") ? $("showGuides").checked : true;
   for (const f of pointFields()) {
+    if ((f.type === "height" || f.type === "span") && !showGuides) continue;
     const P = f.pts.filter((p) => Array.isArray(p) && p.length === 3).map((u) => F.fromUnit(u));
     P.forEach((p, i) => {
       const b = ball(p, f.col, r * (i === P.length - 1 ? 1.2 : 0.9));
@@ -790,7 +798,10 @@ function drawMarks() {
         b.userData.pointType = f.type || "point";
       }
       marks.add(b);
-      if (i === 0 || i === P.length - 1 || f.type === "station") {
+      let showThisLabel = showSuggested;
+      if (f.type === "height" && !showHeightLabels) showThisLabel = false;
+      if (f.type === "span" && !showSpanLabels) showThisLabel = false;
+      if (showThisLabel && (i === 0 || i === P.length - 1 || f.type === "station")) {
         const t = tag(f.name + (P.length > 2 ? " " + (i + 1) : ""), "", f.col);
         t.position.copy(V(p));
         marks.add(t);
@@ -810,7 +821,9 @@ function drawMarks() {
     const g = new THREE.BufferGeometry().setFromPoints(edges.flatMap(([a, z]) => [V(c[a]), V(c[z])]));
     const ls = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, depthTest: false, transparent: true }));
     ls.renderOrder = 13; marks.add(ls);
-    const t = tag("rigid: " + b[0], "", col); t.position.copy(V(c[7])); marks.add(t);
+    if (showSuggested) {
+      const t = tag("rigid: " + b[0], "", col); t.position.copy(V(c[7])); marks.add(t);
+    }
   });
   if (pick && pick.preview) { const p = F.fromUnit(pick.preview); marks.add(ball(p, 0xffffff, r * 1.4)); }
 }
@@ -831,8 +844,10 @@ function drawSpots() {
 }
 
 function redraw() { F = frame(); L = kind() === "tripo" ? layoutTripo() : { of: {}, chains: [], virtual: {}, dropped: new Set(), unused: new Set(), problems: [], alias: {} }; drawSkeleton(); drawMarks(); drawSpots(); legend(); boneInfo(); }
-$("showLabels").onchange = redraw;
-$("showSpots").onchange = redraw;
+if ($("showSourceLabels")) $("showSourceLabels").onchange = redraw;
+if ($("showSuggestedLabels")) $("showSuggestedLabels").onchange = redraw;
+if ($("showGuides")) $("showGuides").onchange = redraw;
+if ($("showSpots")) $("showSpots").onchange = redraw;
 
 function legend() {
   const el = $("legend");
@@ -875,32 +890,94 @@ function applyPointEdit(path, type, u) {
   }
 }
 
+function applyPointEditInMemory(path, type, u) {
+  if (!path || !path.length) return;
+  let o = draft;
+  for (let i = 0; i < path.length - 1; i++) {
+    const k = path[i];
+    if (o[k] == null) o[k] = typeof path[i + 1] === "number" ? [] : {};
+    o = o[k];
+  }
+  const last = path[path.length - 1];
+  if (type === "station" || type === "slice_y") {
+    o[last] = Math.round(u[1] * 1000) / 1000;
+  } else if (type === "height") {
+    o[last] = Math.round(u[2] * 1000) / 1000;
+  } else if (type === "span") {
+    o[last] = Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000;
+  } else {
+    o[last] = [Math.round(u[0] * 1000) / 1000, Math.round(u[1] * 1000) / 1000, Math.round(u[2] * 1000) / 1000];
+  }
+}
+
 const ray = new THREE.Raycaster();
 let downAt = null;
 let drag3D = null;
+let hoveredMark = null;
 const dragPlane = new THREE.Plane();
 const planeIntersect = new THREE.Vector3();
+
+// Screen-space proximity picking for effortless 3D point selection
+function findPointAtScreen(clientX, clientY) {
+  if (!F || !renderer) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const markBalls = [];
+  marks.traverse((obj) => {
+    if (obj.isMesh && obj.userData && obj.userData.pointPath) markBalls.push(obj);
+  });
+  if (!markBalls.length) return null;
+
+  const tempV = new THREE.Vector3();
+  let best = null, bestDist = 24; // 24px screen-space hit tolerance
+  for (const b of markBalls) {
+    b.getWorldPosition(tempV);
+    const proj = tempV.clone().project(camera);
+    if (proj.z > 1) continue; // Behind camera
+    const sx = ((proj.x + 1) * 0.5) * rect.width + rect.left;
+    const sy = ((-proj.y + 1) * 0.5) * rect.height + rect.top;
+    const d = Math.hypot(clientX - sx, clientY - sy);
+    if (d < bestDist) {
+      bestDist = d;
+      best = b;
+    }
+  }
+  return best;
+}
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
   downAt = [e.clientX, e.clientY];
   if (!pick) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    ray.setFromCamera(m, camera);
-    const markHits = ray.intersectObjects(marks.children, false);
-    const hitWithPoint = markHits.find((h) => h.object.userData && h.object.userData.pointPath);
-    if (hitWithPoint) {
+    const hitObj = findPointAtScreen(e.clientX, e.clientY);
+    if (hitObj) {
       pushUndo();
-      const hitObj = hitWithPoint.object;
+      try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+      controls.enabled = false;
+      renderer.domElement.style.cursor = "grabbing";
+
       const camDir = new THREE.Vector3();
       camera.getWorldDirection(camDir);
       dragPlane.setFromNormalAndCoplanarPoint(camDir.negate(), hitObj.position);
-      controls.enabled = false;
+
+      const path = hitObj.userData.pointPath;
+      const type = hitObj.userData.pointType;
+      const startU = clone(getPath(path));
+
       drag3D = {
-        path: hitObj.userData.pointPath,
-        type: hitObj.userData.pointType,
-        obj: hitObj
+        pointerId: e.pointerId,
+        path,
+        type,
+        obj: hitObj,
+        startU,
+        lastU: startU
       };
+
+      const banner = $("bannerText");
+      if (banner) {
+        const desc = Array.isArray(startU) ? startU.map((x) => typeof x === "number" ? x.toFixed(2) : x).join(", ") : startU;
+        banner.textContent = `Dragging point (${path.slice(-2).join(".")} = [${desc}]) · Drag in 3D (Shift to snap)`;
+        $("banner").style.display = "block";
+      }
+      return;
     }
   }
 });
@@ -911,18 +988,70 @@ renderer.domElement.addEventListener("pointermove", (e) => {
     const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(m, camera);
     if (ray.ray.intersectPlane(dragPlane, planeIntersect)) {
-      const u = r3(F.toUnit(fromV(planeIntersect)));
-      applyPointEdit(drag3D.path, drag3D.type, u);
+      let u = r3(F.toUnit(fromV(planeIntersect)));
+
+      // Clamp coordinates within bounding range
+      u = [
+        Math.max(-0.05, Math.min(1.05, u[0])),
+        Math.max(-0.05, Math.min(1.05, u[1])),
+        Math.max(-0.05, Math.min(1.05, u[2]))
+      ];
+
+      // Shift snapping: snap to symmetry plane (X=0.5) or floor (Z=0.0) if nearby
+      if (e.shiftKey) {
+        if (Math.abs(u[0] - 0.5) < 0.05) u[0] = 0.5;
+        if (Math.abs(u[2] - 0.0) < 0.05) u[2] = 0.0;
+      }
+
+      drag3D.lastU = u;
+      applyPointEditInMemory(drag3D.path, drag3D.type, u);
       drawMarks();
+
+      const banner = $("bannerText");
+      if (banner) {
+        banner.textContent = `Point: [${u[0].toFixed(3)}, ${u[1].toFixed(3)}, ${u[2].toFixed(3)}] ${e.shiftKey ? "(Snapped)" : ""}`;
+      }
       if (tab === "flat") drawFlat();
+    }
+    return;
+  }
+
+  // Hover detection for draggable points
+  if (!pick) {
+    const h = findPointAtScreen(e.clientX, e.clientY);
+    if (h !== hoveredMark) {
+      if (hoveredMark) {
+        hoveredMark.scale.set(1, 1, 1);
+        if (hoveredMark.material && hoveredMark.userData.origColor !== undefined) {
+          hoveredMark.material.color.setHex(hoveredMark.userData.origColor);
+        }
+      }
+      hoveredMark = h;
+      if (hoveredMark) {
+        hoveredMark.scale.set(1.5, 1.5, 1.5);
+        if (hoveredMark.material) {
+          if (hoveredMark.userData.origColor === undefined) hoveredMark.userData.origColor = hoveredMark.material.color.getHex();
+          hoveredMark.material.color.setHex(0xffdd00); // Highlight in vivid gold
+        }
+        renderer.domElement.style.cursor = "grab";
+      } else {
+        renderer.domElement.style.cursor = "";
+      }
     }
   }
 });
 
 renderer.domElement.addEventListener("pointerup", (e) => {
   if (drag3D) {
+    try { renderer.domElement.releasePointerCapture(drag3D.pointerId); } catch (_) {}
+    const finalU = drag3D.lastU;
+    const finalPath = drag3D.path;
+    const finalType = drag3D.type;
     drag3D = null;
     controls.enabled = true;
+    renderer.domElement.style.cursor = hoveredMark ? "grab" : "";
+    if (!pick) $("banner").style.display = "none";
+    if (finalU) applyPointEdit(finalPath, finalType, finalU);
     changed();
     return;
   }
@@ -1403,7 +1532,10 @@ function humanoidHtml() {
     ["ankle", "Ankle joint", "ankle bones / top of foot"]
   ];
   const { e: ze, w: zw } = errsAt(["humanoid", "z"]);
-  h += `<div class="field ${ze.length ? "err" : ""}"><div class="lab">Heights (Z)</div>` +
+  h += `<div class="field ${ze.length ? "err" : ""}"><div class="lab">` +
+       `<span>Heights (Z)</span><span class="grow"></span>` +
+       `<label style="font-size:11px;font-weight:normal;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px">` +
+       `<input type="checkbox" data-act="toggleheightlabels" ${showHeightLabels ? "checked" : ""}> show labels</label></div>` +
        `<div class="help">Heights as 0 (floor) to 1 (top of head). Click Pick to click points in 3D or flat views.</div>` +
        ze.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") +
        zw.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("");
@@ -1429,7 +1561,10 @@ function humanoidHtml() {
     ["tip", "Fingertip span", "outermost fingertips (usually 0.0)"]
   ];
   const { e: xe, w: xw } = errsAt(["humanoid", "x"]);
-  h += `<div class="field ${xe.length ? "err" : ""}"><div class="lab">Spans (X)</div>` +
+  h += `<div class="field ${xe.length ? "err" : ""}"><div class="lab">` +
+       `<span>Spans (X)</span><span class="grow"></span>` +
+       `<label style="font-size:11px;font-weight:normal;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px">` +
+       `<input type="checkbox" data-act="togglespanlabels" ${showSpanLabels ? "checked" : ""}> show labels</label></div>` +
        `<div class="help">Distance from center (0 outermost tip .. 0.5 center). Click Pick to click an arm/hand in 3D or flat views.</div>` +
        xe.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") +
        xw.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("");
@@ -1775,13 +1910,20 @@ function wirePane(pane) {
     try { sessionStorage.setItem("shut", JSON.stringify(shut)); } catch (e) {}
   }));
   pane.querySelectorAll("[data-act]").forEach((el) => (el.onclick = (e) => { e.stopPropagation(); act(el); }));
+  pane.querySelectorAll("input[type=checkbox][data-act]").forEach((el) => (el.onchange = (e) => { e.stopPropagation(); act(el); }));
   pane.querySelectorAll("[data-set]").forEach((el) => (el.onchange = () => set(el)));
 }
 
 function act(el) {
   const path = el.dataset.path ? JSON.parse(el.dataset.path) : null;
   const a = el.dataset.act;
-  if (a === "pick") {
+  if (a === "toggleheightlabels") {
+    showHeightLabels = el.checked;
+    drawMarks();
+  } else if (a === "togglespanlabels") {
+    showSpanLabels = el.checked;
+    drawMarks();
+  } else if (a === "pick") {
     if (pick && JSON.stringify(pick.path) === JSON.stringify(path)) return endPick();
     const p = pickers[el.dataset.mode](path, el.dataset.label); p.path = path; startPick(p);
   } else if (a === "rm") {
@@ -1876,12 +2018,15 @@ function kindChanged() {
   const R = rig();
   if (["build", "placed"].includes(R.kind) && !Array.isArray(R.chains)) { delete R.chains; R.chains = []; changed(); }
   if (R.kind === "tripo" && Array.isArray(R.chains)) { delete R.chains; changed(); }
-  if (R.kind === "humanoid" && !draft.humanoid) {
-    draft.humanoid = {
-      forward: [0, -1, 0],
-      z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
-      x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
-    };
+  if (R.kind === "humanoid") {
+    delete R.chains;
+    if (!draft.humanoid) {
+      draft.humanoid = {
+        forward: [0, -1, 0],
+        z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
+        x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
+      };
+    }
     changed();
   }
 }
@@ -1926,7 +2071,21 @@ $("bSuggest").onclick = async () => {
       return;
     }
     pushUndo();
-    draft.rig = Object.assign({}, draft.rig || {}, res.rig);
+    if (res.spec) {
+      draft = clone(res.spec);
+    } else {
+      draft.rig = Object.assign({}, draft.rig || {}, res.rig);
+    }
+    if (draft.rig && draft.rig.kind === "humanoid") {
+      delete draft.rig.chains;
+      if (!draft.humanoid) {
+        draft.humanoid = {
+          forward: [0, -1, 0],
+          z: { top: 1.0, head: 0.87, neck: 0.83, arm: 0.77, spine2: 0.72, spine1: 0.65, spine: 0.57, hip: 0.47, knee: 0.28, ankle: 0.08 },
+          x: { shoulder: 0.38, elbow: 0.23, wrist: 0.11, knuckle: 0.05, tip: 0.0 }
+        };
+      }
+    }
     changed();
     flashTop(`Suggested ${res.archetype || "skeleton"} (${(res.reasons || []).join("; ")})`);
   } catch (e) {
@@ -1994,6 +2153,7 @@ async function runMeasure() {
 function openViewer() { window.open("/viewer.html?model=" + encodeURIComponent(MODEL) + "&t=" + encodeURIComponent(TOKEN), "_blank"); }
 $("bView").onclick = openViewer;
 $("back").href = "/?t=" + encodeURIComponent(TOKEN) + "#model=" + encodeURIComponent(MODEL) + "&tab=spec";
+if ($("helpLink")) $("helpLink").href = "/help.html?t=" + encodeURIComponent(TOKEN) + "#spec-button";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Loading
@@ -2022,6 +2182,10 @@ async function reload(fresh) {
   $("title").textContent = MODEL;
   $("sub").textContent = `${B.group || "(root)"} · ${B.source_file || "no source"} · ${B.text ? "rig.json" : "no rig.json yet"}` +
                          (SRC ? ` · ${SRC.skeleton === "none" ? "no skeleton" : SRC.joints.length + " source bones"}` : "");
+  const sk = SRC ? SRC.skeleton : (B.survey ? B.survey.skeleton : "");
+  if ($("lblSourceNames")) {
+    $("lblSourceNames").textContent = sk === "mixamo" ? "Mixamo labels" : (sk === "tripo" ? "Tripo labels" : "source bones");
+  }
   $("bView").disabled = !B.audit && !B.rig_bones.length;
   const btnRigged = $("vRigged");
   if (btnRigged) {

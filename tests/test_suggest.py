@@ -110,6 +110,26 @@ class TestSuggestHeuristics(unittest.TestCase):
         res = suggest.suggest_skeleton("test_human", source_data=source)
         self.assertEqual(res["archetype"], "humanoid")
         self.assertEqual(res["rig"]["kind"], "humanoid")
+        self.assertIn("humanoid", res["spec"])
+
+    def test_suggest_apose_humanoid(self):
+        # A-pose upright character tips: feet on floor, hands at side/waist level, tall Z
+        tips = [
+            [0.5, 0.45, 0.95],    # head
+            [0.65, 0.5, 0.05],    # left foot
+            [0.35, 0.5, 0.05],    # right foot
+            [0.80, 0.5, 0.50],    # left hand
+            [0.20, 0.5, 0.50],    # right hand
+        ]
+        res = suggest.suggest_skeleton("test_guard", tips=tips, proportions=[0.9, 0.4, 1.9])
+        self.assertEqual(res["archetype"], "humanoid")
+        chain_names = [c["name"] for c in res["rig"]["chains"]]
+        self.assertIn("arm.L", chain_names)
+        self.assertIn("arm.R", chain_names)
+        self.assertIn("leg.L", chain_names)
+        self.assertIn("leg.R", chain_names)
+        self.assertNotIn("leg_front.L", chain_names)
+        self.assertNotIn("leg_hind.L", chain_names)
 
     def test_suggest_tripo_source(self):
         source = {
