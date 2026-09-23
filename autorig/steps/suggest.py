@@ -16,7 +16,7 @@ def run_suggest(key):
         return {"model": key, "error": "no source export found"}
 
     mesh, joints = rerig.load(path)
-    rerig.normalise(mesh, {}, {"kind": "build", "forward": [0, -1, 0]})
+    rerig.normalise(mesh, joints or {}, {"kind": "build", "forward": "auto"})
     s = geo.Surface(mesh)
 
     raw_tips = s.tips(most=18, least=0.12)

@@ -280,7 +280,7 @@ def check(spec, source=None):
             if not _num(v) or (t == "int" and int(v) != v): E(p, "a %s" % ("whole number" if t == "int" else "number"))
             elif ("min" in f and v < f["min"]) or ("max" in f and v > f["max"]):
                 E(p, "between %s and %s" % (f.get("min", "-"), f.get("max", "-")))
-        elif t == "vec3" and not (_vec(v) and any(v)): E(p, "a direction [x, y, z], e.g. [0, -1, 0]")
+        elif t == "vec3" and not (key == "forward" and v == "auto") and not (_vec(v) and any(v)): E(p, "a direction [x, y, z] or 'auto', e.g. [0, -1, 0]")
         elif t in ("text",) and not isinstance(v, str): E(p, "a text")
         elif t in ("texts", "joints") and not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
             E(p, "a list of names")
@@ -527,8 +527,8 @@ def _check_humanoid(spec, E, W):
     for k in h:
         if k not in ("forward", "z", "x"):
             W("humanoid." + k, "not a humanoid setting the editor knows; kept as it is")
-    if "forward" in h and not (_vec(h["forward"]) and any(h["forward"])):
-        E("humanoid.forward", "a direction [x, y, z], e.g. [0, -1, 0]")
+    if "forward" in h and h["forward"] != "auto" and not (_vec(h["forward"]) and any(h["forward"])):
+        E("humanoid.forward", "a direction [x, y, z] or 'auto', e.g. [0, -1, 0]")
     if "z" not in h or not isinstance(h["z"], dict):
         E("humanoid.z", "z must be an object of heights: " + ", ".join(HUMANOID_Z_KEYS))
     else:

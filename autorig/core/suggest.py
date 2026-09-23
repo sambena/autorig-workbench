@@ -475,14 +475,15 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
         hi = (source_data or {}).get("hi")
         size = (source_data or {}).get("size")
         archetype = "humanoid"
+        fwd = detect_mesh_forward(vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices"), joints=joints)
         rig_spec = {
             "kind": "humanoid",
             "skeleton": "humanoid",
-            "forward": [0, -1, 0],
+            "forward": fwd,
             "clips": {"archetype": "walker"}
         }
         humanoid_defaults = {
-            "forward": [0, -1, 0],
+            "forward": fwd,
             "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72, "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
             "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
         }
@@ -551,10 +552,11 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     verts = vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices")
     chains = build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=verts)
 
+    fwd = detect_mesh_forward(verts, joints=joints)
     rig_spec = {
         "kind": "placed",
         "skeleton": archetype,
-        "forward": [0, -1, 0],
+        "forward": fwd,
         "chains": chains
     }
 
@@ -601,3 +603,134 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
             "rig": rig_spec
         }
     }
+
+
+def detect_mesh_forward(coords, joints=None):
+    """Anatomical feature vector analysis to automatically detect mesh orientation.
+    Evaluates:
+      1. Feet / toe protrusion in lower body relative to ankle centroid.
+      2. Face / snout / chin protrusion in upper body relative to cranium centroid.
+      3. Knee bend / forward protrusion in mid-low body.
+      4. Bilateral symmetry of candidate lateral axes.
+      5. Joint vector signals (foot-to-toe, neck-to-head) if source armature exists.
+    Returns: cardinal forward vector: [0, -1, 0] (-Y), [0, 1, 0] (+Y), [1, 0, 0] (+X), or [-1, 0, 0] (-X).
+    """
+    if not coords:
+        return [0, -1, 0]
+
+    # Normalize input to list of [x, y, z]
+    pts = [list(p[:3]) for p in coords]
+    n = len(pts)
+    if n == 0:
+        return [0, -1, 0]
+
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    zs = [p[2] for p in pts]
+    z_min, z_max = min(zs), max(zs)
+    h = max(1e-6, z_max - z_min)
+
+    candidates = [
+        ("mY", [0, -1, 0]),
+        ("pY", [0, 1, 0]),
+        ("pX", [1, 0, 0]),
+        ("mX", [-1, 0, 0]),
+    ]
+    scores = {name: 0.0 for name, _ in candidates}
+
+    # 1. Lower limb / feet protrusion (lowest 10% vs ankles 10-22%)
+    feet_pts = [p for p in pts if p[2] <= (z_min + 0.10 * h)]
+    ankle_pts = [p for p in pts if (z_min + 0.10 * h) < p[2] <= (z_min + 0.22 * h)]
+
+    if feet_pts and ankle_pts:
+        feet_cx = sum(p[0] for p in feet_pts) / len(feet_pts)
+        feet_cy = sum(p[1] for p in feet_pts) / len(feet_pts)
+        ankle_cx = sum(p[0] for p in ankle_pts) / len(ankle_pts)
+        ankle_cy = sum(p[1] for p in ankle_pts) / len(ankle_pts)
+
+        for name, d in candidates:
+            # Shift from ankle center to feet center
+            dot = (feet_cx - ankle_cx) * d[0] + (feet_cy - ankle_cy) * d[1]
+            scores[name] += dot * 4.0
+
+            # Extreme reach of toes along d beyond ankle center
+            max_feet_reach = max(p[0] * d[0] + p[1] * d[1] for p in feet_pts)
+            ankle_proj = ankle_cx * d[0] + ankle_cy * d[1]
+            scores[name] += (max_feet_reach - ankle_proj) * 5.0
+
+    # 2. Upper head / face protrusion (top 20% of height)
+    head_pts = [p for p in pts if p[2] >= (z_max - 0.20 * h)]
+    if head_pts:
+        head_cx = sum(p[0] for p in head_pts) / len(head_pts)
+        head_cy = sum(p[1] for p in head_pts) / len(head_pts)
+        for name, d in candidates:
+            head_proj = head_cx * d[0] + head_cy * d[1]
+            max_face_reach = max(p[0] * d[0] + p[1] * d[1] for p in head_pts)
+            scores[name] += (max_face_reach - head_proj) * 4.0
+
+    # 3. Knee bend / forward protrusion (mid-low limb 25%-45% of height)
+    knee_pts = [p for p in pts if (z_min + 0.25 * h) <= p[2] <= (z_min + 0.45 * h)]
+    if knee_pts and ankle_pts:
+        knee_cx = sum(p[0] for p in knee_pts) / len(knee_pts)
+        knee_cy = sum(p[1] for p in knee_pts) / len(knee_pts)
+        for name, d in candidates:
+            knee_proj = (knee_cx - ankle_cx) * d[0] + (knee_cy - ankle_cy) * d[1]
+            scores[name] += knee_proj * 1.5
+
+    # 4. Bilateral symmetry check:
+    span_x = max(1e-6, max(xs) - min(xs))
+    span_y = max(1e-6, max(ys) - min(ys))
+    mid_x = (max(xs) + min(xs)) * 0.5
+    mid_y = (max(ys) + min(ys)) * 0.5
+
+    sym_err_y = abs(mid_x) / span_x
+    sym_err_x = abs(mid_y) / span_y
+    scores["mY"] -= sym_err_y * 2.0
+    scores["pY"] -= sym_err_y * 2.0
+    scores["pX"] -= sym_err_x * 2.0
+    scores["mX"] -= sym_err_x * 2.0
+
+    # 5. Joint signals if joints provided
+    if joints:
+        j_dict = {}
+        if isinstance(joints, dict):
+            for k, v in joints.items():
+                p = v.get("pos") or v.get("head")
+                if p:
+                    j_dict[k.lower()] = list(p[:3])
+        elif isinstance(joints, list):
+            for j in joints:
+                p = j.get("pos") or j.get("head")
+                nm = j.get("name", "")
+                if p:
+                    j_dict[nm.lower()] = list(p[:3])
+
+        # Foot to toe vectors
+        for jname, p_toe in j_dict.items():
+            if "toe" in jname:
+                for fname, p_foot in j_dict.items():
+                    if any(k in fname for k in ("foot", "ankle", "leg_3", "leg3")) and fname != jname:
+                        vec = [p_toe[0] - p_foot[0], p_toe[1] - p_foot[1], p_toe[2] - p_foot[2]]
+                        mag = math.hypot(vec[0], vec[1])
+                        if mag > 1e-4:
+                            for name, d in candidates:
+                                scores[name] += (vec[0] * d[0] + vec[1] * d[1]) / mag * 8.0
+
+        # Neck to head / jaw vector
+        head_p = next((p for nm, p in j_dict.items() if nm in ("head", "head_1", "head1")), None)
+        neck_p = next((p for nm, p in j_dict.items() if nm in ("neck", "neck_1", "neck1", "spine2", "spine_2")), None)
+        if head_p and neck_p:
+            vec = [head_p[0] - neck_p[0], head_p[1] - neck_p[1], head_p[2] - neck_p[2]]
+            mag = math.hypot(vec[0], vec[1])
+            if mag > 1e-4:
+                for name, d in candidates:
+                    scores[name] += (vec[0] * d[0] + vec[1] * d[1]) / mag * 5.0
+
+    best_name = max(scores, key=scores.get)
+    dir_map = {
+        "mY": [0, -1, 0],
+        "pY": [0, 1, 0],
+        "pX": [1, 0, 0],
+        "mX": [-1, 0, 0],
+    }
+    return dir_map[best_name]
