@@ -22,6 +22,13 @@ import source_io
 def skeleton_kind(names):
     if not names:
         return "none"
+    try:
+        import skeletons
+        conv, conf = skeletons.detect_convention(names)
+        if conf >= 0.25:
+            return conv
+    except Exception:
+        pass
     if any(n.startswith("mixamorig") for n in names):
         return "mixamo"
     if all(n.startswith("bone_") for n in names):

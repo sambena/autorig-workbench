@@ -174,5 +174,50 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertIn("tail", chains)
         self.assertTrue(chains["tail"].get("medial"))
 
+    def test_suggest_unreal_and_unity_sources(self):
+        # Unreal Mannequin source
+        unreal_source = {
+            "joints": [
+                {"name": "pelvis", "head": [0.0, 0.0, 1.0], "tail": [0.0, 0.0, 1.1]},
+                {"name": "spine_01", "head": [0.0, 0.0, 1.2]},
+                {"name": "neck_01", "head": [0.0, 0.0, 1.5]},
+                {"name": "head", "head": [0.0, 0.0, 1.65], "tail": [0.0, 0.0, 1.8]},
+                {"name": "clavicle_l", "head": [0.1, 0.0, 1.45]},
+                {"name": "upperarm_l", "head": [0.25, 0.0, 1.45]},
+                {"name": "lowerarm_l", "head": [0.5, 0.0, 1.45]},
+                {"name": "hand_l", "head": [0.75, 0.0, 1.45]},
+                {"name": "thigh_l", "head": [0.15, 0.0, 0.95]},
+                {"name": "calf_l", "head": [0.15, 0.0, 0.5]},
+                {"name": "foot_l", "head": [0.15, 0.0, 0.1]},
+            ]
+        }
+        res_u = suggest.suggest_skeleton("test_ue", source_data=unreal_source)
+        self.assertEqual(res_u["archetype"], "humanoid")
+        self.assertEqual(res_u["rig"]["kind"], "placed")
+        u_chains = {c["name"]: c for c in res_u["rig"]["chains"]}
+        self.assertIn("spine", u_chains)
+        self.assertIn("arm.L", u_chains)
+        self.assertIn("leg.L", u_chains)
+
+        # Unity Humanoid source
+        unity_source = {
+            "joints": [
+                {"name": "Hips", "head": [0.0, 0.0, 1.0]},
+                {"name": "Spine", "head": [0.0, 0.0, 1.2]},
+                {"name": "Neck", "head": [0.0, 0.0, 1.5]},
+                {"name": "Head", "head": [0.0, 0.0, 1.65], "tail": [0.0, 0.0, 1.8]},
+                {"name": "LeftUpperArm", "head": [0.25, 0.0, 1.45]},
+                {"name": "LeftLowerArm", "head": [0.5, 0.0, 1.45]},
+                {"name": "LeftHand", "head": [0.75, 0.0, 1.45]},
+                {"name": "LeftUpperLeg", "head": [0.15, 0.0, 0.95]},
+                {"name": "LeftLowerLeg", "head": [0.15, 0.0, 0.5]},
+                {"name": "LeftFoot", "head": [0.15, 0.0, 0.1]},
+            ]
+        }
+        res_unity = suggest.suggest_skeleton("test_unity", source_data=unity_source)
+        self.assertEqual(res_unity["archetype"], "humanoid")
+        self.assertEqual(res_unity["rig"]["kind"], "placed")
+
+
 if __name__ == "__main__":
     unittest.main()

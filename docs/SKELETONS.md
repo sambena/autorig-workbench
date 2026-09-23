@@ -230,3 +230,21 @@ Moth wings are spar-less: `wing_*` chains only, animated by the flyer archetype.
 
 A humanoid's is `{"archetype": "humanoid", "root": "root", "humanoid": {<Unity HumanBodyBones name>: <bone>}}`, which
 is exactly a Unity `HumanDescription` bone map.
+
+## Ingestion & Universal Semantic Bone Dictionary
+
+When importing pre-rigged models, Autorig Workbench's semantic bone engine (`autorig/core/skeletons.py`) automatically recognizes major game engine and DCC armature conventions and maps them 1:1 to canonical chains:
+
+| Armature Convention | Signature Bone Names | Auto-Detected As |
+|---|---|---|
+| **Unreal Engine Mannequin** | `pelvis`, `spine_01`, `upperarm_l`, `thigh_l`, `calf_l`, `ball_l` | `unreal` |
+| **Unity Mecanim** | `Hips`, `Spine`, `LeftUpperArm`, `LeftLowerArm`, `LeftUpperLeg` | `unity` |
+| **Adobe Mixamo** | `mixamorig:Hips`, `mixamorig:LeftArm`, `mixamorig:LeftUpLeg` | `mixamo` |
+| **Blender Rigify** | `DEF-spine`, `DEF-upper_arm.L`, `DEF-forearm.L`, `DEF-thigh.L` | `rigify` |
+| **3ds Max Biped (CS)** | `Bip01 Pelvis`, `Bip01 L UpperArm`, `Bip01 L Thigh`, `Bip01 L Calf` | `biped` |
+| **Reallusion AccuRig / CC** | `CC_Base_Pelvis`, `CC_Base_L_Upperarm`, `CC_Base_L_Thigh` | `accurig` |
+| **Source Engine / Valve** | `ValveBiped.Bip01_Pelvis`, `ValveBiped.Bip01_L_UpperArm` | `valve` |
+| **Tripo AI** | `bone_0`, `bone_1`, `bone_2`... | `tripo` |
+
+When detected, the auto-rigger preserves existing joint coordinates directly from the source export, retaining fingers, toes, and limb hinge locations with 100% fidelity without discarding bones.
+
