@@ -10,6 +10,7 @@
 #   python autorig/cli/run.py audit-all [-render 0] [-strict]   audit every rigged model, then a table worst first
 #   python autorig/cli/run.py batch [models|all] [--group <g>] [--steps ...] [--export ...]
 #   python autorig/cli/run.py watch <dir> [--group <g>] [--once] [--export ...]
+#   python autorig/cli/run.py retarget <model> <clip>  retarget external mocap / BVH / FBX clip onto character
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #
@@ -64,6 +65,8 @@ def main(argv):
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "batch.py")] + rest)
     if cmd == "watch" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "watch.py")] + rest)
+    if cmd == "retarget" and rest:
+        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "retarget.py")] + rest)
     if cmd == "rig" and rest:
         import pipeline
         code = 0

@@ -701,6 +701,18 @@ def make_handler(app):
                     except ImportError:
                         from autorig.core import mesh_doctor as _doc
                     return self._send(200, _doc.inspect_source_model(src))
+                if path == "/api/retarget/plan":
+                    name = clean_name((q.get("model") or q.get("name") or [""])[0])
+                    mocap_file = (q.get("file") or [""])[0].strip()
+                    g = find_group(name)
+                    if g is None: return self._send(404, {"error": "no model " + name})
+                    if not mocap_file or not os.path.exists(mocap_file):
+                        return self._send(400, {"error": "mocap file not found"})
+                    try:
+                        import retargeter as _ret
+                    except ImportError:
+                        from autorig.core import retargeter as _ret
+                    return self._send(200, _ret.plan_retarget(name, mocap_file, clip_name=(q.get("clip_name") or [None])[0]))
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})
@@ -857,6 +869,25 @@ def make_handler(app):
                     except ImportError:
                         from autorig.core import exporter as _exp
                     res = _exp.create_export_package(name, target=target)
+                    return self._send(200, res)
+                if path == "/api/retarget":
+                    name = clean_name(body.get("model", ""))
+                    g = find_group(name)
+                    if g is None: return self._send(404, {"error": "no such model"})
+                    mocap_file = body.get("file", "").strip()
+                    if not mocap_file or not os.path.exists(mocap_file):
+                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
+                    try:
+                        import retargeter as _ret
+                    except ImportError:
+                        from autorig.core import retargeter as _ret
+                    res = _ret.retarget_clip(
+                        model_name=name,
+                        mocap_file=mocap_file,
+                        clip_name=body.get("clip_name"),
+                        root_motion=body.get("root_motion", True),
+                        export_glb=body.get("export_glb", False),
+                    )
                     return self._send(200, res)
                 self._send(404, {"error": "not found"})
             except ValueError as e:
