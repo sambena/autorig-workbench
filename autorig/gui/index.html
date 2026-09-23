@@ -228,7 +228,7 @@ function renderModel() {
   const running = state.running;
   let h = `<div class="row"><h3 style="margin:0;font-size:17px">${esc(m.name)}</h3><span class="meta">${esc(m.group || "(root)")}` +
           ` · ${esc(m.kind || "no spec")}${m.source ? " · " + esc(m.source) : ""}${m.budget ? " · budget " + m.budget : " · full resolution"}</span>` +
-          `<span style="flex:1"></span>${editButton(m)}${viewButton(m)}<button id="open">Open output folder</button></div>`;
+          `<span style="flex:1"></span>${editButton(m)}${viewButton(m)}${exportButton(m)}<button id="open">Open output folder</button></div>`;
   h += `<div class="steps">`;
   for (const [k, label] of STEPS) {
     const why = m.steps[k];
@@ -243,8 +243,14 @@ function renderModel() {
   p.innerHTML = h;
   p.querySelectorAll("button[data-step]").forEach((b) => b.onclick = () => run(b.dataset.step));
   $("#open").onclick = () => api("/api/open", {model: m.name}).catch((e) => alert(e.message));
+  const bExp = $("#bExport"); if (bExp) bExp.onclick = () => { tab = "export"; loadDetails(); select_hash(); };
   p.querySelectorAll("button[data-view]").forEach((b) => b.onclick = () => window.open(viewerUrl(b.dataset.view), "_blank"));
   p.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
+}
+
+function exportButton(m) {
+  const can = m.rigged || m.rigged_fbx;
+  return `<button class="${can ? "" : "disabled"}" id="bExport" ${can ? "" : "disabled"} title="${can ? "export engine packages for Unreal, Unity, Godot, Web" : "rig the model first to export"}">Export Pack ▾</button>`;
 }
 
 // ---- spec editor (spec_editor.html): rig.json as a form beside the source model and its own skeleton
@@ -314,13 +320,38 @@ async function loadDetails() {
 function img(u, cap) { return u ? `<figure><img src="${esc(fileUrl(u))}" alt="${esc(cap)}" loading="lazy"><figcaption>${esc(cap)}</figcaption></figure>` : ""; }
 
 function renderResults(d) {
-  const tabs = [["audit", "Audit"], ["pictures", "Bend test"], ["clips", "Clips"], ["survey", "Survey"], ["spec", "Spec and card"]];
+  const tabs = [["audit", "Audit"], ["pictures", "Bend test"], ["clips", "Clips"], ["export", "Export"], ["survey", "Survey"], ["spec", "Spec and card"]];
   let h = `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
   h += `<div id="tabBody">${body(d)}</div>`;
   const r = $("#results"); r.innerHTML = h;
   r.querySelectorAll("button[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderResults(d); select_hash(); });
   r.querySelectorAll("img").forEach((i) => i.onclick = () => { $("#zoom img").src = i.src; $("#zoom").style.display = "flex"; });
   r.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
+  r.querySelectorAll("button[data-export-target]").forEach((b) => b.onclick = async () => {
+    const target = b.dataset.exportTarget;
+    b.disabled = true; const origText = b.textContent; b.textContent = "Packaging…";
+    const statusEl = $("#exportStatus");
+    if (statusEl) { statusEl.className = "msg"; statusEl.textContent = `Packaging ${target} export…`; }
+    try {
+      const res = await api("/api/export", {model: d.status.name, target});
+      b.disabled = false; b.textContent = origText;
+      if (statusEl) {
+        statusEl.className = "msg ok";
+        statusEl.innerHTML = `Exported <b>${esc(res.preset_name || target)}</b> package (${Math.round(res.zip_size / 1024)} KB). ` +
+                             `<a href="${esc(fileUrl('/files/work/' + res.zip_rel))}" download style="color:var(--pass);font-weight:bold;text-decoration:underline">Download again if not started automatically ↗</a>`;
+      }
+      const a = document.createElement("a");
+      a.href = fileUrl("/files/work/" + res.zip_rel);
+      a.download = res.zip_rel.split("/").pop();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      b.disabled = false; b.textContent = origText;
+      if (statusEl) { statusEl.className = "msg err"; statusEl.textContent = e.message; }
+      else alert(e.message);
+    }
+  });
 }
 $("#zoom").onclick = () => $("#zoom").style.display = "none";
 
@@ -364,6 +395,28 @@ function body(d) {
     if (d.clips) h += `<div class="meta">${esc(d.clips.format || "")} · ${d.clips.clips.map((c) => `${esc(c.name)} ${c.seconds}s${c.loops ? " loop" : ""}`).join(" · ")}</div>`;
     if (!names.length) return h + `<div class="empty">No clip frames yet: press Make clips (needs a clip archetype in rig.json).</div>`;
     for (const n of names) h += `<div class="cliprow"><div class="cn">${esc(n)}</div><div class="strip">${f[n].map((u) => `<img src="${esc(fileUrl(u))}" alt="${esc(n)}" loading="lazy">`).join("")}</div></div>`;
+    return h;
+  }
+  if (tab === "export") {
+    const can = d.status && (d.status.rigged || d.status.rigged_fbx);
+    if (!can) return `<div class="empty">Model is not rigged yet. Rig the model first to export engine packages.</div>`;
+    let h = `<div class="row"><h3 style="margin:0">Engine Export Presets</h3><span class="meta">Tailor-made asset packages for major game engines and WebGL</span><span style="flex:1"></span>` +
+            `<button class="primary" data-export-target="all">Download All Presets Bundle (.zip)</button></div>` +
+            `<div class="sample-grid" style="margin-top:12px">` +
+            `<div class="sample-card"><div class="row"><h3 style="margin:0">Unreal Engine 4 / 5</h3><span class="chip on">FBX</span><span class="chip pass">Z-up</span></div>` +
+            `<div class="why" style="margin:8px 0">Skeletal mesh FBX mapped to standard UE Mannequin hierarchy, root motion origin guide, and Unreal import profile.</div>` +
+            `<div class="actions"><button class="primary" data-export-target="unreal">Download Unreal Pack (.zip)</button></div></div>` +
+            `<div class="sample-card"><div class="row"><h3 style="margin:0">Unity (Mecanim)</h3><span class="chip on">FBX</span><span class="chip pass">Y-up</span></div>` +
+            `<div class="why" style="margin:8px 0">FBX with Unity HumanDescription Mecanim avatar descriptor JSON, animation clip loop settings, and import walkthrough.</div>` +
+            `<div class="actions"><button class="primary" data-export-target="unity">Download Unity Pack (.zip)</button></div></div>` +
+            `<div class="sample-card"><div class="row"><h3 style="margin:0">Godot 4.x</h3><span class="chip on">GLB</span><span class="chip pass">Scene</span></div>` +
+            `<div class="why" style="margin:8px 0">Self-contained GLB scene with embedded animation library, Godot 4 .import presets, and sample GDScript character loader.</div>` +
+            `<div class="actions"><button class="primary" data-export-target="godot">Download Godot Pack (.zip)</button></div></div>` +
+            `<div class="sample-card"><div class="row"><h3 style="margin:0">Web / glTF</h3><span class="chip on">GLB</span><span class="chip pass">HTML5</span></div>` +
+            `<div class="why" style="margin:8px 0">Optimized standalone GLB with web manifest, clip list, and self-contained interactive HTML 3D previewer.</div>` +
+            `<div class="actions"><button class="primary" data-export-target="web">Download Web Pack (.zip)</button></div></div>` +
+            `</div>` +
+            `<div id="exportStatus" class="msg" style="margin-top:14px"></div>`;
     return h;
   }
   if (tab === "survey") {
