@@ -1025,7 +1025,7 @@ def skin(mesh, arm, chains, spec, size, log):
     placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("rigid_islands"):
+    if spec.get("rigid_islands") or spec.get("rigid_armor"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it (a humanoid's back, behind the chest); a few
