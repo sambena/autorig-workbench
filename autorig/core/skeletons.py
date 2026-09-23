@@ -224,7 +224,28 @@ def map_bone_to_canonical(raw_name):
             side = "L" if "l" in suf else "R"
             n = n[:m_suf.start()]
 
+    # Inner side check (e.g. arm.L_1 or leg_r_2)
+    m_inner = re.search(r"[._-]([lr]|left|right)[._-]", n, re.IGNORECASE)
+    if m_inner:
+        if not side:
+            inner_suf = m_inner.group(1).lower()
+            side = "L" if "l" in inner_suf else "R"
+        n = n[:m_inner.start()] + "_" + n[m_inner.end():]
+
     core = re.sub(r"[^a-zA-Z0-9]", "", n).lower()
+
+    # Limb chain index check: e.g. arm1, arm2, leg1, leg2, leg3 (Autorig placed chains)
+    m_limb = re.search(r"^(arm|leg|wing)[_.]*(\d+)$", core)
+    if m_limb:
+        limb = m_limb.group(1)
+        idx = int(m_limb.group(2))
+        if limb == "arm":
+            role = {1: "arm", 2: "forearm", 3: "hand"}.get(idx, f"arm_{idx}")
+        elif limb == "leg":
+            role = {1: "thigh", 2: "shin", 3: "foot", 4: "toe"}.get(idx, f"leg_{idx}")
+        elif limb == "wing":
+            role = f"wing_{idx}"
+        return f"{role}.{side}" if side else role
 
     # Finger check: numbered index (e.g. index1, thumb_02, CC_Base_L_Mid1)
     m_f = re.search(r"(thumb|index|mid|middle|ring|pinky|little)[_.]*(\d+)", core)
