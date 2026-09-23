@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { mirrorName, mirrorChainData, generateStations } from "./viewer_logic.js";
+import { mirrorName, mirrorChainData, generateStations, bendVertices, rodriguesRotate, computeHingeAxis } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const MODEL = new URLSearchParams(location.search).get("model") || "";
@@ -482,6 +482,9 @@ async function loadModel(url) {
   model.traverse((o) => {
     if (!o.isMesh) return;
     meshes.push(o);
+    if (!o.geometry.userData.originalPositions && o.geometry.attributes.position) {
+      o.geometry.userData.originalPositions = o.geometry.attributes.position.array.slice();
+    }
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) { m.side = THREE.DoubleSide; m.transparent = true; }
     const pos = o.geometry.attributes.position, v = new THREE.Vector3();
@@ -514,6 +517,185 @@ function frameView(dir) {
 $("vFront").onclick = () => frameView([0.35, -1, 0.3]);
 $("vSide").onclick = () => frameView([1, 0, 0.05]);
 $("vTop").onclick = () => frameView([0, -0.02, 1]);
+
+// ---------------------------------------------------------------------------------------------------------------
+// Interactive Limb Bend & Pose Test Preview
+// ---------------------------------------------------------------------------------------------------------------
+
+function getBendableChains() {
+  const R = rig(), list = [];
+  if (Array.isArray(R.chains)) {
+    R.chains.forEach((c) => {
+      if (!c || !c.name) return;
+      let pts = null;
+      if (Array.isArray(c.points) && c.points.length >= 2) pts = c.points;
+      else if (c.base && c.tip) pts = [c.base, c.tip];
+      if (pts) list.push({ name: c.name, role: c.role || c.name, points: pts });
+    });
+  }
+  if (!list.length && draft.humanoid) {
+    const H = draft.humanoid;
+    const armZ = (H.z && typeof H.z.arm === "number") ? H.z.arm : 0.77;
+    const elbowX = (H.x && typeof H.x.elbow === "number") ? H.x.elbow : 0.23;
+    const wristX = (H.x && typeof H.x.wrist === "number") ? H.x.wrist : 0.11;
+    const shoulderX = (H.x && typeof H.x.shoulder === "number") ? H.x.shoulder : 0.38;
+    const hipZ = (H.z && typeof H.z.hip === "number") ? H.z.hip : 0.47;
+    const kneeZ = (H.z && typeof H.z.knee === "number") ? H.z.knee : 0.28;
+    const ankleZ = (H.z && typeof H.z.ankle === "number") ? H.z.ankle : 0.08;
+
+    list.push({
+      name: "arm.L",
+      role: "arm",
+      points: [[1 - shoulderX, 0.5, armZ], [1 - elbowX, 0.5, armZ], [1 - wristX, 0.5, armZ]]
+    });
+    list.push({
+      name: "arm.R",
+      role: "arm",
+      points: [[shoulderX, 0.5, armZ], [elbowX, 0.5, armZ], [wristX, 0.5, armZ]]
+    });
+    list.push({
+      name: "leg.L",
+      role: "leg",
+      points: [[0.62, 0.5, hipZ], [0.62, 0.5, kneeZ], [0.62, 0.5, ankleZ]]
+    });
+    list.push({
+      name: "leg.R",
+      role: "leg",
+      points: [[0.38, 0.5, hipZ], [0.38, 0.5, kneeZ], [0.38, 0.5, ankleZ]]
+    });
+  }
+  return list;
+}
+
+function updatePoseChainSelect() {
+  const sel = $("poseChainSelect");
+  if (!sel) return;
+  const currentVal = sel.value;
+  const chains = getBendableChains();
+  sel.innerHTML = "";
+  chains.forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c.name;
+    opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+  if (currentVal && chains.some((c) => c.name === currentVal)) {
+    sel.value = currentVal;
+  }
+}
+
+function applyLiveBend(chainName, angleDeg) {
+  if (!meshes.length) return;
+  if (!angleDeg || Math.abs(angleDeg) < 1e-4) {
+    for (const o of meshes) {
+      if (o.isMesh && o.geometry && o.geometry.userData.originalPositions) {
+        o.geometry.attributes.position.array.set(o.geometry.userData.originalPositions);
+        o.geometry.attributes.position.needsUpdate = true;
+        o.geometry.computeVertexNormals();
+      }
+    }
+    return;
+  }
+
+  const chains = getBendableChains();
+  const c = chains.find((x) => x.name === chainName) || chains[0];
+  if (!c) return;
+
+  const pts = c.points;
+  let p0_u, p1_u, p2_u;
+  if (pts.length >= 3) {
+    p0_u = pts[0];
+    p1_u = pts[1];
+    p2_u = pts[pts.length - 1];
+  } else if (pts.length === 2) {
+    p0_u = pts[0];
+    p1_u = [
+      (pts[0][0] + pts[1][0]) * 0.5,
+      (pts[0][1] + pts[1][1]) * 0.5,
+      (pts[0][2] + pts[1][2]) * 0.5
+    ];
+    p2_u = pts[1];
+  } else {
+    return;
+  }
+
+  const p0_w = V(F.fromUnit(p0_u));
+  const p1_w = V(F.fromUnit(p1_u));
+  const p2_w = V(F.fromUnit(p2_u));
+  const angleRad = (angleDeg * Math.PI) / 180;
+
+  for (const o of meshes) {
+    if (!o.isMesh || !o.geometry || !o.geometry.userData.originalPositions) continue;
+    const inv = o.matrixWorld.clone().invert();
+    const l0 = p0_w.clone().applyMatrix4(inv);
+    const l1 = p1_w.clone().applyMatrix4(inv);
+    const l2 = p2_w.clone().applyMatrix4(inv);
+
+    const posAttr = o.geometry.attributes.position;
+    bendVertices(
+      posAttr.array,
+      o.geometry.userData.originalPositions,
+      [l0.x, l0.y, l0.z],
+      [l1.x, l1.y, l1.z],
+      [l2.x, l2.y, l2.z],
+      angleRad
+    );
+    posAttr.needsUpdate = true;
+    o.geometry.computeVertexNormals();
+  }
+}
+
+function setPoseTestActive(active) {
+  const toggle = $("poseTestToggle");
+  const sel = $("poseChainSelect");
+  const slider = $("poseAngle");
+  const val = $("poseAngleVal");
+  const resetBtn = $("poseReset");
+
+  if (toggle) toggle.checked = active;
+  const disp = active ? "inline-block" : "none";
+  if (sel) sel.style.display = disp;
+  if (slider) slider.style.display = disp;
+  if (val) val.style.display = disp;
+  if (resetBtn) resetBtn.style.display = disp;
+
+  if (active) {
+    updatePoseChainSelect();
+    if (slider) slider.value = 0;
+    if (val) val.textContent = "0°";
+    applyLiveBend(sel ? sel.value : "", 0);
+  } else {
+    if (slider) slider.value = 0;
+    if (val) val.textContent = "0°";
+    applyLiveBend("", 0);
+  }
+}
+
+if ($("poseTestToggle")) {
+  $("poseTestToggle").onchange = () => {
+    setPoseTestActive($("poseTestToggle").checked);
+  };
+}
+if ($("poseAngle")) {
+  $("poseAngle").oninput = () => {
+    const ang = Number($("poseAngle").value);
+    if ($("poseAngleVal")) $("poseAngleVal").textContent = ang + "°";
+    applyLiveBend($("poseChainSelect") ? $("poseChainSelect").value : "", ang);
+  };
+}
+if ($("poseChainSelect")) {
+  $("poseChainSelect").onchange = () => {
+    const ang = Number($("poseAngle") ? $("poseAngle").value : 0);
+    applyLiveBend($("poseChainSelect").value, ang);
+  };
+}
+if ($("poseReset")) {
+  $("poseReset").onclick = () => {
+    if ($("poseAngle")) $("poseAngle").value = 0;
+    if ($("poseAngleVal")) $("poseAngleVal").textContent = "0°";
+    applyLiveBend($("poseChainSelect") ? $("poseChainSelect").value : "", 0);
+  };
+}
 
 function clearGroup(g) {
   for (const o of [...g.children]) {

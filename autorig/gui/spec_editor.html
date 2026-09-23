@@ -177,6 +177,13 @@ kbd { font: 11px ui-monospace, Consolas, monospace; background: var(--chip); bor
       <label title="Show or hide audit issue spots in 3D"><input type="checkbox" id="showSpots" checked> audit spots</label>
       <label title="Clicking the model places a point halfway through the part under the mouse (a limb's middle), or on its surface"><input type="checkbox" id="throughMiddle" checked> points in the middle</label>
       <label title="Mirror point edits across X=0.5 symmetry plane to opposite .L/.R chain"><input type="checkbox" id="mirrorEdits" checked> mirror .L/.R</label>
+      <span id="poseTestBar" style="display:inline-flex; align-items:center; gap:5px; border-left:1px solid var(--line); padding-left:8px; margin-left:4px;">
+        <label title="Preview limb bending and skin deformation in real time before rerigging"><input type="checkbox" id="poseTestToggle"> bend test</label>
+        <select id="poseChainSelect" class="small" style="display:none; max-width:110px"></select>
+        <input type="range" id="poseAngle" min="-90" max="90" step="1" value="0" style="display:none; width:80px" title="Bend angle (-90° to +90°)">
+        <span id="poseAngleVal" class="meta" style="display:none; font-size:11px; min-width:26px">0°</span>
+        <button id="poseReset" class="small" style="display:none; padding:1px 5px;" title="Reset bend angle to 0°">Reset</button>
+      </span>
     </div>
   </section>
   <aside>

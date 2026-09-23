@@ -206,5 +206,44 @@ test("chain mirroring and stations generation", () => {
   assert.deepEqual(customSt, [0.2, 0.4, 0.6, 0.8]);
 });
 
+test("interactive joint bend test math: rodrigues, hinge axis, and vertex deformation", () => {
+  // Rodrigues 90-degree rotation around Z
+  const r90 = L.rodriguesRotate([1, 0, 0], [0, 0, 0], [0, 0, 1], Math.PI / 2);
+  assert.ok(Math.abs(r90[0]) < 1e-6);
+  assert.ok(Math.abs(r90[1] - 1) < 1e-6);
+  assert.ok(Math.abs(r90[2]) < 1e-6);
+
+  // Natural hinge axis for bent limb
+  const axis = L.computeHingeAxis([0, 0, 0], [1, 0, 0], [1, 1, 0]);
+  assert.deepEqual(axis, [0, 0, 1]);
+
+  // Vertex deformation: v0 (proximal), v1 (pivot), v2 (distal), v3 (far outside radius)
+  const orig = new Float32Array([
+    0.0, 0.0, 0.0,   // v0: proximal (behind pivot)
+    1.0, 0.0, 0.0,   // v1: pivot
+    2.0, 0.0, 0.0,   // v2: distal (after pivot)
+    1.0, 5.0, 0.0    // v3: outside limb radius
+  ]);
+  const pos = new Float32Array(orig);
+
+  // Bend 90 degrees (+PI/2)
+  L.bendVertices(pos, orig, [0, 0, 0], [1, 0, 0], [2, 0, 0], Math.PI / 2, 0.5, 0.2);
+
+  // v0 must remain untouched
+  assert.ok(Math.abs(pos[0]) < 1e-6 && Math.abs(pos[1]) < 1e-6 && Math.abs(pos[2]) < 1e-6);
+  // v1 is pivot, remains near (1, 0, 0)
+  assert.ok(Math.abs(pos[3] - 1.0) < 1e-6);
+  // v2 rotates 90 deg around pivot (1, 0, 0) to (1, 0, 1)
+  assert.ok(Math.abs(pos[6] - 1.0) < 1e-4);
+  assert.ok(Math.abs(pos[7] - 0.0) < 1e-4);
+  assert.ok(Math.abs(pos[8] - 1.0) < 1e-4);
+  // v3 outside radius must remain untouched
+  assert.deepEqual([...pos.subarray(9, 12)], [1.0, 5.0, 0.0]);
+
+  // Zero angle resets positions to original exactly
+  L.bendVertices(pos, orig, [0, 0, 0], [1, 0, 0], [2, 0, 0], 0, 0.5, 0.2);
+  assert.deepEqual(pos, orig);
+});
+
 console.log(`${n} passed`);
 
