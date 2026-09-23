@@ -690,6 +690,17 @@ def make_handler(app):
                     except ImportError:
                         from autorig.core import exporter as _exp
                     return self._send(200, {"targets": _exp.list_presets()})
+                if path == "/api/doctor":
+                    name = (q.get("model") or q.get("name") or [""])[0]
+                    g = find_group(name)
+                    if g is None: return self._send(404, {"error": "no model " + name})
+                    src = layout.source_model(name)
+                    if not src: return self._send(404, {"error": "no source 3D model found"})
+                    try:
+                        import mesh_doctor as _doc
+                    except ImportError:
+                        from autorig.core import mesh_doctor as _doc
+                    return self._send(200, _doc.inspect_source_model(src))
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})

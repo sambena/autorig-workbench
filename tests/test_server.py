@@ -251,6 +251,14 @@ class ServerTest(unittest.TestCase):
             zip_bytes = r.read()
             self.assertEqual(len(zip_bytes), res["zip_size"])
 
+    def test_7_doctor_api(self):
+        diag = self.call("/api/doctor?model=pedestal")
+        self.assertIn("health_score", diag)
+        self.assertIn("grade", diag)
+        self.assertIn("verts", diag)
+        self.assertIn("faces", diag)
+        self.assertIn(diag["grade"], ("HEALTHY", "WARN", "CRITICAL"))
+
 
 def alive(pid):
     if os.name == "nt":

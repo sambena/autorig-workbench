@@ -970,10 +970,33 @@ def skin(mesh, arm, chains, spec, size, log):
         verts = mesh.data.vertices
     select_only(mesh, arm)
     mesh.vertex_groups.clear()
+    if spec.get("mesh_heal") or spec.get("heal"):
+        try:
+            import mesh_doctor
+            h_rep = mesh_doctor.heal_mesh_object(mesh)
+            log["mesh_heal"] = h_rep.get("actions", {})
+            verts = mesh.data.vertices
+        except Exception as e:
+            log["mesh_heal_err"] = str(e)
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
     bare = [v.index for v in verts if not skinned(v)]
     log["unreached"] = len(bare)
     proxy = None
+    if len(bare) > len(verts) * 0.05:
+        # If bone heat weighting failed, attempt geometric auto-healing before voxel remesh
+        if not spec.get("mesh_heal") and not spec.get("heal"):
+            try:
+                import mesh_doctor
+                h_rep = mesh_doctor.heal_mesh_object(mesh)
+                log["mesh_heal_recovery"] = h_rep.get("actions", {})
+                verts = mesh.data.vertices
+                mesh.vertex_groups.clear()
+                select_only(mesh, arm)
+                bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+                bare = [v.index for v in verts if not skinned(v)]
+                log["unreached_after_heal"] = len(bare)
+            except Exception:
+                pass
     if len(bare) > len(verts) * 0.05:
         # Bone heat gives up on a sculpt made of loose pieces: skin a watertight voxel copy and carry the weights over.
         for voxel in (0.016, 0.022, 0.012, 0.03):

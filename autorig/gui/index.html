@@ -352,6 +352,30 @@ function renderResults(d) {
       else alert(e.message);
     }
   });
+  const bDoc = $("#bRunDoctor");
+  if (bDoc) {
+    bDoc.onclick = async () => {
+      bDoc.disabled = true; bDoc.textContent = "Analyzing…";
+      const resEl = $("#doctorResult");
+      try {
+        const diag = await api("/api/doctor?model=" + encodeURIComponent(d.status.name));
+        bDoc.disabled = false; bDoc.textContent = "Run Diagnostics";
+        const gClass = diag.grade === "HEALTHY" ? "pass" : (diag.grade === "WARN" ? "check" : "fail");
+        let info = `<div class="row" style="margin-top:6px"><span class="chip ${gClass}">${esc(diag.grade)}</span><b>${esc(diag.health_score)}/100</b>` +
+                   `<span class="meta">${esc(diag.file || "")} · ${esc(diag.verts || 0)} verts · ${esc(diag.faces || 0)} faces</span></div>` +
+                   `<ul class="why" style="margin-top:6px">` +
+                   `<li>Non-manifold edges: <b>${esc(diag.non_manifold_edges ?? 0)}</b></li>` +
+                   `<li>Degenerate (zero-area) faces: <b>${esc(diag.degenerate_faces ?? 0)}</b></li>` +
+                   `<li>Loose vertices: <b>${esc(diag.loose_verts ?? 0)}</b></li>` +
+                   `<li>Duplicate coincident vertices: <b>${esc(diag.duplicate_verts ?? 0)}</b></li>` +
+                   `</ul>`;
+        if (resEl) resEl.innerHTML = info;
+      } catch (e) {
+        bDoc.disabled = false; bDoc.textContent = "Run Diagnostics";
+        if (resEl) resEl.innerHTML = `<span style="color:var(--fail)">${esc(e.message)}</span>`;
+      }
+    };
+  }
 }
 $("#zoom").onclick = () => $("#zoom").style.display = "none";
 
@@ -423,6 +447,9 @@ function body(d) {
     let h = "";
     if (d.survey) h += `<table class="kv">${Object.entries(d.survey).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(Array.isArray(v) ? v.join(" × ") : v)}</td></tr>`).join("")}</table>`;
     else h += `<div class="empty">No survey yet: press Survey.</div>`;
+    h += `<div class="row" style="margin-top:14px"><h3 style="margin:0">Mesh Doctor (Geometry Health)</h3><span style="flex:1"></span>` +
+         `<button id="bRunDoctor" class="small" type="button">Run Diagnostics</button></div>` +
+         `<div id="doctorResult" class="why" style="margin-top:4px">Analyze non-manifold edges, zero-area faces, and duplicate vertices that cause bone heat failures.</div>`;
     if (d.facing && d.facing.length) h += `<h3>Facing views</h3><div class="meta">Which way it faces in its file: read <code>forward</code> for rig.json off these.</div><div class="pics">${d.facing.map((u) => img(u, u.split("__").pop().replace(".png", "").replace("m", "-").replace("p", "+") + " view")).join("")}</div>`;
     return h;
   }

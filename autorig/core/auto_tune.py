@@ -292,6 +292,16 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
             "delta_type": "rigid_islands",
         }
 
+    # 8. Strategy: Pre-flight Mesh Doctor Healing
+    if "mesh_heal" not in tried_params and not rig.get("mesh_heal") and (comb_tears > 0 or bend_tears > 0 or bleed_pct > 2.0):
+        rig["mesh_heal"] = True
+        return {
+            "description": "Enable pre-flight Mesh Doctor geometry healing (mesh_heal=True)",
+            "param": "mesh_heal",
+            "spec": cand_spec,
+            "delta_type": "mesh_heal",
+        }
+
     # 7. Strategy: Bleed Reduction (if bleed_pct is the sole failing factor)
     if bleed_pct > 2.0 and "bleed_tighten" not in tried_params:
         if cur_lr > 0.8:
