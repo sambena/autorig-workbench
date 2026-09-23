@@ -72,7 +72,12 @@ def bounds(mesh):
 
 def normalise(mesh, joints, spec):
     """Head to -Y, body centred on x=0, feet (or the body's middle) on the origin."""
-    if spec["kind"] == "tripo" and not spec.get("forward"):
+    fwd = spec.get("forward")
+    if fwd in ("auto", "detect", "auto_detect") or (isinstance(fwd, str) and fwd.lower() == "auto"):
+        import suggest
+        coords = [v.co[:] for v in mesh.data.vertices]
+        d = Vector(suggest.detect_mesh_forward(coords, joints=joints))
+    elif spec.get("kind") == "tripo" and not spec.get("forward"):
         d = joints[spec["head"]]["pos"] - joints[spec["hips"]]["pos"]
     else:
         d = Vector(spec.get("forward", (0, -1, 0)))

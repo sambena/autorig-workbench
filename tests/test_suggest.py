@@ -218,6 +218,64 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertEqual(res_unity["archetype"], "humanoid")
         self.assertEqual(res_unity["rig"]["kind"], "placed")
 
+    def test_detect_mesh_forward_cardinal_directions(self):
+        # 1. Model facing -Y (Blender standard)
+        verts_mY = [
+            [0.2, 0.0, 1.8], [-0.2, 0.0, 1.8], [0.0, -0.15, 1.8],  # Head + nose towards -Y
+            [0.2, 0.0, 0.2], [-0.2, 0.0, 0.2],                     # Ankles
+            [0.2, -0.25, 0.0], [-0.2, -0.25, 0.0],                 # Toes protruding along -Y
+        ]
+        self.assertEqual(suggest.detect_mesh_forward(verts_mY), [0, -1, 0])
+
+        # 2. Model facing +Y
+        verts_pY = [
+            [0.2, 0.0, 1.8], [-0.2, 0.0, 1.8], [0.0, 0.15, 1.8],   # Head + nose towards +Y
+            [0.2, 0.0, 0.2], [-0.2, 0.0, 0.2],                     # Ankles
+            [0.2, 0.25, 0.0], [-0.2, 0.25, 0.0],                   # Toes protruding along +Y
+        ]
+        self.assertEqual(suggest.detect_mesh_forward(verts_pY), [0, 1, 0])
+
+        # 3. Model facing +X
+        verts_pX = [
+            [0.0, 0.2, 1.8], [0.0, -0.2, 1.8], [0.15, 0.0, 1.8],   # Head + nose towards +X
+            [0.0, 0.2, 0.2], [0.0, -0.2, 0.2],                     # Ankles
+            [0.25, 0.2, 0.0], [0.25, -0.2, 0.0],                   # Toes protruding along +X
+        ]
+        self.assertEqual(suggest.detect_mesh_forward(verts_pX), [1, 0, 0])
+
+        # 4. Model facing -X
+        verts_mX = [
+            [0.0, 0.2, 1.8], [0.0, -0.2, 1.8], [-0.15, 0.0, 1.8],  # Head + nose towards -X
+            [0.0, 0.2, 0.2], [0.0, -0.2, 0.2],                     # Ankles
+            [-0.25, 0.2, 0.0], [-0.25, -0.2, 0.0],                 # Toes protruding along -X
+        ]
+        self.assertEqual(suggest.detect_mesh_forward(verts_mX), [-1, 0, 0])
+
+    def test_detect_mesh_forward_with_joint_hints(self):
+        # Model with subtle geometry but explicit toe joints pointing along +X
+        verts = [
+            [0.0, 0.0, 1.0], [0.1, 0.1, 0.5], [-0.1, -0.1, 0.5]
+        ]
+        joints = [
+            {"name": "LeftFoot", "pos": [0.0, 0.2, 0.2]},
+            {"name": "LeftToeBase", "pos": [0.3, 0.2, 0.0]},  # vector (0.3, 0, -0.2) points +X
+        ]
+        self.assertEqual(suggest.detect_mesh_forward(verts, joints=joints), [1, 0, 0])
+
+    def test_spec_forward_auto_validation(self):
+        # Check that 'auto' is accepted in humanoid and build specs
+        h_spec = {
+            "schema": "autorig-spec/1",
+            "rig": {"kind": "humanoid", "skeleton": "humanoid", "forward": "auto"},
+            "humanoid": {
+                "forward": "auto",
+                "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72, "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
+                "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
+            }
+        }
+        errs, warns = spec_api.check(h_spec)
+        self.assertEqual(errs, [], f"humanoid.forward='auto' should be valid, got errors: {errs}")
+
 
 if __name__ == "__main__":
     unittest.main()
