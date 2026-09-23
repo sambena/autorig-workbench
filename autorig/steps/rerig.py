@@ -356,16 +356,28 @@ def build_chains(mesh, spec, size):
             if len(pts) == 2 and n > 1: pts = [pts[0].lerp(pts[1], k / n) for k in range(n + 1)]
         elif "tube" in c:
             a, b = s.point(c["tube"][0]), s.point(c["tube"][1])
-            pts = s.tube(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
+            if c.get("medial"):
+                pts = s.medial_axis(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
+            else:
+                pts = s.tube(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
         else:  # a limb, known by where it ends
             tip = s.co[s.nearest(s.point(c["tip"]))].copy()
             # Rule C: a limb starts where it leaves the body. `base` is that point, measured (measure.py); the
             # old base_f fraction of the way from the spine is kept only for specs that have not been measured, and
             # it is what ran an insect's legs up through its shell.
             base = s.point(c["base"]) if c.get("base") else loose_limb_root(tip)
+            if base is None and pi is not None and chains[pi].get("points"):
+                body_ref = on_polyline(chains[pi]["points"], tip)
+                if body_ref is not None:
+                    junc = s.junction(tip, body_ref)
+                    if junc is not None:
+                        base = junc[0]
             if base is None:
                 base = on_polyline(chains[pi]["points"], tip).lerp(tip, c.get("base_f", 0.45))
-            pts = [base, tip] if n == 1 else s.tube(base, tip, n, first=base)
+            if c.get("medial"):
+                pts = [base, tip] if n == 1 else s.medial_axis(base, tip, n, first=base)
+            else:
+                pts = [base, tip] if n == 1 else s.tube(base, tip, n, first=base)
         if c.get("girdle") and pi is not None:
             # A shoulder or pelvis bone (index 0 of the chain) from the spine out to where the limb leaves the body:
             # the scapula a quadruped's front leg swings from, a humanoid's clavicle.
@@ -529,7 +541,7 @@ def head_to_snout(chains, mesh, size, spec):
     for c in chains:
         if "head" not in c.get("bones", []): continue
         i = c["bones"].index("head")
-        if i != len(c["bones"]) - 1: return None
+        if i != len(c["bones"]) - 1 or i >= len(c["points"]) - 1: return None
         h, t = c["points"][i], c["points"][i + 1]
         d = t - h
         if d.length < 1e-9 or abs(d.normalized().z) > 0.7: return None
@@ -1010,6 +1022,7 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.membrane_pass(mesh, arm, chains, spec, size, log)
     if spec.get("parts"):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands"):

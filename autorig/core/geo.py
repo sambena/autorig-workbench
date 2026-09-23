@@ -2,8 +2,50 @@
 # Autorig Workbench: surface geometry helpers for building skeletons where a model came with none: distances
 # measured along the mesh's surface find the tips of its limbs, and rings of equal distance between two points give
 # the line down the middle of a limb, a tail or a whole serpent.
-import heapq
-from mathutils import Vector, kdtree
+import heapq, math
+try:
+    from mathutils import Vector, kdtree
+except ImportError:
+    class Vector(tuple):
+        def __new__(cls, coords):
+            return super().__new__(cls, tuple(float(c) for c in coords))
+        @property
+        def x(self): return self[0]
+        @property
+        def y(self): return self[1]
+        @property
+        def z(self): return self[2]
+        def __add__(self, other):
+            return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
+        def __sub__(self, other):
+            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
+        def __mul__(self, scalar):
+            return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
+        def __rmul__(self, scalar):
+            return self.__mul__(scalar)
+        def __truediv__(self, scalar):
+            return Vector((self[0] / scalar, self[1] / scalar, self[2] / scalar))
+        @property
+        def length(self):
+            return math.sqrt(self[0]**2 + self[1]**2 + self[2]**2)
+        def dot(self, other):
+            return self[0]*other[0] + self[1]*other[1] + self[2]*other[2]
+        def cross(self, other):
+            return Vector((
+                self[1] * other[2] - self[2] * other[1],
+                self[2] * other[0] - self[0] * other[2],
+                self[0] * other[1] - self[1] * other[0]
+            ))
+        def normalized(self):
+            l = self.length
+            return Vector((0, 0, 0)) if l < 1e-12 else Vector((self[0] / l, self[1] / l, self[2] / l))
+        def lerp(self, other, factor):
+            return Vector((self[0] + (other[0] - self[0]) * factor,
+                           self[1] + (other[1] - self[1]) * factor,
+                           self[2] + (other[2] - self[2]) * factor))
+        def copy(self):
+            return Vector(self)
+    kdtree = None
 
 class Surface:
     def __init__(self, mesh, bridge=0.02):
@@ -129,4 +171,236 @@ class Surface:
             if rad[k] > jump * ref and k < n * 0.9:
                 return pts[k + 1], (n - k - 1) / float(n), ref
         return None
+
+
+    def medial_axis(self, start, end, bones, slack=0.3, first=None, samples=16):
+        """Curved volumetric medial axis: traces bone stations inside the mesh volume,
+        balancing distances to boundary walls so bones stay centered inside the volume."""
+        a, b = self.nearest(start), self.nearest(end)
+        da, db = self.distances([a]), self.distances([b])
+        length = da[b]
+        if length == float("inf"): return [Vector(start), Vector(end)]
+        on = [i for i in range(len(self.co)) if da[i] + db[i] <= length * (1.0 + slack)]
+        pts = []
+        for k in range(bones + 1):
+            t = length * k / bones
+            half = length / bones * 0.5
+            ring = [self.co[i] for i in on if abs(da[i] - t) <= half]
+            if not ring or len(ring) < 4:
+                pts.append(self.co[a].lerp(self.co[b], k / bones))
+                continue
+            lo = Vector((min(p.x for p in ring), min(p.y for p in ring), min(p.z for p in ring)))
+            hi = Vector((max(p.x for p in ring), max(p.y for p in ring), max(p.z for p in ring)))
+            mean = sum(ring, Vector()) / len(ring)
+            c0 = (lo + hi) * 0.25 + mean * 0.5
+
+            # Local path tangent direction
+            tangent = (self.co[b] - self.co[a]).normalized()
+            ref = Vector((0, 0, 1)) if abs(tangent.z) < 0.85 else Vector((1, 0, 0))
+            u_axis = tangent.cross(ref).normalized()
+            v_axis = tangent.cross(u_axis).normalized()
+
+            c_refined = c0
+            for _ in range(2):
+                num_sectors = 8
+                sector_radii = [[] for _ in range(num_sectors)]
+                for p in ring:
+                    diff = p - c_refined
+                    pu = diff.dot(u_axis); pv = diff.dot(v_axis)
+                    angle = math.atan2(pv, pu)
+                    sec = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
+                    sector_radii[sec].append(math.sqrt(pu * pu + pv * pv))
+
+                shift_u, shift_v = 0.0, 0.0
+                half_sec = num_sectors // 2
+                for sec in range(half_sec):
+                    opp = sec + half_sec
+                    r1 = min(sector_radii[sec]) if sector_radii[sec] else None
+                    r2 = min(sector_radii[opp]) if sector_radii[opp] else None
+                    if r1 is not None and r2 is not None:
+                        mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
+                        delta = (r1 - r2) * 0.5
+                        shift_u += delta * math.cos(mid_angle)
+                        shift_v += delta * math.sin(mid_angle)
+
+                c_refined = c_refined + u_axis * (shift_u / 2.0) + v_axis * (shift_v / 2.0)
+            pts.append(c_refined)
+
+        pts[-1] = pts[-1].lerp(self.co[b], 0.7)
+        if first is not None: pts[0] = Vector(first)
+        # Laplacian smoothing of interior joints
+        for _ in range(2):
+            pts = [pts[0]] + [
+                (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
+                for i in range(1, len(pts) - 1)
+            ] + [pts[-1]]
+        return pts
+
+    def find_pinches(self, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
+        """Finds anatomical hinge creases / local cross-section minima between start and end on this surface."""
+        s = Vector(start) if not isinstance(start, Vector) else start
+        e = Vector(end) if not isinstance(end, Vector) else end
+        return find_pinches(self.co, s, e, slices=slices, span_radius=span_radius, min_t=min_t, max_t=max_t)
+
+
+def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
+    """Finds pinch points (anatomical hinge creases / local cross-section minima) between start and end.
+    coords: iterable of (x, y, z) or Vector.
+    start, end: (x, y, z) or Vector defining limb or torso axis.
+    slices: number of cross-sectional evaluation bins along the axis.
+    span_radius: optional maximum radial distance from axis to include.
+    min_t, max_t: search interval along the axis (fraction 0..1).
+    Returns:
+      list of dicts sorted by prominence (most prominent pinch first):
+      [{"t": float, "pos": Vector, "radius": float, "prominence": float}, ...]
+    """
+    s = Vector(start) if not isinstance(start, Vector) else start
+    e = Vector(end) if not isinstance(end, Vector) else end
+    ab = e - s
+    length = ab.length
+    if length < 1e-6:
+        return []
+    d = ab.normalized()
+
+    # Bin vertices into slices
+    bins = [[] for _ in range(slices)]
+    for pt in coords:
+        p = Vector(pt) if not isinstance(pt, Vector) else pt
+        ap = p - s
+        proj = ap.dot(d)
+        t = proj / length
+        if t < min_t or t > max_t:
+            continue
+        perp = ap - d * proj
+        r = perp.length
+        if span_radius is not None and r > span_radius:
+            continue
+        idx = int((t - min_t) / max(1e-9, (max_t - min_t)) * (slices - 1))
+        idx = max(0, min(slices - 1, idx))
+        bins[idx].append((p, r, t))
+
+    # Compute slice metrics
+    slice_data = []
+    for k in range(slices):
+        pts = bins[k]
+        if not pts:
+            slice_data.append(None)
+            continue
+        avg_t = sum(item[2] for item in pts) / len(pts)
+        centroid = sum((item[0] for item in pts), Vector((0, 0, 0))) / len(pts)
+        rms_r = math.sqrt(sum(item[1] ** 2 for item in pts) / len(pts))
+        slice_data.append({"t": avg_t, "pos": centroid, "radius": rms_r})
+
+    # Fill gaps by linear interpolation
+    known = [i for i, data in enumerate(slice_data) if data is not None]
+    if len(known) < 3:
+        return []
+    for i in range(slices):
+        if slice_data[i] is None:
+            left = max([k for k in known if k < i], default=None)
+            right = min([k for k in known if k > i], default=None)
+            if left is not None and right is not None:
+                alpha = (i - left) / (right - left)
+                dl = slice_data[left]; dr = slice_data[right]
+                slice_data[i] = {
+                    "t": dl["t"] + (dr["t"] - dl["t"]) * alpha,
+                    "pos": dl["pos"].lerp(dr["pos"], alpha),
+                    "radius": dl["radius"] + (dr["radius"] - dl["radius"]) * alpha
+                }
+            elif left is not None:
+                slice_data[i] = dict(slice_data[left])
+            elif right is not None:
+                slice_data[i] = dict(slice_data[right])
+
+    radii = [data["radius"] for data in slice_data]
+    smoothed = [radii[0]] + [
+        0.25 * radii[i - 1] + 0.5 * radii[i] + 0.25 * radii[i + 1]
+        for i in range(1, slices - 1)
+    ] + [radii[-1]]
+
+    pinches = []
+    for i in range(1, slices - 1):
+        if smoothed[i] < smoothed[i - 1] and smoothed[i] < smoothed[i + 1]:
+            left_peak = max(smoothed[:i])
+            right_peak = max(smoothed[i + 1:])
+            prominence = min(left_peak, right_peak) - smoothed[i]
+            if prominence > 0:
+                data = slice_data[i]
+                pinches.append({
+                    "t": round(float(data["t"]), 4),
+                    "pos": data["pos"],
+                    "radius": round(float(data["radius"]), 4),
+                    "prominence": round(float(prominence), 4)
+                })
+
+    pinches.sort(key=lambda item: item["prominence"], reverse=True)
+    return pinches
+
+
+def trace_medial_axis(coords, start, end, bones=4, slack=0.3):
+    """Traces bone station points along the volumetric medial axis between start and end.
+    Centers each station by balancing radial boundary distances within its orthogonal cross-section."""
+    s = Vector(start) if not isinstance(start, Vector) else start
+    e = Vector(end) if not isinstance(end, Vector) else end
+    ab = e - s
+    length = ab.length
+    if length < 1e-6 or bones < 1:
+        return [s, e]
+
+    pts = []
+    d = ab.normalized()
+    ref = Vector((0, 0, 1)) if abs(d.z) < 0.85 else Vector((1, 0, 0))
+    u = d.cross(ref).normalized()
+    v = d.cross(u).normalized()
+
+    for k in range(bones + 1):
+        frac = k / bones
+        nominal = s.lerp(e, frac)
+        half_step = length / bones * 0.5
+        slice_pts = []
+        for pt in coords:
+            p = Vector(pt) if not isinstance(pt, Vector) else pt
+            proj = (p - nominal).dot(d)
+            if abs(proj) <= half_step:
+                slice_pts.append(p)
+
+        if not slice_pts or len(slice_pts) < 4:
+            pts.append(nominal)
+            continue
+
+        c_refined = sum(slice_pts, Vector((0, 0, 0))) / len(slice_pts)
+        for _ in range(2):
+            num_sectors = 8
+            sector_radii = [[] for _ in range(num_sectors)]
+            for p in slice_pts:
+                diff = p - c_refined
+                pu = diff.dot(u); pv = diff.dot(v)
+                angle = math.atan2(pv, pu)
+                sector_idx = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
+                r = math.sqrt(pu * pu + pv * pv)
+                sector_radii[sector_idx].append(r)
+
+            shift_u, shift_v = 0.0, 0.0
+            half_sec = num_sectors // 2
+            for sec in range(half_sec):
+                opp = sec + half_sec
+                r1 = min(sector_radii[sec]) if sector_radii[sec] else None
+                r2 = min(sector_radii[opp]) if sector_radii[opp] else None
+                if r1 is not None and r2 is not None:
+                    mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
+                    delta = (r1 - r2) * 0.5
+                    shift_u += delta * math.cos(mid_angle)
+                    shift_v += delta * math.sin(mid_angle)
+
+            c_refined = c_refined + u * (shift_u / 2.0) + v * (shift_v / 2.0)
+        pts.append(c_refined)
+
+    pts[0] = s
+    pts[-1] = e
+    for _ in range(2):
+        pts = [pts[0]] + [
+            (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
+            for i in range(1, len(pts) - 1)
+        ] + [pts[-1]]
+    return pts
 

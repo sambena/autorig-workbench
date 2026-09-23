@@ -56,8 +56,9 @@ main { display: grid; grid-template-columns: 1fr 470px; min-height: 0; }
 #banner button { margin-left: 8px; }
 #msg { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; display: none; max-width: 440px; padding: 14px 18px; }
 #msg .big { font-size: 15px; margin-bottom: 6px; }
-.lbl { font: 11px/1 system-ui, sans-serif; color: #e8edf6; background: rgba(10, 12, 18, .78); padding: 2px 4px;
-       border-radius: 3px; white-space: nowrap; pointer-events: auto; cursor: pointer; border-left: 3px solid #666; }
+.lbl { font: 11px/1 system-ui, sans-serif; color: #e8edf6; background: rgba(10, 12, 18, .86); padding: 2.5px 5px;
+       border-radius: 4px; white-space: nowrap; pointer-events: auto; cursor: pointer; border-left: 3px solid #666;
+       box-shadow: 0 2px 6px rgba(0,0,0,.5); }
 .lbl.sel { background: #5b8ff0; color: #0b0e14; font-weight: 650; }
 .lbl.dim { opacity: .5; }
 #view.pointpick .lbl { pointer-events: none; }
@@ -145,6 +146,7 @@ kbd { font: 11px ui-monospace, Consolas, monospace; background: var(--chip); bor
   <button id="bSave" title="Write rig.json (the old one is kept as rig.json.bak)">Save</button>
   <button id="bRerig" class="primary" title="Save, then rig, trim, audit, clips and preview: compare the audit before and after">Save and re-rig</button>
   <button id="bView" title="Open the 3D results viewer on the rig">View results</button>
+  <a id="helpLink" href="#" target="_blank"><button type="button" title="Comprehensive guide with diagrams, bone placement, and troubleshooting">Help ↗</button></a>
   <a id="back" href="#">workbench</a>
 </header>
 <main>
@@ -169,9 +171,12 @@ kbd { font: 11px ui-monospace, Consolas, monospace; background: var(--chip); bor
       <button id="vSide" class="small" title="From its left side">Side</button>
       <button id="vTop" class="small" title="From above">Top</button>
       <label title="How see-through the model is">model <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></label>
-      <label><input type="checkbox" id="showLabels" checked> names</label>
-      <label><input type="checkbox" id="showSpots" checked> audit spots</label>
+      <label title="Show or hide source skeleton bone names (e.g. Mixamo/Tripo)"><input type="checkbox" id="showSourceLabels"> <span id="lblSourceNames">Mixamo labels</span></label>
+      <label title="Show or hide suggested spec chain and guide labels"><input type="checkbox" id="showSuggestedLabels" checked> suggested labels</label>
+      <label title="Show or hide height and span guide lines in 3D"><input type="checkbox" id="showGuides" checked> guides</label>
+      <label title="Show or hide audit issue spots in 3D"><input type="checkbox" id="showSpots" checked> audit spots</label>
       <label title="Clicking the model places a point halfway through the part under the mouse (a limb's middle), or on its surface"><input type="checkbox" id="throughMiddle" checked> points in the middle</label>
+      <label title="Mirror point edits across X=0.5 symmetry plane to opposite .L/.R chain"><input type="checkbox" id="mirrorEdits" checked> mirror .L/.R</label>
     </div>
   </section>
   <aside>

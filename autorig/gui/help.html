@@ -1,0 +1,1259 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Autorig Workbench: Comprehensive Interactive Guide and Documentation. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autorig Workbench — Comprehensive Guide &amp; Documentation</title>
+<style>
+:root {
+  --bg: #0f1217;
+  --panel: #171b23;
+  --panel2: #1e232e;
+  --ink: #e8ecf3;
+  --muted: #95a0b3;
+  --line: #2b3342;
+  --accent: #5b8ff0;
+  --accent-ink: #0b0e14;
+  --accent-soft: rgba(91, 143, 240, 0.14);
+  --pass: #4cc17e;
+  --pass-bg: #153223;
+  --warn: #e8b64a;
+  --warn-bg: #3a2f14;
+  --fail: #f07070;
+  --fail-bg: #381a1a;
+  --code-bg: #0b0d12;
+  --chip: #232936;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --panel2: #f0f3f8;
+    --ink: #1b202a;
+    --muted: #5e697d;
+    --line: #d8dee8;
+    --accent: #2d6cd8;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(45, 108, 216, 0.1);
+    --pass: #1b8549;
+    --pass-bg: #e2f4ea;
+    --warn: #966700;
+    --warn-bg: #fdf2d7;
+    --fail: #c52929;
+    --fail-bg: #fbe4e4;
+    --code-bg: #151922;
+    --chip: #eaedf3;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Header */
+header.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+header.topbar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+header.topbar .badge {
+  font-size: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+header.topbar .nav-links {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+/* Layout */
+.wrapper {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  max-width: 1440px;
+  margin: 0 auto;
+  min-height: calc(100vh - 54px);
+}
+@media (max-width: 960px) {
+  .wrapper { grid-template-columns: 1fr; }
+  aside.sidebar { display: none; }
+}
+
+/* Sidebar navigation */
+aside.sidebar {
+  position: sticky;
+  top: 54px;
+  height: calc(100vh - 54px);
+  overflow-y: auto;
+  padding: 20px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.sidebar nav ul { list-style: none; margin: 0; padding: 0; }
+.sidebar nav li { margin: 3px 0; }
+.sidebar nav li.group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 700;
+  margin: 16px 0 6px 4px;
+}
+.sidebar nav li.group-title:first-child { margin-top: 0; }
+.sidebar nav a {
+  display: block;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+.sidebar nav a:hover {
+  background: var(--chip);
+  color: var(--ink);
+  text-decoration: none;
+}
+.sidebar nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Main Content Area */
+main.content {
+  padding: 28px 40px 80px;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  main.content { padding: 18px 16px 60px; }
+}
+
+section {
+  margin-bottom: 54px;
+  scroll-margin-top: 74px;
+}
+h2 {
+  font-size: 24px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+h3 {
+  font-size: 18px;
+  font-weight: 650;
+  margin: 26px 0 10px;
+  color: var(--ink);
+}
+h4 {
+  font-size: 14.5px;
+  font-weight: 650;
+  margin: 18px 0 6px;
+  color: var(--ink);
+}
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 14px; padding-left: 24px; }
+li { margin-bottom: 5px; }
+
+/* Callout Boxes */
+.callout {
+  border-left: 4px solid var(--accent);
+  background: var(--panel2);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 13.5px;
+}
+.callout.tip { border-color: var(--pass); background: var(--pass-bg); color: var(--pass); }
+.callout.warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+.callout.danger { border-color: var(--fail); background: var(--fail-bg); color: var(--fail); }
+.callout b { color: var(--ink); }
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 14px 0 20px;
+  background: var(--panel);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+th, td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th {
+  background: var(--chip);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+tr:last-child td { border-bottom: none; }
+td.kbd { font-family: ui-monospace, Consolas, monospace; }
+
+/* Code Blocks & Inline Code */
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  background: var(--chip);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  color: #cfd6e4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  margin: 12px 0 18px;
+}
+
+/* Badges / Chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.chip.pass { background: var(--pass-bg); color: var(--pass); }
+.chip.check { background: var(--warn-bg); color: var(--warn); }
+.chip.fail { background: var(--fail-bg); color: var(--fail); }
+.chip.step { background: var(--chip); color: var(--ink); border: 1px solid var(--line); font-family: ui-monospace, monospace; }
+
+/* Button Card Grid */
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 16px;
+  margin: 18px 0 24px;
+}
+.btn-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn-card .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-card .btn-title {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-card .script {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.btn-card .desc {
+  font-size: 13px;
+  color: var(--ink);
+  flex: 1;
+}
+.btn-card .meta-row {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Diagram styling */
+.diagram-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  margin: 18px 0;
+  text-align: center;
+}
+.diagram-box svg {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+}
+
+/* Picture Figures & Zoom Modal */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+figure.shot {
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+figure.shot img {
+  width: 100%;
+  aspect-ratio: 16/10;
+  object-fit: cover;
+  background: #ffffff;
+  display: block;
+  cursor: zoom-in;
+  border-bottom: 1px solid var(--line);
+}
+figure.shot figcaption {
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+figure.shot figcaption b { color: var(--ink); }
+
+/* Modern Dialog modal with closedby="any" */
+dialog#zoomDialog {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: 95vw;
+  max-height: 95vh;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  overflow: hidden;
+}
+dialog#zoomDialog::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+dialog#zoomDialog img {
+  display: block;
+  max-width: 95vw;
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 8px;
+}
+dialog#zoomDialog .close-bar {
+  text-align: right;
+  padding: 6px 10px;
+  background: var(--panel);
+}
+dialog#zoomDialog .close-bar button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Collapsible sections */
+details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  margin: 10px 0;
+  overflow: hidden;
+}
+summary {
+  padding: 12px 16px;
+  font-weight: 650;
+  cursor: pointer;
+  background: var(--panel);
+  user-select: none;
+}
+summary:hover {
+  background: var(--chip);
+}
+details[open] summary {
+  border-bottom: 1px solid var(--line);
+  background: var(--panel2);
+}
+.details-content {
+  padding: 16px;
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>
+    <span>Autorig Workbench</span>
+    <span class="badge">Comprehensive Guide</span>
+  </h1>
+  <div class="nav-links">
+    <a href="/">&larr; Back to Workbench</a>
+    <a href="/spec_editor.html" target="_blank">Spec Editor ↗</a>
+    <a href="/viewer.html" target="_blank">3D Viewer ↗</a>
+  </div>
+</header>
+
+<div class="wrapper">
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar">
+    <nav>
+      <ul>
+        <li class="group-title">Getting Started</li>
+        <li><a href="#overview">Overview &amp; Architecture</a></li>
+        <li><a href="#quickstart">Quick Start Flow</a></li>
+        
+        <li class="group-title">Buttons &amp; Actions</li>
+        <li><a href="#buttons-all">Full Button Reference</a></li>
+        <li><a href="#survey-button">Survey &amp; Facing</a></li>
+        <li><a href="#spec-button">Edit Spec &amp; Suggest</a></li>
+        <li><a href="#rig-button">Rig &amp; Bone Skinning</a></li>
+        <li><a href="#trim-button">Trim &amp; Decimation</a></li>
+        <li><a href="#audit-button">Audit &amp; Grades</a></li>
+        <li><a href="#clips-button">Make Clips &amp; Archetypes</a></li>
+        <li><a href="#publish-button">Publish &amp; Cards</a></li>
+        <li><a href="#preview-button">Preview &amp; 3D Viewer</a></li>
+        <li><a href="#collection-buttons">Audit All &amp; Collection</a></li>
+
+        <li class="group-title">Bone Placement</li>
+        <li><a href="#coords">Coordinate System (0..1)</a></li>
+        <li><a href="#placement-methods">Placement Workflows</a></li>
+        <li><a href="#rig-kinds">Rig Kinds (tripo, build, etc.)</a></li>
+        <li><a href="#rules-a-f">The Rules (A to F)</a></li>
+
+        <li class="group-title">Troubleshooting</li>
+        <li><a href="#fix-facing">Fix Inverted / Sideways Facing</a></li>
+        <li><a href="#fix-tears">Fix Mesh Tearing (Fail/Check)</a></li>
+        <li><a href="#fix-bleed">Fix Weight Bleed (&gt; 2%)</a></li>
+        <li><a href="#fix-head">Fix Low Head Share (&lt; 2.5%)</a></li>
+        <li><a href="#fix-allowances">When to Use Audit Allowances</a></li>
+
+        <li class="group-title">Visual References</li>
+        <li><a href="#visual-gallery">Bend Tests &amp; Audit Sheets</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+
+    <!-- Section 1: Overview -->
+    <section id="overview">
+      <h2>Overview &amp; Architecture</h2>
+      <p>
+        <b>Autorig Workbench</b> is an automated rigging, skinning, QA auditing, and animation authoring pipeline for 3D sculpts,
+        generative models, and custom assets. Blender runs completely headless in the background&mdash;no Blender window ever opens.
+        Everything is orchestrated through a local web server (Python standard library only) and audited with automated mathematical checks.
+      </p>
+
+      <div class="callout tip">
+        <b>Non-Destructive Principle:</b> Source models (FBX, GLB, glTF, OBJ) are <b>never modified</b>.
+        Generated files land cleanly in a <code>rigged/</code> directory beside the source, accompanied by <code>clips/</code>,
+        and an engine-ready model card <code>model.json</code>.
+      </div>
+
+      <div class="diagram-box">
+        <h4 style="margin-top:0">Pipeline Architecture &amp; Dataflow</h4>
+        <svg viewBox="0 0 920 180" width="920" height="180">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#5b8ff0" />
+            </marker>
+          </defs>
+          <!-- Nodes -->
+          <g fill="#171b23" stroke="#2b3342" stroke-width="2">
+            <!-- Source -->
+            <rect x="10" y="55" width="110" height="70" rx="8" />
+            <!-- Survey -->
+            <rect x="150" y="55" width="105" height="70" rx="8" />
+            <!-- Spec -->
+            <rect x="285" y="55" width="105" height="70" rx="8" />
+            <!-- Rig -->
+            <rect x="420" y="55" width="95" height="70" rx="8" stroke="#5b8ff0" />
+            <!-- Trim -->
+            <rect x="545" y="55" width="95" height="70" rx="8" />
+            <!-- Audit -->
+            <rect x="670" y="55" width="105" height="70" rx="8" stroke="#4cc17e" />
+            <!-- Outputs -->
+            <rect x="805" y="55" width="105" height="70" rx="8" stroke="#e8b64a" />
+          </g>
+
+          <!-- Arrows -->
+          <g stroke="#5b8ff0" stroke-width="2" fill="none" marker-end="url(#arrow)">
+            <line x1="120" y1="90" x2="148" y2="90" />
+            <line x1="255" y1="90" x2="283" y2="90" />
+            <line x1="390" y1="90" x2="418" y2="90" />
+            <line x1="515" y1="90" x2="543" y2="90" />
+            <line x1="640" y1="90" x2="668" y2="90" />
+            <line x1="775" y1="90" x2="803" y2="90" />
+          </g>
+
+          <!-- Text Labels -->
+          <g font-family="system-ui, sans-serif" font-size="12" text-anchor="middle" fill="#e8ecf3">
+            <text x="65" y="85" font-weight="bold">Source 3D</text>
+            <text x="65" y="103" fill="#95a0b3" font-size="10.5">FBX/GLB/OBJ</text>
+
+            <text x="202" y="85" font-weight="bold">Survey</text>
+            <text x="202" y="103" fill="#95a0b3" font-size="10.5">Facing &amp; Bones</text>
+
+            <text x="337" y="85" font-weight="bold">rig.json</text>
+            <text x="337" y="103" fill="#95a0b3" font-size="10.5">Spec Editor</text>
+
+            <text x="467" y="85" font-weight="bold" fill="#5b8ff0">Rig</text>
+            <text x="467" y="103" fill="#95a0b3" font-size="10.5">Armature &amp; Skin</text>
+
+            <text x="592" y="85" font-weight="bold">Trim</text>
+            <text x="592" y="103" fill="#95a0b3" font-size="10.5">Budget &amp; 4 Inf</text>
+
+            <text x="722" y="85" font-weight="bold" fill="#4cc17e">Audit</text>
+            <text x="722" y="103" fill="#95a0b3" font-size="10.5">PASS / CHECK</text>
+
+            <text x="857" y="85" font-weight="bold" fill="#e8b64a">Engine FBX</text>
+            <text x="857" y="103" fill="#95a0b3" font-size="10.5">Clips &amp; Card</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Section 2: Quick Start -->
+    <section id="quickstart">
+      <h2>Quick Start: Step-by-Step Flow</h2>
+      <ol>
+        <li>
+          <b>Add your model:</b> Drop an FBX (with its texture folder), GLB, OBJ, or zip into the drop area on the left panel, or paste filesystem paths.
+        </li>
+        <li>
+          <b>Survey:</b> Click <b>Survey</b>. Read the 4 facing views under the <i>Survey</i> tab to determine which axis is the front of the model (e.g., <code>[0, -1, 0]</code>).
+        </li>
+        <li>
+          <b>Edit spec:</b> Click <b>Edit spec</b> to open the 3D editor. Click <b>Suggest skeleton</b> for an automatic proposal, or click joints directly on the 3D model. Click <b>Save</b>.
+        </li>
+        <li>
+          <b>Run all:</b> Press <span class="chip pass">Run all</span>. The pipeline builds the armature, skins the geometry, enforces envelope capsules, decimates to budget, performs QA audits, authors animations, and creates the preview GLB.
+        </li>
+        <li>
+          <b>Inspect:</b> Check the audit verdict (<span class="chip pass">PASS</span>, <span class="chip check">CHECK</span>, or <span class="chip fail">FAIL</span>) and press <b>View results</b> to scrub through clips and inspect weights in the 3D results viewer.
+        </li>
+      </ol>
+    </section>
+
+    <!-- Section 3: Button Reference -->
+    <section id="buttons-all">
+      <h2>Interactive Button &amp; Action Reference</h2>
+      <p>
+        Every button on the workbench controls an isolated, reproducible script. When a button is disabled,
+        hovering over it reveals the exact prerequisite needed (e.g. <i>"no rig yet: run Rig"</i>).
+      </p>
+
+      <div class="button-grid">
+        <!-- Edit spec -->
+        <div class="btn-card" id="spec-button">
+          <div class="head">
+            <span class="btn-title"><button>Edit spec</button></span>
+            <span class="script">spec_editor.html</span>
+          </div>
+          <div class="desc">
+            Opens the WebGL 3D Spec Editor. Displays the source model with its bone hierarchy drawn in 3D.
+            Allows picking bones for head, hips, limbs, dragging and dropping points in 3D (with Shift snapping),
+            and toggling labels and height/span guide overlays (via the <b>names</b>/<b>guides</b> toolbar checkboxes or the <b>show labels</b> checkboxes next to the Heights and Spans sections) to keep the viewport clean when picking.
+          </div>
+          <div class="meta-row">Prerequisite: Source model present.</div>
+        </div>
+
+        <!-- Survey -->
+        <div class="btn-card" id="survey-button">
+          <div class="head">
+            <span class="btn-title"><button>Survey</button></span>
+            <span class="script">survey.py &middot; facing.py</span>
+          </div>
+          <div class="desc">
+            Surveys what the source model contains: mesh topology, vertex/face count, bounding box measurements,
+            and whether it carries an existing skeleton (Tripo, Mixamo, custom, or none).
+            Renders 4 orthographic facing views (+X, -X, +Y, -Y) so you can unambiguously configure <code>forward</code>.
+          </div>
+          <div class="meta-row">Prerequisite: Source model file (.fbx, .glb, .obj).</div>
+        </div>
+
+        <!-- Rig -->
+        <div class="btn-card" id="rig-button">
+          <div class="head">
+            <span class="btn-title"><button>Rig</button></span>
+            <span class="script">rerig.py / rerig_humanoid.py</span>
+          </div>
+          <div class="desc">
+            Constructs the target armature oriented along canonical game coordinates (facing -Y, feet on Z=0, left on +X).
+            Generates IK foot controls on all legs, skins mesh via bone heat (with watertight voxel proxy fallback for sculpts),
+            applies Torso Envelope &amp; Capsule rules (A-F), and outputs <code>&lt;model&gt;.blend</code>, <code>&lt;model&gt;.fbx</code>, and the QA bend test render.
+          </div>
+          <div class="meta-row">Prerequisite: Source model and valid <code>rig.json</code>.</div>
+        </div>
+
+        <!-- Trim -->
+        <div class="btn-card" id="trim-button">
+          <div class="head">
+            <span class="btn-title"><button>Trim</button></span>
+            <span class="script">decimate.py</span>
+          </div>
+          <div class="desc">
+            Decimates the rigged mesh to the game triangle budget (e.g. 2000 tris). Clamps bone influences to at most 4 per vertex
+            (required by game engine GPU skinning shaders) and normalizes weights.
+            Preserves planar faces and purposefully severed seam boundaries (such as wing membranes from body flanks).
+          </div>
+          <div class="meta-row">Prerequisite: Rigged .blend or source.</div>
+        </div>
+
+        <!-- Audit -->
+        <div class="btn-card" id="audit-button">
+          <div class="head">
+            <span class="btn-title"><button>Audit</button></span>
+            <span class="script">audit.py</span>
+          </div>
+          <div class="desc">
+            Runs rigorous QA checks on the exported game FBX: checks for skin tearing in extreme poses (combined pose &amp; single joint 40&deg; bends),
+            calculates maximum gap %, weight bleed % across unrelated bones, head surface share, and 4-influence limits.
+            Produces <code>_skin.png</code> (bone ownership) and <code>_bend.png</code> (pose stress test).
+          </div>
+          <div class="meta-row">Prerequisite: Rigged FBX file.</div>
+        </div>
+
+        <!-- Clips -->
+        <div class="btn-card" id="clips-button">
+          <div class="head">
+            <span class="btn-title"><button>Make clips</button></span>
+            <span class="script">make_clips.py</span>
+          </div>
+          <div class="desc">
+            Procedurally generates animation clips tailored to the model's archetype (e.g. <code>walker</code>: idle, walk, run, bite/attack, hit, death).
+            Measures mesh floor contact frame-by-frame during collapse animations to ensure dead models rest flush against the floor without clipping.
+          </div>
+          <div class="meta-row">Prerequisite: Rigged model + <code>clips.archetype</code> in <code>rig.json</code>.</div>
+        </div>
+
+        <!-- Publish -->
+        <div class="btn-card" id="publish-button">
+          <div class="head">
+            <span class="btn-title"><button>Publish</button></span>
+            <span class="script">publish.py</span>
+          </div>
+          <div class="desc">
+            Generates the official <code>model.json</code> card for game engine asset importers: real-world meters scale,
+            polygon counts, bone lists, animation manifest, and audit certificate. Updates the collection's master <code>pack.json</code>.
+          </div>
+          <div class="meta-row">Prerequisite: Rigged FBX file.</div>
+        </div>
+
+        <!-- Preview -->
+        <div class="btn-card" id="preview-button">
+          <div class="head">
+            <span class="btn-title"><button>Preview</button></span>
+            <span class="script">preview_glb.py</span>
+          </div>
+          <div class="desc">
+            Bakes the skinned mesh, armature, and all animation clips into a compact <code>preview.glb</code> and <code>preview.json</code>.
+            This file powers the interactive 3D Results Viewer.
+          </div>
+          <div class="meta-row">Prerequisite: Rigged .blend or FBX.</div>
+        </div>
+
+        <!-- Run all -->
+        <div class="btn-card">
+          <div class="head">
+            <span class="btn-title"><button class="primary">Run all</button></span>
+            <span class="script">Chained execution</span>
+          </div>
+          <div class="desc">
+            Executes the entire end-to-end pipeline in order: Survey &rarr; Rig &rarr; Trim &rarr; Audit &rarr; Clips &rarr; Publish &rarr; Preview.
+            Streams live terminal logs to the interface and enables cancellation at any time.
+          </div>
+          <div class="meta-row">Prerequisite: Source model and <code>rig.json</code>.</div>
+        </div>
+
+        <!-- View results -->
+        <div class="btn-card">
+          <div class="head">
+            <span class="btn-title"><button class="primary">View results</button></span>
+            <span class="script">viewer.html</span>
+          </div>
+          <div class="desc">
+            Launches the interactive 3D WebGL viewer. Allows 360&deg; orbit, playing and scrubbing clips frame-by-frame,
+            toggling bone weight heatmaps, visualizing bleed percentages, and clicking tear sites in 3D space.
+          </div>
+          <div class="meta-row">Prerequisite: preview.glb generated.</div>
+        </div>
+
+        <!-- Cancel -->
+        <div class="btn-card">
+          <div class="head">
+            <span class="btn-title"><button style="color:var(--fail)">Cancel</button></span>
+            <span class="script">Process Isolation</span>
+          </div>
+          <div class="desc">
+            Immediately halts the active background task. Kills only that specific Blender subprocess by its individual PID
+            without killing any other tasks, terminating the server, or corrupting other models.
+          </div>
+          <div class="meta-row">Active while any job is in progress.</div>
+        </div>
+
+        <!-- Open output folder -->
+        <div class="btn-card" id="collection-buttons">
+          <div class="head">
+            <span class="btn-title"><button>Open output folder</button></span>
+            <span class="script">System Explorer</span>
+          </div>
+          <div class="desc">
+            Invokes your operating system's native file explorer (Windows Explorer, macOS Finder, or Linux <code>xdg-open</code>)
+            directly on the model's generated folder holding its <code>rigged/</code> files, clips, and cards.
+          </div>
+          <div class="meta-row">Any model folder.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Bone Placement & Coordinates -->
+    <section id="coords">
+      <h2>Bone Placement &amp; Coordinate System</h2>
+      <p>
+        In Autorig Workbench, all 3D positions in <code>rig.json</code> (joint coordinates, cut lines, envelopes) are expressed as
+        normalized <b><code>[x, y, z]</code> fractions from 0.0 to 1.0</b> of the model's bounding box <i>after</i> turning to face canonical <b>-Y</b>.
+      </p>
+
+      <div class="diagram-box">
+        <h4 style="margin-top:0">Normalized Coordinate Conventions</h4>
+        <svg viewBox="0 0 600 240" width="600" height="240">
+          <g stroke="#2b3342" stroke-width="1.5" fill="none">
+            <!-- 3D Box Wireframe -->
+            <polygon points="180,60 380,60 480,110 280,110" fill="rgba(91,143,240,0.04)" stroke="#5b8ff0" />
+            <polygon points="180,170 380,170 480,220 280,220" fill="rgba(91,143,240,0.08)" stroke="#5b8ff0" />
+            <line x1="180" y1="60" x2="180" y2="170" stroke="#5b8ff0" />
+            <line x1="380" y1="60" x2="380" y2="170" stroke="#5b8ff0" />
+            <line x1="480" y1="110" x2="480" y2="220" stroke="#5b8ff0" />
+            <line x1="280" y1="110" x2="280" y2="220" stroke="#5b8ff0" />
+          </g>
+
+          <!-- Axes Arrows -->
+          <!-- X Axis -->
+          <line x1="180" y1="170" x2="380" y2="170" stroke="#f07070" stroke-width="3" marker-end="url(#arrow)" />
+          <!-- Y Axis -->
+          <line x1="280" y1="220" x2="480" y2="220" stroke="#4cc17e" stroke-width="3" marker-end="url(#arrow)" />
+          <!-- Z Axis -->
+          <line x1="180" y1="170" x2="180" y2="60" stroke="#5b8ff0" stroke-width="3" marker-end="url(#arrow)" />
+
+          <!-- Labels -->
+          <g font-family="system-ui, sans-serif" font-size="12" fill="#e8ecf3">
+            <text x="240" y="190" fill="#f07070" font-weight="bold">X Axis: 0.0 (Right) &rarr; 1.0 (Left)</text>
+            <text x="240" y="206" fill="#95a0b3" font-size="11">X = 0.5 is the Symmetry Plane</text>
+
+            <text x="360" y="235" fill="#4cc17e" font-weight="bold">Y Axis: 0.0 (Front / Nose) &rarr; 1.0 (Back / Tail)</text>
+
+            <text x="70" y="115" fill="#5b8ff0" font-weight="bold">Z Axis:</text>
+            <text x="70" y="132" fill="#5b8ff0">1.0 = Crown / Top</text>
+            <text x="70" y="150" fill="#5b8ff0">0.0 = Ground / Feet</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Axis</th>
+              <th>Value = 0.0</th>
+              <th>Center = 0.5</th>
+              <th>Value = 1.0</th>
+              <th>Rig Interpretation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>X</b> (Span)</td>
+              <td>Model's Right (-X side)</td>
+              <td>Centerline / Spine plane</td>
+              <td>Model's Left (+X side)</td>
+              <td>Limbs on +X are mirrored to -X with <code>.L</code> &rarr; <code>.R</code> suffixes</td>
+            </tr>
+            <tr>
+              <td><b>Y</b> (Depth)</td>
+              <td>Snout / Nose / Front Face</td>
+              <td>Mid-body / Ribcage</td>
+              <td>Tail / Rump / Rear</td>
+              <td>Rig faces <b>-Y</b>. Head points towards 0.0, Tail towards 1.0</td>
+            </tr>
+            <tr>
+              <td><b>Z</b> (Height)</td>
+              <td>Ground / Soles of Feet</td>
+              <td>Waist / Knees</td>
+              <td>Crown of head / Top of crest</td>
+              <td>Walkers stand planted on Z = 0; Swimmers/Flyers centered on Z = 0.5</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Section 5: Placement Workflows -->
+    <section id="placement-methods">
+      <h2>Bone Placement Workflows</h2>
+      <p>Depending on the kind of 3D asset you have, Autorig Workbench provides three primary ways to place bones:</p>
+
+      <div class="button-grid">
+        <div class="btn-card">
+          <div class="btn-title">1. One-Click Heuristic: "Suggest skeleton"</div>
+          <div class="desc">
+            In <code>spec_editor.html</code>, clicking <b>Suggest skeleton</b> analyzes geodesic extremities,
+            detects symmetry across X=0.5, aligns spine stations to shoulder and hip hinges, anchors limbs via volumetric surface junctions (Rule C),
+            attaches limbs to nearest body bones (<code>parent_nearest</code>), and generates <code>head_line</code> / <code>head_to_snout</code> (Rule A).
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">2. Direct 3D Drag &amp; Drop on Points</div>
+          <div class="desc">
+            In the 3D viewport, hover over any chain point (limb tips, bases, spine stations, tube points, head line, jaw) to see it highlight in vivid gold with a <code>grab</code> cursor.
+            Click and drag to reposition the point in 3D in real time. Hold <b>Shift</b> to snap to the centerline ($X=0.5$) or ground ($Z=0.0$).
+            Full Undo (<b>Ctrl+Z</b>) is supported.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">3. Click-to-Place (Through the Middle)</div>
+          <div class="desc">
+            For boneless sculpts: check <b>points in the middle</b> in the 3D editor. When you click on a limb or torso in the 3D view,
+            the tool shoots a raycast straight through the model, finds both the front and back entry/exit points, and places the joint
+            <b>exactly halfway through the anatomical interior</b>!
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">4. Re-Root Existing Generator Bones</div>
+          <div class="desc">
+            For AI-generated models with raw skeletons (such as Tripo <code>bone_0..N</code>): click a bone in 3D to identify it,
+            then click <b>Head</b>, <b>Hips</b>, <b>Leg</b>, or <b>Mirror</b> to convert tangled generator bones into a proper named hierarchy.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">5. Cross-Section Pinch Crease Analysis</div>
+          <div class="desc">
+            Analyzes 2D orthogonal cross-sections along limbs and body axes to detect localized narrowing (anatomical pinches).
+            Knees, elbows, and waists snap automatically to the true physical bend creases rather than relying on arbitrary percentage heights.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">6. Volumetric Medial-Axis Centerline</div>
+          <div class="desc">
+            Traces curved spines, tails, and tentacles through the 3D interior volume using radial boundary distance balancing.
+            Bones remain centered deep within fleshy volumes, immune to distortion from dorsal fins, pauldrons, or armor plates.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">7. Real-Time Symmetry &amp; Mirror Mode</div>
+          <div class="desc">
+            Toggle <code>mirror .L/.R</code> in the viewport overlay: dragging any station on a <code>.L</code> chain instantly reflects across
+            the $X=0.5$ symmetry plane onto the corresponding <code>.R</code> chain in real time, cutting manual adjustment time in half.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: Rig Kinds -->
+    <section id="rig-kinds">
+      <h2>Rig Kinds &amp; Specifications</h2>
+      <p>The <code>"kind"</code> property in <code>rig.json</code> selects which builder algorithm creates the armature:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kind</th>
+              <th>Ideal For</th>
+              <th>Key Fields in <code>rig.json</code></th>
+              <th>How Bones Are Formed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tripo</code></td>
+              <td>AI generator exports that include raw <code>bone_N</code> armatures</td>
+              <td><code>head</code>, <code>hips</code>, <code>chains</code>, <code>legs</code>, <code>delete</code>, <code>mirror</code></td>
+              <td>Reuses joint positions, strips messy parenting, re-roots at hips, and cleans rolls.</td>
+            </tr>
+            <tr>
+              <td><code>build</code></td>
+              <td>Boneless sculpts, animals, creatures, machines, serpentine forms</td>
+              <td><code>chains: [ {slice: [y0, y1]}, {tip: [x,y,z]}, {tube: [s, e]} ]</code></td>
+              <td>Traces cross-sectional centroid slices for spines, tubes for necks/tails, and tips for limbs.</td>
+            </tr>
+            <tr>
+              <td><code>placed</code></td>
+              <td>Complex creatures with wings, membranes, armor plates, and jaw articulations</td>
+              <td><code>parts</code>, <code>blends</code>, <code>rip_welds</code>, <code>membranes</code>, <code>rigid_islands</code></td>
+              <td>Hand-placed chains reinforced with boundary rules that prevent cross-bleed between adjacent anatomical parts.</td>
+            </tr>
+            <tr>
+              <td><code>humanoid</code></td>
+              <td>Human figures, knights, bipedal humanoids</td>
+              <td><code>hip</code>, <code>knee</code>, <code>ankle</code>, <code>spine</code>, <code>neck</code>, <code>shoulder</code>, <code>wrist</code> heights/spans</td>
+              <td>Standard game humanoid rig (compatible with Mixamo/Unreal/Unity retargeting) measured from frontal proportions.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Example: Constructive Build Chains</h3>
+      <pre><code>{
+  "schema": "autorig-spec/1",
+  "rig": {
+    "kind": "build",
+    "forward": [0, -1, 0],
+    "skeleton": "quadruped",
+    "chains": [
+      { "name": "spine", "slice": [0.25, 0.75], "bones": 3, "names": ["hips", "spine", "chest"] },
+      { "name": "neck", "tube": [[0.5, 0.25, 0.6], [0.5, 0.15, 0.8]], "bones": 2, "parent": ["spine", 2] },
+      { "name": "leg_front.L", "tip": [0.75, 0.28, 0.0], "bones": 3, "ik": true, "parent": ["spine", 2] },
+      { "name": "leg_hind.L", "tip": [0.72, 0.72, 0.0], "bones": 3, "ik": true, "parent": ["spine", 0] }
+    ],
+    "envelope": "full",
+    "rigid_pieces": 0.12
+  },
+  "budget": 2500,
+  "clips": { "archetype": "walker", "display": "Wolf" }
+}</code></pre>
+    </section>
+
+    <!-- Section 7: The Rules (A to F) -->
+    <section id="rules-a-f">
+      <h2>The Core Rigging Rules (A to F)</h2>
+      <p>
+        Simple bone heat skinning often fails on complex sculpts&mdash;teeth stretch across jaws, armpits glue together,
+        and fingers merge with thighs. Autorig Workbench applies 6 procedural rules automatically during every rig build:
+      </p>
+
+      <details open>
+        <summary><b>Rule A: Head to Snout &amp; Articulated Jaw</b></summary>
+        <div class="details-content">
+          A forward-facing head bone is procedurally extended forward along its axis to the anterior tip of the snout.
+          If <code>head_line</code> is defined, the spine is cleanly cut at the base of the skull.
+          If <code>jaw</code> is specified (with hinge point and tip), all geometry beneath the mouth plane ahead of the hinge
+          moves from the skull to the jaw bone, blended smoothly at the lips.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule B: Torso Envelope &amp; Capsule Radii</b></summary>
+        <div class="details-content">
+          Torso vertices are projected onto the spine and partitioned along bisecting joint planes.
+          Limbs are assigned strictly within measured 3D capsules (radius determined by <code>limb_radius</code>).
+          Spikes, horns, and claws ride only the nearest bone of their parent chain.
+          This guarantees a foreleg will <i>never</i> steal skin weight from the ribs or belly!
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule C: Limbs Anchored from Body Surface</b></summary>
+        <div class="details-content">
+          Tip-based limbs start at <code>base</code> coordinates on the actual body surface. For loose pieces (e.g. an arm sculpted as a detached mesh),
+          the limb originates precisely where the piece emerges from the torso. Clavicles and scapulae are blended as girdles.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule D: Canonical Suffixes &amp; Centerline Reservation</b></summary>
+        <div class="details-content">
+          Bones situated on or near the central symmetry plane ($X=0.5$) receive un-suffixed names (<code>spine_1</code>, <code>neck</code>, <code>tail_2</code>).
+          Lateral bones receive canonical <code>.L</code> and <code>.R</code> tags. <code>root</code> is reserved strictly for the world root bone.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule E: 4 Influences &amp; Seam Integrity</b></summary>
+        <div class="details-content">
+          Game engine GPU shaders require $\le 4$ bone weights per vertex. Decimation clamps influences to 4 and normalizes.
+          Crucially, vertices on intentionally cut seams (e.g. bat wing membranes or cloak hems) are <b>never accidentally merged</b>
+          if their weights disagree across the seam.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule F: Mirrored Chain Symmetry</b></summary>
+        <div class="details-content">
+          Mirrored limbs are guaranteed to have identical bone counts, hierarchy levels, and IK setups on both sides.
+          The QA audit automatically flags a warning if asymmetrical chains are detected.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule G: Geodesic Crotch &amp; Underarm Skinning Barrier</b></summary>
+        <div class="details-content">
+          Bone heat is geometrically blind to empty air gaps between adjacent body parts.
+          Autorig enforces an automated geodesic barrier: vertices on the left side ($X &gt; \epsilon$) are strictly
+          isolated from right-leg bones, and torso vertices are protected from distal forearm/hand influences in resting poses.
+          This universally eliminates crotch stretching and underarm tear sites across all biped, quadruped, and creature models.
+        </div>
+      </details>
+    </section>
+
+    <!-- Section 8: Troubleshooting & Fixes -->
+    <section id="fix-facing">
+      <h2>Troubleshooting &amp; Rig Repairs</h2>
+      <p>
+        The QA Audit grades models as <span class="chip pass">PASS</span>, <span class="chip check">CHECK</span>, or <span class="chip fail">FAIL</span>.
+        Here is how to diagnose and resolve every common issue:
+      </p>
+
+      <!-- Troubleshooting 1: Facing -->
+      <div class="callout" style="border-left-color: var(--warn)">
+        <h3 style="margin-top:0">1. Model Faces Sideways, Upwards, or Backwards</h3>
+        <p><b>Symptom:</b> Limbs stick into the torso, walk clips move sideways, or the bend test render is viewed from an odd angle.</p>
+        <p><b>Cause:</b> Incorrect <code>"forward"</code> vector in <code>rig.json</code>.</p>
+        <p><b>How to Fix:</b></p>
+        <ol>
+          <li>Click <b>Survey</b>, then click the <b>Survey</b> tab in the results panel.</li>
+          <li>Look at the 4 <b>Facing Views</b>. Identify which render shows the creature's front face / nose:
+            <ul>
+              <li>Face in <b>+X view</b> &rarr; <code>"forward": [1, 0, 0]</code></li>
+              <li>Face in <b>-X view</b> &rarr; <code>"forward": [-1, 0, 0]</code></li>
+              <li>Face in <b>+Y view</b> &rarr; <code>"forward": [0, 1, 0]</code></li>
+              <li>Face in <b>-Y view</b> &rarr; <code>"forward": [0, -1, 0]</code></li>
+            </ul>
+          </li>
+          <li>In <b>Edit spec</b> (or directly in <code>rig.json</code>), update <code>forward</code> and run <b>Rig</b>.</li>
+        </ol>
+      </div>
+
+      <!-- Troubleshooting 2: Tears -->
+      <div class="callout" id="fix-tears" style="border-left-color: var(--fail)">
+        <h3 style="margin-top:0">2. Audit Fails with Combined or Single Bend Tears</h3>
+        <p><b>Symptom:</b> Audit table shows <span class="chip fail">FAIL</span> or <span class="chip check">CHECK</span> with tearing edges, e.g. <code>Tears combined: 18, Worst gap: 9.4%</code>.</p>
+        <p><b>Cause:</b> Adjacent geometry is being pulled apart by opposing bones, or coincident vertices were sculpted as a fused weld.</p>
+        <p><b>How to Fix:</b></p>
+        <ul>
+          <li><b>Identify the tearing bone:</b> Look at the <i>Tears by bone</i> table in the Audit tab, or click <b>View results</b> in 3D to see the red tear site markers.</li>
+          <li><b>Rip accidental welds:</b> If wing tips are welded to hips or fingers to legs, add a rip rule in <code>rig.json</code>:
+            <pre><code>"rip_welds": [["wing_tip.L", "hip.L"], ["wing_tip.R", "hip.R"]]</code></pre>
+          </li>
+          <li><b>Soften joint transitions:</b> Increase <code>joint_blend</code> in <code>rig.json</code> from <code>0.4</code> to <code>0.55</code>:
+            <pre><code>"joint_blend": 0.55</code></pre>
+          </li>
+          <li><b>Reposition limb roots:</b> In <b>Edit spec</b>, verify the leg or arm root is anchored cleanly inside the mesh, not floating outside the skin.</li>
+        </ul>
+      </div>
+
+      <!-- Troubleshooting 3: Weight Bleed -->
+      <div class="callout" id="fix-bleed" style="border-left-color: var(--fail)">
+        <h3 style="margin-top:0">3. Weight Bleed is High (&gt; 2.0%)</h3>
+        <p><b>Symptom:</b> Audit check <code>bleed_pct</code> is yellow or red. Vertices on the chest move when the foot twists, or teeth deform with the neck.</p>
+        <p><b>Cause:</b> Loose mesh pieces (buckles, armor, buttons, fangs) were captured by the wrong bone's heat diffusion.</p>
+        <p><b>How to Fix:</b></p>
+        <ul>
+          <li><b>Ensure torso capsule is active:</b> Set <code>"envelope": "full"</code> (for creatures) or <code>"envelope": "root"</code> (for humanoids).</li>
+          <li><b>Lock small loose pieces:</b> Set <code>"rigid_pieces": 0.15</code> to force any disconnected piece smaller than 15% of the model to ride exactly one bone.</li>
+          <li><b>Assign pieces to bounding boxes:</b> Use <code>rigid_to</code> to force any piece in a 3D box onto a specific bone:
+            <pre><code>"rigid_to": [
+  ["head", [0.4, 0.0, 0.7], [0.6, 0.3, 1.0]]
+]</code></pre>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Troubleshooting 4: Head Share -->
+      <div class="callout" id="fix-head" style="border-left-color: var(--warn)">
+        <h3 style="margin-top:0">4. Head Share is Too Low (&lt; 2.5%)</h3>
+        <p><b>Symptom:</b> Audit warning or failure on <code>head_pct</code>. The head bone only controls 0.8% of the surface.</p>
+        <p><b>Cause:</b> The spine or chest bone reaches too far into the skull, leaving the head bone with only the tip of the nose.</p>
+        <p><b>How to Fix:</b></p>
+        <ul>
+          <li>Enable automatic snout extension: <code>"head_to_snout": true</code>.</li>
+          <li>Define an explicit <code>head_line</code> cutting plane between neck and skull:
+            <pre><code>"head_line": [[0.5, 0.25, 0.7], [0.5, 0.05, 0.75]]</code></pre>
+          </li>
+          <li>If the model has an open mouth, add an articulated <code>jaw</code> hinge:
+            <pre><code>"jaw": { "hinge": [0.5, 0.2, 0.65], "tip": [0.5, 0.02, 0.62], "band": 0.12 }</code></pre>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Troubleshooting 5: Allowances -->
+      <div class="callout" id="fix-allowances" style="border-left-color: var(--pass)">
+        <h3 style="margin-top:0">5. When is an Audit Allowance Justified?</h3>
+        <p>
+          Some complex geometries (such as humanoids with high-poly shoulder pads or broad dragon wings) naturally exhibit a minor tear
+          during extreme 180&deg; overhead arm stretches. If the model looks <b>visually clean</b> in the 3D Viewer during real walk, run, and attack clips:
+        </p>
+        <pre><code>{
+  "rig": {
+    "audit": {
+      "combined_tears": 8,
+      "bend_tears": 4
+    }
+  },
+  "notes": {
+    "rig.audit": "Shoulder stretch on extreme dual-arm overhead pose is clean and unnoticeable in gameplay animations"
+  }
+}</code></pre>
+        <p><i>Note: The audit reason in <code>notes["rig.audit"]</code> is mandatory; the Workbench flags a warning if an allowance is granted without an explanation.</i></p>
+      </div>
+    </section>
+
+    <!-- Section 9: Visual Gallery -->
+    <section id="visual-gallery">
+      <h2>Visual Reference: Audit &amp; QA Sheets</h2>
+      <p>Click any render below to inspect the full-resolution audit pass generated by the headless Blender engine:</p>
+
+      <div class="gallery">
+        <figure class="shot">
+          <img src="/samples/_autorig/qa/biped.png?t=__AUTORIG_TOKEN__" alt="Biped Bend Test QA Sheet" loading="lazy">
+          <figcaption>
+            <b>QA Bend Test (Biped):</b> Top row shows rest pose from side, top, and front quarter. Bottom row demonstrates dynamic extreme posing to check joint limits.
+          </figcaption>
+        </figure>
+
+        <figure class="shot">
+          <img src="/samples/_autorig/qa/canine.png?t=__AUTORIG_TOKEN__" alt="Canine Bend Test QA Sheet" loading="lazy">
+          <figcaption>
+            <b>QA Bend Test (Canine):</b> Quadruped rest alignment vs flexed spine, extended limbs, and tail articulation.
+          </figcaption>
+        </figure>
+
+        <figure class="shot">
+          <img src="/samples/_autorig/qa/wyvern.png?t=__AUTORIG_TOKEN__" alt="Wyvern Bend Test QA Sheet" loading="lazy">
+          <figcaption>
+            <b>QA Bend Test (Wyvern):</b> Testing wing spar extension, neck flexion, and claw IK planting.
+          </figcaption>
+        </figure>
+
+        <figure class="shot">
+          <img src="/samples/_autorig/audit/canine_skin.png?t=__AUTORIG_TOKEN__" alt="Canine Skin Bone Ownership" loading="lazy">
+          <figcaption>
+            <b>Skin Ownership Sheet (Canine):</b> Each distinct color represents which bone primarily owns each vertex partition across the body.
+          </figcaption>
+        </figure>
+
+        <figure class="shot">
+          <img src="/samples/_autorig/audit/beetle_bend.png?t=__AUTORIG_TOKEN__" alt="Beetle Joint Bend Tears" loading="lazy">
+          <figcaption>
+            <b>Joint Bend Audit (Beetle):</b> Multi-legged joint flexion analysis with red/amber markers flagging any edge stretched beyond 2x.
+          </figcaption>
+        </figure>
+
+        <figure class="shot">
+          <img src="/samples/_autorig/audit/biped_skin.png?t=__AUTORIG_TOKEN__" alt="Biped Skin Ownership" loading="lazy">
+          <figcaption>
+            <b>Skin Ownership Sheet (Biped):</b> Torso envelope projection, arm capsules, and leg partitioning illustrated in full color.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Modern Light-Dismiss Zoom Dialog -->
+<dialog id="zoomDialog" closedby="any" aria-label="Image Zoom Preview">
+  <div class="close-bar">
+    <button id="zoomClose" type="button">Close (Esc)</button>
+  </div>
+  <img id="zoomImg" src="" alt="Zoom preview">
+</dialog>
+
+<script>
+"use strict";
+// Modern light-dismiss dialog handling
+const zoomDialog = document.getElementById("zoomDialog");
+const zoomImg = document.getElementById("zoomImg");
+const zoomClose = document.getElementById("zoomClose");
+
+document.querySelectorAll("figure.shot img").forEach((img) => {
+  img.addEventListener("click", () => {
+    zoomImg.src = img.src;
+    zoomDialog.showModal();
+  });
+});
+
+if (zoomClose) {
+  zoomClose.addEventListener("click", () => zoomDialog.close());
+}
+
+// Fallback for browsers without closedby support
+if (!('closedBy' in HTMLDialogElement.prototype)) {
+  zoomDialog.addEventListener("click", (event) => {
+    if (event.target !== zoomDialog) return;
+    const rect = zoomDialog.getBoundingClientRect();
+    const isDialogContent = (
+      rect.top <= event.clientY &&
+      event.clientY <= rect.top + rect.height &&
+      rect.left <= event.clientX &&
+      event.clientX <= rect.left + rect.width
+    );
+    if (!isDialogContent) zoomDialog.close();
+  });
+}
+
+// Smooth scroll active link highlighting
+const navLinks = document.querySelectorAll(".sidebar nav a");
+window.addEventListener("scroll", () => {
+  const fromTop = window.scrollY + 100;
+  navLinks.forEach((link) => {
+    const sec = document.querySelector(link.hash);
+    if (sec && sec.offsetTop <= fromTop && sec.offsetTop + sec.offsetHeight > fromTop) {
+      navLinks.forEach((l) => l.classList.remove("active"));
+      link.classList.add("active");
+    }
+  });
+}, { passive: true });
+</script>
+</body>
+</html>

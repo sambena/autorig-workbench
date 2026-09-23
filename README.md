@@ -46,6 +46,16 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
    overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
    (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
 
+## Documentation and help guide
+
+The local GUI server includes a comprehensive, interactive HTML guide with diagrams, button walkthroughs, bone placement instructions, and troubleshooting tips:
+
+- Open via the **Help & Guide ↗** button in the workbench top bar, or visit `/help.html` (served with session token).
+- **Button breakdown**: Detailed reference for every action (`Survey`, `Edit spec`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Table`, `Open output folder`, `Cancel`).
+- **How to place bones**: Coordinate system conventions (0..1 bounding box space facing -Y), 1-click **Suggest skeleton**, raycast click-to-place ("points in the middle"), and constructive build chains (`slice`, `tube`, `tip`, `points`).
+- **How to fix rigs & audits**: Diagnostic guide for reversed facing vectors, combined and single-bend mesh tears, weight bleed (> 2%), low head share (< 2.5%), rip welds, rigid piece assignment, and audit allowances.
+- **Visual reference gallery**: Includes rendered QA bend test sheets and skin ownership audit sheets from sample models.
+
 ## The spec editor
 
 **Edit spec** (on a model, and in its Spec and card tab) opens `spec_editor.html`: the source model as it came, with its

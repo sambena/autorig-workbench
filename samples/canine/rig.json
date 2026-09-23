@@ -1,0 +1,169 @@
+{
+  "schema": "autorig-spec/1",
+  "rig": {
+    "kind": "placed",
+    "forward": [
+      0,
+      -1,
+      0
+    ],
+    "chains": [
+      {
+        "name": "spine",
+        "points": [
+          [
+            0.5,
+            0.77,
+            0.65
+          ],
+          [
+            0.5,
+            0.55,
+            0.65
+          ],
+          [
+            0.5,
+            0.34,
+            0.72
+          ],
+          [
+            0.5,
+            0.22,
+            0.82
+          ],
+          [
+            0.5,
+            0.02,
+            0.8
+          ]
+        ],
+        "names": [
+          "hips",
+          "spine_1",
+          "neck",
+          "head"
+        ]
+      },
+      {
+        "name": "leg_front.L",
+        "points": [
+          [
+            0.85,
+            0.36,
+            0.65
+          ],
+          [
+            0.85,
+            0.36,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          2
+        ]
+      },
+      {
+        "name": "leg_front.R",
+        "points": [
+          [
+            0.15,
+            0.36,
+            0.65
+          ],
+          [
+            0.15,
+            0.36,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          2
+        ]
+      },
+      {
+        "name": "leg_back.L",
+        "points": [
+          [
+            0.85,
+            0.77,
+            0.65
+          ],
+          [
+            0.85,
+            0.77,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      },
+      {
+        "name": "leg_back.R",
+        "points": [
+          [
+            0.15,
+            0.77,
+            0.65
+          ],
+          [
+            0.15,
+            0.77,
+            0.02
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      },
+      {
+        "name": "tail",
+        "points": [
+          [
+            0.5,
+            0.82,
+            0.72
+          ],
+          [
+            0.5,
+            0.98,
+            0.94
+          ]
+        ],
+        "bones": 2,
+        "parent": [
+          "spine",
+          0
+        ]
+      }
+    ],
+    "audit": {
+      "bleed_pct": 3.0,
+      "combined_tears": 8,
+      "bend_tears": 10
+    }
+  },
+  "budget": 1200,
+  "clips": {
+    "archetype": "walker",
+    "display": "Canine",
+    "category": "Creatures",
+    "attack": "bite"
+  },
+  "card": {
+    "metres": 1.4,
+    "role": "creature"
+  },
+  "notes": {
+    "rig": "Stylized quadruped canine",
+    "rig.audit": "Allowance for compact quadruped leg root proximity"
+  }
+}

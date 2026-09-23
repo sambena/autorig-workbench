@@ -22,9 +22,27 @@ def run_suggest(key):
     raw_tips = s.tips(most=18, least=0.12)
     norm_tips = [s.norm(s.co[v]) for v, _ in raw_tips]
 
+    # Load survey data if available
+    surv_path = os.path.join(layout.work_dir("survey"), key + ".json")
+    surv = None
+    if os.path.exists(surv_path):
+        try:
+            with open(surv_path, encoding="utf-8") as fh:
+                surv = json.load(fh)
+        except Exception:
+            pass
+
+    joint_list = [{"name": k, "head": [float(c) for c in v["pos"]], "parent": v.get("parent")} for k, v in (joints or {}).items()]
+
     res = suggest.suggest_skeleton(
         name=key,
-        source_data={"size": [float(v) for v in s.size], "lo": [float(v) for v in s.lo], "hi": [float(v) for v in s.hi]},
+        source_data={
+            "size": [float(v) for v in s.size],
+            "lo": [float(v) for v in s.lo],
+            "hi": [float(v) for v in s.hi],
+            "joints": joint_list
+        },
+        survey_data=surv,
         tips=norm_tips,
         proportions=[float(v) for v in s.size]
     )
