@@ -453,3 +453,144 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
             rigid_count += 1
 
     log["rigid_islands_assigned"] = rigid_count
+
+
+def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
+                                crotch_threshold=0.04, armpit_barrier=True):
+    """Enforces geodesic and air-gap barriers on skin weights:
+    1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
+    2. Armpit / Flank barrier: prevents distal arm bones from pulling torso/rib vertices across the underarm gap.
+    weights: (N, num_bones) array of vertex weights.
+    coords: (N, 3) array of vertex positions.
+    bone_names: list of bone names matching columns of weights.
+    bone_heads: optional dict or array of bone head positions (num_bones, 3).
+    sym_plane: X coordinate of symmetry plane (default 0.0).
+    crotch_threshold: distance from sym_plane beyond which opposite-leg weights are completely zeroed.
+    armpit_barrier: whether to clean distal arm weights off chest/torso vertices.
+    Returns: (N, num_bones) cleaned and normalized weights."""
+    W = np.array(weights, copy=True)
+    N, num_bones = W.shape
+    if N == 0 or num_bones == 0:
+        return W
+
+    col = {name: i for i, name in enumerate(bone_names)}
+
+    def is_left(name):
+        return name.endswith(".L") or name.startswith("Left") or "_l" in name.lower() or ".l" in name.lower()
+
+    def is_right(name):
+        return name.endswith(".R") or name.startswith("Right") or "_r" in name.lower() or ".r" in name.lower()
+
+    def is_leg(name):
+        lower = name.lower()
+        return any(k in lower for k in ("leg", "thigh", "foot", "toe", "shin", "upleg", "calf", "ankle"))
+
+    def is_distal_arm(name):
+        lower = name.lower()
+        return any(k in lower for k in ("forearm", "hand", "finger", "wrist", "arm_2", "arm_3", "arm2", "arm3"))
+
+    def is_torso(name):
+        lower = name.lower()
+        return any(k in lower for k in ("spine", "hips", "chest", "root", "body", "pelvis", "neck"))
+
+    left_leg_cols = [col[b] for b in bone_names if is_left(b) and is_leg(b)]
+    right_leg_cols = [col[b] for b in bone_names if is_right(b) and is_leg(b)]
+
+    X = coords[:, 0]
+    # Crotch / Leg separation
+    if left_leg_cols and right_leg_cols:
+        left_mask = X > (sym_plane + crotch_threshold)
+        if np.any(left_mask):
+            W[np.ix_(left_mask, right_leg_cols)] = 0.0
+
+        right_mask = X < (sym_plane - crotch_threshold)
+        if np.any(right_mask):
+            W[np.ix_(right_mask, left_leg_cols)] = 0.0
+
+        transition_mask = np.abs(X - sym_plane) <= crotch_threshold
+        if np.any(transition_mask):
+            trans_indices = np.where(transition_mask)[0]
+            for idx in trans_indices:
+                x_val = X[idx]
+                if x_val > sym_plane:
+                    fade = (x_val - sym_plane) / max(1e-6, crotch_threshold)
+                    W[idx, right_leg_cols] *= (1.0 - fade)
+                elif x_val < sym_plane:
+                    fade = (sym_plane - x_val) / max(1e-6, crotch_threshold)
+                    W[idx, left_leg_cols] *= (1.0 - fade)
+
+    # Armpit / Flank barrier
+    if armpit_barrier:
+        torso_cols = [col[b] for b in bone_names if is_torso(b)]
+        distal_arm_cols = [col[b] for b in bone_names if is_distal_arm(b)]
+        if torso_cols and distal_arm_cols:
+            torso_weight = W[:, torso_cols].sum(axis=1)
+            torso_dominant = torso_weight > 0.35
+            if np.any(torso_dominant):
+                W[np.ix_(torso_dominant, distal_arm_cols)] = 0.0
+
+            distal_weight = W[:, distal_arm_cols].sum(axis=1)
+            distal_dominant = distal_weight > 0.40
+            if np.any(distal_dominant):
+                W[np.ix_(distal_dominant, torso_cols)] = 0.0
+
+    # Renormalize rows
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
+def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
+    """Enforces geodesic and air-gap barriers on mesh vertex groups:
+    Prevents opposite-limb cross-bleed across the crotch and underarm gaps."""
+    if not spec.get("barrier", True):
+        return
+    verts = mesh.data.vertices
+    vg = mesh.vertex_groups
+    n = len(verts)
+    if n == 0:
+        return
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return
+
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((n, len(bone_names)), dtype=np.float32)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+
+    P = np.empty(n * 3, dtype=np.float32)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    crotch_thresh = float(spec.get("crotch_barrier", max(size) * 0.03))
+    sym_plane = float(spec.get("sym_plane", 0.0))
+
+    cleaned_W = apply_geodesic_skin_barrier(
+        W, P, bone_names,
+        sym_plane=sym_plane,
+        crotch_threshold=crotch_thresh,
+        armpit_barrier=spec.get("armpit_barrier", True)
+    )
+
+    diff = np.abs(cleaned_W - W).sum(axis=1)
+    corrected_count = int((diff > 1e-3).sum())
+
+    if corrected_count > 0:
+        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
+        for vi in np.where(diff > 1e-3)[0]:
+            for bi, g_obj in group_objs.items():
+                w = float(cleaned_W[vi, bi])
+                if w > 1e-4:
+                    g_obj.add([int(vi)], w, 'REPLACE')
+                else:
+                    g_obj.remove([int(vi)])
+
+    log["geodesic_barrier_fixed_verts"] = corrected_count
+

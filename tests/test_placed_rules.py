@@ -90,6 +90,32 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertEqual(blend[3], 0.0)
 
 
+    def test_geodesic_skin_barrier_crotch_and_armpit(self):
+        bone_names = ["LeftUpLeg", "RightUpLeg", "Spine", "LeftForeArm"]
+        # Vert 0: left leg (X=0.2), Vert 1: right leg (X=-0.2), Vert 2: torso center (X=0.0)
+        coords = np.array([
+            [0.2, 0.0, 0.3],
+            [-0.2, 0.0, 0.3],
+            [0.0, 0.0, 0.5],
+        ])
+        weights = np.array([
+            [0.7, 0.2, 0.1, 0.0],    # Left leg vert with RightUpLeg cross-bleed
+            [0.2, 0.7, 0.1, 0.0],    # Right leg vert with LeftUpLeg cross-bleed
+            [0.0, 0.0, 0.85, 0.15],  # Torso vert with LeftForeArm cross-bleed
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, sym_plane=0.0, crotch_threshold=0.04
+        )
+        self.assertEqual(cleaned.shape, (3, 4))
+        # Opposite-leg cross bleed must be completely eliminated
+        self.assertEqual(cleaned[0, 1], 0.0)  # No RightUpLeg on Left leg
+        self.assertEqual(cleaned[1, 0], 0.0)  # No LeftUpLeg on Right leg
+        # Distal arm bleed on torso must be eliminated
+        self.assertEqual(cleaned[2, 3], 0.0)  # No LeftForeArm on Torso
+        # All rows must remain normalized to 1.0
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(3), rtol=1e-5)
+
+
 if "bpy" not in sys.modules:
     class TestPlacedRulesUnderBlender(unittest.TestCase):
         @unittest.skipUnless(blender.find(required=False), "Blender not found")
