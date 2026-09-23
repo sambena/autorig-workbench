@@ -330,3 +330,97 @@ export function generateStations(slice = [0.1, 0.9], bones = 4) {
   return Array.from({ length: n + 1 }, (_, k) => Math.round((s0 + (s1 - s0) * k / n) * 1000) / 1000);
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Interactive Joint Bend & Pose Preview Math
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Rotates a 3D point around a pivot point along an arbitrary normalized axis using Rodrigues' formula. */
+export function rodriguesRotate(p, c, axis, angle) {
+  const vx = p[0] - c[0], vy = p[1] - c[1], vz = p[2] - c[2];
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const dot = vx * axis[0] + vy * axis[1] + vz * axis[2];
+  const crossX = axis[1] * vz - axis[2] * vy;
+  const crossY = axis[2] * vx - axis[0] * vz;
+  const crossZ = axis[0] * vy - axis[1] * vx;
+  const rx = vx * cosA + crossX * sinA + axis[0] * dot * (1 - cosA);
+  const ry = vy * cosA + crossY * sinA + axis[1] * dot * (1 - cosA);
+  const rz = vz * cosA + crossZ * sinA + axis[2] * dot * (1 - cosA);
+  return [c[0] + rx, c[1] + ry, c[2] + rz];
+}
+
+/** Computes the natural orthogonal hinge rotation axis for a 3-point limb chain (p0 -> p1 -> p2). */
+export function computeHingeAxis(p0, p1, p2, role = "") {
+  const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+  const vx = p2[0] - p1[0], vy = p2[1] - p1[1], vz = p2[2] - p1[2];
+  let cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+  let len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+  if (len > 1e-5) return [cx / len, cy / len, cz / len];
+
+  // Colinear fallback: find axis perpendicular to bone direction
+  const d = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+  const dx = vx / d, dy = vy / d, dz = vz / d;
+  const ref = Math.abs(dz) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  cx = dy * ref[2] - dz * ref[1];
+  cy = dz * ref[0] - dx * ref[2];
+  cz = dx * ref[1] - dy * ref[0];
+  len = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
+  return [cx / len, cy / len, cz / len];
+}
+
+/** Deforms a vertex buffer by bending a limb at pivot p1 towards p2 by angleRad.
+ * positions: Float32Array to update in-place.
+ * originalPositions: Float32Array of rest-pose vertex positions.
+ * p0, p1, p2: [x,y,z] coordinates in mesh space.
+ * angleRad: bend angle in radians. */
+export function bendVertices(positions, originalPositions, p0, p1, p2, angleRad, maxRadius, blendRadius) {
+  const n = positions.length / 3;
+  if (!angleRad || Math.abs(angleRad) < 1e-6) {
+    positions.set(originalPositions);
+    return positions;
+  }
+  const axis = computeHingeAxis(p0, p1, p2);
+  const cx = p1[0], cy = p1[1], cz = p1[2];
+  const vx = p2[0] - p1[0], vy = p2[1] - p1[1], vz = p2[2] - p1[2];
+  const boneLen = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+  const dx = vx / boneLen, dy = vy / boneLen, dz = vz / boneLen;
+
+  const bRad = blendRadius ?? Math.max(0.02, boneLen * 0.25);
+  const mRad = maxRadius ?? Math.max(0.08, boneLen * 0.8);
+
+  for (let i = 0; i < n; i++) {
+    const idx = i * 3;
+    const px = originalPositions[idx], py = originalPositions[idx + 1], pz = originalPositions[idx + 2];
+    const wx = px - cx, wy = py - cy, wz = pz - cz;
+    const s = wx * dx + wy * dy + wz * dz;
+    const perpX = wx - dx * s, perpY = wy - dy * s, perpZ = wz - dz * s;
+    const rPerp = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ);
+
+    if (rPerp > mRad || s < -bRad) {
+      positions[idx] = px; positions[idx + 1] = py; positions[idx + 2] = pz;
+      continue;
+    }
+
+    let w = 0;
+    if (s >= bRad) {
+      w = 1.0;
+    } else {
+      const alpha = (s + bRad) / (2.0 * bRad);
+      w = alpha * alpha * (3.0 - 2.0 * alpha);
+    }
+    if (rPerp > mRad * 0.65) {
+      w *= (1.0 - (rPerp - mRad * 0.65) / (mRad * 0.35));
+    }
+
+    if (w < 1e-4) {
+      positions[idx] = px; positions[idx + 1] = py; positions[idx + 2] = pz;
+      continue;
+    }
+
+    const rotated = rodriguesRotate([px, py, pz], p1, axis, w * angleRad);
+    positions[idx] = rotated[0];
+    positions[idx + 1] = rotated[1];
+    positions[idx + 2] = rotated[2];
+  }
+  return positions;
+}
+
