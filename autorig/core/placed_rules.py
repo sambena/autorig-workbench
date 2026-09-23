@@ -698,3 +698,171 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
 
     log["geodesic_barrier_fixed_verts"] = corrected_count
 
+
+def find_central_pelvis_bone(arm, chains=None):
+    """Finds the central pelvis/hips/root spine bone on an armature:
+    1. Common ancestor of left and right leg roots.
+    2. Bone named 'hips', 'pelvis', 'spine', or 'body'.
+    3. Armature root bone.
+    """
+    def is_left_leg(b):
+        nm = b.name.lower()
+        return ("left" in nm or nm.endswith(".l") or "_l" in nm) and any(k in nm for k in ("leg", "thigh", "upleg"))
+
+    def is_right_leg(b):
+        nm = b.name.lower()
+        return ("right" in nm or nm.endswith(".r") or "_r" in nm) and any(k in nm for k in ("leg", "thigh", "upleg"))
+
+    left_legs = [b for b in arm.data.bones if is_left_leg(b)]
+    right_legs = [b for b in arm.data.bones if is_right_leg(b)]
+    if left_legs and right_legs:
+        l_top = left_legs[0]
+        while l_top.parent and is_left_leg(l_top.parent):
+            l_top = l_top.parent
+        r_top = right_legs[0]
+        while r_top.parent and is_right_leg(r_top.parent):
+            r_top = r_top.parent
+
+        ancestors_l = []
+        curr = l_top.parent
+        while curr:
+            ancestors_l.append(curr.name)
+            curr = curr.parent
+        curr = r_top.parent
+        while curr:
+            if curr.name in ancestors_l:
+                return curr.name
+            curr = curr.parent
+
+    for pat in ("hips", "pelvis", "spine", "body"):
+        for b in arm.data.bones:
+            if pat in b.name.lower():
+                return b.name
+
+    if chains:
+        for c in chains:
+            if c.get("role") in ("spine", "root") and c.get("bones"):
+                return c["bones"][0]
+    return arm.data.bones[0].name if arm.data.bones else "Hips"
+
+
+def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """Universal anti-tear skinning for skirts, faulds, belts, groin armor, and centerline accessories:
+    1. Detects disconnected mesh islands crossing the sagittal plane (X=sym_plane) in the pelvic/hip region
+       and binds them 100% to the central hips/pelvis/spine bone.
+    2. Enforces smooth sagittal seam anchoring for pelvic/thigh geometry so centerline vertices bind to
+       Hips/pelvis rather than shearing across left and right leg bones.
+    """
+    if spec is None:
+        spec = {}
+    if log is None:
+        log = {}
+    if not spec.get("centerline_armor", True):
+        return 0
+
+    verts = mesh.data.vertices
+    n = len(verts)
+    if n == 0:
+        return 0
+
+    vg = mesh.vertex_groups
+    vg_names = {g.index: g.name for g in vg}
+    hips_name = find_central_pelvis_bone(arm, chains)
+    if not hips_name:
+        return 0
+    hips_vg = vg.get(hips_name) or vg.new(name=hips_name)
+
+    P = np.empty(n * 3, dtype=np.float32)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    min_x, max_x = float(P[:, 0].min()), float(P[:, 0].max())
+    span_x = max(1e-6, max_x - min_x)
+    min_z, max_z = float(P[:, 2].min()), float(P[:, 2].max())
+    span_z = max(1e-6, max_z - min_z)
+    height = span_z
+
+    sym_plane = float(spec.get("sym_plane", 0.0))
+
+    def is_left_leg_name(nm):
+        l = nm.lower()
+        return ("left" in l or l.endswith(".l") or "_l" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
+
+    def is_right_leg_name(nm):
+        l = nm.lower()
+        return ("right" in l or l.endswith(".r") or "_r" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
+
+    # Estimate pelvic height range from armature hips/legs if possible, else 0.25..0.65 of height
+    hips_bone = arm.data.bones.get(hips_name)
+    if hips_bone:
+        z_hips = float(hips_bone.head_local[2])
+        z_pelvis_min = max(min_z, z_hips - 0.40 * height)
+        z_pelvis_max = min(max_z, z_hips + 0.15 * height)
+    else:
+        z_pelvis_min = min_z + 0.25 * height
+        z_pelvis_max = min_z + 0.65 * height
+
+    # --- Part 1: Disconnected Centerline Islands ---
+    import rerig
+    isl = rerig.islands_of(mesh)
+    island_delta = float(spec.get("island_delta", 0.005 * span_x))
+    bound_islands = 0
+
+    for idxs in isl:
+        if len(idxs) >= 0.6 * n:
+            continue  # Main body, not a loose accessory
+        island_P = P[idxs]
+        ix_min, ix_max = float(island_P[:, 0].min()), float(island_P[:, 0].max())
+        iz_min, iz_max = float(island_P[:, 2].min()), float(island_P[:, 2].max())
+
+        # Check if straddling sagittal plane in pelvic / waist region
+        if ix_min < (sym_plane - island_delta) and ix_max > (sym_plane + island_delta):
+            if iz_min <= z_pelvis_max and iz_max >= z_pelvis_min:
+                # Bind 100% to Hips
+                for i in idxs:
+                    for g in list(verts[i].groups):
+                        vg[g.group].remove([i])
+                    hips_vg.add([i], 1.0, 'REPLACE')
+                bound_islands += 1
+
+    log["centerline_islands_bound"] = bound_islands
+
+    # --- Part 2: Sagittal Centerline Pelvic / Crotch Anti-Tear Protection ---
+    crotch_thresh = float(spec.get("crotch_threshold", 0.045 * span_x))
+    X = P[:, 0]
+    Z = P[:, 2]
+
+    in_pelvis_zone = (np.abs(X - sym_plane) <= crotch_thresh) & (Z >= z_pelvis_min) & (Z <= z_pelvis_max)
+    pelvis_indices = np.where(in_pelvis_zone)[0]
+
+    adjusted_verts = 0
+    for idx in pelvis_indices:
+        v = verts[int(idx)]
+        w_left = sum(g.weight for g in v.groups if is_left_leg_name(vg_names.get(g.group, "")))
+        w_right = sum(g.weight for g in v.groups if is_right_leg_name(vg_names.get(g.group, "")))
+        if w_left + w_right > 0.01:
+            ratio = abs(X[idx] - sym_plane) / max(1e-6, crotch_thresh)
+            ratio = min(1.0, max(0.0, ratio))
+            # Smoothstep
+            k = 1.0 - ratio
+            k = k * k * (3.0 - 2.0 * k)
+            trans = (w_left + w_right) * k
+
+            # Reduce leg weights
+            for g in list(v.groups):
+                nm = vg_names.get(g.group, "")
+                if is_left_leg_name(nm) or is_right_leg_name(nm):
+                    new_w = float(g.weight * (1.0 - k))
+                    if new_w > 1e-4:
+                        vg[g.group].add([v.index], new_w, 'REPLACE')
+                    else:
+                        vg[g.group].remove([v.index])
+
+            # Transfer to hips
+            w_h = sum(g.weight for g in v.groups if vg_names.get(g.group) == hips_name)
+            hips_vg.add([v.index], w_h + trans, 'REPLACE')
+            adjusted_verts += 1
+
+    log["centerline_verts_anchored"] = adjusted_verts
+    return bound_islands + adjusted_verts
+

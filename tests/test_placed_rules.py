@@ -203,6 +203,74 @@ else:
                     self.assertAlmostEqual(arm_weight, 1.0, places=4)
                     self.assertEqual(spine_weight, 0.0)
 
+        def test_centerline_armor_pass_blender(self):
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            # Create a body cylinder centered at origin, height 2.0 (Z from 0 to 2)
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=2.0, radius=0.4, location=(0, 0, 1.0))
+            body = bpy.context.active_object
+            # Create a centerline armor skirt/fauld box centered at X=0, spanning X in [-0.15, 0.15], Z=0.9
+            bpy.ops.mesh.primitive_cube_add(size=0.3, location=(0, -0.6, 0.9))
+            skirt = bpy.context.active_object
+
+            body.select_set(True)
+            skirt.select_set(True)
+            bpy.context.view_layer.objects.active = body
+            bpy.ops.object.join()
+            mesh = body
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+            # Armature with Hips and two legs
+            arm_data = bpy.data.armatures.new("Armature")
+            arm = bpy.data.objects.new("Armature", arm_data)
+            bpy.context.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b_hips = arm.data.edit_bones.new("Hips")
+            b_hips.head = (0, 0, 1.0); b_hips.tail = (0, 0, 1.3)
+
+            b_lleg = arm.data.edit_bones.new("LeftUpLeg")
+            b_lleg.parent = b_hips
+            b_lleg.head = (0.2, 0, 1.0); b_lleg.tail = (0.2, 0, 0.4)
+
+            b_rleg = arm.data.edit_bones.new("RightUpLeg")
+            b_rleg.parent = b_hips
+            b_rleg.head = (-0.2, 0, 1.0); b_rleg.tail = (-0.2, 0, 0.4)
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Parent with automatic weights
+            mesh.select_set(True)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+            # Ensure Hips vertex group exists
+            if not mesh.vertex_groups.get("Hips"):
+                mesh.vertex_groups.new(name="Hips")
+
+            log = {}
+            chains = [
+                {"name": "spine", "role": "spine", "bones": ["Hips"]},
+                {"name": "leg.L", "role": "leg", "bones": ["LeftUpLeg"]},
+                {"name": "leg.R", "role": "leg", "bones": ["RightUpLeg"]}
+            ]
+            placed_rules.centerline_armor_pass(mesh, arm, chains, {}, Vector((1.0, 1.0, 2.0)), log)
+
+            self.assertGreaterEqual(log.get("centerline_islands_bound", 0), 1)
+
+            # Centerline skirt piece (near Y=-0.6) must be 100% bound to Hips
+            vg_hips = mesh.vertex_groups.get("Hips")
+            vg_lleg = mesh.vertex_groups.get("LeftUpLeg")
+            vg_rleg = mesh.vertex_groups.get("RightUpLeg")
+
+            for v in mesh.data.vertices:
+                if v.co.y < -0.45:  # skirt vertex
+                    w_hips = sum(g.weight for g in v.groups if g.group == vg_hips.index)
+                    w_lleg = sum(g.weight for g in v.groups if vg_lleg and g.group == vg_lleg.index)
+                    w_rleg = sum(g.weight for g in v.groups if vg_rleg and g.group == vg_rleg.index)
+                    self.assertAlmostEqual(w_hips, 1.0, places=4)
+                    self.assertEqual(w_lleg, 0.0)
+                    self.assertEqual(w_rleg, 0.0)
+
 
 if __name__ == "__main__":
     clean_argv = [sys.argv[0]]
