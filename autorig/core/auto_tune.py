@@ -282,6 +282,16 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
             "delta_type": "girdle_blend",
         }
 
+    # 7. Strategy: Rigid Island Auto-Isolation for Armor / Accessories
+    if "rigid_islands_auto" not in tried_params and not rig.get("rigid_islands") and (comb_tears > 0 or bend_tears > 0):
+        rig["rigid_islands"] = "auto"
+        return {
+            "description": "Enable automatic disconnected rigid island isolation (rigid_islands='auto')",
+            "param": "rigid_islands_auto",
+            "spec": cand_spec,
+            "delta_type": "rigid_islands",
+        }
+
     # 7. Strategy: Bleed Reduction (if bleed_pct is the sole failing factor)
     if bleed_pct > 2.0 and "bleed_tighten" not in tried_params:
         if cur_lr > 0.8:

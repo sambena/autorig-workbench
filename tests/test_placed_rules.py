@@ -3,7 +3,7 @@
 import os, subprocess, sys, unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path[:0] = [os.path.join(REPO, "autorig", "core")]
+sys.path[:0] = [os.path.join(REPO, "autorig", "core"), os.path.join(REPO, "autorig", "steps")]
 import blender
 
 try:
@@ -115,6 +115,24 @@ class TestPlacedRulesMath(unittest.TestCase):
         # All rows must remain normalized to 1.0
         np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(3), rtol=1e-5)
 
+    def test_find_nearest_bone_segment(self):
+        # Two bone segments:
+        # spine: from (0, 0, 0) to (0, 0, 1)
+        # arm.L: from (0, 0, 1) to (1, 0, 1)
+        segments = [
+            ("spine", np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])),
+            ("arm.L", np.array([0.0, 0.0, 1.0]), np.array([1.0, 0.0, 1.0])),
+        ]
+        # Point A (0.8, 0.1, 1.0) is closest to arm.L
+        bone, dist = placed_rules.find_nearest_bone_segment([0.8, 0.1, 1.0], segments)
+        self.assertEqual(bone, "arm.L")
+        self.assertAlmostEqual(dist, 0.1, places=5)
+
+        # Point B (0.05, 0.0, 0.4) is closest to spine
+        bone, dist = placed_rules.find_nearest_bone_segment([0.05, 0.0, 0.4], segments)
+        self.assertEqual(bone, "spine")
+        self.assertAlmostEqual(dist, 0.05, places=5)
+
 
 if "bpy" not in sys.modules:
     class TestPlacedRulesUnderBlender(unittest.TestCase):
@@ -126,6 +144,64 @@ if "bpy" not in sys.modules:
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("OK", r.stderr + r.stdout)
+else:
+    import bpy
+    from mathutils import Vector
+
+    class TestRigidIslandsBlender(unittest.TestCase):
+        def test_auto_isolate_disconnected_islands_blender(self):
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            # Create a main body cylinder
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=2.0, radius=0.3, location=(0, 0, 1.0))
+            body = bpy.context.active_object
+            # Create a separate floating pauldron armor box near X=0.8, Z=1.5
+            bpy.ops.mesh.primitive_cube_add(size=0.2, location=(0.8, 0, 1.5))
+            pauldron = bpy.context.active_object
+
+            # Join pauldron into body mesh so it's a single mesh with 2 disconnected islands
+            body.select_set(True)
+            pauldron.select_set(True)
+            bpy.context.view_layer.objects.active = body
+            bpy.ops.object.join()
+            mesh = body
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+            # Create armature with spine (0,0,0)->(0,0,1) and arm.L (0,0,1.5)->(1,0,1.5)
+            arm_data = bpy.data.armatures.new("Armature")
+            arm = bpy.data.objects.new("Armature", arm_data)
+            bpy.context.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b1 = arm.data.edit_bones.new("spine")
+            b1.head = (0, 0, 0); b1.tail = (0, 0, 1.0)
+            b2 = arm.data.edit_bones.new("arm.L")
+            b2.head = (0, 0, 1.5); b2.tail = (1.0, 0, 1.5)
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Parent with automatic weights (bone heat will bleed across gap)
+            mesh.select_set(True)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+            # Run rigid_islands_pass with rigid_islands="auto"
+            log = {}
+            chains = [{"name": "arm.L", "role": "arm", "bones": ["arm.L"]}]
+            spec = {"rigid_islands": "auto"}
+            placed_rules.rigid_islands_pass(mesh, arm, chains, spec, Vector((2, 2, 2)), log)
+
+            self.assertEqual(log.get("auto_rigid_islands"), 1)
+            self.assertEqual(log.get("rigid_islands_assigned"), 1)
+
+            # Check that pauldron vertices are 100% bound to arm.L
+            vg_arm = mesh.vertex_groups.get("arm.L")
+            vg_spine = mesh.vertex_groups.get("spine")
+            for v in mesh.data.vertices:
+                if v.co.x > 0.5:  # pauldron vertex
+                    arm_weight = sum(g.weight for g in v.groups if g.group == vg_arm.index)
+                    spine_weight = sum(g.weight for g in v.groups if g.group == vg_spine.index)
+                    self.assertAlmostEqual(arm_weight, 1.0, places=4)
+                    self.assertEqual(spine_weight, 0.0)
 
 
 if __name__ == "__main__":

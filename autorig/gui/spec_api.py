@@ -376,8 +376,10 @@ def check(spec, source=None):
                     elif "bones" in m and not (isinstance(m["bones"], list) and all(isinstance(x, str) for x in m["bones"])):
                         E("%s.%d.bones" % (p, i), "bones must be a list of spar bone names")
         elif t == "rigid_islands":
-            if not isinstance(v, list):
-                E(p, "a list of rigid island rules: [{\"bone\": \"spine_2\", \"at\": [x, y, z]}]")
+            if v in ("auto", True, False):
+                pass
+            elif not isinstance(v, list):
+                E(p, "a list of rigid island rules or \"auto\": [{\"bone\": \"spine_2\", \"at\": [x, y, z]}]")
             else:
                 for i, r in enumerate(v):
                     if not isinstance(r, dict) or not isinstance(r.get("bone"), str):

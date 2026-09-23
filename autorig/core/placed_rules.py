@@ -399,10 +399,104 @@ def blend_joins_pass(mesh, arm, chains, spec, size, log):
     log["blend_joins_verts"] = blended_count
 
 
+def find_nearest_bone_segment(point, bone_segments):
+    """Finds the nearest bone segment to a 3D point.
+    bone_segments: list of (name, head_xyz, tail_xyz)
+    Returns: (best_bone_name, min_distance)
+    """
+    best_name = None
+    best_dist = float("inf")
+    p = np.asarray(point, dtype=float)
+    for name, h, t in bone_segments:
+        h_arr = np.asarray(h, dtype=float)
+        t_arr = np.asarray(t, dtype=float)
+        ab = t_arr - h_arr
+        denom = max(1e-12, float(np.dot(ab, ab)))
+        s = max(0.0, min(1.0, float(np.dot(p - h_arr, ab)) / denom))
+        proj = h_arr + s * ab
+        d = float(np.linalg.norm(p - proj))
+        if d < best_dist:
+            best_dist = d
+            best_name = name
+    return best_name, best_dist
+
+
+def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, already_assigned=None):
+    """Automatically identifies topologically disconnected sub-mesh islands (armor plates, holsters,
+    buckles, props) with 0 vertex connections to the body and binds them 100% to their single nearest bone."""
+    import rerig
+    isl = rerig.islands_of(mesh)
+    if len(isl) <= 1:
+        return 0
+
+    verts = mesh.data.vertices
+    vg = mesh.vertex_groups
+    total_verts = len(verts)
+    sizes = [len(i) for i in isl]
+    max_size = max(sizes)
+
+    # Main body islands: the largest component, plus any major component (>35% of total vertices)
+    body_islands = {k for k, i in enumerate(isl) if len(i) == max_size or len(i) >= 0.35 * total_verts}
+
+    # Soft chains to respect:
+    soft_chains = set(spec.get("soft", []))
+    soft_bones = {
+        b
+        for c in chains
+        if c.get("name") in soft_chains or c.get("role") in soft_chains
+        for b in c.get("bones", [])
+    }
+
+    # Deform bones as (name, head, tail)
+    dbones = [b for b in arm.data.bones if b.use_deform]
+    if not dbones:
+        dbones = list(arm.data.bones)
+    segments = [(b.name, np.array(b.head_local), np.array(b.tail_local)) for b in dbones]
+
+    assigned_set = set(already_assigned or [])
+    auto_count = 0
+
+    for k, idxs in enumerate(isl):
+        if k in body_islands:
+            continue
+        # Skip if already handled by explicit rule
+        if any(i in assigned_set for i in idxs):
+            continue
+
+        # Island vertex coords
+        coords = np.array([verts[i].co[:] for i in idxs])
+        center = coords.mean(axis=0)
+
+        # Convert center to armature space if matrices differ
+        if hasattr(mesh, "matrix_world") and hasattr(arm, "matrix_world"):
+            from mathutils import Vector
+            arm_center = np.array((arm.matrix_world.inverted() @ mesh.matrix_world @ Vector(center))[:3])
+        else:
+            arm_center = center
+
+        best_bone_name, best_dist = find_nearest_bone_segment(arm_center, segments)
+        if not best_bone_name or best_bone_name in soft_bones:
+            continue
+
+        # Bind 100% to this single nearest bone
+        target_group = vg.get(best_bone_name) or vg.new(name=best_bone_name)
+        for i in idxs:
+            for g in list(verts[i].groups):
+                vg[g.group].remove([i])
+            target_group.add([i], 1.0, "REPLACE")
+
+        assigned_set.update(idxs)
+        auto_count += 1
+
+    log["auto_rigid_islands"] = auto_count
+    return auto_count
+
+
 def rigid_islands_pass(mesh, arm, chains, spec, size, log):
     """Enforces 100% rigid binding for armour pieces, pauldrons, and specified islands."""
-    rigid_rules = spec.get("rigid_islands", [])
-    if not rigid_rules:
+    rigid_val = spec.get("rigid_islands")
+    rigid_armor = spec.get("rigid_armor", False)
+    if not rigid_val and not rigid_armor:
         return
     import rerig
     isl = rerig.islands_of(mesh)
@@ -412,45 +506,55 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
     span = np.maximum(hi - lo, 1e-9)
 
     rigid_count = 0
-    for rule in rigid_rules:
-        target_bone = rule.get("bone")
-        if not target_bone or target_bone not in arm.data.bones:
-            continue
-        target_group = vg.get(target_bone) or vg.new(name=target_bone)
+    assigned_indices = set()
 
-        matched_indices = []
-        if "island" in rule and 0 <= rule["island"] < len(isl):
-            matched_indices = isl[rule["island"]]
-        elif "at" in rule:
-            # 0..1 target bounds position
-            target_pt = np.array(lo) + np.array(span) * np.array(rule["at"])
-            # Find nearest island center
-            best_idx = None
-            best_dist = float("inf")
-            for idxs in isl:
-                coords = np.array([verts[i].co[:] for i in idxs])
-                center = coords.mean(axis=0)
-                d = np.linalg.norm(center - target_pt)
-                if d < best_dist:
-                    best_dist = d
-                    best_idx = idxs
-            if best_idx is not None:
-                matched_indices = best_idx
-        elif "box" in rule and len(rule["box"]) == 2:
-            b0, b1 = np.array(rule["box"][0]), np.array(rule["box"][1])
-            for idxs in isl:
-                coords = np.array([verts[i].co[:] for i in idxs])
-                norm_coords = (coords.mean(axis=0) - lo) / span
-                if np.all(b0 <= norm_coords) and np.all(norm_coords <= b1):
-                    matched_indices = idxs
-                    break
+    if isinstance(rigid_val, list):
+        for rule in rigid_val:
+            target_bone = rule.get("bone")
+            if not target_bone or target_bone not in arm.data.bones:
+                continue
+            target_group = vg.get(target_bone) or vg.new(name=target_bone)
 
-        if matched_indices:
-            for i in matched_indices:
-                for g in list(verts[i].groups):
-                    vg[g.group].remove([i])
-                target_group.add([i], 1.0, 'REPLACE')
-            rigid_count += 1
+            matched_indices = []
+            if "island" in rule and 0 <= rule["island"] < len(isl):
+                matched_indices = isl[rule["island"]]
+            elif "at" in rule:
+                # 0..1 target bounds position
+                target_pt = np.array(lo) + np.array(span) * np.array(rule["at"])
+                # Find nearest island center
+                best_idx = None
+                best_dist = float("inf")
+                for idxs in isl:
+                    coords = np.array([verts[i].co[:] for i in idxs])
+                    center = coords.mean(axis=0)
+                    d = np.linalg.norm(center - target_pt)
+                    if d < best_dist:
+                        best_dist = d
+                        best_idx = idxs
+                if best_idx is not None:
+                    matched_indices = best_idx
+            elif "box" in rule and len(rule["box"]) == 2:
+                b0, b1 = np.array(rule["box"][0]), np.array(rule["box"][1])
+                for idxs in isl:
+                    coords = np.array([verts[i].co[:] for i in idxs])
+                    norm_coords = (coords.mean(axis=0) - lo) / span
+                    if np.all(b0 <= norm_coords) and np.all(norm_coords <= b1):
+                        matched_indices = idxs
+                        break
+
+            if matched_indices:
+                for i in matched_indices:
+                    for g in list(verts[i].groups):
+                        vg[g.group].remove([i])
+                    target_group.add([i], 1.0, 'REPLACE')
+                assigned_indices.update(matched_indices)
+                rigid_count += 1
+
+    do_auto = (rigid_val in (True, "auto") or rigid_armor or
+               (isinstance(rigid_val, list) and any(isinstance(r, dict) and r.get("auto") for r in rigid_val)))
+    if do_auto:
+        auto_count = auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, assigned_indices)
+        rigid_count += auto_count
 
     log["rigid_islands_assigned"] = rigid_count
 
