@@ -1046,6 +1046,7 @@ def skin(mesh, arm, chains, spec, size, log):
     if spec.get("parts"):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
     placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands") or spec.get("rigid_armor"):
