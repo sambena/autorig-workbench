@@ -109,6 +109,12 @@ def command(script, *args):
     return [find(), "-b", "--python", os.path.join(STEPS, script), "--"] + list(args)
 
 
-def run(script, *args, **kw):
-    """Runs a step to the end, output captured as text."""
-    return subprocess.run(command(script, *args), capture_output=True, text=True, errors="replace", **kw)
+def run(script, *args, timeout=None, memory_limit_mb=None, **kw):
+    """Runs a step to the end with watchdog timeout and memory protection, output captured as text."""
+    try:
+        import watchdog
+    except ImportError:
+        from autorig.core import watchdog
+    step_timeout = watchdog.get_timeout_for_script(script, timeout)
+    return watchdog.run_with_watchdog(command(script, *args), timeout=step_timeout,
+                                      memory_limit_mb=memory_limit_mb, capture_output=True, **kw)

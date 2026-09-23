@@ -24,7 +24,12 @@ sys.path.insert(0, os.path.join(PKG, "core"))
 
 def blender_step(script, *args):
     import blender
-    return subprocess.call(blender.command(script, *args))
+    r = blender.run(script, *args)
+    if r.stdout:
+        print(r.stdout, end="")
+    if r.stderr and r.stderr.strip() != r.stdout.strip():
+        print(r.stderr, end="", file=sys.stderr)
+    return r.returncode
 
 
 def main(argv):
