@@ -424,3 +424,58 @@ export function bendVertices(positions, originalPositions, p0, p1, p2, angleRad,
   return positions;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Camera System: Front, 3/4 Hero, Side, and Free Orbit
+// ---------------------------------------------------------------------------------------------------------------
+
+export const VIEWS = ["hero", "front", "side", "orbit"];
+
+/** Human-readable label for each camera view mode. */
+export function viewLabel(v) {
+  if (v === "front") return "Front view";
+  if (v === "hero") return "3/4 Hero view";
+  if (v === "side") return "Side view";
+  if (v === "orbit") return "Free orbit";
+  return v || "Hero view";
+}
+
+/** Returns the next view in cyclical order: Hero -> Front -> Side -> Orbit -> Hero. */
+export function nextView(curView) {
+  const idx = VIEWS.indexOf(curView);
+  return idx >= 0 ? VIEWS[(idx + 1) % VIEWS.length] : VIEWS[0];
+}
+
+/** Determines if a model is humanoid or bipedal based on archetype, skeleton metadata, bone names, and proportions. */
+export function isHumanoidOrBiped(info, bones, box) {
+  if (!info && !bones && !box) return false;
+  const arch = String((info && (info.archetype || info.skeleton)) || "").toLowerCase();
+  if (arch === "humanoid" || arch === "biped" || arch === "walker") return true;
+
+  if (Array.isArray(bones) && bones.length > 0) {
+    const boneNames = bones.map((b) => (typeof b === "string" ? b : (b && b.name) || "").toLowerCase());
+    const hasHips = boneNames.some((n) => n.includes("hip") || n.includes("pelvis"));
+    const hasSpine = boneNames.some((n) => n.includes("spine"));
+    const hasArm = boneNames.some((n) => n.includes("arm") || n.includes("shoulder") || n.includes("hand"));
+    const hasLeg = boneNames.some((n) => n.includes("leg") || n.includes("thigh") || n.includes("foot"));
+    const hasHead = boneNames.some((n) => n.includes("head"));
+    if (hasHips && hasSpine && (hasArm || hasHead) && hasLeg) return true;
+  }
+
+  if (box && typeof box.getSize === "function") {
+    const s = box.getSize({ x: 0, y: 0, z: 0 });
+    if (s.y > 0.8 && s.y > 1.35 * Math.max(s.x, s.z)) {
+      return true;
+    }
+  } else if (box && typeof box.x === "number" && typeof box.y === "number" && typeof box.z === "number") {
+    if (box.y > 0.8 && box.y > 1.35 * Math.max(box.x, box.z)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Returns the recommended default camera view: "hero" (3/4 perspective) for humanoids/bipeds, "side" for quadrupeds/creatures. */
+export function defaultCameraView(info, bones, box) {
+  return isHumanoidOrBiped(info, bones, box) ? "hero" : "side";
+}
+

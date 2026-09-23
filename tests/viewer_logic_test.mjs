@@ -245,5 +245,52 @@ test("interactive joint bend test math: rodrigues, hinge axis, and vertex deform
   assert.deepEqual(pos, orig);
 });
 
+test("universal camera system: views, labels, cycling, and humanoid detection", () => {
+  assert.deepEqual(L.VIEWS, ["hero", "front", "side", "orbit"]);
+  assert.equal(L.viewLabel("front"), "Front view");
+  assert.equal(L.viewLabel("hero"), "3/4 Hero view");
+  assert.equal(L.viewLabel("side"), "Side view");
+  assert.equal(L.viewLabel("orbit"), "Free orbit");
+
+  // Cyclical view switching
+  assert.equal(L.nextView("hero"), "front");
+  assert.equal(L.nextView("front"), "side");
+  assert.equal(L.nextView("side"), "orbit");
+  assert.equal(L.nextView("orbit"), "hero");
+  assert.equal(L.nextView("unknown"), "hero");
+
+  // Humanoid detection by archetype
+  assert.ok(L.isHumanoidOrBiped({ archetype: "humanoid" }));
+  assert.ok(L.isHumanoidOrBiped({ skeleton: "walker" }));
+  assert.ok(L.isHumanoidOrBiped({ archetype: "biped" }));
+  assert.ok(!L.isHumanoidOrBiped({ archetype: "quadruped" }));
+  assert.ok(!L.isHumanoidOrBiped({ archetype: "serpent" }));
+
+  // Humanoid detection by bone names
+  const humanoidBones = [
+    { name: "Hips" }, { name: "Spine" }, { name: "Head" },
+    { name: "LeftArm" }, { name: "RightArm" },
+    { name: "LeftLeg" }, { name: "RightLeg" }
+  ];
+  assert.ok(L.isHumanoidOrBiped({}, humanoidBones));
+
+  const quadBones = [
+    { name: "body" }, { name: "leg_front_1.L" }, { name: "leg_back_1.L" }
+  ];
+  assert.ok(!L.isHumanoidOrBiped({}, quadBones));
+
+  // Humanoid detection by bounding box proportions (tall upright figure)
+  const tallBox = { x: 0.5, y: 1.8, z: 0.3 };
+  assert.ok(L.isHumanoidOrBiped({}, [], tallBox));
+
+  const wideBox = { x: 2.0, y: 0.8, z: 1.2 };
+  assert.ok(!L.isHumanoidOrBiped({}, [], wideBox));
+
+  // Default camera view
+  assert.equal(L.defaultCameraView({ archetype: "humanoid" }), "hero");
+  assert.equal(L.defaultCameraView({}, humanoidBones), "hero");
+  assert.equal(L.defaultCameraView({ archetype: "quadruped" }), "side");
+});
+
 console.log(`${n} passed`);
 
