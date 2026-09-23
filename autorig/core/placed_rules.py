@@ -560,10 +560,12 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
 
 
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
-                                crotch_threshold=0.04, armpit_barrier=True):
+                                crotch_threshold=0.04, armpit_barrier=True, height_span=None):
     """Enforces geodesic and air-gap barriers on skin weights:
     1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
-    2. Armpit / Flank barrier: prevents distal arm bones from pulling torso/rib vertices across the underarm gap.
+    2. Armpit / Flank barrier: prevents arm bones from pulling torso/rib/neck vertices across the underarm/collar gaps.
+    3. Clavicle / Shoulder bilateral isolation: prevents shoulder bones from affecting the contralateral side.
+    4. Distal leg height isolation: prevents foot/toe bones from bleeding onto thighs or pelvis.
     weights: (N, num_bones) array of vertex weights.
     coords: (N, 3) array of vertex positions.
     bone_names: list of bone names matching columns of weights.
@@ -571,6 +573,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
     sym_plane: X coordinate of symmetry plane (default 0.0).
     crotch_threshold: distance from sym_plane beyond which opposite-leg weights are completely zeroed.
     armpit_barrier: whether to clean distal arm weights off chest/torso vertices.
+    height_span: optional total model height.
     Returns: (N, num_bones) cleaned and normalized weights."""
     W = np.array(weights, copy=True)
     N, num_bones = W.shape
@@ -589,19 +592,37 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
         lower = name.lower()
         return any(k in lower for k in ("leg", "thigh", "foot", "toe", "shin", "upleg", "calf", "ankle"))
 
+    def is_distal_leg(name):
+        lower = name.lower()
+        return any(k in lower for k in ("foot", "toe", "toebase", "ankle"))
+
     def is_distal_arm(name):
         lower = name.lower()
         return any(k in lower for k in ("forearm", "hand", "finger", "wrist", "arm_2", "arm_3", "arm2", "arm3"))
+
+    def is_arm(name):
+        lower = name.lower()
+        return any(k in lower for k in ("arm", "forearm", "hand", "finger", "wrist")) and "shoulder" not in lower and "clavicle" not in lower
+
+    def is_shoulder(name):
+        lower = name.lower()
+        return any(k in lower for k in ("shoulder", "clavicle"))
 
     def is_torso(name):
         lower = name.lower()
         return any(k in lower for k in ("spine", "hips", "chest", "root", "body", "pelvis", "neck"))
 
+    def is_head_or_neck(name):
+        lower = name.lower()
+        return any(k in lower for k in ("head", "neck"))
+
+    X = coords[:, 0]
+    Z = coords[:, 2]
+
     left_leg_cols = [col[b] for b in bone_names if is_left(b) and is_leg(b)]
     right_leg_cols = [col[b] for b in bone_names if is_right(b) and is_leg(b)]
 
-    X = coords[:, 0]
-    # Crotch / Leg separation
+    # 1. Crotch / Leg bilateral separation
     if left_leg_cols and right_leg_cols:
         left_mask = X > (sym_plane + crotch_threshold)
         if np.any(left_mask):
@@ -623,7 +644,43 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                     fade = (sym_plane - x_val) / max(1e-6, crotch_threshold)
                     W[idx, left_leg_cols] *= (1.0 - fade)
 
-    # Armpit / Flank barrier
+    # 2. Clavicle / Shoulder bilateral isolation
+    sh_margin = crotch_threshold * 0.5
+    for b in bone_names:
+        if is_shoulder(b):
+            c_idx = col[b]
+            if is_left(b):
+                r_side = X < (sym_plane - sh_margin)
+                if np.any(r_side):
+                    W[r_side, c_idx] = 0.0
+            elif is_right(b):
+                l_side = X > (sym_plane + sh_margin)
+                if np.any(l_side):
+                    W[l_side, c_idx] = 0.0
+
+    # 3. Distal leg height isolation (feet / toes cannot own thighs or hips)
+    distal_leg_cols = [col[b] for b in bone_names if is_distal_leg(b)]
+    if distal_leg_cols and bone_heads:
+        z_feet = [bone_heads[b][2] for b in bone_names if is_distal_leg(b) and b in bone_heads]
+        if z_feet:
+            z_ankle_thresh = max(z_feet) + (height_span * 0.08 if height_span else 0.08)
+            too_high = Z > z_ankle_thresh
+            if np.any(too_high):
+                W[np.ix_(too_high, distal_leg_cols)] = 0.0
+
+    # 4. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
+    arm_cols = [col[b] for b in bone_names if is_arm(b)]
+    head_neck_cols = [col[b] for b in bone_names if is_head_or_neck(b)]
+    if arm_cols and bone_heads:
+        z_neck_heads = [bone_heads[b][2] for b in bone_names if is_head_or_neck(b) and b in bone_heads]
+        if z_neck_heads:
+            z_neck = min(z_neck_heads)
+            h = height_span or float(coords[:, 2].max() - coords[:, 2].min())
+            neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.15 * h)
+            if np.any(neck_zone):
+                W[np.ix_(neck_zone, arm_cols)] = 0.0
+
+    # 5. Armpit / Flank barrier
     if armpit_barrier:
         torso_cols = [col[b] for b in bone_names if is_torso(b)]
         distal_arm_cols = [col[b] for b in bone_names if is_distal_arm(b)]
@@ -675,12 +732,16 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
 
     crotch_thresh = float(spec.get("crotch_barrier", max(size) * 0.03))
     sym_plane = float(spec.get("sym_plane", 0.0))
+    bone_heads = {b.name: list(b.head_local) for b in arm.data.bones}
+    h_span = float(size[2]) if hasattr(size, '__getitem__') else float(size.z)
 
     cleaned_W = apply_geodesic_skin_barrier(
         W, P, bone_names,
+        bone_heads=bone_heads,
         sym_plane=sym_plane,
         crotch_threshold=crotch_thresh,
-        armpit_barrier=spec.get("armpit_barrier", True)
+        armpit_barrier=spec.get("armpit_barrier", True),
+        height_span=h_span
     )
 
     diff = np.abs(cleaned_W - W).sum(axis=1)
@@ -792,15 +853,19 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
         l = nm.lower()
         return ("right" in l or l.endswith(".r") or "_r" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
 
-    # Estimate pelvic height range from armature hips/legs if possible, else 0.25..0.65 of height
+    # Estimate pelvic height range from armature hips/legs if possible
     hips_bone = arm.data.bones.get(hips_name)
-    if hips_bone:
-        z_hips = float(hips_bone.head_local[2])
-        z_pelvis_min = max(min_z, z_hips - 0.40 * height)
-        z_pelvis_max = min(max_z, z_hips + 0.15 * height)
+    knee_bones = [b for b in arm.data.bones if any(k in b.name.lower() for k in ("knee", "leg")) and not any(k in b.name.lower() for k in ("upleg", "thigh"))]
+    if knee_bones:
+        z_knee = float(knee_bones[0].head_local[2])
+    elif hips_bone:
+        z_knee = float(hips_bone.head_local[2]) - 0.25 * height
     else:
-        z_pelvis_min = min_z + 0.25 * height
-        z_pelvis_max = min_z + 0.65 * height
+        z_knee = min_z + 0.30 * height
+
+    z_hips = float(hips_bone.head_local[2]) if hips_bone else min_z + 0.55 * height
+    z_pelvis_min = max(min_z, z_knee - 0.02 * height)
+    z_pelvis_max = min(max_z, z_hips + 0.15 * height)
 
     # --- Part 1: Disconnected Centerline Islands ---
     import rerig
@@ -828,11 +893,11 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     log["centerline_islands_bound"] = bound_islands
 
     # --- Part 2: Sagittal Centerline Pelvic / Crotch Anti-Tear Protection ---
-    crotch_thresh = float(spec.get("crotch_threshold", 0.045 * span_x))
+    crotch_thresh = float(spec.get("crotch_threshold", 0.08 * span_x))
     X = P[:, 0]
     Z = P[:, 2]
 
-    in_pelvis_zone = (np.abs(X - sym_plane) <= crotch_thresh) & (Z >= z_pelvis_min) & (Z <= z_pelvis_max)
+    in_pelvis_zone = (np.abs(X - sym_plane) <= crotch_thresh * 1.5) & (Z >= z_pelvis_min) & (Z <= z_pelvis_max)
     pelvis_indices = np.where(in_pelvis_zone)[0]
 
     adjusted_verts = 0
@@ -840,28 +905,33 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
         v = verts[int(idx)]
         w_left = sum(g.weight for g in v.groups if is_left_leg_name(vg_names.get(g.group, "")))
         w_right = sum(g.weight for g in v.groups if is_right_leg_name(vg_names.get(g.group, "")))
-        if w_left + w_right > 0.01:
-            ratio = abs(X[idx] - sym_plane) / max(1e-6, crotch_thresh)
-            ratio = min(1.0, max(0.0, ratio))
-            # Smoothstep
-            k = 1.0 - ratio
-            k = k * k * (3.0 - 2.0 * k)
-            trans = (w_left + w_right) * k
+        w_legs = w_left + w_right
+        if w_legs > 0.01:
+            # 1. Bilateral shear conflict: if both legs pull the same vertex
+            conflict = 2.0 * min(w_left, w_right) / w_legs
+            # 2. Midline proximity: smoothstep fade from sym_plane
+            dist_x = abs(X[idx] - sym_plane)
+            dist_k = max(0.0, 1.0 - dist_x / (crotch_thresh * 1.5))
+            dist_k = dist_k * dist_k * (3.0 - 2.0 * dist_k)
+            # 3. Vertical profile: stronger near hips, softer near knees
+            z_frac = (Z[idx] - z_pelvis_min) / max(1e-6, z_pelvis_max - z_pelvis_min)
+            z_k = min(1.0, max(0.3, z_frac))
 
-            # Reduce leg weights
-            for g in list(v.groups):
-                nm = vg_names.get(g.group, "")
-                if is_left_leg_name(nm) or is_right_leg_name(nm):
-                    new_w = float(g.weight * (1.0 - k))
-                    if new_w > 1e-4:
-                        vg[g.group].add([v.index], new_w, 'REPLACE')
-                    else:
-                        vg[g.group].remove([v.index])
+            k = max(conflict * 0.9, dist_k * z_k * 0.6)
+            if k > 0.01:
+                trans = w_legs * k
+                for g in list(v.groups):
+                    nm = vg_names.get(g.group, "")
+                    if is_left_leg_name(nm) or is_right_leg_name(nm):
+                        new_w = float(g.weight * (1.0 - k))
+                        if new_w > 1e-4:
+                            vg[g.group].add([v.index], new_w, 'REPLACE')
+                        else:
+                            vg[g.group].remove([v.index])
 
-            # Transfer to hips
-            w_h = sum(g.weight for g in v.groups if vg_names.get(g.group) == hips_name)
-            hips_vg.add([v.index], w_h + trans, 'REPLACE')
-            adjusted_verts += 1
+                w_h = sum(g.weight for g in v.groups if vg_names.get(g.group) == hips_name)
+                hips_vg.add([v.index], w_h + trans, 'REPLACE')
+                adjusted_verts += 1
 
     log["centerline_verts_anchored"] = adjusted_verts
     return bound_islands + adjusted_verts

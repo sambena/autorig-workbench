@@ -115,6 +115,79 @@ class TestPlacedRulesMath(unittest.TestCase):
         # All rows must remain normalized to 1.0
         np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(3), rtol=1e-5)
 
+    def test_geodesic_skin_barrier_shoulder_isolation(self):
+        bone_names = ["LeftShoulder", "RightShoulder", "Chest"]
+        # Vert 0: left shoulder (X=0.25), Vert 1: right shoulder (X=-0.25)
+        coords = np.array([
+            [0.25, 0.0, 1.4],
+            [-0.25, 0.0, 1.4],
+        ])
+        weights = np.array([
+            [0.6, 0.2, 0.2],   # Left shoulder vert with RightShoulder cross-bleed
+            [0.2, 0.6, 0.2],   # Right shoulder vert with LeftShoulder cross-bleed
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, sym_plane=0.0, crotch_threshold=0.04
+        )
+        # Contralateral shoulder bleed must be zeroed out
+        self.assertEqual(cleaned[0, 1], 0.0)  # No RightShoulder on Left side
+        self.assertEqual(cleaned[1, 0], 0.0)  # No LeftShoulder on Right side
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_geodesic_skin_barrier_distal_leg_height(self):
+        bone_names = ["LeftUpLeg", "LeftFoot", "LeftToeBase"]
+        bone_heads = {
+            "LeftUpLeg": [0.1, 0.0, 0.9],
+            "LeftFoot": [0.1, 0.0, 0.1],
+            "LeftToeBase": [0.1, 0.0, 0.02],
+        }
+        # Vert 0: foot height (Z=0.05), Vert 1: thigh height (Z=0.8)
+        coords = np.array([
+            [0.1, 0.0, 0.05],
+            [0.1, 0.0, 0.8],
+        ])
+        weights = np.array([
+            [0.1, 0.6, 0.3],   # Foot vert
+            [0.6, 0.3, 0.1],   # Thigh vert with foot and toe bleed
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, bone_heads=bone_heads, sym_plane=0.0, height_span=1.8
+        )
+        # Distal leg weights on thigh vertex (Z=0.8) must be eliminated
+        self.assertEqual(cleaned[1, 1], 0.0)  # LeftFoot eliminated
+        self.assertEqual(cleaned[1, 2], 0.0)  # LeftToeBase eliminated
+        self.assertAlmostEqual(cleaned[1, 0], 1.0, places=5)
+        # Foot vert retains distal weights
+        self.assertGreater(cleaned[0, 1], 0.0)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_geodesic_skin_barrier_arm_neck_isolation(self):
+        bone_names = ["Neck", "Head", "LeftArm", "LeftForeArm"]
+        bone_heads = {
+            "Neck": [0.0, 0.0, 1.4],
+            "Head": [0.0, 0.0, 1.55],
+            "LeftArm": [0.2, 0.0, 1.4],
+            "LeftForeArm": [0.4, 0.0, 1.4],
+        }
+        # Vert 0: neck center (X=0.02, Z=1.45), Vert 1: arm (X=0.3, Z=1.4)
+        coords = np.array([
+            [0.02, 0.0, 1.45],
+            [0.30, 0.0, 1.40],
+        ])
+        weights = np.array([
+            [0.5, 0.1, 0.25, 0.15],  # Neck vert with arm bleed
+            [0.0, 0.0, 0.70, 0.30],  # Arm vert
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, bone_heads=bone_heads, sym_plane=0.0, height_span=1.8
+        )
+        # Arm weights on central neck vert must be eliminated
+        self.assertEqual(cleaned[0, 2], 0.0)  # LeftArm eliminated
+        self.assertEqual(cleaned[0, 3], 0.0)  # LeftForeArm eliminated
+        self.assertAlmostEqual(cleaned[0, 0] + cleaned[0, 1], 1.0, places=5)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+
     def test_find_nearest_bone_segment(self):
         # Two bone segments:
         # spine: from (0, 0, 0) to (0, 0, 1)
