@@ -149,11 +149,18 @@ class Runner:
                     job.add("!! could not start: %r" % e); ok = False; break
                 job.proc, job.pid = p, p.pid
                 failed = False
+                try:
+                    import watchdog as _wd
+                except ImportError:
+                    from autorig.core import watchdog as _wd
+                guard = _wd.JobWatchdog(job, p, label)
+                guard.start()
                 for line in p.stdout:
                     job.add(line)
                     if line.startswith("Traceback") or (TAG.match(line) and '"error"' in line):
                         failed = True
                 rc = p.wait()
+                guard.stop()
                 job.proc = None
                 if job.cancelled: break
                 if rc != 0 or failed:
@@ -713,6 +720,20 @@ def make_handler(app):
                     except ImportError:
                         from autorig.core import retargeter as _ret
                     return self._send(200, _ret.plan_retarget(name, mocap_file, clip_name=(q.get("clip_name") or [None])[0]))
+                if path == "/api/watchdog/status":
+                    try:
+                        import watchdog as _wd
+                    except ImportError:
+                        from autorig.core import watchdog as _wd
+                    cur_pid = app.runner.current.pid if app.runner.current else None
+                    cur_mem = _wd.get_process_rss_mb(cur_pid) if cur_pid else 0.0
+                    return self._send(200, {
+                        "timeouts": _wd.DEFAULT_TIMEOUTS,
+                        "global_timeout": os.environ.get("AUTORIG_STEP_TIMEOUT"),
+                        "max_memory_mb": _wd.get_max_memory_mb(),
+                        "current_job_pid": cur_pid,
+                        "current_job_rss_mb": cur_mem,
+                    })
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})
@@ -889,6 +910,13 @@ def make_handler(app):
                         export_glb=body.get("export_glb", False),
                     )
                     return self._send(200, res)
+                if path == "/api/watchdog/reap":
+                    try:
+                        import watchdog as _wd
+                    except ImportError:
+                        from autorig.core import watchdog as _wd
+                    reaped = _wd.reap_orphaned_blender_processes()
+                    return self._send(200, {"reaped_pids": reaped, "count": len(reaped)})
                 self._send(404, {"error": "not found"})
             except ValueError as e:
                 self._send(400, {"error": str(e)})
