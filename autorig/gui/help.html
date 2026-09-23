@@ -882,6 +882,30 @@ details[open] summary {
             then click <b>Head</b>, <b>Hips</b>, <b>Leg</b>, or <b>Mirror</b> to convert tangled generator bones into a proper named hierarchy.
           </div>
         </div>
+
+        <div class="btn-card">
+          <div class="btn-title">5. Cross-Section Pinch Crease Analysis</div>
+          <div class="desc">
+            Analyzes 2D orthogonal cross-sections along limbs and body axes to detect localized narrowing (anatomical pinches).
+            Knees, elbows, and waists snap automatically to the true physical bend creases rather than relying on arbitrary percentage heights.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">6. Volumetric Medial-Axis Centerline</div>
+          <div class="desc">
+            Traces curved spines, tails, and tentacles through the 3D interior volume using radial boundary distance balancing.
+            Bones remain centered deep within fleshy volumes, immune to distortion from dorsal fins, pauldrons, or armor plates.
+          </div>
+        </div>
+
+        <div class="btn-card">
+          <div class="btn-title">7. Real-Time Symmetry &amp; Mirror Mode</div>
+          <div class="desc">
+            Toggle <code>mirror .L/.R</code> in the viewport overlay: dragging any station on a <code>.L</code> chain instantly reflects across
+            the $X=0.5$ symmetry plane onto the corresponding <code>.R</code> chain in real time, cutting manual adjustment time in half.
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1008,6 +1032,16 @@ details[open] summary {
         <div class="details-content">
           Mirrored limbs are guaranteed to have identical bone counts, hierarchy levels, and IK setups on both sides.
           The QA audit automatically flags a warning if asymmetrical chains are detected.
+        </div>
+      </details>
+
+      <details open>
+        <summary><b>Rule G: Geodesic Crotch &amp; Underarm Skinning Barrier</b></summary>
+        <div class="details-content">
+          Bone heat is geometrically blind to empty air gaps between adjacent body parts.
+          Autorig enforces an automated geodesic barrier: vertices on the left side ($X &gt; \epsilon$) are strictly
+          isolated from right-leg bones, and torso vertices are protected from distal forearm/hand influences in resting poses.
+          This universally eliminates crotch stretching and underarm tear sites across all biped, quadruped, and creature models.
         </div>
       </details>
     </section>

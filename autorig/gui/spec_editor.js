@@ -877,7 +877,28 @@ function legend() {
 // Clicking: bones, the model, the flat views
 // ---------------------------------------------------------------------------------------------------------------
 
-function applyPointEdit(path, type, u) {
+function findOppositePath(path) {
+  const el = $("mirrorEdits");
+  if (!el || !el.checked) return null;
+  if (!path || path.length < 3) return null;
+  const listKey = path[0];
+  if (listKey !== "chains" && listKey !== "placed") return null;
+  const list = draft[listKey];
+  if (!Array.isArray(list) || typeof path[1] !== "number") return null;
+  const chain = list[path[1]];
+  if (!chain || !chain.name) return null;
+  let oppName = null;
+  if (chain.name.includes(".L")) oppName = chain.name.replace(".L", ".R");
+  else if (chain.name.includes(".R")) oppName = chain.name.replace(".R", ".L");
+  else if (chain.name.startsWith("Left")) oppName = chain.name.replace(/^Left/, "Right");
+  else if (chain.name.startsWith("Right")) oppName = chain.name.replace(/^Right/, "Left");
+  if (!oppName) return null;
+  const oppIdx = list.findIndex(c => c && c.name === oppName);
+  if (oppIdx === -1) return null;
+  return [listKey, oppIdx, ...path.slice(2)];
+}
+
+function applyPointEdit(path, type, u, isMirror = false) {
   if (!path || !path.length) return;
   if (type === "station" || type === "slice_y") {
     setPath(path, Math.round(u[1] * 1000) / 1000, { noUndo: true });
@@ -888,9 +909,16 @@ function applyPointEdit(path, type, u) {
   } else {
     setPath(path, u, { noUndo: true });
   }
+  if (!isMirror) {
+    const oppPath = findOppositePath(path);
+    if (oppPath) {
+      const oppU = [Math.round((1.0 - u[0]) * 1000) / 1000, u[1], u[2]];
+      applyPointEdit(oppPath, type, oppU, true);
+    }
+  }
 }
 
-function applyPointEditInMemory(path, type, u) {
+function applyPointEditInMemory(path, type, u, isMirror = false) {
   if (!path || !path.length) return;
   let o = draft;
   for (let i = 0; i < path.length - 1; i++) {
@@ -907,6 +935,13 @@ function applyPointEditInMemory(path, type, u) {
     o[last] = Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000;
   } else {
     o[last] = [Math.round(u[0] * 1000) / 1000, Math.round(u[1] * 1000) / 1000, Math.round(u[2] * 1000) / 1000];
+  }
+  if (!isMirror) {
+    const oppPath = findOppositePath(path);
+    if (oppPath) {
+      const oppU = [Math.round((1.0 - u[0]) * 1000) / 1000, u[1], u[2]];
+      applyPointEditInMemory(oppPath, type, oppU, true);
+    }
   }
 }
 
