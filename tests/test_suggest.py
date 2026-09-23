@@ -171,6 +171,8 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertIn("leg_front.L", chains)
         self.assertIn("points", chains["leg_front.L"])
         self.assertEqual(len(chains["leg_front.L"]["points"]), 3)
+        self.assertIn("tail", chains)
+        self.assertTrue(chains["tail"].get("medial"))
 
 if __name__ == "__main__":
     unittest.main()

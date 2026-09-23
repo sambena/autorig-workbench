@@ -172,6 +172,70 @@ class Surface:
                 return pts[k + 1], (n - k - 1) / float(n), ref
         return None
 
+
+    def medial_axis(self, start, end, bones, slack=0.3, first=None, samples=16):
+        """Curved volumetric medial axis: traces bone stations inside the mesh volume,
+        balancing distances to boundary walls so bones stay centered inside the volume."""
+        a, b = self.nearest(start), self.nearest(end)
+        da, db = self.distances([a]), self.distances([b])
+        length = da[b]
+        if length == float("inf"): return [Vector(start), Vector(end)]
+        on = [i for i in range(len(self.co)) if da[i] + db[i] <= length * (1.0 + slack)]
+        pts = []
+        for k in range(bones + 1):
+            t = length * k / bones
+            half = length / bones * 0.5
+            ring = [self.co[i] for i in on if abs(da[i] - t) <= half]
+            if not ring or len(ring) < 4:
+                pts.append(self.co[a].lerp(self.co[b], k / bones))
+                continue
+            lo = Vector((min(p.x for p in ring), min(p.y for p in ring), min(p.z for p in ring)))
+            hi = Vector((max(p.x for p in ring), max(p.y for p in ring), max(p.z for p in ring)))
+            mean = sum(ring, Vector()) / len(ring)
+            c0 = (lo + hi) * 0.25 + mean * 0.5
+
+            # Local path tangent direction
+            tangent = (self.co[b] - self.co[a]).normalized()
+            ref = Vector((0, 0, 1)) if abs(tangent.z) < 0.85 else Vector((1, 0, 0))
+            u_axis = tangent.cross(ref).normalized()
+            v_axis = tangent.cross(u_axis).normalized()
+
+            c_refined = c0
+            for _ in range(2):
+                num_sectors = 8
+                sector_radii = [[] for _ in range(num_sectors)]
+                for p in ring:
+                    diff = p - c_refined
+                    pu = diff.dot(u_axis); pv = diff.dot(v_axis)
+                    angle = math.atan2(pv, pu)
+                    sec = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
+                    sector_radii[sec].append(math.sqrt(pu * pu + pv * pv))
+
+                shift_u, shift_v = 0.0, 0.0
+                half_sec = num_sectors // 2
+                for sec in range(half_sec):
+                    opp = sec + half_sec
+                    r1 = min(sector_radii[sec]) if sector_radii[sec] else None
+                    r2 = min(sector_radii[opp]) if sector_radii[opp] else None
+                    if r1 is not None and r2 is not None:
+                        mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
+                        delta = (r1 - r2) * 0.5
+                        shift_u += delta * math.cos(mid_angle)
+                        shift_v += delta * math.sin(mid_angle)
+
+                c_refined = c_refined + u_axis * (shift_u / 2.0) + v_axis * (shift_v / 2.0)
+            pts.append(c_refined)
+
+        pts[-1] = pts[-1].lerp(self.co[b], 0.7)
+        if first is not None: pts[0] = Vector(first)
+        # Laplacian smoothing of interior joints
+        for _ in range(2):
+            pts = [pts[0]] + [
+                (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
+                for i in range(1, len(pts) - 1)
+            ] + [pts[-1]]
+        return pts
+
     def find_pinches(self, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
         """Finds anatomical hinge creases / local cross-section minima between start and end on this surface."""
         s = Vector(start) if not isinstance(start, Vector) else start
@@ -271,4 +335,72 @@ def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max
 
     pinches.sort(key=lambda item: item["prominence"], reverse=True)
     return pinches
+
+
+def trace_medial_axis(coords, start, end, bones=4, slack=0.3):
+    """Traces bone station points along the volumetric medial axis between start and end.
+    Centers each station by balancing radial boundary distances within its orthogonal cross-section."""
+    s = Vector(start) if not isinstance(start, Vector) else start
+    e = Vector(end) if not isinstance(end, Vector) else end
+    ab = e - s
+    length = ab.length
+    if length < 1e-6 or bones < 1:
+        return [s, e]
+
+    pts = []
+    d = ab.normalized()
+    ref = Vector((0, 0, 1)) if abs(d.z) < 0.85 else Vector((1, 0, 0))
+    u = d.cross(ref).normalized()
+    v = d.cross(u).normalized()
+
+    for k in range(bones + 1):
+        frac = k / bones
+        nominal = s.lerp(e, frac)
+        half_step = length / bones * 0.5
+        slice_pts = []
+        for pt in coords:
+            p = Vector(pt) if not isinstance(pt, Vector) else pt
+            proj = (p - nominal).dot(d)
+            if abs(proj) <= half_step:
+                slice_pts.append(p)
+
+        if not slice_pts or len(slice_pts) < 4:
+            pts.append(nominal)
+            continue
+
+        c_refined = sum(slice_pts, Vector((0, 0, 0))) / len(slice_pts)
+        for _ in range(2):
+            num_sectors = 8
+            sector_radii = [[] for _ in range(num_sectors)]
+            for p in slice_pts:
+                diff = p - c_refined
+                pu = diff.dot(u); pv = diff.dot(v)
+                angle = math.atan2(pv, pu)
+                sector_idx = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
+                r = math.sqrt(pu * pu + pv * pv)
+                sector_radii[sector_idx].append(r)
+
+            shift_u, shift_v = 0.0, 0.0
+            half_sec = num_sectors // 2
+            for sec in range(half_sec):
+                opp = sec + half_sec
+                r1 = min(sector_radii[sec]) if sector_radii[sec] else None
+                r2 = min(sector_radii[opp]) if sector_radii[opp] else None
+                if r1 is not None and r2 is not None:
+                    mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
+                    delta = (r1 - r2) * 0.5
+                    shift_u += delta * math.cos(mid_angle)
+                    shift_v += delta * math.sin(mid_angle)
+
+            c_refined = c_refined + u * (shift_u / 2.0) + v * (shift_v / 2.0)
+        pts.append(c_refined)
+
+    pts[0] = s
+    pts[-1] = e
+    for _ in range(2):
+        pts = [pts[0]] + [
+            (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
+            for i in range(1, len(pts) - 1)
+        ] + [pts[-1]]
+    return pts
 

@@ -356,7 +356,10 @@ def build_chains(mesh, spec, size):
             if len(pts) == 2 and n > 1: pts = [pts[0].lerp(pts[1], k / n) for k in range(n + 1)]
         elif "tube" in c:
             a, b = s.point(c["tube"][0]), s.point(c["tube"][1])
-            pts = s.tube(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
+            if c.get("medial"):
+                pts = s.medial_axis(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
+            else:
+                pts = s.tube(a, b, n, first=s.point(c["first"]) if c.get("first") else None)
         else:  # a limb, known by where it ends
             tip = s.co[s.nearest(s.point(c["tip"]))].copy()
             # Rule C: a limb starts where it leaves the body. `base` is that point, measured (measure.py); the
@@ -371,7 +374,10 @@ def build_chains(mesh, spec, size):
                         base = junc[0]
             if base is None:
                 base = on_polyline(chains[pi]["points"], tip).lerp(tip, c.get("base_f", 0.45))
-            pts = [base, tip] if n == 1 else s.tube(base, tip, n, first=base)
+            if c.get("medial"):
+                pts = [base, tip] if n == 1 else s.medial_axis(base, tip, n, first=base)
+            else:
+                pts = [base, tip] if n == 1 else s.tube(base, tip, n, first=base)
         if c.get("girdle") and pi is not None:
             # A shoulder or pelvis bone (index 0 of the chain) from the spine out to where the limb leaves the body:
             # the scapula a quadruped's front leg swings from, a humanoid's clavicle.

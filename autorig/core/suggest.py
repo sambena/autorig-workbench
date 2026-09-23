@@ -222,6 +222,8 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         "slice": [slice_start, slice_end],
         "bones": num_body_bones
     }
+    if archetype == "serpent":
+        body_chain["medial"] = True
 
     # Propose anatomical stations along the spine at shoulder, mid-torso, and hip hinges
     if len(legs) >= 2:
@@ -377,6 +379,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
             "tip": [round(c, 3) for c in tail_pt],
             "base": [0.5, slice_end, tail_pt[2]],
             "bones": 4,
+            "medial": True,
             "parent_nearest": True,
             "parent": [body_chain["name"], -1]
         })

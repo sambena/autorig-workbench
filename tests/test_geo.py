@@ -28,6 +28,31 @@ class TestGeoAlgorithms(unittest.TestCase):
         self.assertAlmostEqual(top_pinch["pos"].z, 0.5, delta=0.03)
 
 
+
+    def test_trace_medial_axis_centers_in_volume(self):
+        # Generate a straight cylinder along Z from 0 to 1 with an asymmetric outward spike at X=3.0 on Z=0.5
+        coords = []
+        for z in [i / 10.0 for i in range(11)]:
+            for theta in [j * math.pi / 8.0 for j in range(16)]:
+                coords.append((math.cos(theta), math.sin(theta), z))
+        coords.append((3.0, 0.0, 0.5))
+        coords.append((2.8, 0.1, 0.5))
+        coords.append((2.8, -0.1, 0.5))
+
+        pts = geo.trace_medial_axis(coords, (0, 0, 0), (0, 0, 1), bones=4)
+        self.assertEqual(len(pts), 5)
+        self.assertAlmostEqual(pts[0].x, 0.0, places=3)
+        self.assertAlmostEqual(pts[0].y, 0.0, places=3)
+        self.assertAlmostEqual(pts[0].z, 0.0, places=3)
+        self.assertAlmostEqual(pts[-1].x, 0.0, places=3)
+        self.assertAlmostEqual(pts[-1].y, 0.0, places=3)
+        self.assertAlmostEqual(pts[-1].z, 1.0, places=3)
+        mid_pt = pts[2]
+        self.assertAlmostEqual(mid_pt.z, 0.5, places=3)
+        self.assertLess(abs(mid_pt.x), 0.06)
+        self.assertLess(abs(mid_pt.y), 0.05)
+
+
 if "bpy" not in sys.modules:
     class TestGeoUnderBlender(unittest.TestCase):
         @unittest.skipUnless(blender.find(required=False), "Blender not found")
