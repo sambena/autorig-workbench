@@ -400,6 +400,11 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(res["archetype"], "quadruped")
         self.assertEqual(res["spec"]["rig"]["kind"], "placed")
 
+    def test_5_auto_tune_api(self):
+        res = self.call("/api/spec/auto-tune", {"model": "boned", "max_iterations": 1})
+        self.assertIn("job", res)
+        self.assertEqual(res["job"]["step"], "auto-tune")
+
 
 if __name__ == "__main__":
     unittest.main()

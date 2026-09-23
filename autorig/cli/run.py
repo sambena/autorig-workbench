@@ -5,6 +5,7 @@
 #   python autorig/cli/run.py gui [--port N] ...       the GUI, with its options
 #   python autorig/cli/run.py wolf,moth [options]      rig -> trim -> audit (cli/pipeline.py and its options)
 #   python autorig/cli/run.py rig wolf,moth            one step: rig, survey, facing, trim, audit, clips, measure, probe
+#   python autorig/cli/run.py auto-tune wolf,moth      closed-loop auto-tuning optimizer (self-healing rigs)
 #   python autorig/cli/run.py preview wolf,moth        the 3D viewer's rigged/preview.glb (steps/preview_glb.py)
 #   python autorig/cli/run.py audit-all [-render 0] [-strict]   audit every rigged model, then a table worst first
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
@@ -51,6 +52,8 @@ def main(argv):
         return blender_step("preview_glb.py", *(rest if rest[0].startswith("-") else ["-only"] + rest))
     if cmd == "probe" and rest:
         return blender_step("probe_tips.py", *rest)
+    if cmd == "auto-tune" and rest:
+        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "auto_tune.py")] + rest)
     if cmd == "rig" and rest:
         import pipeline
         code = 0

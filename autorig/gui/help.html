@@ -668,6 +668,18 @@ details[open] summary {
           <div class="meta-row">Prerequisite: Rigged FBX file.</div>
         </div>
 
+        <!-- Auto-tune -->
+        <div class="btn-card" id="auto-tune-button">
+          <div class="head">
+            <span class="btn-title"><button>Auto-tune</button></span>
+            <span class="script">auto_tune.py</span>
+          </div>
+          <div class="desc">
+            Closed-loop self-healing rig optimizer. Parses QA audit results (tear sites, worst bones, gaps, bleed), formulates candidate parameter micro-adjustments (joint blend radii, weight smoothing, capsule scale, station placement, rip welds), and iterates over 3 cycles to eliminate tears and achieve a clean PASS.
+          </div>
+          <div class="meta-row">Prerequisite: Source model or initial rig. Available via CLI: <code>python autorig/cli/run.py auto-tune &lt;model&gt;</code></div>
+        </div>
+
         <!-- Clips -->
         <div class="btn-card" id="clips-button">
           <div class="head">

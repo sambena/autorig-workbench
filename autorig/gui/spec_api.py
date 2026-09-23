@@ -18,7 +18,7 @@
 #
 # The editor edits a copy of the parsed file: fields it does not know are kept as they are, key order is kept, and
 # the file is written in the same compact style people write it in (short lists and objects on one line).
-import difflib, hashlib, json, os, re, shutil, time
+import difflib, hashlib, json, os, re, shutil, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8"}
@@ -754,6 +754,21 @@ def post(h, app, srv, path, body):
                 cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
                 out["job"] = _job(app, srv, name, "save and re-rig", cmds)
             h._send(200, out)
+        elif what == "auto-tune":
+            ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
+            cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
+            if cur:
+                with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
+                    json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
+            st = srv.status(g, name)
+            if st["steps"].get("rig"):
+                h._send(409, {"error": st["steps"]["rig"]}); return True
+            auto_tune_script = os.path.join(os.path.dirname(HERE), "steps", "auto_tune.py")
+            max_iter = str(body.get("max_iterations", 3))
+            cmd = (f"auto-tune ({max_iter} iter)", [sys.executable, "-u", auto_tune_script, name, "-max-iter", max_iter], None)
+            preview_cmd = ("preview", srv.blender_cmd("preview_glb.py", "-only", name), None)
+            job = _job(app, srv, name, "auto-tune", [cmd, preview_cmd])
+            h._send(200, {"job": job})
         elif what == "source":
             if not srv._quiet(layout.source_model, name):
                 h._send(409, {"error": "no source export in the model folder"}); return True
