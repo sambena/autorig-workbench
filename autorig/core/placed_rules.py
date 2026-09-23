@@ -633,16 +633,28 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
             W[np.ix_(right_mask, left_leg_cols)] = 0.0
 
         transition_mask = np.abs(X - sym_plane) <= crotch_threshold
+        hips_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("hips", "pelvis", "root"))]
+        hips_target = hips_cols[0] if hips_cols else None
         if np.any(transition_mask):
             trans_indices = np.where(transition_mask)[0]
             for idx in trans_indices:
                 x_val = X[idx]
                 if x_val > sym_plane:
                     fade = (x_val - sym_plane) / max(1e-6, crotch_threshold)
-                    W[idx, right_leg_cols] *= (1.0 - fade)
+                    k_fade = fade * fade * (3.0 - 2.0 * fade)
+                    old_w = float(W[idx, right_leg_cols].sum())
+                    W[idx, right_leg_cols] *= (1.0 - k_fade)
+                    freed = old_w - float(W[idx, right_leg_cols].sum())
+                    if hips_target is not None and freed > 1e-5:
+                        W[idx, hips_target] += freed
                 elif x_val < sym_plane:
                     fade = (sym_plane - x_val) / max(1e-6, crotch_threshold)
-                    W[idx, left_leg_cols] *= (1.0 - fade)
+                    k_fade = fade * fade * (3.0 - 2.0 * fade)
+                    old_w = float(W[idx, left_leg_cols].sum())
+                    W[idx, left_leg_cols] *= (1.0 - k_fade)
+                    freed = old_w - float(W[idx, left_leg_cols].sum())
+                    if hips_target is not None and freed > 1e-5:
+                        W[idx, hips_target] += freed
 
     # 2. Clavicle / Shoulder bilateral isolation
     sh_margin = crotch_threshold * 0.5
@@ -853,7 +865,7 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
         l = nm.lower()
         return ("right" in l or l.endswith(".r") or "_r" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
 
-    # Estimate pelvic height range from armature hips/legs if possible
+    # Estimate pelvic and lower garment height range from armature hips/legs/ankles
     hips_bone = arm.data.bones.get(hips_name)
     knee_bones = [b for b in arm.data.bones if any(k in b.name.lower() for k in ("knee", "leg")) and not any(k in b.name.lower() for k in ("upleg", "thigh"))]
     if knee_bones:
@@ -863,9 +875,18 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     else:
         z_knee = min_z + 0.30 * height
 
+    ankle_bones = [b for b in arm.data.bones if any(k in b.name.lower() for k in ("foot", "ankle", "toe"))]
+    if ankle_bones:
+        z_ankle = float(ankle_bones[0].head_local[2])
+    else:
+        z_ankle = min_z + 0.08 * height
+
     z_hips = float(hips_bone.head_local[2]) if hips_bone else min_z + 0.55 * height
-    z_pelvis_min = max(min_z, z_knee - 0.02 * height)
-    z_pelvis_max = min(max_z, z_hips + 0.15 * height)
+    z_bot = max(min_z, z_ankle + 0.05 * height)
+    z_mid = z_hips
+    z_top = min(max_z, z_hips + 0.15 * height)
+    z_pelvis_min = z_bot
+    z_pelvis_max = z_top
 
     # --- Part 1: Disconnected Centerline Islands ---
     import rerig
@@ -893,11 +914,35 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     log["centerline_islands_bound"] = bound_islands
 
     # --- Part 2: Sagittal Centerline Pelvic / Crotch Anti-Tear Protection ---
-    crotch_thresh = float(spec.get("crotch_threshold", 0.08 * span_x))
+    left_hip = [b for b in arm.data.bones if is_left_leg_name(b.name) and any(k in b.name.lower() for k in ("up", "thigh", "1"))]
+    x_hip_spacing = float(abs(left_hip[0].head_local[0] - sym_plane)) if left_hip else 0.08 * span_x
+    x_core = max(x_hip_spacing * 0.4, 0.03 * span_x)
+    x_span = max(x_hip_spacing * 1.8, 0.18 * span_x)
+
     X = P[:, 0]
     Z = P[:, 2]
+    dx = np.abs(X - sym_plane)
 
-    in_pelvis_zone = (np.abs(X - sym_plane) <= crotch_thresh * 1.5) & (Z >= z_pelvis_min) & (Z <= z_pelvis_max)
+    # C1 smooth Hermite profile in X
+    fx = np.ones_like(X)
+    outer = dx > x_core
+    u = np.clip((dx[outer] - x_core) / max(1e-6, x_span - x_core), 0.0, 1.0)
+    fx[outer] = 1.0 - (u * u * (3.0 - 2.0 * u))
+
+    # C1 smooth Hermite profile in Z: peak at hips, gentle descent toward ankles, gentle taper above hips
+    gz = np.zeros_like(Z)
+    lower = (Z >= z_bot) & (Z <= z_mid)
+    if np.any(lower):
+        v = (Z[lower] - z_bot) / max(1e-6, z_mid - z_bot)
+        gz[lower] = v * v * (3.0 - 2.0 * v)
+    upper = (Z > z_mid) & (Z <= z_top)
+    if np.any(upper):
+        w = (z_top - Z[upper]) / max(1e-6, z_top - z_mid)
+        gz[upper] = w * w * (3.0 - 2.0 * w)
+
+    K = fx * gz
+
+    in_pelvis_zone = (dx <= x_span) & (Z >= z_bot) & (Z <= z_top)
     pelvis_indices = np.where(in_pelvis_zone)[0]
 
     adjusted_verts = 0
@@ -907,17 +952,8 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
         w_right = sum(g.weight for g in v.groups if is_right_leg_name(vg_names.get(g.group, "")))
         w_legs = w_left + w_right
         if w_legs > 0.01:
-            # 1. Bilateral shear conflict: if both legs pull the same vertex
             conflict = 2.0 * min(w_left, w_right) / w_legs
-            # 2. Midline proximity: smoothstep fade from sym_plane
-            dist_x = abs(X[idx] - sym_plane)
-            dist_k = max(0.0, 1.0 - dist_x / (crotch_thresh * 1.5))
-            dist_k = dist_k * dist_k * (3.0 - 2.0 * dist_k)
-            # 3. Vertical profile: stronger near hips, softer near knees
-            z_frac = (Z[idx] - z_pelvis_min) / max(1e-6, z_pelvis_max - z_pelvis_min)
-            z_k = min(1.0, max(0.3, z_frac))
-
-            k = max(conflict * 0.9, dist_k * z_k * 0.6)
+            k = max(K[idx], conflict * gz[idx])
             if k > 0.01:
                 trans = w_legs * k
                 for g in list(v.groups):
