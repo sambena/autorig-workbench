@@ -187,6 +187,23 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertAlmostEqual(cleaned[0, 0] + cleaned[0, 1], 1.0, places=5)
         np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
 
+    def test_geodesic_skin_barrier_crotch_transfer_to_hips(self):
+        bone_names = ["Hips", "LeftUpLeg", "RightUpLeg"]
+        # Vert 0 is slightly left of midline (X=0.02, crotch_threshold=0.04)
+        coords = np.array([
+            [0.02, 0.0, 0.5],
+        ])
+        weights = np.array([
+            [0.2, 0.4, 0.4],  # Hips: 0.2, LeftUpLeg: 0.4, RightUpLeg: 0.4
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, sym_plane=0.0, crotch_threshold=0.04
+        )
+        # RightUpLeg is faded because X > 0; freed weight must be transferred to Hips
+        self.assertLess(cleaned[0, 2], 0.4)
+        self.assertGreater(cleaned[0, 0], 0.2)  # Hips received the freed weight
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(1), rtol=1e-5)
+
 
     def test_find_nearest_bone_segment(self):
         # Two bone segments:
