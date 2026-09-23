@@ -230,6 +230,27 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(res2.get("loaded"))
         self.assertTrue(res2.get("already_installed"))
 
+    def test_6_export_api(self):
+        targets_res = self.call("/api/export/targets")
+        self.assertIn("targets", targets_res)
+        target_ids = {t["id"] for t in targets_res["targets"]}
+        self.assertEqual(target_ids, {"unreal", "unity", "godot", "web"})
+
+        # Export unreal package for pedestal
+        res = self.call("/api/export", body={"model": "pedestal", "target": "unreal"})
+        self.assertEqual(res.get("model"), "pedestal")
+        self.assertEqual(res.get("target"), "unreal")
+        self.assertIn("zip_rel", res)
+        self.assertGreater(res.get("zip_size", 0), 0)
+
+        # Download the zip archive through /files/work/...
+        req = urllib.request.Request(self.base + "/files/work/" + res["zip_rel"] + "?t=" + TOKEN)
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.headers.get("Content-Type"), "application/zip")
+            zip_bytes = r.read()
+            self.assertEqual(len(zip_bytes), res["zip_size"])
+
 
 def alive(pid):
     if os.name == "nt":

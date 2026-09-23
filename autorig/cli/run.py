@@ -54,6 +54,8 @@ def main(argv):
         return blender_step("probe_tips.py", *rest)
     if cmd == "auto-tune" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "auto_tune.py")] + rest)
+    if cmd in ("export", "package") and rest:
+        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "export.py")] + rest)
     if cmd == "rig" and rest:
         import pipeline
         code = 0

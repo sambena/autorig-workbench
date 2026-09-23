@@ -34,7 +34,7 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all")
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
-layout = spec_store = blender = grades = None    # imported in main(), once the environment names the folders
+layout = spec_store = blender = grades = exporter = None    # imported in main(), once the environment names the folders
 
 
 def _quiet(fn, *a):
@@ -684,6 +684,12 @@ def make_handler(app):
                 if path == "/api/state": return self._send(200, self.state())
                 if path == "/api/samples":
                     return self._send(200, {"samples": sample_models_list()})
+                if path == "/api/export/targets":
+                    try:
+                        import exporter as _exp
+                    except ImportError:
+                        from autorig.core import exporter as _exp
+                    return self._send(200, {"targets": _exp.list_presets()})
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})
@@ -776,10 +782,14 @@ def make_handler(app):
                 return self._send(403, {"error": "outside the served folders"})
             if not os.path.isfile(p): return self._send(404, {"error": "no such file"})
             ctype = mimetypes.guess_type(p)[0] or "application/octet-stream"
-            if ctype not in ("image/png", "image/jpeg", "application/json", "text/plain", "image/webp"):
+            if ctype not in ("image/png", "image/jpeg", "application/json", "text/plain", "image/webp", "application/zip", "model/gltf-binary"):
                 ctype = "application/octet-stream"
+            extra = {}
+            if p.lower().endswith(".zip"):
+                ctype = "application/zip"
+                extra["Content-Disposition"] = f'attachment; filename="{os.path.basename(p)}"'
             with open(p, "rb") as fh: data = fh.read()
-            self._send(200, data, ctype)
+            self._send(200, data, ctype, extra=extra)
 
         # ---- POST
         def do_POST(self):
@@ -826,6 +836,17 @@ def make_handler(app):
                 if path == "/api/samples/load":
                     slug = clean_name(body.get("name", ""))
                     return self._send(200, load_sample_model(slug))
+                if path == "/api/export":
+                    name = clean_name(body.get("model", ""))
+                    g = find_group(name)
+                    if g is None: return self._send(404, {"error": "no such model"})
+                    target = body.get("target", "all")
+                    try:
+                        import exporter as _exp
+                    except ImportError:
+                        from autorig.core import exporter as _exp
+                    res = _exp.create_export_package(name, target=target)
+                    return self._send(200, res)
                 self._send(404, {"error": "not found"})
             except ValueError as e:
                 self._send(400, {"error": str(e)})
@@ -846,10 +867,10 @@ def main(argv=None):
     if a.models: os.environ["AUTORIG_MODELS"] = os.path.abspath(a.models)
     if a.work: os.environ["AUTORIG_WORK"] = os.path.abspath(a.work)
 
-    global layout, spec_store, blender, grades
+    global layout, spec_store, blender, grades, exporter
     sys.path.insert(0, CORE)
-    import layout as _l, spec_store as _s, blender as _b, grades as _g
-    layout, spec_store, blender, grades = _l, _s, _b, _g
+    import layout as _l, spec_store as _s, blender as _b, grades as _g, exporter as _e
+    layout, spec_store, blender, grades, exporter = _l, _s, _b, _g, _e
     os.makedirs(layout.ROOT, exist_ok=True)
     os.makedirs(layout.WORK, exist_ok=True)
 
