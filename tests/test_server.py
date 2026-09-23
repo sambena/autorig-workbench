@@ -183,6 +183,53 @@ class ServerTest(unittest.TestCase):
         time.sleep(0.5)
         self.assertFalse(alive(pid), "PID %d still running after Cancel" % pid)
 
+    def test_4_samples_gallery_api(self):
+        data = self.call("/api/samples")
+        self.assertIn("samples", data)
+        samples = data["samples"]
+        self.assertEqual(len(samples), 5)
+        names = [s["name"] for s in samples]
+        self.assertEqual(sorted(names), ["beetle", "biped", "canine", "pedestal", "wyvern"])
+        for s in samples:
+            self.assertTrue(s["title"])
+            self.assertTrue(s["archetype"])
+            self.assertIn(s["kind"], ("placed", "build"))
+            self.assertGreater(s["budget"], 0)
+            self.assertTrue(s["description"])
+            self.assertIn("installed", s)
+            self.assertIn("thumbnail", s)
+            if s["thumbnail"]:
+                req = urllib.request.Request(self.base + s["thumbnail"] + "?t=" + TOKEN)
+                with urllib.request.urlopen(req) as r:
+                    self.assertEqual(r.headers["Content-Type"], "image/png")
+
+    def test_5_load_sample_model(self):
+        # invalid sample name fails with 400
+        self.assertEqual(self.status("/api/samples/load", body={"name": "nonexistent"}), 400)
+
+        # load pedestal
+        res = self.call("/api/samples/load", body={"name": "pedestal"})
+        self.assertTrue(res.get("loaded"))
+        self.assertEqual(res.get("name"), "pedestal")
+        self.assertFalse(res.get("already_installed"))
+
+        # verify files exist in models folder
+        pedestal_dir = os.path.join(self.models, "pedestal")
+        self.assertTrue(os.path.isdir(pedestal_dir))
+        self.assertTrue(os.path.isfile(os.path.join(pedestal_dir, "rig.json")))
+
+        # verify model appears in state
+        st = self.call("/api/state")
+        names = [m["name"] for m in st["models"]]
+        self.assertIn("pedestal", names)
+        pm = next(m for m in st["models"] if m["name"] == "pedestal")
+        self.assertTrue(pm["spec"])
+
+        # loading again reports already_installed: True
+        res2 = self.call("/api/samples/load", body={"name": "pedestal"})
+        self.assertTrue(res2.get("loaded"))
+        self.assertTrue(res2.get("already_installed"))
+
 
 def alive(pid):
     if os.name == "nt":

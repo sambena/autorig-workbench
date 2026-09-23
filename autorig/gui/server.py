@@ -174,6 +174,7 @@ def model_dir(group, name):
 
 
 def find_group(name):
+    if layout is None: return None
     for g, m in layout.all_models():
         if m == name: return g
     return None
@@ -524,6 +525,59 @@ def place(src, group, name, move):
         raise
 
 
+SAMPLE_MODEL_NAMES = ("beetle", "biped", "canine", "wyvern", "pedestal")
+
+
+def sample_models_list():
+    """Returns summaries of the 5 built-in CC0 sample models."""
+    out = []
+    samples_dir = os.path.join(REPO, "samples")
+    for slug in SAMPLE_MODEL_NAMES:
+        d = os.path.join(samples_dir, slug)
+        rj = os.path.join(d, "rig.json")
+        spec = {}
+        if os.path.exists(rj):
+            try:
+                with open(rj, encoding="utf-8") as fh:
+                    spec = json.load(fh)
+            except Exception:
+                pass
+        rig = spec.get("rig", {})
+        clips = spec.get("clips", {})
+        notes = spec.get("notes", {})
+        card = spec.get("card", {})
+
+        is_installed = find_group(slug) is not None
+        thumb_rel = f"_autorig/qa/{slug}.png"
+        thumb_path = os.path.join(samples_dir, "_autorig", "qa", f"{slug}.png")
+        out.append({
+            "name": slug,
+            "title": clips.get("display") or slug.capitalize(),
+            "archetype": clips.get("archetype") or rig.get("skeleton") or card.get("role") or "creature",
+            "kind": rig.get("kind", "placed"),
+            "budget": spec.get("budget", 1500),
+            "description": notes.get("rig") or f"CC0 {slug} sample model",
+            "category": clips.get("category") or "Creatures",
+            "installed": is_installed,
+            "thumbnail": f"/samples/{thumb_rel}" if os.path.exists(thumb_path) else None,
+        })
+    return out
+
+
+def load_sample_model(slug):
+    """Loads a built-in sample model into the models root."""
+    if slug not in SAMPLE_MODEL_NAMES:
+        raise ValueError(f"unknown sample model {slug} (valid: {', '.join(SAMPLE_MODEL_NAMES)})")
+    if find_group(slug) is not None:
+        return {"name": slug, "loaded": True, "already_installed": True, "group": find_group(slug)}
+    src = os.path.join(REPO, "samples", slug)
+    if not os.path.isdir(src):
+        raise ValueError(f"sample directory missing for {slug}")
+    res = place(src, "", slug, move=False)
+    spec_store.reload()
+    return {"name": slug, "loaded": True, "already_installed": False, "group": res.get("group", "")}
+
+
 def open_folder(path):
     if sys.platform.startswith("win"): os.startfile(path)                                   # noqa
     elif sys.platform == "darwin": subprocess.Popen(["open", path])
@@ -628,6 +682,8 @@ def make_handler(app):
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
                 if path == "/api/state": return self._send(200, self.state())
+                if path == "/api/samples":
+                    return self._send(200, {"samples": sample_models_list()})
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})
@@ -767,6 +823,9 @@ def make_handler(app):
                     if g is None: return self._send(404, {"error": "no such model"})
                     open_folder(model_dir(g, body["model"]))
                     return self._send(200, {"opened": model_dir(g, body["model"])})
+                if path == "/api/samples/load":
+                    slug = clean_name(body.get("name", ""))
+                    return self._send(200, load_sample_model(slug))
                 self._send(404, {"error": "not found"})
             except ValueError as e:
                 self._send(400, {"error": str(e)})
