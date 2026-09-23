@@ -16,11 +16,13 @@ import blender, grades, layout
 
 
 def rigged_models():
-    """Every model with a rigged FBX, in the order the GUI lists them."""
+    """Every model with a rigged FBX or blend, in the order the GUI lists them."""
     out = []
     with contextlib.redirect_stdout(io.StringIO()):          # layout's notes about ambiguous folders
         for _, m in layout.all_models():
-            if os.path.exists(os.path.join(layout.rigged_dir(m), m + ".fbx")): out.append(m)
+            rd = layout.rigged_dir(m)
+            if os.path.exists(os.path.join(rd, m + ".fbx")) or os.path.exists(os.path.join(rd, m + ".blend")):
+                out.append(m)
     return out
 
 
@@ -54,9 +56,16 @@ def fmt(v, spec="%s"):
 def main():
     a = sys.argv[1:]
     if not a or a[0].startswith("-"):
-        sys.exit("usage: python audit_all.py model[,model...]|all [-render 0] [-out dir] [-strict]")
-    models = rigged_models() if a[0] == "all" else a[0].split(",")
+        sys.exit("usage: python audit_all.py model[,model...]|all|failed [-render 0] [-out dir] [-strict]")
     out = a[a.index("-out") + 1] if "-out" in a else layout.work_dir("audit")
+    if a[0] == "all":
+        models = rigged_models()
+    elif a[0] == "failed":
+        models = [m for m in rigged_models() if (read(out, m) or {}).get("verdict", {}).get("grade") == grades.FAIL
+                  or (read(out, m) or {}).get("verdict", {}).get("pass") is False]
+        if not models: sys.exit("no failed models found in %s" % out)
+    else:
+        models = a[0].split(",")
     render = a[a.index("-render") + 1] if "-render" in a else "1"
     if not models: sys.exit("no rigged models under %s" % layout.ROOT)
     errors = set()
