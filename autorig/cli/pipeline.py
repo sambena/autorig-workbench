@@ -45,7 +45,11 @@ def rig_script(model):
 
 def main():
     a = sys.argv[1:]
-    if not a or a[0].startswith("-"): sys.exit("usage: python pipeline.py model[,model...] [-skipRig] [-rig script] [-qa dir] [-noSheets] [-preview]")
+    if not a or a[0].startswith("-"): sys.exit("usage: python pipeline.py model[,model...] [-skipRig] [-rig script] [-qa dir] [-noSheets] [-preview] [--auto-tune]")
+    if "--auto-tune" in a or "-autoTune" in a:
+        max_iter = ["-max-iter", a[a.index("-max-iter") + 1]] if "-max-iter" in a else []
+        auto_tune_script = os.path.join(os.path.dirname(HERE), "steps", "auto_tune.py")
+        sys.exit(subprocess.call([sys.executable, auto_tune_script, a[0]] + max_iter))
     models = a[0].split(",")
     qa = a[a.index("-qa") + 1] if "-qa" in a else layout.work_dir("qa")
     ok = True

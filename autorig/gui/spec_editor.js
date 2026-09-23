@@ -2267,6 +2267,7 @@ async function runCheck() {
   $("bSave").disabled = !checked.changed || checked.errors.length > 0;
   $("bSave").title = checked.errors.length ? "Fix the problems first (Changes tab)" : "Write rig.json (the old one is kept as rig.json.bak)";
   $("bRerig").disabled = checked.errors.length > 0 || (job && (job.state === "running" || job.state === "queued"));
+  if ($("bAutoTune")) $("bAutoTune").disabled = checked.errors.length > 0 || (job && (job.state === "running" || job.state === "queued"));
   renderTabs();
   if (tab === "rig" || tab === "changes") renderPane();
 }
@@ -2328,6 +2329,23 @@ async function save(rerig) {
 }
 $("bSave").onclick = () => save(false);
 $("bRerig").onclick = () => save(true);
+if ($("bAutoTune")) $("bAutoTune").onclick = autoTune;
+
+async function autoTune() {
+  endPick(false);
+  try {
+    const r = await api("/api/spec/auto-tune", { model: MODEL, spec: draft, base, max_iterations: 3 });
+    if (r.job) {
+      follow(r.job);
+      tab = "run";
+      renderTabs();
+      renderPane();
+      flashTop("Running closed-loop auto-tune optimizer…");
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+}
 function flashTop(t) { const d = $("dirty"); d.textContent = t; d.style.color = "var(--ok)"; setTimeout(() => { d.style.color = ""; d.textContent = checked.changed ? "● unsaved changes" : ""; }, 3000); }
 
 function follow(j) {
@@ -2346,8 +2364,13 @@ function follow(j) {
     redraw();
     if (job.step === "source view" && SRC && !model) await loadModel(SRC.glb_url).catch(() => {});
     if (job.step === "source view") { redraw(); frameView([0.35, -1, 0.3]); }
-    if (job.step === "save and re-rig" && job.state === "done") {
+    if ((job.step === "save and re-rig" || job.step === "auto-tune") && job.state === "done") {
       tab = "run";
+      if (job.step === "auto-tune") {
+        draft = JSON.parse(JSON.stringify(B.spec || startDraft()));
+        base = B.base;
+        undo = [];
+      }
       if (B.preview_url) {
         await loadRigged(B.preview_url);
       }
