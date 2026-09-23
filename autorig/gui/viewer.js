@@ -14,7 +14,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { padStep, scrubTicks, scrubTime, keyTimes, isBleed, segDist2, islands as meshIslands, sideOf, hops,
-         tearSeverity, tearMarkerRadius, mapTearPoint, defaultCombinedAngle } from "./viewer_logic.js";
+         tearSeverity, tearMarkerRadius, mapTearPoint, defaultCombinedAngle,
+         VIEWS, viewLabel, nextView, isHumanoidOrBiped, defaultCameraView } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const REF_HEIGHT = 1.8;
@@ -78,8 +79,8 @@ function resize() {
   camera.updateProjectionMatrix();
   layoutPanels();
   drawScrub();
-  clearTimeout(resizeTimer);                       // the side view refits once the window stops changing
-  resizeTimer = setTimeout(() => { if (view === "side") frame(); }, 120);
+  clearTimeout(resizeTimer);                       // the view refits once the window stops changing
+  resizeTimer = setTimeout(() => { if (view !== "orbit") frame(); }, 120);
 }
 window.addEventListener("resize", () => resize());
 
@@ -183,7 +184,7 @@ const loader = new GLTFLoader();
 let models = [], mi = -1;            // every rigged model the server knows; the one shown
 let cur = null;                      // {item, gltf, holder, mixer, clips, bones, skinned, box, fps, names, ...}
 let ci = 0, action = null, playing = true, loop = true, speed = 1;
-let overlay = 0, view = "side", framing = "model", sel = -1;
+let overlay = 0, view = "hero", framing = "model", sel = -1;
 let loadToken = 0;
 
 function disposeTree(o) {
@@ -356,9 +357,9 @@ function setup(item, gltf) {
   applyOverlay();
   renderChecks(checks());
   renderWorst();
-  hud();
+  const defView = defaultCameraView(info, cur.bones, box);
+  setView(defView);
   layoutPanels();
-  frame();
 }
 
 // The box the model fills over every clip: its bind-pose mesh, and each clip sampled through, the skeleton's box
@@ -1154,8 +1155,22 @@ function frame() {
   if (!cur) return;
   const box = frameBox();
   const s = box.getSize(new THREE.Vector3());
-  const dir = view === "side" ? new THREE.Vector3(0, 0.16, 1).normalize() : new THREE.Vector3(0.62, 0.35, 0.72).normalize();
-  const aspect = view === "side" ? s.x / Math.max(s.y, 1e-6) : (s.x + s.z) / Math.max(s.y * 1.2, 1e-6);
+  let dir, aspect;
+  if (view === "front") {
+    dir = new THREE.Vector3(1, 0.05, 0).normalize();
+    aspect = s.z / Math.max(s.y, 1e-6);
+  } else if (view === "side") {
+    dir = new THREE.Vector3(0, 0.16, 1).normalize();
+    aspect = s.x / Math.max(s.y, 1e-6);
+  } else if (view === "hero") {
+    dir = new THREE.Vector3(0.72, 0.22, 0.65).normalize();
+    aspect = (s.x + s.z) / Math.max(s.y * 1.2, 1e-6);
+  } else {
+    // orbit: preserve current direction if valid, else default to hero 3/4
+    const curDir = camera.position.clone().sub(controls.target).normalize();
+    dir = curDir.lengthSq() > 0.5 ? curDir : new THREE.Vector3(0.62, 0.35, 0.72).normalize();
+    aspect = (s.x + s.z) / Math.max(s.y * 1.2, 1e-6);
+  }
   fitCamera(box, dir, clearRect(aspect), framing === "all" ? 0.08 : 0.03);
 }
 
@@ -1251,9 +1266,10 @@ scrubCanvas.addEventListener("pointercancel", endScrub);
 function setView(v) {
   view = v;
   controls.enableRotate = v === "orbit";
-  $("bView").textContent = v === "side" ? "Side view" : "Free orbit";
+  $("bView").textContent = viewLabel(v);
   $("bView").classList.toggle("on", v === "orbit");
-  frame(); hud();
+  frame();
+  hud();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1370,7 +1386,7 @@ function hud() {
   } else {
     $("clipName").textContent = cur ? "bind pose (no clips)" : "";
   }
-  $("modeLine").textContent = cur ? `view: ${view === "side" ? "side (+X forward)" : "free orbit"} · overlay: ${OVERLAYS[overlay]}` : "";
+  $("modeLine").textContent = cur ? `view: ${viewLabel(view)} · overlay: ${OVERLAYS[overlay]}` : "";
   hudTime(); hudPlay();
   drawScrub();
 }
@@ -1416,8 +1432,8 @@ const act = {
   prevModel: () => show(mi - 1), nextModel: () => show(mi + 1),
   prevClip: () => cur && cur.clips.length && playClip(ci - 1), nextClip: () => cur && cur.clips.length && playClip(ci + 1),
   play: () => setPlaying(!playing),
-  overlay: () => { overlay = (overlay + 1) % OVERLAYS.length; applyOverlay(); if (view === "side") frame(); },
-  view: () => setView(view === "side" ? "orbit" : "side"),
+  overlay: () => { overlay = (overlay + 1) % OVERLAYS.length; applyOverlay(); if (view !== "orbit") frame(); },
+  view: () => setView(nextView(view)),
   frame: () => { framing = framing === "all" ? "model" : "all"; frame(); },
   prevBone: () => {
     if (OVERLAYS[overlay] === "tears" && cur && cur.tearSites && cur.tearSites.length > 1) {
