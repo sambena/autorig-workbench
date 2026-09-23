@@ -447,17 +447,33 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     Returns: dict with 'rig' spec, 'archetype', 'confidence', 'reasons'."""
     reasons = []
 
-    # 1. Survey check
+    # 1. Armature convention detection
     skel_kind = (survey_data or {}).get("skeleton") or "none"
     joints = (source_data or {}).get("joints") or []
-    if not skel_kind or skel_kind == "none":
-        if any(j["name"].startswith("mixamorig") for j in joints):
+    import skeletons
+
+    if not skel_kind or skel_kind in ("none", "other"):
+        if joints:
+            conv, conf = skeletons.detect_convention([j["name"] for j in joints])
+            if conf >= 0.25:
+                skel_kind = conv
+        elif any(j["name"].startswith("mixamorig") for j in joints):
             skel_kind = "mixamo"
         elif all(j["name"].startswith("bone_") for j in joints) and joints:
             skel_kind = "tripo"
 
-    # Strategy 1: Existing Mixamo skeleton -> Humanoid
+    # Strategy 1: Known standard armature (Unreal, Unity, Rigify, Biped, AccuRig, Valve)
+    if skel_kind in ("unreal", "unity", "rigify", "biped", "accurig", "valve") and joints:
+        lo = (source_data or {}).get("lo")
+        hi = (source_data or {}).get("hi")
+        size = (source_data or {}).get("size")
+        return skeletons.suggest_from_known_skeleton(joints, skel_kind, lo=lo, hi=hi, size=size)
+
+    # Strategy 2: Existing Mixamo skeleton -> Humanoid
     if skel_kind == "mixamo":
+        lo = (source_data or {}).get("lo")
+        hi = (source_data or {}).get("hi")
+        size = (source_data or {}).get("size")
         archetype = "humanoid"
         rig_spec = {
             "kind": "humanoid",
@@ -470,6 +486,11 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
             "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72, "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
             "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
         }
+        if joints:
+            res_known = skeletons.suggest_from_known_skeleton(joints, "mixamo", lo=lo, hi=hi, size=size)
+            if "humanoid" in res_known.get("spec", {}):
+                humanoid_defaults = res_known["spec"]["humanoid"]
+
         return {
             "archetype": archetype,
             "confidence": "high",

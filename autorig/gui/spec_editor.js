@@ -2197,7 +2197,7 @@ if ($("helpLink")) $("helpLink").href = "/help.html?t=" + encodeURIComponent(TOK
 function startDraft() {
   if (B.spec) return clone(B.spec);
   const sk = B.source ? B.source.skeleton : B.survey ? B.survey.skeleton : "none";
-  const k = sk === "tripo" ? "tripo" : sk === "mixamo" ? "humanoid" : "build";
+  const k = sk === "tripo" ? "tripo" : sk === "mixamo" ? "humanoid" : (["unreal", "unity", "rigify", "biped", "accurig", "valve"].includes(sk) ? "placed" : "build");
   const d = { schema: "autorig-spec/1", rig: { kind: k } };
   if (k === "humanoid") {
     d.humanoid = {
@@ -2219,7 +2219,17 @@ async function reload(fresh) {
                          (SRC ? ` · ${SRC.skeleton === "none" ? "no skeleton" : SRC.joints.length + " source bones"}` : "");
   const sk = SRC ? SRC.skeleton : (B.survey ? B.survey.skeleton : "");
   if ($("lblSourceNames")) {
-    $("lblSourceNames").textContent = sk === "mixamo" ? "Mixamo labels" : (sk === "tripo" ? "Tripo labels" : "source bones");
+    const labelMap = {
+      mixamo: "Mixamo labels",
+      tripo: "Tripo labels",
+      unreal: "Unreal labels",
+      unity: "Unity labels",
+      rigify: "Rigify labels",
+      biped: "Biped labels",
+      accurig: "AccuRig labels",
+      valve: "Valve labels"
+    };
+    $("lblSourceNames").textContent = labelMap[sk] || "source bones";
   }
   $("bView").disabled = !B.audit && !B.rig_bones.length;
   const btnRigged = $("vRigged");
