@@ -8,6 +8,10 @@
 #
 # Pure heuristics: deterministic, fast, offline (no ML or network).
 import math
+try:
+    import geo
+except ImportError:
+    from autorig.core import geo
 
 
 def pair_tips(tips, sym_center=0.5, tol_x=0.15, tol_yz=0.18):
@@ -191,7 +195,7 @@ def propose_archetype(proportions, classified_limbs, centerline_info, skeleton_t
     return "rigid", "medium", reasons + ["compact single volume with no limb pairs indicates rigid prop/creature"]
 
 
-def build_suggested_chains(classified_limbs, centerline_info, archetype):
+def build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=None):
     """Constructs placed chain definitions from the classified tips and archetype."""
     chains = []
     head_pt = centerline_info.get("head")
@@ -252,7 +256,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
         # Left leg
         l_tip = [round(c, 3) for c in p["left"]]
         l_base = [round(0.5 + (l_tip[0] - 0.5) * 0.45, 3), l_tip[1], round(min(0.85, max(body_z_est, l_tip[2] + 0.38)), 3)]
-        chains.append({
+        l_chain = {
             "name": f"{base_name}.L",
             "role": "leg",
             "tip": l_tip,
@@ -261,11 +265,11 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
             "ik": True,
             "parent_nearest": True,
             "parent": [body_chain["name"], 0 if idx == 0 else -1]
-        })
+        }
         # Right leg
         r_tip = [round(c, 3) for c in p["right"]]
         r_base = [round(0.5 + (r_tip[0] - 0.5) * 0.45, 3), r_tip[1], round(min(0.85, max(body_z_est, r_tip[2] + 0.38)), 3)]
-        chains.append({
+        r_chain = {
             "name": f"{base_name}.R",
             "role": "leg",
             "tip": r_tip,
@@ -274,7 +278,26 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
             "ik": True,
             "parent_nearest": True,
             "parent": [body_chain["name"], 0 if idx == 0 else -1]
-        })
+        }
+
+        # Anatomical pinch refinement (knee / hock crease) if vertices available
+        if vertices:
+            try:
+                p_left = geo.find_pinches(vertices, l_base, l_tip, slices=25, min_t=0.35, max_t=0.65)
+                if p_left:
+                    knee_l = [round(c, 3) for c in p_left[0]["pos"]]
+                    l_chain["points"] = [l_base, knee_l, l_tip]
+                    l_chain["bones"] = 2
+                p_right = geo.find_pinches(vertices, r_base, r_tip, slices=25, min_t=0.35, max_t=0.65)
+                if p_right:
+                    knee_r = [round(c, 3) for c in p_right[0]["pos"]]
+                    r_chain["points"] = [r_base, knee_r, r_tip]
+                    r_chain["bones"] = 2
+            except Exception:
+                pass
+
+        chains.append(l_chain)
+        chains.append(r_chain)
 
     # 3. Wings
     for idx, p in enumerate(wings):
@@ -306,7 +329,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
     for idx, p in enumerate(arms):
         l_tip = [round(c, 3) for c in p["left"]]
         l_base = [0.58, l_tip[1], round(l_tip[2] + 0.1, 3)]
-        chains.append({
+        l_arm = {
             "name": "arm.L",
             "role": "arm",
             "tip": l_tip,
@@ -314,10 +337,10 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
             "bones": 3,
             "parent_nearest": True,
             "parent": [body_chain["name"], 1]
-        })
+        }
         r_tip = [round(c, 3) for c in p["right"]]
         r_base = [0.42, r_tip[1], round(r_tip[2] + 0.1, 3)]
-        chains.append({
+        r_arm = {
             "name": "arm.R",
             "role": "arm",
             "tip": r_tip,
@@ -325,7 +348,26 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype):
             "bones": 3,
             "parent_nearest": True,
             "parent": [body_chain["name"], 1]
-        })
+        }
+
+        # Anatomical pinch refinement (elbow crease) if vertices available
+        if vertices:
+            try:
+                p_left = geo.find_pinches(vertices, l_base, l_tip, slices=25, min_t=0.35, max_t=0.65)
+                if p_left:
+                    elbow_l = [round(c, 3) for c in p_left[0]["pos"]]
+                    l_arm["points"] = [l_base, elbow_l, l_tip]
+                    l_arm["bones"] = 2
+                p_right = geo.find_pinches(vertices, r_base, r_tip, slices=25, min_t=0.35, max_t=0.65)
+                if p_right:
+                    elbow_r = [round(c, 3) for c in p_right[0]["pos"]]
+                    r_arm["points"] = [r_base, elbow_r, r_tip]
+                    r_arm["bones"] = 2
+            except Exception:
+                pass
+
+        chains.append(l_arm)
+        chains.append(r_arm)
 
     # 5. Tail
     if tail_pt and tail_pt[1] > slice_end and archetype != "humanoid":
@@ -397,7 +439,7 @@ def suggest_from_tripo(source_joints, lo, hi):
     }
 
 
-def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None):
+def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None):
     """Main heuristic suggestion entry point.
     Returns: dict with 'rig' spec, 'archetype', 'confidence', 'reasons'."""
     reasons = []
@@ -482,7 +524,8 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     archetype, confidence, arch_reasons = propose_archetype(prop, classified_limbs, centerline_info, skel_kind)
     reasons.extend(arch_reasons)
 
-    chains = build_suggested_chains(classified_limbs, centerline_info, archetype)
+    verts = vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices")
+    chains = build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=verts)
 
     rig_spec = {
         "kind": "placed",

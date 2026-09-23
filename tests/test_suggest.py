@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Autorig Workbench: unit tests for skeleton suggestion heuristics (autorig/core/suggest.py).
-import os, sys, unittest
+import math, os, sys, unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(REPO, "autorig", "core"), os.path.join(REPO, "autorig", "gui")]
@@ -148,6 +148,29 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertEqual(res["rig"]["head"], "bone_0")
         self.assertEqual(res["rig"]["hips"], "bone_1")
 
+
+    def test_suggest_pinch_refinement(self):
+        tips = [
+            [0.5, 0.15, 0.6],    # head/snout
+            [0.7, 0.4, 0.1],     # front left foot
+            [0.3, 0.4, 0.1],     # front right foot
+            [0.7, 0.8, 0.1],     # hind left foot
+            [0.3, 0.8, 0.1],     # hind right foot
+            [0.5, 0.95, 0.5],    # tail tip
+        ]
+        verts = []
+        for z in [i / 20.0 for i in range(21)]:
+            r = 0.08 - 0.04 * math.sin(z * math.pi)
+            for theta in [0, math.pi / 2, math.pi, 3 * math.pi / 2]:
+                verts.append([0.7 + r * math.cos(theta), 0.4 + r * math.sin(theta), z])
+                verts.append([0.3 + r * math.cos(theta), 0.4 + r * math.sin(theta), z])
+
+        res = suggest.suggest_skeleton("test_beast", tips=tips, proportions=[1.0, 1.5, 0.8], vertices=verts)
+        self.assertEqual(res["archetype"], "quadruped")
+        chains = {c["name"]: c for c in res["rig"]["chains"]}
+        self.assertIn("leg_front.L", chains)
+        self.assertIn("points", chains["leg_front.L"])
+        self.assertEqual(len(chains["leg_front.L"]["points"]), 3)
 
 if __name__ == "__main__":
     unittest.main()

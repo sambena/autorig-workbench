@@ -86,17 +86,55 @@ def measure(co, lo, size, h, main=None):
     for side, sgn in (("Left", 1), ("Right", -1)):
         X = (lambda f: 1.0 - f) if sgn > 0 else (lambda f: f)   # 0..1 x on this side (x 0 = its right)
         xs = (0.52, 0.95) if sgn > 0 else (0.05, 0.48)
-        for j in ("hip", "knee", "ankle"):
+        # Anatomical crease refinement for knee via cross-section pinch analysis
+        knee_z = z["knee"]
+        leg_m = M[(M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1]) & (M[:, 2] >= z["ankle"]) & (M[:, 2] <= z["hip"])]
+        if len(leg_m) > 40:
+            try:
+                import geo
+                mid_x = float(np.median(leg_m[:, 0]))
+                mid_y = float(np.median(leg_m[:, 1]))
+                pinches = geo.find_pinches(leg_m, (mid_x, mid_y, z["ankle"]), (mid_x, mid_y, z["hip"]), slices=25, min_t=0.25, max_t=0.75)
+                cands = [p for p in pinches if abs(p["pos"].z - z["knee"]) <= 0.04 and p.get("prominence", 0) > 0.005]
+                if cands:
+                    knee_z = round(float(cands[0]["pos"].z), 4)
+            except Exception:
+                pass
+
+        for j in ("hip", "ankle"):
             s = slab_z(z[j], *xs)
             raw[side + j] = (float(np.median(s[:, 0])), float(np.median(s[:, 1])), z[j])
+        s_knee = slab_z(knee_z, *xs)
+        raw[side + "knee"] = (float(np.median(s_knee[:, 0])), float(np.median(s_knee[:, 1])), knee_z)
+
         foot = M[(M[:, 2] < 0.04) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
         toe = foot[foot[:, 1].argmin()]
         fx = float(np.median(foot[:, 0]))
         raw[side + "toe"] = (fx, float(toe[1]), 0.02)
         ay = raw[side + "ankle"][1]
         raw[side + "ball"] = (fx, ay + (toe[1] - ay) * 0.68, 0.035)
+
+        # Anatomical crease refinement for elbow via cross-section pinch analysis
+        elbow_x = x["elbow"]
+        arm_lo_x = min(X(x["wrist"]), X(x["shoulder"]))
+        arm_hi_x = max(X(x["wrist"]), X(x["shoulder"]))
+        arm_m = M[(M[:, 0] >= arm_lo_x) & (M[:, 0] <= arm_hi_x) & (np.abs(M[:, 2] - z["arm"]) <= 0.12)]
+        if len(arm_m) > 40:
+            try:
+                import geo
+                mid_y = float(np.median(arm_m[:, 1]))
+                start_x = X(x["shoulder"])
+                end_x = X(x["wrist"])
+                pinches = geo.find_pinches(arm_m, (start_x, mid_y, z["arm"]), (end_x, mid_y, z["arm"]), slices=25, min_t=0.25, max_t=0.75)
+                if pinches:
+                    cand_x = float(1.0 - pinches[0]["pos"].x if sgn > 0 else pinches[0]["pos"].x)
+                    if abs(cand_x - x["elbow"]) <= 0.04 and pinches[0].get("prominence", 0) > 0.005:
+                        elbow_x = round(cand_x, 4)
+            except Exception:
+                pass
+
         arm = {}
-        for j, f in (("upper", (x["shoulder"] + x["elbow"]) / 2), ("elbow", x["elbow"]), ("wrist", x["wrist"]),
+        for j, f in (("upper", (x["shoulder"] + elbow_x) / 2), ("elbow", elbow_x), ("wrist", x["wrist"]),
                      ("knuckle", x["knuckle"])):
             s = slab_x(X(f), z["arm"] - 0.09, z["arm"] + 0.09)
             arm[j] = np.array((X(f), float(np.median(s[:, 1])), float(np.median(s[:, 2]))))

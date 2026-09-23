@@ -2,8 +2,50 @@
 # Autorig Workbench: surface geometry helpers for building skeletons where a model came with none: distances
 # measured along the mesh's surface find the tips of its limbs, and rings of equal distance between two points give
 # the line down the middle of a limb, a tail or a whole serpent.
-import heapq
-from mathutils import Vector, kdtree
+import heapq, math
+try:
+    from mathutils import Vector, kdtree
+except ImportError:
+    class Vector(tuple):
+        def __new__(cls, coords):
+            return super().__new__(cls, tuple(float(c) for c in coords))
+        @property
+        def x(self): return self[0]
+        @property
+        def y(self): return self[1]
+        @property
+        def z(self): return self[2]
+        def __add__(self, other):
+            return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
+        def __sub__(self, other):
+            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
+        def __mul__(self, scalar):
+            return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
+        def __rmul__(self, scalar):
+            return self.__mul__(scalar)
+        def __truediv__(self, scalar):
+            return Vector((self[0] / scalar, self[1] / scalar, self[2] / scalar))
+        @property
+        def length(self):
+            return math.sqrt(self[0]**2 + self[1]**2 + self[2]**2)
+        def dot(self, other):
+            return self[0]*other[0] + self[1]*other[1] + self[2]*other[2]
+        def cross(self, other):
+            return Vector((
+                self[1] * other[2] - self[2] * other[1],
+                self[2] * other[0] - self[0] * other[2],
+                self[0] * other[1] - self[1] * other[0]
+            ))
+        def normalized(self):
+            l = self.length
+            return Vector((0, 0, 0)) if l < 1e-12 else Vector((self[0] / l, self[1] / l, self[2] / l))
+        def lerp(self, other, factor):
+            return Vector((self[0] + (other[0] - self[0]) * factor,
+                           self[1] + (other[1] - self[1]) * factor,
+                           self[2] + (other[2] - self[2]) * factor))
+        def copy(self):
+            return Vector(self)
+    kdtree = None
 
 class Surface:
     def __init__(self, mesh, bridge=0.02):
@@ -129,4 +171,104 @@ class Surface:
             if rad[k] > jump * ref and k < n * 0.9:
                 return pts[k + 1], (n - k - 1) / float(n), ref
         return None
+
+    def find_pinches(self, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
+        """Finds anatomical hinge creases / local cross-section minima between start and end on this surface."""
+        s = Vector(start) if not isinstance(start, Vector) else start
+        e = Vector(end) if not isinstance(end, Vector) else end
+        return find_pinches(self.co, s, e, slices=slices, span_radius=span_radius, min_t=min_t, max_t=max_t)
+
+
+def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
+    """Finds pinch points (anatomical hinge creases / local cross-section minima) between start and end.
+    coords: iterable of (x, y, z) or Vector.
+    start, end: (x, y, z) or Vector defining limb or torso axis.
+    slices: number of cross-sectional evaluation bins along the axis.
+    span_radius: optional maximum radial distance from axis to include.
+    min_t, max_t: search interval along the axis (fraction 0..1).
+    Returns:
+      list of dicts sorted by prominence (most prominent pinch first):
+      [{"t": float, "pos": Vector, "radius": float, "prominence": float}, ...]
+    """
+    s = Vector(start) if not isinstance(start, Vector) else start
+    e = Vector(end) if not isinstance(end, Vector) else end
+    ab = e - s
+    length = ab.length
+    if length < 1e-6:
+        return []
+    d = ab.normalized()
+
+    # Bin vertices into slices
+    bins = [[] for _ in range(slices)]
+    for pt in coords:
+        p = Vector(pt) if not isinstance(pt, Vector) else pt
+        ap = p - s
+        proj = ap.dot(d)
+        t = proj / length
+        if t < min_t or t > max_t:
+            continue
+        perp = ap - d * proj
+        r = perp.length
+        if span_radius is not None and r > span_radius:
+            continue
+        idx = int((t - min_t) / max(1e-9, (max_t - min_t)) * (slices - 1))
+        idx = max(0, min(slices - 1, idx))
+        bins[idx].append((p, r, t))
+
+    # Compute slice metrics
+    slice_data = []
+    for k in range(slices):
+        pts = bins[k]
+        if not pts:
+            slice_data.append(None)
+            continue
+        avg_t = sum(item[2] for item in pts) / len(pts)
+        centroid = sum((item[0] for item in pts), Vector((0, 0, 0))) / len(pts)
+        rms_r = math.sqrt(sum(item[1] ** 2 for item in pts) / len(pts))
+        slice_data.append({"t": avg_t, "pos": centroid, "radius": rms_r})
+
+    # Fill gaps by linear interpolation
+    known = [i for i, data in enumerate(slice_data) if data is not None]
+    if len(known) < 3:
+        return []
+    for i in range(slices):
+        if slice_data[i] is None:
+            left = max([k for k in known if k < i], default=None)
+            right = min([k for k in known if k > i], default=None)
+            if left is not None and right is not None:
+                alpha = (i - left) / (right - left)
+                dl = slice_data[left]; dr = slice_data[right]
+                slice_data[i] = {
+                    "t": dl["t"] + (dr["t"] - dl["t"]) * alpha,
+                    "pos": dl["pos"].lerp(dr["pos"], alpha),
+                    "radius": dl["radius"] + (dr["radius"] - dl["radius"]) * alpha
+                }
+            elif left is not None:
+                slice_data[i] = dict(slice_data[left])
+            elif right is not None:
+                slice_data[i] = dict(slice_data[right])
+
+    radii = [data["radius"] for data in slice_data]
+    smoothed = [radii[0]] + [
+        0.25 * radii[i - 1] + 0.5 * radii[i] + 0.25 * radii[i + 1]
+        for i in range(1, slices - 1)
+    ] + [radii[-1]]
+
+    pinches = []
+    for i in range(1, slices - 1):
+        if smoothed[i] < smoothed[i - 1] and smoothed[i] < smoothed[i + 1]:
+            left_peak = max(smoothed[:i])
+            right_peak = max(smoothed[i + 1:])
+            prominence = min(left_peak, right_peak) - smoothed[i]
+            if prominence > 0:
+                data = slice_data[i]
+                pinches.append({
+                    "t": round(float(data["t"]), 4),
+                    "pos": data["pos"],
+                    "radius": round(float(data["radius"]), 4),
+                    "prominence": round(float(prominence), 4)
+                })
+
+    pinches.sort(key=lambda item: item["prominence"], reverse=True)
+    return pinches
 
