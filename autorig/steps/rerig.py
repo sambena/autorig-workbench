@@ -1060,6 +1060,7 @@ def skin(mesh, arm, chains, spec, size, log):
         smooth_weights(mesh, int(spec["smooth"]))
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands") or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 

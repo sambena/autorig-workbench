@@ -383,6 +383,46 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertEqual(bound[3, 0], 1.0)
         self.assertEqual(bound[3, 2], 0.0)
 
+    def test_compute_twist_shaft_relaxation(self):
+        bone_names = ["Spine", "Spine1", "Spine2"]
+        shaft_pairs = [("Spine", "Spine1"), ("Spine1", "Spine2")]
+        bone_heads = {
+            "Spine": [0.0, 0.0, 0.0],
+            "Spine1": [0.0, 0.0, 1.0],
+            "Spine2": [0.0, 0.0, 2.0],
+        }
+        bone_tails = {
+            "Spine": [0.0, 0.0, 1.0],
+            "Spine1": [0.0, 0.0, 2.0],
+            "Spine2": [0.0, 0.0, 3.0],
+        }
+        # 3 vertices along spine shaft around joint Spine1 (Z=1.0)
+        coords = np.array([
+            [0.1, 0.0, 0.95],
+            [0.1, 0.0, 1.05],
+            [0.0, 0.0, 2.80],
+        ])
+        weights = np.array([
+            [0.9, 0.1, 0.0],
+            [0.1, 0.9, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+        edges = np.array([
+            [0, 1],  # steep step cliff of 0.8
+        ])
+        relaxed = placed_rules.compute_twist_shaft_relaxation(
+            weights, coords, edges, shaft_pairs, bone_names,
+            bone_heads=bone_heads, bone_tails=bone_tails,
+            max_twist_gradient=0.25, passes=15
+        )
+        # Gradient across edge (0, 1) on Spine1 must be relaxed to <= 0.25
+        diff = abs(relaxed[0, 1] - relaxed[1, 1])
+        self.assertLessEqual(diff, 0.26)
+        # Far vertex v2 untouched
+        np.testing.assert_allclose(relaxed[2], [0.0, 0.0, 1.0])
+        # Partition of unity preserved
+        np.testing.assert_allclose(relaxed.sum(axis=1), np.ones(3), rtol=1e-5)
+
 
 if "bpy" not in sys.modules:
     class TestPlacedRulesUnderBlender(unittest.TestCase):

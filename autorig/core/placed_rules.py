@@ -586,6 +586,166 @@ def joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log):
     log["joint_hinge_smoothed_verts"] = corrected_count
 
 
+def compute_twist_shaft_relaxation(weights, coords, edges, shaft_pairs, bone_names,
+                                   bone_heads=None, bone_tails=None,
+                                   max_twist_gradient=0.25, passes=12):
+    """Relaxes weight gradients along kinematic bone shafts (spine, neck, shoulders, arms)
+    to eliminate axial twist shearing and candy-wrapper tearing artifacts.
+    Preserves total joint partition of unity (W_P + W_C) while smoothing the relative blend t."""
+    if len(weights) == 0 or len(edges) == 0 or not shaft_pairs:
+        return weights
+
+    W = np.array(weights, copy=True, dtype=float)
+    N = len(W)
+    col = {name: i for i, name in enumerate(bone_names)}
+    P = np.array(coords, dtype=float)
+    E = np.array(edges, dtype=int)
+    bone_heads = bone_heads or {}
+    bone_tails = bone_tails or {}
+
+    for p_name, c_name in shaft_pairs:
+        if p_name not in col or c_name not in col:
+            continue
+        p_idx = col[p_name]
+        c_idx = col[c_name]
+
+        # Determine transition zone around joint pivot and along shaft
+        if c_name in bone_heads:
+            j_pos = np.array(bone_heads[c_name], dtype=float)
+        else:
+            continue
+
+        if c_name in bone_tails:
+            t_pos = np.array(bone_tails[c_name], dtype=float)
+            shaft_vec = t_pos - j_pos
+            L = float(np.linalg.norm(shaft_vec))
+        else:
+            L = 0.15 * max(1e-3, float(np.linalg.norm(P.max(0) - P.min(0))))
+
+        R = max(0.06 * L, 0.55 * max(1e-3, L))
+        dists = np.linalg.norm(P - j_pos, axis=1)
+        in_zone = dists <= R
+
+        w_sum = W[:, p_idx] + W[:, c_idx]
+        active = in_zone & (w_sum > 0.05)
+        if not np.any(active):
+            continue
+
+        t = np.zeros(N, dtype=float)
+        t[active] = W[active, c_idx] / w_sum[active]
+
+        edge_active = active[E[:, 0]] & active[E[:, 1]]
+        if not np.any(edge_active):
+            continue
+        E_active = E[edge_active]
+
+        for _ in range(passes):
+            u_idx = E_active[:, 0]
+            v_idx = E_active[:, 1]
+            dt = t[u_idx] - t[v_idx]
+            steep = np.abs(dt) > max_twist_gradient
+            if not np.any(steep):
+                break
+
+            for e_k in np.where(steep)[0]:
+                u = u_idx[e_k]
+                v = v_idx[e_k]
+                diff = t[u] - t[v]
+                excess = 0.5 * (diff - np.sign(diff) * max_twist_gradient)
+                t[u] = np.clip(t[u] - 0.5 * excess, 0.0, 1.0)
+                t[v] = np.clip(t[v] + 0.5 * excess, 0.0, 1.0)
+
+        active_indices = np.where(active)[0]
+        W[active_indices, c_idx] = w_sum[active_indices] * t[active_indices]
+        W[active_indices, p_idx] = w_sum[active_indices] * (1.0 - t[active_indices])
+
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
+def twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log):
+    """Blender mesh pass: relaxes weight gradients along spine, neck, and shoulder/arm shafts
+    to eliminate axial twist shearing and candy-wrapper tearing artifacts."""
+    if not spec.get("twist_relaxation", True):
+        return
+
+    vg = mesh.vertex_groups
+    verts = mesh.data.vertices
+    n = len(verts)
+    if n == 0 or len(mesh.data.edges) == 0:
+        return
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return
+
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((n, len(bone_names)), dtype=float)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+
+    P = np.empty(n * 3, dtype=float)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    edges = np.array([tuple(e.vertices) for e in mesh.data.edges], dtype=int)
+    bone_heads = {b.name: tuple(b.head_local) for b in arm.data.bones}
+    bone_tails = {b.name: tuple(b.tail_local) for b in arm.data.bones}
+
+    shaft_pairs = []
+    if "twist_pairs" in spec:
+        for item in spec["twist_pairs"]:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                shaft_pairs.append((item[0], item[1]))
+            elif isinstance(item, dict) and "parent" in item and "child" in item:
+                shaft_pairs.append((item["parent"], item["child"]))
+    else:
+        for b in arm.data.bones:
+            if not b.use_deform or not b.parent or not b.parent.use_deform:
+                continue
+            p_name, c_name = b.parent.name, b.name
+            p_lower, c_lower = p_name.lower(), c_name.lower()
+            is_shaft = (
+                any(k in c_lower for k in ("spine", "neck", "head", "shoulder", "clavicle", "arm", "forearm")) or
+                any(k in p_lower for k in ("spine", "hips", "neck", "shoulder", "clavicle", "arm"))
+            )
+            if is_shaft:
+                shaft_pairs.append((p_name, c_name))
+
+    passes = int(spec.get("twist_passes", 12))
+    max_gradient = float(spec.get("twist_max_gradient", 0.25))
+
+    cleaned_W = compute_twist_shaft_relaxation(
+        W, P, edges, shaft_pairs, bone_names,
+        bone_heads=bone_heads, bone_tails=bone_tails,
+        max_twist_gradient=max_gradient, passes=passes
+    )
+
+    diff = np.abs(cleaned_W - W).sum(axis=1)
+    corrected_count = int((diff > 1e-3).sum())
+
+    if corrected_count > 0:
+        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
+        for vi in np.where(diff > 1e-3)[0]:
+            for b_idx, g_obj in group_objs.items():
+                w_new = float(cleaned_W[vi, b_idx])
+                if w_new > 1e-4:
+                    g_obj.add([int(vi)], w_new, 'REPLACE')
+                else:
+                    try:
+                        g_obj.remove([int(vi)])
+                    except RuntimeError:
+                        pass
+
+    log["twist_shaft_relaxed_verts"] = corrected_count
+
+
 def find_nearest_bone_segment(point, bone_segments):
     """Finds the nearest bone segment to a 3D point.
     bone_segments: list of (name, head_xyz, tail_xyz)
