@@ -479,3 +479,87 @@ export function defaultCameraView(info, bones, box) {
   return isHumanoidOrBiped(info, bones, box) ? "hero" : "side";
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Orientation & Axis Locking: Pitch, Yaw, Roll, Leveling, and Ground Floor Calculations
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Converts spherical polar and azimuthal angles (in radians) to human-readable degrees.
+ * Pitch is 0° at horizontal ground level, +90° from above, -90° from below.
+ * Yaw is 0°..360° around the vertical Y axis. Roll is camera bank angle (0°).
+ */
+export function computeOrientation(polarAngle, azimuthalAngle) {
+  const pitchDeg = Math.round((90 - (polarAngle * 180 / Math.PI)) * 10) / 10;
+  let yawDeg = Math.round((((azimuthalAngle * 180 / Math.PI) % 360 + 360) % 360) * 10) / 10;
+  if (yawDeg === 360) yawDeg = 0;
+  return { pitchDeg, yawDeg, rollDeg: 0.0 };
+}
+
+/** Computes the clamped OrbitControls angle bounds when locking axes of rotation.
+ * Locking X freezes polar angle (pitch). Locking Y freezes azimuthal angle (yaw).
+ */
+export function clampAnglesToLocked(currentPolar, currentAzimuth, lockX, lockY) {
+  return {
+    minPolar: lockX ? currentPolar : 0.001,
+    maxPolar: lockX ? currentPolar : Math.PI - 0.001,
+    minAzimuth: lockY ? currentAzimuth : -Infinity,
+    maxAzimuth: lockY ? currentAzimuth : Infinity,
+  };
+}
+
+/** Calculates new camera position coordinates to level the view parallel to the ground (pitch = 0°)
+ * while preserving distance to target, or setting an exact pitch and yaw.
+ */
+export function calculateLeveledCameraPosition(cameraPos, targetPos, pitchDeg = 0, yawDeg = null) {
+  const cx = cameraPos?.x ?? cameraPos?.[0] ?? 0;
+  const cy = cameraPos?.y ?? cameraPos?.[1] ?? 0;
+  const cz = cameraPos?.z ?? cameraPos?.[2] ?? 2;
+  const tx = targetPos?.x ?? targetPos?.[0] ?? 0;
+  const ty = targetPos?.y ?? targetPos?.[1] ?? 0;
+  const tz = targetPos?.z ?? targetPos?.[2] ?? 0;
+
+  const dx = cx - tx, dy = cy - ty, dz = cz - tz;
+  const radius = Math.max(1e-4, Math.hypot(dx, dy, dz));
+
+  const phi = Math.max(0.001, Math.min(Math.PI - 0.001, (90 - pitchDeg) * Math.PI / 180));
+  const theta = (yawDeg !== null && yawDeg !== undefined)
+    ? (yawDeg * Math.PI / 180)
+    : Math.atan2(dx, dz);
+
+  const sinPhiR = radius * Math.sin(phi);
+  return {
+    x: Math.round((tx + sinPhiR * Math.sin(theta)) * 10000) / 10000,
+    y: Math.round((ty + radius * Math.cos(phi)) * 10000) / 10000,
+    z: Math.round((tz + sinPhiR * Math.cos(theta)) * 10000) / 10000,
+  };
+}
+
+/** Computes ground plane dimensions and position from a model's bounding box so feet sit flush on ground. */
+export function computeGroundPlaneParameters(box) {
+  if (!box) {
+    return { groundY: 0, center: [0, 0, 0], extent: 4, gridDim: 8, divisions: 16 };
+  }
+  const minX = box.min?.x ?? box.min?.[0] ?? -0.5;
+  const minY = box.min?.y ?? box.min?.[1] ?? 0;
+  const minZ = box.min?.z ?? box.min?.[2] ?? -0.5;
+  const maxX = box.max?.x ?? box.max?.[0] ?? 0.5;
+  const maxY = box.max?.y ?? box.max?.[1] ?? 1.0;
+  const maxZ = box.max?.z ?? box.max?.[2] ?? 0.5;
+
+  const szX = maxX - minX, szY = maxY - minY, szZ = maxZ - minZ;
+  const extent = Math.max(szX, szZ, szY, 1.0);
+  const gridDim = Math.max(4, Math.ceil(extent * 2.5));
+  const divisions = Math.max(10, gridDim * 2);
+
+  return {
+    groundY: minY,
+    center: [
+      Math.round((minX + szX / 2) * 10000) / 10000,
+      Math.round(minY * 10000) / 10000,
+      Math.round((minZ + szZ / 2) * 10000) / 10000
+    ],
+    extent,
+    gridDim,
+    divisions,
+  };
+}
+

@@ -292,5 +292,69 @@ test("universal camera system: views, labels, cycling, and humanoid detection", 
   assert.equal(L.defaultCameraView({ archetype: "quadruped" }), "side");
 });
 
+test("orientation angles, axis locking, camera leveling, and ground plane", () => {
+  // 1. Orientation angles: pitch, yaw, roll
+  // When polar angle is PI/2 (horizontal ground level), pitch should be 0.0°
+  const horiz = L.computeOrientation(Math.PI / 2, 0);
+  assert.equal(horiz.pitchDeg, 0);
+  assert.equal(horiz.yawDeg, 0);
+  assert.equal(horiz.rollDeg, 0);
+
+  // Top-down view (polar = 0) -> pitch = +90°
+  const top = L.computeOrientation(0, Math.PI / 2);
+  assert.equal(top.pitchDeg, 90);
+  assert.equal(top.yawDeg, 90);
+
+  // Bottom-up view (polar = PI) -> pitch = -90°
+  const bottom = L.computeOrientation(Math.PI, -Math.PI / 2);
+  assert.equal(bottom.pitchDeg, -90);
+  assert.equal(bottom.yawDeg, 270);
+
+  // 2. Axis locking: clampAnglesToLocked
+  const unlocked = L.clampAnglesToLocked(1.2, 0.5, false, false);
+  assert.equal(unlocked.minPolar, 0.001);
+  assert.equal(unlocked.maxPolar, Math.PI - 0.001);
+  assert.equal(unlocked.minAzimuth, -Infinity);
+  assert.equal(unlocked.maxAzimuth, Infinity);
+
+  // Lock X freezes polar angle (pitch)
+  const lockedX = L.clampAnglesToLocked(1.2, 0.5, true, false);
+  assert.equal(lockedX.minPolar, 1.2);
+  assert.equal(lockedX.maxPolar, 1.2);
+  assert.equal(lockedX.minAzimuth, -Infinity);
+
+  // Lock Y freezes azimuthal angle (yaw)
+  const lockedY = L.clampAnglesToLocked(1.2, 0.5, false, true);
+  assert.equal(lockedY.minPolar, 0.001);
+  assert.equal(lockedY.minAzimuth, 0.5);
+  assert.equal(lockedY.maxAzimuth, 0.5);
+
+  // Lock both X and Y
+  const lockedBoth = L.clampAnglesToLocked(1.2, 0.5, true, true);
+  assert.equal(lockedBoth.minPolar, 1.2);
+  assert.equal(lockedBoth.maxPolar, 1.2);
+  assert.equal(lockedBoth.minAzimuth, 0.5);
+  assert.equal(lockedBoth.maxAzimuth, 0.5);
+
+  // 3. Camera leveling: calculateLeveledCameraPosition
+  // Camera at (0, 2, 2) looking at (0, 0, 0), pitchDeg=0
+  const leveled = L.calculateLeveledCameraPosition({ x: 0, y: 2, z: 2 }, { x: 0, y: 0, z: 0 }, 0);
+  // At pitch=0, Y must equal target Y (0)
+  assert.equal(leveled.y, 0);
+  assert.ok(Math.abs(Math.hypot(leveled.x, leveled.z) - Math.hypot(0, 2, 2)) < 1e-3);
+
+  // 4. Ground plane parameters: computeGroundPlaneParameters
+  const box = {
+    min: { x: -0.5, y: -0.1, z: -0.2 },
+    max: { x: 0.5, y: 1.7, z: 0.4 }
+  };
+  const ground = L.computeGroundPlaneParameters(box);
+  assert.equal(ground.groundY, -0.1); // feet contact level
+  assert.equal(ground.center[0], 0.0);
+  assert.equal(ground.center[1], -0.1);
+  assert.equal(ground.center[2], 0.1);
+  assert.ok(ground.gridDim >= 4);
+});
+
 console.log(`${n} passed`);
 

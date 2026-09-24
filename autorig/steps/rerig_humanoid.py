@@ -115,15 +115,21 @@ def measure(co, lo, size, h, main=None):
         raw[side + "ball"] = (fx, ay + (toe[1] - ay) * 0.68, 0.035)
 
         # Anatomical crease refinement for elbow via cross-section pinch analysis
+        # Ensure shoulder span is anatomically valid (never placed inside the chest column)
+        shoulder_x = min(x.get("shoulder", 0.38), 0.385)
         elbow_x = x["elbow"]
-        arm_lo_x = min(X(x["wrist"]), X(x["shoulder"]))
-        arm_hi_x = max(X(x["wrist"]), X(x["shoulder"]))
+        forearm_span = abs(elbow_x - x.get("wrist", 0.11))
+        if forearm_span > 0.05 and (shoulder_x - elbow_x) > 1.35 * forearm_span:
+            shoulder_x = round(elbow_x + 1.25 * forearm_span, 4)
+
+        arm_lo_x = min(X(x["wrist"]), X(shoulder_x))
+        arm_hi_x = max(X(x["wrist"]), X(shoulder_x))
         arm_m = M[(M[:, 0] >= arm_lo_x) & (M[:, 0] <= arm_hi_x) & (np.abs(M[:, 2] - z["arm"]) <= 0.12)]
         if len(arm_m) > 40:
             try:
                 import geo
                 mid_y = float(np.median(arm_m[:, 1]))
-                start_x = X(x["shoulder"])
+                start_x = X(shoulder_x)
                 end_x = X(x["wrist"])
                 pinches = geo.find_pinches(arm_m, (start_x, mid_y, z["arm"]), (end_x, mid_y, z["arm"]), slices=25, min_t=0.25, max_t=0.75)
                 if pinches:
@@ -134,14 +140,13 @@ def measure(co, lo, size, h, main=None):
                 pass
 
         arm = {}
-        for j, f in (("upper", (x["shoulder"] + elbow_x) / 2), ("elbow", elbow_x), ("wrist", x["wrist"]),
+        for j, f in (("upper", (shoulder_x + elbow_x) / 2), ("elbow", elbow_x), ("wrist", x["wrist"]),
                      ("knuckle", x["knuckle"])):
             s = slab_x(X(f), z["arm"] - 0.09, z["arm"] + 0.09)
             arm[j] = np.array((X(f), float(np.median(s[:, 1])), float(np.median(s[:, 2]))))
-        # the shoulder joint on the upper arm's own line, not a slice through the pauldron and the chest
-        d = arm["elbow"] - arm["upper"]
-        t = (X(x["shoulder"]) - arm["upper"][0]) / d[0]
-        raw[side + "shoulder"] = tuple(arm["upper"] + d * t)
+        # Shoulder joint aligned in the coronal plane of the upper torso and upper arm
+        torso_y = (spine_y(z["spine2"]) + spine_y(z["neck"])) * 0.5
+        raw[side + "shoulder"] = (X(shoulder_x), torso_y, float(arm["upper"][2]))
         for j in ("elbow", "wrist", "knuckle"): raw[side + j] = tuple(arm[j])
         tip = N[(N[:, 0] >= 0.985) if sgn > 0 else (N[:, 0] <= 0.015)]
         raw[side + "tip"] = (X(x["tip"]), float(np.median(tip[:, 1])), float(np.median(tip[:, 2])))

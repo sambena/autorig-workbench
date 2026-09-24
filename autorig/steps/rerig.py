@@ -1050,16 +1050,16 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.membrane_pass(mesh, arm, chains, spec, size, log)
     if spec.get("parts"):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("smooth"):
+        # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
+        # Run before rigid-piece pass so loose pieces still end up rigid.
+        smooth_weights(mesh, int(spec["smooth"]))
     if spec.get("rigid_islands") or spec.get("rigid_armor"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("smooth"):
-        # Bone heat on a thick body leaves patchy weights behind it (a humanoid's back, behind the chest); a few
-        # smoothing passes even them out. Before the rigid-piece pass, so loose pieces still end up rigid.
-        smooth_weights(mesh, int(spec["smooth"]))
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
     to_body = set()

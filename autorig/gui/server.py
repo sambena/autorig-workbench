@@ -718,9 +718,10 @@ def make_handler(app):
                 if not self._host_ok() or not self._token_ok(q):
                     return self._send(403, "<p>Open the link Autorig Workbench printed in its console (it carries a "
                                            "session token).</p>", "text/html; charset=utf-8")
-                page = app.page.replace("__AUTORIG_TOKEN__", app.token)
+                with open(os.path.join(HERE, "index.html"), encoding="utf-8") as fh:
+                    page = fh.read().replace("__AUTORIG_TOKEN__", app.token)
                 return self._send(200, page, "text/html; charset=utf-8",
-                                  {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
+                                  {"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
             if path == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
             # ---- results viewer (gui/viewer_api.py): its code and vendored three.js need only the Host check

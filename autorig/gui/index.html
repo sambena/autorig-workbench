@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Autorig Workbench: the one page of the local GUI (served by gui/server.py). -->
+<!-- Autorig Workbench: modern unified desktop-class workbench UI. Served by gui/server.py. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -8,637 +8,801 @@
 <title>Autorig Workbench</title>
 <style>
 :root {
-  --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2230; --muted: #667085; --line: #d9dde5; --accent: #2f6fdb;
-  --accent-ink: #ffffff; --pass: #1f8a4c; --pass-bg: #e3f4ea; --fail: #c62f2f; --fail-bg: #fbe5e5; --warn: #9a6a00;
-  --warn-bg: #fff3d6; --log-bg: #11151d; --log-ink: #cfd6e4; --chip: #eef1f6; --sel: #e7efff;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12151b; --panel: #1b1f27; --ink: #e6e9ef; --muted: #98a2b3; --line: #2c3340; --accent: #5b8ff0;
-    --accent-ink: #0b0e14; --pass: #4cc17e; --pass-bg: #173323; --fail: #f07070; --fail-bg: #3a1a1a; --warn: #e8b64a;
-    --warn-bg: #3a2f14; --log-bg: #0b0d12; --log-ink: #c9d1e0; --chip: #252b36; --sel: #22304a;
-  }
+  --bg: #12151b; --panel: #1b1f27; --panel2: #212632; --ink: #e6e9ef; --muted: #949eb2;
+  --line: #2c3340; --accent: #4378ff; --accent-hover: #5b8ff0; --accent-ink: #ffffff;
+  --pass: #3ec479; --pass-bg: rgba(62, 196, 121, 0.15);
+  --fail: #f26666; --fail-bg: rgba(242, 102, 102, 0.15);
+  --warn: #e8b64a; --warn-bg: rgba(232, 182, 74, 0.15);
+  --log-bg: #0b0d12; --log-ink: #cfd6e4; --chip: #252b36; --sel: #243552;
+  --header-h: 46px;
 }
 * { box-sizing: border-box; }
-body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
-header { display: flex; align-items: baseline; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
-header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
-header .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-main { display: grid; grid-template-columns: 320px 1fr; gap: 14px; padding: 14px; align-items: start; }
-@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
-main > section { min-width: 0; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-.panel + .panel { margin-top: 14px; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 8px; }
-h3 { font-size: 14px; margin: 14px 0 6px; }
-button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--accent); }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+html, body {
+  margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden;
+  background: var(--bg); color: var(--ink);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  display: flex; flex-direction: column;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button {
+  font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; display: inline-flex; align-items: center;
+  gap: 5px; justify-content: center; transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) { border-color: var(--accent); background: var(--panel2); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 button.danger { color: var(--fail); }
-button:disabled { opacity: .45; cursor: not-allowed; }
-input[type=text], textarea { font: inherit; width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-textarea { font-family: ui-monospace, Consolas, monospace; font-size: 12px; min-height: 52px; }
-label { font-size: 12px; color: var(--muted); display: block; margin: 6px 0 2px; }
-.drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); transition: .15s; }
-.drop.over { border-color: var(--accent); background: var(--sel); color: var(--ink); }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.row > .grow { flex: 1; min-width: 0; }
-.models { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
-.models .group { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 8px 6px 2px; }
-.models li.m { padding: 5px 6px; border-radius: 6px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
-.models li.m:hover { background: var(--chip); }
-.models li.m.sel { background: var(--sel); }
-.models .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip { font-size: 10.5px; padding: 1px 6px; border-radius: 9px; background: var(--chip); color: var(--muted); white-space: nowrap; }
-.chip.pass { background: var(--pass-bg); color: var(--pass); font-weight: 600; }
-.chip.fail { background: var(--fail-bg); color: var(--fail); font-weight: 600; }
-.chip.check { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.small { padding: 2px 7px; font-size: 12px; }
+button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+input[type=text], input[type=number], select, textarea {
+  font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink);
+}
+textarea { font-family: ui-monospace, Consolas, monospace; font-size: 12px; min-height: 52px; resize: vertical; }
+
+/* ---- Header (2-Tier Desktop Layout: Menu Bar + Workspace Toolbar) ---- */
+header.app-header {
+  display: flex; flex-direction: column; flex-shrink: 0; z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3); background: var(--panel);
+}
+.app-menubar {
+  height: 28px; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; padding: 0 10px; gap: 6px; flex-shrink: 0;
+}
+.brand { font-weight: 750; font-size: 14px; letter-spacing: .2px; display: flex; align-items: center; gap: 6px; margin-right: 8px; white-space: nowrap; }
+.brand .logo-icon { width: 16px; height: 16px; fill: var(--accent); }
+
+nav.app-menu { display: flex; align-items: center; gap: 1px; }
+.menu-item { position: relative; }
+.menu-item > button {
+  background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 3px 8px;
+  color: var(--ink); font-size: 12.5px; font-weight: 500;
+}
+.menu-item > button:hover, .menu-item.open > button { background: var(--chip); border-color: var(--line); }
+.menu-dropdown {
+  position: absolute; top: calc(100% + 2px); left: 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 7px; padding: 4px 0; min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  display: none; flex-direction: column; z-index: 200; backdrop-filter: blur(8px);
+}
+.menu-item.open .menu-dropdown { display: flex; }
+.menu-dropdown button, .menu-dropdown a {
+  background: transparent; border: none; border-radius: 0; text-align: left; justify-content: flex-start;
+  padding: 6px 14px; font-size: 12.5px; color: var(--ink); width: 100%; display: flex; align-items: center;
+}
+.menu-dropdown button:hover, .menu-dropdown a:hover { background: var(--accent); color: var(--accent-ink); text-decoration: none; }
+.menu-dropdown .shortcut { margin-left: auto; font-size: 11px; opacity: .7; padding-left: 12px; }
+.menu-dropdown hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+
+.app-toolbar {
+  height: 38px; background: var(--panel2); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; padding: 0 10px; gap: 8px; justify-content: space-between;
+  flex-shrink: 0;
+}
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.toolbar-label { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600; letter-spacing: .4px; }
+
+.model-switcher { display: flex; align-items: center; gap: 6px; }
+.model-switcher select {
+  font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); max-width: 240px; text-overflow: ellipsis;
+}
+.mode-pills { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.mode-pills button { border: none; border-radius: 0; padding: 4px 10px; background: var(--chip); font-size: 12px; }
+.mode-pills button.on { background: var(--accent); color: var(--accent-ink); }
+
+.header-spacer { flex: 1; }
+
+.job-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; background: var(--warn-bg);
+  color: var(--warn); border: 1px solid var(--warn); border-radius: 12px; font-size: 11px;
+}
+.spinner {
+  width: 9px; height: 9px; border: 2px solid var(--warn); border-top-color: transparent;
+  border-radius: 50%; animation: spin .8s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.drawer-toggles { display: inline-flex; gap: 4px; align-items: center; }
+.chip { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--chip); color: var(--muted); font-weight: 600; cursor: pointer; }
+.chip.pass { background: var(--pass-bg); color: var(--pass); }
+.chip.fail { background: var(--fail-bg); color: var(--fail); }
+.chip.check { background: var(--warn-bg); color: var(--warn); }
 .chip.on { color: var(--ink); }
-.steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-.why { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
-.why li { margin: 1px 0; }
-pre.log { background: var(--log-bg); color: var(--log-ink); border-radius: 6px; padding: 10px; height: 260px; overflow: auto; margin: 0; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.jobline { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 13px; }
-.state { font-weight: 600; }
-.state.done { color: var(--pass); } .state.failed, .state.cancelled { color: var(--fail); } .state.running, .state.queued { color: var(--warn); }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+
+/* Responsive styles to keep buttons aligned and prevent overflow */
+@media (max-width: 950px) {
+  .btn-text { display: none; }
+  .toolbar-label { display: none; }
+  .model-switcher select { max-width: 150px; }
+  .menu-item > button { padding: 3px 6px; font-size: 12px; }
+}
+@media (max-width: 700px) {
+  .brand { font-size: 13px; }
+  .brand .logo-icon { width: 14px; height: 14px; }
+  .mode-pills button { padding: 3px 7px; font-size: 11.5px; }
+  .model-switcher select { max-width: 120px; }
+}
+
+/* ---- Main Viewport Area ---- */
+main.app-main {
+  flex: 1 1 0; min-height: 0; min-width: 0; position: relative; display: flex; width: 100%; overflow: hidden;
+}
+#view {
+  flex: 1 1 0; position: relative; min-width: 0; min-height: 0; width: 100%; height: 100%; overflow: hidden; background: #15181e;
+}
+#stage { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+#stage canvas { display: block; width: 100% !important; height: 100% !important; }
+
+.hud {
+  position: absolute; background: rgba(20, 23, 30, 0.86); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 12px; backdrop-filter: blur(8px); z-index: 10;
+}
+#hudModelInfo {
+  top: 12px; left: 12px; min-width: 200px; max-width: 40vw; pointer-events: none;
+}
+#hudModelInfo .model-name { font-size: 16px; font-weight: 700; }
+#hudModelInfo .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+#viewbar {
+  bottom: calc(var(--log-drawer-offset, 34px) + 12px); left: 50%; transform: translateX(-50%); display: flex; gap: 6px;
+  align-items: center; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 24px);
+  z-index: 20; transition: bottom .22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.log-open #viewbar,
+#view:has(#logDrawer.open) #viewbar,
+#logDrawer.open ~ * #viewbar {
+  bottom: 262px;
+}
+#viewbar label { color: var(--muted); display: flex; gap: 4px; align-items: center; font-size: 12px; }
+#viewbar input[type=range] { width: 85px; }
+
+/* Top-Right Orientation & Axis Lock HUD */
+#orientTool {
+  top: 12px;
+  right: calc(var(--inspector-offset, 440px) + 12px);
+  min-width: 200px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: right .22s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+aside#inspectorDrawer.open ~ #orientTool,
+#view:has(aside#inspectorDrawer.open) #orientTool {
+  right: 454px;
+}
+#orientTool .orient-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+  gap: 6px;
+}
+#orientTool .orient-head span {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+#orientTool .orient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+#orientTool .orient-axis {
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+}
+#orientTool .orient-val {
+  flex: 1;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  background: var(--panel2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: right;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+#orientTool .orient-val:hover {
+  border-color: var(--line);
+  color: var(--accent);
+}
+#orientTool .orient-lock {
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  white-space: nowrap;
+}
+#orientTool .orient-lock:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+#orientTool .orient-lock.locked {
+  background: var(--accent);
+  color: #0b0e14;
+  border-color: var(--accent);
+  font-weight: 650;
+}
+
+#legend { left: 12px; top: 72px; max-width: 250px; font-size: 12px; display: none; }
+#legend h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .5px; }
+#boneinfo { right: 12px; top: 12px; width: 260px; display: none; }
+#boneinfo .n { font-size: 14px; font-weight: 650; }
+#banner {
+  left: 50%; top: 12px; transform: translateX(-50%); display: none; background: var(--warn-bg);
+  color: var(--warn); border-color: var(--warn); font-weight: 600; text-align: center;
+}
+#msg {
+  left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; display: none;
+  max-width: 440px; padding: 18px 24px;
+}
+#msg .big { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+
+.lbl {
+  font: 11px/1 system-ui, sans-serif; color: #e8edf6; background: rgba(10, 12, 18, .86);
+  padding: 2.5px 5px; border-radius: 4px; white-space: nowrap; pointer-events: auto; cursor: pointer;
+  border-left: 3px solid #666; box-shadow: 0 2px 6px rgba(0,0,0,.5);
+}
+.lbl.sel { background: var(--accent); color: #0b0e14; font-weight: 650; }
+.lbl.dim { opacity: .45; }
+.lbl.spot { background: rgba(140, 20, 20, .9); border-left-color: #ff4a4a; color: #ffd9d9; }
+
+/* ---- Slide-over Rig Inspector Drawer ---- */
+aside#inspectorDrawer {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 440px; max-width: calc(100vw - 40px);
+  background: var(--panel); border-left: 1px solid var(--line); z-index: 30;
+  display: flex; flex-direction: column; transform: translateX(100%);
+  transition: transform .22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: -4px 0 24px rgba(0,0,0,.5);
+}
+aside#inspectorDrawer.open { transform: translateX(0); }
+.drawer-header {
+  padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center;
+  gap: 8px; background: var(--panel2); flex-shrink: 0;
+}
+.drawer-header h2 { font-size: 14px; margin: 0; font-weight: 650; }
+.drawer-header .grow { flex: 1; }
+.drawer-actions {
+  display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+  background: var(--panel); flex-wrap: wrap; flex-shrink: 0;
+}
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 8px; flex-shrink: 0; }
+.tabs button {
+  border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+  padding: 8px 10px; color: var(--muted); font-size: 12.5px;
+}
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .count { font-size: 10px; border-radius: 8px; padding: 0 5px; margin-left: 3px; background: var(--fail-bg); color: var(--fail); }
+.tabs .count.w { background: var(--warn-bg); color: var(--warn); }
+#pane { overflow: auto; padding: 12px 14px 40px; flex: 1; min-height: 0; user-select: text; }
+
+.group { margin: 6px 0 14px; }
+.group > h3 {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
+  margin: 12px 0 4px; border-bottom: 1px solid var(--line); padding-bottom: 3px; cursor: pointer;
+}
+.group > h3::before { content: "▾ "; }
+.group.shut > h3::before { content: "▸ "; }
+.group.shut > .fields { display: none; }
+.field { padding: 6px 0 8px; border-bottom: 1px dashed rgba(255,255,255,.05); }
+.field > .lab { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; }
+.field > .lab .grow { flex: 1; }
+.field .help { color: var(--muted); font-size: 11.5px; margin: 2px 0 4px; }
+.field.err { background: linear-gradient(90deg, rgba(242,102,102,.1), transparent); }
+.field .ferr { color: var(--fail); font-size: 12px; }
+.field .fwarn { color: var(--warn); font-size: 12px; }
+.sub-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0; padding: 4px 6px; background: var(--panel2); border-radius: 6px; }
+
+/* ---- Collapsible Bottom Log Console ---- */
+#logDrawer {
+  position: absolute; left: 0; right: 0; bottom: 0; background: var(--log-bg);
+  border-top: 1px solid var(--line); z-index: 25; display: flex; flex-direction: column;
+  height: 250px; transform: translateY(calc(100% - 32px));
+  transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.5);
+}
+#logDrawer.open { transform: translateY(0); }
+.log-header {
+  height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+  background: var(--panel); border-bottom: 1px solid var(--line); cursor: pointer; flex-shrink: 0;
+}
+.log-header .meta { font-size: 12px; color: var(--muted); }
+.log-header .state { font-weight: 600; }
+.log-header .state.done { color: var(--pass); }
+.log-header .state.failed, .log-header .state.cancelled { color: var(--fail); }
+.log-header .state.running, .log-header .state.queued { color: var(--warn); }
+pre.log {
+  flex: 1; margin: 0; padding: 10px 14px; background: var(--log-bg); color: var(--log-ink);
+  overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ---- Dialog Modals ---- */
+dialog {
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+  padding: 0; width: 680px; max-width: calc(100vw - 32px); max-height: calc(100vh - 40px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.7); backdrop-filter: blur(12px);
+}
+dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(4px); }
+.dialog-header {
+  padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center;
+  justify-content: space-between; background: var(--panel2);
+}
+.dialog-header h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.dialog-body { padding: 16px 18px 24px; overflow: auto; max-height: calc(100vh - 140px); user-select: text; }
+
+.drop {
+  border: 2px dashed var(--line); border-radius: 8px; padding: 20px; text-align: center;
+  color: var(--muted); transition: border-color .15s, background .15s; cursor: pointer;
+}
+.drop.over { border-color: var(--accent); background: var(--sel); color: var(--ink); }
+
+.sample-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.sample-card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; }
+.sample-card .thumb { width: 100%; height: 130px; object-fit: contain; background: #000; border-radius: 6px; border: 1px solid var(--line); }
+.sample-card .actions { margin-top: auto; display: flex; gap: 8px; padding-top: 10px; flex-wrap: wrap; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
 td.num { font-variant-numeric: tabular-nums; }
-.verdict { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 6px; margin-right: 8px; }
-.verdict.pass { background: var(--pass-bg); color: var(--pass); } .verdict.fail { background: var(--fail-bg); color: var(--fail); }
-.verdict.check { background: var(--warn-bg); color: var(--warn); }
 tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--chip); }
-.warns { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin-top: 8px; }
-.pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.verdict { display: inline-block; font-weight: 700; padding: 2px 10px; border-radius: 6px; font-size: 13px; }
+.verdict.pass { background: var(--pass-bg); color: var(--pass); }
+.verdict.fail { background: var(--fail-bg); color: var(--fail); }
+.verdict.check { background: var(--warn-bg); color: var(--warn); }
+.warns { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-top: 8px; }
+.pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .pics figure { margin: 0; }
-.pics img, .strip img { width: 100%; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; }
-figcaption { font-size: 12px; color: var(--muted); margin-top: 3px; }
-.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.cliprow { margin-bottom: 10px; }
-.cliprow .cn { font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
-.empty { color: var(--muted); font-size: 13px; }
-.kv td:first-child { color: var(--muted); width: 38%; }
+.pics img { width: 100%; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; }
+figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.why { font-size: 12px; color: var(--muted); }
+.row { display: flex; gap: 8px; align-items: center; }
+.grow { flex: 1; }
 .scroll { overflow-x: auto; }
-.meta, .why, td { overflow-wrap: anywhere; }
-.msg { font-size: 12.5px; margin-top: 6px; }
-.msg.err { color: var(--fail); } .msg.ok { color: var(--pass); }
-#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; align-items: center; justify-content: center; z-index: 10; cursor: zoom-out; }
+
+#flat { position: relative; }
+#flat.large { position: fixed; left: 10px; top: 54px; width: calc(100vw - 500px); z-index: 100; background: #f7f7f7; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.6); }
+#flat img { width: 100%; display: block; border-radius: 5px; cursor: crosshair; }
+#flat canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+
+#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 999; cursor: zoom-out; }
 #zoom img { max-width: 95vw; max-height: 95vh; background: #fff; border-radius: 6px; }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 8px; flex-wrap: wrap; }
-.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: var(--muted); }
-.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
-.sample-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 12px; }
-.sample-card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; }
-.sample-card .thumb { width: 100%; height: 140px; object-fit: contain; background: #fff; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
-.sample-card .actions { margin-top: auto; display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
 </head>
 <body>
-<header>
-  <h1>Autorig Workbench</h1>
-  <span class="meta" id="meta"></span>
-  <span style="flex:1"></span>
-  <button id="bSamples" type="button" style="font-size:12px;padding:3px 9px" title="Try built-in CC0 models (beetle, biped, canine, wyvern, pedestal) with 1 click">Samples Gallery</button>
-  <a id="helpLink" href="/help.html" target="_blank" style="text-decoration:none"><button type="button" style="font-size:12px;padding:3px 9px" title="Comprehensive guide with diagrams, button walkthroughs, bone placement, and troubleshooting">Help &amp; Guide ↗</button></a>
+
+<!-- Top Application Header: Tier 1 Menu Bar + Tier 2 Toolbar -->
+<header class="app-header">
+  <!-- Tier 1: Menu Bar -->
+  <div class="app-menubar">
+    <div class="brand">
+      <svg class="logo-icon" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      Autorig
+    </div>
+
+    <nav class="app-menu">
+      <!-- File Menu -->
+      <div class="menu-item">
+        <button type="button">File ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="import-model">📥 Import / Add Model… <span class="shortcut">Ctrl+O</span></button>
+          <button type="button" data-action="samples-gallery">🎨 Sample Models Gallery…</button>
+          <hr>
+          <button type="button" data-action="open-output">📂 Open Output Folder</button>
+          <button type="button" data-action="refresh">🔄 Refresh State</button>
+        </div>
+      </div>
+
+      <!-- Model Menu -->
+      <div class="menu-item">
+        <button type="button">Model ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="model-details">📋 Model Details &amp; Notes…</button>
+          <button type="button" data-action="mesh-doctor">🩺 Mesh Doctor (Diagnostics)…</button>
+          <button type="button" data-action="facing-views">🖼️ Survey Facing Views…</button>
+        </div>
+      </div>
+
+      <!-- Rig & Fix Menu -->
+      <div class="menu-item">
+        <button type="button">Rig &amp; Fix ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="suggest-skeleton">💡 Suggest Skeleton (Auto Heuristics)</button>
+          <button type="button" data-action="auto-tune">⚡ Auto-Tune Optimizer</button>
+          <button type="button" data-action="toggle-inspector">📐 Toggle Rig Inspector Drawer <span class="shortcut">Ctrl+I</span></button>
+          <hr>
+          <button type="button" data-action="undo">↩️ Undo <span class="shortcut">Ctrl+Z</span></button>
+          <button type="button" data-action="revert">🔁 Revert to Disk</button>
+          <button type="button" data-action="save-spec">💾 Save rig.json <span class="shortcut">Ctrl+S</span></button>
+          <button type="button" data-action="save-rerig">🚀 Save &amp; Re-Rig <span class="shortcut">Ctrl+Shift+S</span></button>
+        </div>
+      </div>
+
+      <!-- Pipeline Menu -->
+      <div class="menu-item">
+        <button type="button">Pipeline ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="pipe-survey">1️⃣ Survey Mesh</button>
+          <button type="button" data-action="pipe-rig">2️⃣ Rig &amp; Skin</button>
+          <button type="button" data-action="pipe-trim">3️⃣ Trim &amp; Decimate</button>
+          <button type="button" data-action="pipe-audit">4️⃣ QA Audit</button>
+          <button type="button" data-action="pipe-clips">5️⃣ Author Clips</button>
+          <button type="button" data-action="pipe-publish">6️⃣ Publish Card</button>
+          <button type="button" data-action="pipe-preview">7️⃣ Compile Preview GLB</button>
+          <hr>
+          <button type="button" data-action="pipe-all">⚡ Run All Pipeline Steps</button>
+          <hr>
+          <button type="button" data-action="batch-rig-all">📦 Batch: Rig All Models</button>
+          <button type="button" data-action="batch-audit-all">🔍 Batch: Audit All Models</button>
+          <button type="button" data-action="batch-audit-failed">⚠️ Batch: Audit Failed Only</button>
+        </div>
+      </div>
+
+      <!-- QA & Test Menu -->
+      <div class="menu-item">
+        <button type="button">QA &amp; Test ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="run-audit">🧪 Run QA Audit</button>
+          <button type="button" data-action="view-audit">📊 View QA Audit Report…</button>
+          <button type="button" data-action="collection-table">📋 Collection Audit Table…</button>
+          <hr>
+          <button type="button" data-action="toggle-bend-test">🦵 Live Limb Bend Test</button>
+          <button type="button" data-action="toggle-tears">💥 Extreme Pose Tears Overlay</button>
+        </div>
+      </div>
+
+      <!-- Export Menu -->
+      <div class="menu-item">
+        <button type="button">Export ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="export-unreal">🎮 Unreal Engine 4 / 5 (.zip)</button>
+          <button type="button" data-action="export-unity">🕹️ Unity (Mecanim) (.zip)</button>
+          <button type="button" data-action="export-godot">🤖 Godot 4.x (.zip)</button>
+          <button type="button" data-action="export-web">🌐 Web / glTF (.zip)</button>
+          <hr>
+          <button type="button" data-action="export-all">📦 All Engine Presets Bundle (.zip)</button>
+        </div>
+      </div>
+
+      <!-- View Menu -->
+      <div class="menu-item">
+        <button type="button">View ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="view-mode-rig">🛠️ Rig &amp; Fix Mode</button>
+          <button type="button" data-action="view-mode-test">🎬 Render &amp; Test Mode</button>
+          <hr>
+          <button type="button" data-action="view-front">🎥 Camera: Front <span class="shortcut">1</span></button>
+          <button type="button" data-action="view-side">🎥 Camera: Side <span class="shortcut">3</span></button>
+          <button type="button" data-action="view-top">🎥 Camera: Top <span class="shortcut">7</span></button>
+          <button type="button" data-action="view-reset">🎥 Frame / Focus Model <span class="shortcut">F</span></button>
+          <hr>
+          <button type="button" data-action="toggle-inspector">📐 Toggle Inspector Drawer</button>
+          <button type="button" data-action="toggle-log">📜 Toggle Console Log Drawer</button>
+        </div>
+      </div>
+
+      <!-- Help Menu -->
+      <div class="menu-item">
+        <button type="button">Help ▾</button>
+        <div class="menu-dropdown">
+          <button type="button" data-action="help-guide">📖 User Guide &amp; Walkthrough ↗</button>
+          <button type="button" data-action="help-shortcuts">⌨️ Keyboard Shortcuts…</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="header-spacer"></div>
+
+    <!-- Job Status Running Pill -->
+    <span id="topJobInfo" class="job-pill" style="display:none"></span>
+  </div>
+
+  <!-- Tier 2: Workspace Toolbar -->
+  <div class="app-toolbar">
+    <div class="toolbar-left">
+      <!-- Model Switcher -->
+      <div class="model-switcher">
+        <span class="toolbar-label">Model:</span>
+        <select id="modelSelect" title="Switch active model"></select>
+        <span id="modelBadge" class="chip" style="display:none" title="Audit grade"></span>
+      </div>
+
+      <!-- Mode Switcher Pill -->
+      <div class="mode-pills">
+        <button type="button" id="modeRig" class="on" title="Source mesh &amp; skeleton: fix chains and joints">🛠️ Rig &amp; Fix</button>
+        <button type="button" id="modeTest" title="Rigged mesh &amp; clips: test animations and tears">🎬 Render &amp; Test</button>
+      </div>
+    </div>
+
+    <div class="header-spacer"></div>
+
+    <div class="toolbar-right">
+      <!-- Primary Quick Action Button -->
+      <button type="button" id="btnQuickAction" class="primary" title="Save spec changes and re-rig model">
+        <span>🚀 Save &amp; Re-Rig</span>
+      </button>
+
+      <!-- Drawer Toggles -->
+      <div class="drawer-toggles">
+        <button type="button" id="toggleInspector" class="on" title="Toggle Rig Inspector Drawer (Ctrl+I)"><span>📐</span><span class="btn-text"> Inspector</span></button>
+        <button type="button" id="toggleAudit" title="View QA Audit Report"><span>📋</span><span class="btn-text"> Audit</span></button>
+        <button type="button" id="toggleLog" title="Toggle Console Log Drawer"><span>📜</span><span class="btn-text"> Console</span></button>
+      </div>
+    </div>
+  </div>
 </header>
-<main>
-  <section>
-    <div class="panel">
-      <h2>Add a model</h2>
-      <div class="drop" id="drop">Drop an FBX (with its .fbm folder), GLB, glTF, OBJ, a zip, or a model's folder here</div>
-      <div class="row" style="margin-top:8px">
-        <button id="pickFiles">Choose files</button>
-        <button id="pickFolder">Choose folder</button>
-        <input type="file" id="files" multiple hidden>
-        <input type="file" id="folder" webkitdirectory hidden>
+
+<!-- Main Central Area: 3D Viewport Dedicated to the Model -->
+<main class="app-main">
+  <section id="view">
+    <div id="stage"></div>
+
+    <!-- Floating HUDs -->
+    <div class="hud" id="hudModelInfo"></div>
+    <div class="hud" id="legend"></div>
+    <div class="hud" id="boneinfo"></div>
+    <div class="hud" id="banner"><span id="bannerText"></span><button id="bannerNext" class="small">Next point</button><button id="bannerDone" class="small">Done</button></div>
+    <div class="hud" id="msg"><div class="big" id="msgBig"></div><div class="why" id="msgSub"></div><div id="msgAct" style="margin-top:10px"></div></div>
+
+    <!-- Top-Right Orientation & Axis Lock HUD -->
+    <div class="hud" id="orientTool">
+      <div class="orient-head">
+        <span>Orientation</span>
+        <button id="btnLevelGround" class="small" title="Orient model so feet are level with ground (0° pitch)">Level Feet</button>
       </div>
-      <label for="paths">Or paths on this computer, one per line (copied, never moved)</label>
-      <textarea id="paths" placeholder="C:\models\wolf\wolf.zip&#10;C:\models\wolf\rig.json"></textarea>
-      <div class="row">
-        <div class="grow"><label for="group">Group (optional)</label><input type="text" id="group" placeholder="e.g. Creatures"></div>
-        <div class="grow"><label for="name">Name</label><input type="text" id="name" placeholder="from the file"></div>
+      <div class="orient-row">
+        <span class="orient-axis" style="color:#ff5555">X</span>
+        <span class="orient-val" id="orientValX" title="Click to reset pitch to 0°">0°</span>
+        <button class="orient-lock" id="btnLockX" title="Lock pitch (rotation around X)">🔓 Lock</button>
       </div>
-      <div class="row" style="margin-top:8px"><button class="primary" id="addPaths">Add from paths</button></div>
-      <div class="msg" id="addMsg"></div>
-      <div class="row" style="margin-top:12px; padding:8px 10px; background:var(--chip); border-radius:6px; align-items:center; justify-content:space-between">
-        <div style="font-size:12px"><b>Try sample models</b><div class="why">5 built-in CC0 models ready to rig</div></div>
-        <button id="bSamplesQuick" class="small primary" type="button">Samples Gallery</button>
+      <div class="orient-row">
+        <span class="orient-axis" style="color:#55ff55">Y</span>
+        <span class="orient-val" id="orientValY" title="Click to reset yaw to 0°">0°</span>
+        <button class="orient-lock" id="btnLockY" title="Lock yaw (rotation around Y)">🔓 Lock</button>
+      </div>
+      <div class="orient-row">
+        <span class="orient-axis" style="color:#5588ff">Z</span>
+        <span class="orient-val" id="orientValZ" title="Roll orientation">0°</span>
+        <button class="orient-lock" id="btnLockZ" title="Lock roll (rotation around Z)">🔓 Lock</button>
       </div>
     </div>
-    <div class="panel">
-      <div class="row" style="margin-bottom:8px; gap:4px; flex-wrap:wrap"><h2 style="margin:0">Models</h2><span style="flex:1"></span>
-        <button id="rigAll" title="rig every model that has a rig spec, one after another">Rig all</button>
-        <button id="auditAll" title="audit every rigged model, one after another, then show the table worst first">Audit all</button>
-        <button id="auditFailed" title="audit only models whose latest audit failed (FAIL grade)">Audit failed</button>
-        <button id="auditTable" title="the latest audit of every model, worst first">Table</button></div>
-      <ul class="models" id="models"></ul>
+
+    <!-- Bottom Viewport Controls HUD -->
+    <div class="hud" id="viewbar">
+      <span style="display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;">
+        <button id="vSource" class="small on" title="Source mesh and skeleton to edit the spec">Source</button>
+        <button id="vRigged" class="small" title="Rigged mesh and animated clips">Rigged &amp; Clips</button>
+      </span>
+
+      <!-- Clip Animation Controls -->
+      <span id="clipBar" style="display:none; align-items:center; gap:6px;">
+        <select id="clipSelect" class="small" style="max-width:140px"></select>
+        <button id="clipPlay" class="small" title="Play / Pause (Space)">▶</button>
+        <span id="clipTime" class="meta" style="font-size:11px"></span>
+        <input type="range" id="clipScrub" min="0" max="1000" step="1" value="0" style="width:100px" title="Scrub frame">
+      </span>
+
+      <!-- Camera Views -->
+      <button id="vFront" class="small" title="Look at its face (1)">Front</button>
+      <button id="vSide" class="small" title="From its left side (3)">Side</button>
+      <button id="vTop" class="small" title="From above (7)">Top</button>
+
+      <label title="How see-through the model is">opacity <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></label>
+      <label title="Show or hide source skeleton bone names"><input type="checkbox" id="showSourceLabels"> <span id="lblSourceNames">labels</span></label>
+      <label title="Show or hide suggested spec chain and guide labels"><input type="checkbox" id="showSuggestedLabels" checked> suggested</label>
+      <label title="Show or hide height and span guide lines in 3D"><input type="checkbox" id="showGuides" checked> guides</label>
+      <label title="Show or hide ground plane and floor grid"><input type="checkbox" id="showGround" checked> ground</label>
+      <label title="Show or hide audit issue spots in 3D"><input type="checkbox" id="showSpots" checked> tears</label>
+      <label title="Clicking places points halfway through limb middle"><input type="checkbox" id="throughMiddle" checked> middle pts</label>
+      <label title="Mirror point edits across X=0.5 symmetry plane"><input type="checkbox" id="mirrorEdits" checked> mirror .L/.R</label>
+
+      <!-- Live Limb Bend Test Controls -->
+      <span id="poseTestBar" style="display:inline-flex; align-items:center; gap:5px; border-left:1px solid var(--line); padding-left:8px; margin-left:4px;">
+        <label title="Preview limb bending and skin deformation in real time before rerigging"><input type="checkbox" id="poseTestToggle"> bend test</label>
+        <select id="poseChainSelect" class="small" style="display:none; max-width:110px"></select>
+        <input type="range" id="poseAngle" min="-90" max="90" step="1" value="0" style="display:none; width:80px" title="Bend angle (-90° to +90°)">
+        <span id="poseAngleVal" class="meta" style="display:none; font-size:11px; min-width:26px">0°</span>
+        <button id="poseReset" class="small" style="display:none; padding:1px 5px;" title="Reset bend angle to 0°">Reset</button>
+      </span>
     </div>
   </section>
-  <section>
-    <div class="panel" id="modelPanel">
-      <div class="empty">Pick a model on the left, or add one.</div>
+
+  <!-- Slide-over Right Drawer: Rig Inspector -->
+  <aside id="inspectorDrawer" class="open">
+    <div class="drawer-header">
+      <h2>Rig Inspector</h2>
+      <span id="dirty" style="font-size:11px;color:var(--warn)"></span>
+      <span class="grow"></span>
+      <button id="closeInspector" class="small" title="Close Inspector drawer (Ctrl+I)">✕</button>
     </div>
-    <div class="panel">
-      <div class="jobline"><h2 style="margin:0">Log</h2><span id="jobInfo" class="meta"></span><span style="flex:1"></span>
-        <button class="danger" id="cancel" disabled>Cancel</button></div>
-      <pre class="log" id="log"></pre>
+    <div class="drawer-actions">
+      <button id="bUndo" class="small" title="Undo the last change (Ctrl+Z)" disabled>Undo</button>
+      <button id="bRevert" class="small" title="Throw away changes: back to rig.json on disk">Revert</button>
+      <button id="bSuggest" class="small" title="Heuristically suggest an archetype and chains">Suggest</button>
+      <button id="bAutoTune" class="small" title="Closed-loop auto-tuning optimizer">Auto-tune</button>
+      <button id="bSave" class="small primary" title="Write rig.json (Ctrl+S)">Save</button>
+      <button id="bRerig" class="small primary" title="Save, then rig, trim, audit, clips and preview">Save &amp; Re-rig</button>
+      <!-- Hidden compatibility hook for spec_editor.js -->
+      <button id="bView" style="display:none"></button>
+      <span id="title" style="display:none"></span>
+      <span id="sub" style="display:none"></span>
+      <a id="back" style="display:none"></a>
     </div>
-    <div class="panel" id="results"></div>
-  </section>
+    <div class="tabs" id="tabs"></div>
+    <div id="pane"></div>
+  </aside>
+
+  <!-- Collapsible Bottom Log Console Drawer -->
+  <div id="logDrawer">
+    <div class="log-header" id="logToggleHeader">
+      <span class="meta" id="logJobInfo">Log idle</span>
+      <select id="logJobSelect" class="small" style="display:none; max-width:260px; margin-left:8px;" title="View past job logs"></select>
+      <span class="grow"></span>
+      <button id="clearLogBtn" class="small" title="Clear console">Clear</button>
+      <button id="cancelJob" class="small danger" disabled>Cancel Job</button>
+      <button id="collapseLog" class="small">▼ Hide</button>
+    </div>
+    <pre class="log" id="consoleLog"></pre>
+  </div>
 </main>
+
+<!-- Modals -->
+
+<!-- Import / Add Model Modal -->
+<dialog id="importModal">
+  <div class="dialog-header">
+    <h3>Import / Add 3D Model</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div class="drop" id="dropZone">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">Drop 3D model files here</div>
+      <div class="why">FBX (with .fbm textures), GLB, glTF, OBJ, ZIP, or model folder</div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="pickFiles">Choose Files</button>
+      <button id="pickFolder">Choose Folder</button>
+      <input type="file" id="fileInput" multiple hidden>
+      <input type="file" id="folderInput" webkitdirectory hidden>
+    </div>
+    <div style="margin-top:14px">
+      <label for="importPaths" style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Or local paths on this machine (one per line):</label>
+      <textarea id="importPaths" placeholder="/path/to/model.fbx&#10;/path/to/rig.json" style="width:100%"></textarea>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="grow">
+        <label for="importGroup" style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px">Group (optional):</label>
+        <input type="text" id="importGroup" placeholder="e.g. Creatures" style="width:100%">
+      </div>
+      <div class="grow">
+        <label for="importName" style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px">Model Name:</label>
+        <input type="text" id="importName" placeholder="autodetected from file" style="width:100%">
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="btnAddPaths">Import Model</button>
+    </div>
+    <div id="importMsg" class="msg" style="margin-top:10px"></div>
+  </div>
+</dialog>
+
+<!-- Sample Models Gallery Modal -->
+<dialog id="samplesModal" style="width:780px">
+  <div class="dialog-header">
+    <h3>Built-in CC0 Sample Models</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="samplesModalBody"></div>
+</dialog>
+
+<!-- Audit QA Report Modal -->
+<dialog id="auditModal" style="width:740px">
+  <div class="dialog-header">
+    <h3>QA Audit Report</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="auditModalBody"></div>
+</dialog>
+
+<!-- Collection Audit Table Modal -->
+<dialog id="collectionModal" style="width:820px">
+  <div class="dialog-header">
+    <h3>Collection Audit Table</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="collectionModalBody"></div>
+</dialog>
+
+<!-- Engine Export Modal -->
+<dialog id="exportModal" style="width:740px">
+  <div class="dialog-header">
+    <h3 id="exportModalTitle">Export Engine Packages</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="exportModalBody"></div>
+</dialog>
+
+<!-- Mesh Doctor Modal -->
+<dialog id="doctorModal">
+  <div class="dialog-header">
+    <h3>Mesh Doctor (Geometry Health)</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="doctorModalBody"></div>
+</dialog>
+
+<!-- Facing Views Modal -->
+<dialog id="facingModal">
+  <div class="dialog-header">
+    <h3>Survey Facing Orthographic Views</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="facingModalBody"></div>
+</dialog>
+
+<!-- Model Details Modal -->
+<dialog id="detailsModal">
+  <div class="dialog-header">
+    <h3>Model Information &amp; Specs</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="detailsModalBody"></div>
+</dialog>
+
+<!-- Keyboard Shortcuts Modal -->
+<dialog id="shortcutsModal" style="width:480px">
+  <div class="dialog-header">
+    <h3>Keyboard Shortcuts</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <table>
+      <tr><th>Shortcut</th><th>Action</th></tr>
+      <tr><td><kbd>Ctrl+S</kbd> / <kbd>Cmd+S</kbd></td><td>Save rig.json</td></tr>
+      <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Save spec and re-rig</td></tr>
+      <tr><td><kbd>Ctrl+O</kbd> / <kbd>Cmd+O</kbd></td><td>Import / Add model</td></tr>
+      <tr><td><kbd>Ctrl+I</kbd></td><td>Toggle Rig Inspector drawer</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Play / Pause animation clip</td></tr>
+      <tr><td><kbd>1</kbd></td><td>Front camera view</td></tr>
+      <tr><td><kbd>3</kbd></td><td>Side camera view</td></tr>
+      <tr><td><kbd>7</kbd></td><td>Top camera view</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Frame / Focus model in viewport</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close open dialog or menu</td></tr>
+    </table>
+  </div>
+</dialog>
+
+<!-- Image Lightbox Zoom -->
 <div id="zoom"><img alt=""></div>
+
 <script>
-"use strict";
-const TOKEN = "__AUTORIG_TOKEN__";
-const STEPS = [["survey", "Survey"], ["rig", "Rig"], ["trim", "Trim"], ["audit", "Audit"], ["clips", "Make clips"],
-               ["publish", "Publish"], ["preview", "Preview"], ["all", "Run all"]];
-const CHECKS = {bleed_pct: "Bleed %", combined_tears: "Tears, combined pose", bend_tears: "Tears, single bends",
-                head_pct: "Head share %", max_influences: "Influences per vertex"};
-const STEP_DESCRIPTIONS = {
-  survey: "Survey source mesh, detect armature kind, and render 4 facing views to find forward direction.",
-  rig: "Build standard armature from rig.json, skin mesh with bone heat & voxel proxy, and render QA bend test.",
-  trim: "Decimate geometry to triangle budget, clamp to max 4 influences per vertex, and normalize weights.",
-  audit: "Run automated QA checks: test for tears in extreme poses, weight bleed, head share, and influence limits.",
-  clips: "Author procedural animation clips (walk, idle, attack, etc.) for the model's archetype.",
-  publish: "Write engine model card (model.json) with bounding measurements and index collection.",
-  preview: "Compile preview.glb with skinned mesh and baked clips for interactive 3D results viewer.",
-  all: "Execute entire pipeline in sequence: Survey -> Rig -> Trim -> Audit -> Clips -> Publish -> Preview."
-};
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-const fileUrl = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
-let state = null, selected = null, job = null, es = null, logFrom = 0, tab = "audit";
-// the audit's grades (core/grades.py): PASS green, CHECK amber (look at it in the viewer), FAIL red
-const gradeClass = (g) => ({PASS: "pass", CHECK: "check", FAIL: "fail"}[g] || "");
-
-async function api(path, body) {
-  const opt = {headers: {"X-Autorig-Token": TOKEN}};
-  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt);
-  const j = await r.json().catch(() => ({error: r.statusText}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
-  return j;
-}
-
-async function refresh() {
-  state = await api("/api/state");
-  $("#meta").textContent = "models " + state.root + "  ·  work " + state.work + "  ·  blender " + (state.blender || "NOT FOUND");
-  $("#helpLink").href = fileUrl("/help.html");
-  renderModels();
-  const busy = state.running;
-  const hasRigged = state.models.some((m) => m.rigged_fbx || m.rigged);
-  const hasRiggable = state.models.some((m) => !m.steps || m.steps.rig === null);
-  const hasFailed = state.models.some((m) => m.audit === "FAIL");
-  if ($("#rigAll")) $("#rigAll").disabled = !!busy || !hasRiggable;
-  if ($("#auditAll")) $("#auditAll").disabled = !!busy || !hasRigged;
-  if ($("#auditFailed")) $("#auditFailed").disabled = !!busy || !hasFailed;
-  if (busy && (!job || job.id !== busy.id)) follow(busy);
-  if (selected) renderModel();
-}
-
-function chips(m) {
-  const c = [];
-  if (m.audit) c.push(`<span class="chip ${gradeClass(m.audit)}" title="audit grade">${esc(m.audit)}</span>`);
-  else if (m.rigged) c.push(`<span class="chip on">rig</span>`);
-  else if (m.spec) c.push(`<span class="chip on">spec</span>`);
-  else c.push(`<span class="chip">no spec</span>`);
-  if (m.clips) c.push(`<span class="chip on">clips</span>`);
-  if (m.card) c.push(`<span class="chip on">card</span>`);
-  return c.join("");
-}
-
-function renderModels() {
-  const ul = $("#models"); const byGroup = {};
-  for (const m of state.models) (byGroup[m.group] ||= []).push(m);
-  let h = "";
-  for (const g of Object.keys(byGroup).sort()) {
-    h += `<li class="group">${esc(g || "(root)")}</li>`;
-    for (const m of byGroup[g]) h += `<li class="m ${m.name === selected ? "sel" : ""}" data-name="${esc(m.name)}"><span class="nm">${esc(m.name)}</span>${chips(m)}</li>`;
-  }
-  ul.innerHTML = h || `<li class="empty">No models yet in ${esc(state.root)}.</li>`;
-  ul.querySelectorAll("li.m").forEach((li) => li.onclick = () => select(li.dataset.name));
-}
-
-function current() { return state && state.models.find((m) => m.name === selected); }
-
-async function select(name) {
-  selected = name; renderModels(); renderModel(); loadDetails();
-  try { history.replaceState(null, "", "#model=" + encodeURIComponent(name) + "&tab=" + tab); } catch (e) {}
-  const last = state.jobs.find((j) => j.model === name);
-  if (last && (!job || job.model !== name)) follow(last);
-}
-
-function renderModel() {
-  const m = current(); const p = $("#modelPanel");
-  if (!m) { p.innerHTML = `<div class="empty">Pick a model on the left, or add one.</div>`; return; }
-  const running = state.running;
-  let h = `<div class="row"><h3 style="margin:0;font-size:17px">${esc(m.name)}</h3><span class="meta">${esc(m.group || "(root)")}` +
-          ` · ${esc(m.kind || "no spec")}${m.source ? " · " + esc(m.source) : ""}${m.budget ? " · budget " + m.budget : " · full resolution"}</span>` +
-          `<span style="flex:1"></span>${editButton(m)}${viewButton(m)}${exportButton(m)}<button id="open">Open output folder</button></div>`;
-  h += `<div class="steps">`;
-  for (const [k, label] of STEPS) {
-    const why = m.steps[k];
-    const tip = why ? `${label} (unavailable): ${why}` : (running ? `${label} (a step is running)` : `${label}: ${STEP_DESCRIPTIONS[k] || ""}`);
-    h += `<button class="${k === "all" ? "primary" : ""}" data-step="${k}" aria-label="${label}" ${why || running ? "disabled" : ""} title="${esc(tip)}">${label}</button>`;
-  }
-  h += `<span class="meta" style="margin-left:auto;align-self:center"><a href="${fileUrl('/help.html#buttons-all')}" target="_blank" style="color:var(--muted);font-size:12px;text-decoration:none">Button Guide ↗</a></span>`;
-  h += `</div>`;
-  const reasons = STEPS.filter(([k]) => m.steps[k]).map(([k, l]) => `<li><b>${l}</b>: ${esc(m.steps[k])}</li>`);
-  if (reasons.length) h += `<ul class="why">${reasons.join("")}</ul>`;
-  if (m.spec_error) h += `<div class="msg err">${esc(m.spec_error)}</div>`;
-  p.innerHTML = h;
-  p.querySelectorAll("button[data-step]").forEach((b) => b.onclick = () => run(b.dataset.step));
-  $("#open").onclick = () => api("/api/open", {model: m.name}).catch((e) => alert(e.message));
-  const bExp = $("#bExport"); if (bExp) bExp.onclick = () => { tab = "export"; loadDetails(); select_hash(); };
-  p.querySelectorAll("button[data-view]").forEach((b) => b.onclick = () => window.open(viewerUrl(b.dataset.view), "_blank"));
-  p.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
-}
-
-function exportButton(m) {
-  const can = m.rigged || m.rigged_fbx;
-  return `<button class="${can ? "" : "disabled"}" id="bExport" ${can ? "" : "disabled"} title="${can ? "export engine packages for Unreal, Unity, Godot, Web" : "rig the model first to export"}">Export Pack ▾</button>`;
-}
-
-// ---- spec editor (spec_editor.html): rig.json as a form beside the source model and its own skeleton
-function editorUrl(name) { return "/spec_editor.html?model=" + encodeURIComponent(name) + "&t=" + encodeURIComponent(TOKEN); }
-function editButton(m) {
-  return `<button class="${m.spec ? "" : "primary"}" data-edit="${esc(m.name)}" title="${m.spec ? "edit rig.json by clicking bones on the source model" : "no rig.json yet: make one by clicking bones on the source model"}">Edit spec</button>`;
-}
-
-// ---- results viewer (viewer.html): the model in 3D with its clips; it says "run Preview first" when it has no preview.glb
-function viewerUrl(name) { return "/viewer.html?model=" + encodeURIComponent(name) + "&t=" + encodeURIComponent(TOKEN); }
-function viewButton(m) {
-  const can = m.rigged || m.rigged_fbx;
-  return `<button class="${m.preview ? "primary" : ""}" ${can ? "" : "disabled"} title="${can ? (m.preview ? "open the 3D viewer" : "no preview.glb yet: the viewer will offer to run Preview") : "no rig yet: run Rig"}"` +
-         ` data-view="${esc(m.name)}">View results</button>`;
-}
-
-async function run(step) {
-  try {
-    const j = await api("/api/run", {model: selected, step});
-    follow(j); await refresh();
-  } catch (e) { alert(e.message); }
-}
-
-function follow(j) {
-  if (es) es.close();
-  job = j; logFrom = 0; $("#log").textContent = "";
-  showJob();
-  es = new EventSource(fileUrl(`/api/jobs/${j.id}/events?from=0`));
-  es.onmessage = (ev) => {
-    const log = $("#log"); const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-    log.textContent += JSON.parse(ev.data) + "\n"; logFrom = Number(ev.lastEventId) + 1;
-    if (stick) log.scrollTop = log.scrollHeight;
-  };
-  es.addEventListener("end", async (ev) => {
-    es.close(); es = null; job = JSON.parse(ev.data); showJob(); await refresh(); showJob();
-    if (job.step === "audit-all" || job.step === "audit-failed") showCollection();
-    else if (job.model === selected) loadDetails();
-  });
-  es.onerror = () => { /* the server closes the stream when the job ends; EventSource retries otherwise */ };
-}
-
-function showJob() {
-  if (!job) { $("#jobInfo").textContent = ""; $("#cancel").disabled = true; return; }
-  const st = job.state;
-  $("#jobInfo").innerHTML = `job ${job.id}: <b>${esc(job.step)}</b> on ${esc(job.model)} · <span class="state ${st}">${st}</span>` +
-                            (job.pid ? ` · PID ${job.pid}` : "");
-  $("#cancel").disabled = !(st === "running" || st === "queued");
-  // a finished run with a preview: straight to the 3D viewer
-  const done = st === "done" && state && state.models.find((m) => m.name === job.model && m.preview);
-  if (done) {
-    $("#jobInfo").insertAdjacentHTML("beforeend", ` · <button class="primary" id="jobView">View results</button>`);
-    $("#jobView").onclick = () => window.open(viewerUrl(job.model), "_blank");
-  }
-}
-$("#cancel").onclick = async () => { if (job) { try { job = await api("/api/cancel", {job: job.id}); showJob(); } catch (e) { alert(e.message); } } };
-setInterval(async () => { if (job && (job.state === "running" || job.state === "queued")) { try { const j = await api(`/api/jobs/${job.id}`); job = Object.assign(job, j); delete job.log; showJob(); } catch (e) {} } }, 2000);
-
-async function loadDetails() {
-  if (!selected) return;
-  const name = selected;
-  let d;
-  try { d = await api("/api/model?name=" + encodeURIComponent(name)); } catch (e) { $("#results").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
-  if (name !== selected) return;
-  renderResults(d);
-}
-
-function img(u, cap) { return u ? `<figure><img src="${esc(fileUrl(u))}" alt="${esc(cap)}" loading="lazy"><figcaption>${esc(cap)}</figcaption></figure>` : ""; }
-
-function renderResults(d) {
-  const tabs = [["audit", "Audit"], ["pictures", "Bend test"], ["clips", "Clips"], ["export", "Export"], ["survey", "Survey"], ["spec", "Spec and card"]];
-  let h = `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  h += `<div id="tabBody">${body(d)}</div>`;
-  const r = $("#results"); r.innerHTML = h;
-  r.querySelectorAll("button[data-tab]").forEach((b) => b.onclick = () => { tab = b.dataset.tab; renderResults(d); select_hash(); });
-  r.querySelectorAll("img").forEach((i) => i.onclick = () => { $("#zoom img").src = i.src; $("#zoom").style.display = "flex"; });
-  r.querySelectorAll("button[data-edit]").forEach((b) => b.onclick = () => window.open(editorUrl(b.dataset.edit), "_blank"));
-  r.querySelectorAll("button[data-export-target]").forEach((b) => b.onclick = async () => {
-    const target = b.dataset.exportTarget;
-    b.disabled = true; const origText = b.textContent; b.textContent = "Packaging…";
-    const statusEl = $("#exportStatus");
-    if (statusEl) { statusEl.className = "msg"; statusEl.textContent = `Packaging ${target} export…`; }
-    try {
-      const res = await api("/api/export", {model: d.status.name, target});
-      b.disabled = false; b.textContent = origText;
-      if (statusEl) {
-        statusEl.className = "msg ok";
-        statusEl.innerHTML = `Exported <b>${esc(res.preset_name || target)}</b> package (${Math.round(res.zip_size / 1024)} KB). ` +
-                             `<a href="${esc(fileUrl('/files/work/' + res.zip_rel))}" download style="color:var(--pass);font-weight:bold;text-decoration:underline">Download again if not started automatically ↗</a>`;
-      }
-      const a = document.createElement("a");
-      a.href = fileUrl("/files/work/" + res.zip_rel);
-      a.download = res.zip_rel.split("/").pop();
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (e) {
-      b.disabled = false; b.textContent = origText;
-      if (statusEl) { statusEl.className = "msg err"; statusEl.textContent = e.message; }
-      else alert(e.message);
-    }
-  });
-  const bDoc = $("#bRunDoctor");
-  if (bDoc) {
-    bDoc.onclick = async () => {
-      bDoc.disabled = true; bDoc.textContent = "Analyzing…";
-      const resEl = $("#doctorResult");
-      try {
-        const diag = await api("/api/doctor?model=" + encodeURIComponent(d.status.name));
-        bDoc.disabled = false; bDoc.textContent = "Run Diagnostics";
-        const gClass = diag.grade === "HEALTHY" ? "pass" : (diag.grade === "WARN" ? "check" : "fail");
-        let info = `<div class="row" style="margin-top:6px"><span class="chip ${gClass}">${esc(diag.grade)}</span><b>${esc(diag.health_score)}/100</b>` +
-                   `<span class="meta">${esc(diag.file || "")} · ${esc(diag.verts || 0)} verts · ${esc(diag.faces || 0)} faces</span></div>` +
-                   `<ul class="why" style="margin-top:6px">` +
-                   `<li>Non-manifold edges: <b>${esc(diag.non_manifold_edges ?? 0)}</b></li>` +
-                   `<li>Degenerate (zero-area) faces: <b>${esc(diag.degenerate_faces ?? 0)}</b></li>` +
-                   `<li>Loose vertices: <b>${esc(diag.loose_verts ?? 0)}</b></li>` +
-                   `<li>Duplicate coincident vertices: <b>${esc(diag.duplicate_verts ?? 0)}</b></li>` +
-                   `</ul>`;
-        if (resEl) resEl.innerHTML = info;
-      } catch (e) {
-        bDoc.disabled = false; bDoc.textContent = "Run Diagnostics";
-        if (resEl) resEl.innerHTML = `<span style="color:var(--fail)">${esc(e.message)}</span>`;
-      }
-    };
-  }
-}
-$("#zoom").onclick = () => $("#zoom").style.display = "none";
-
-function body(d) {
-  if (tab === "audit") {
-    const a = d.audit;
-    if (!a) return `<div class="empty">No audit yet. Rig the model, then press Audit (or Run all).</div>`;
-    const g = a.grade || (a.pass ? "PASS" : "FAIL");
-    let h = `<div><span class="verdict ${gradeClass(g)}">${esc(g)}</span><span class="meta">audit of ${esc(a.fbx_rel || a.fbx || "")}` +
-            `${g === "CHECK" ? " · past a limit but inside its warn band: look at it in the viewer" : ""}</span></div>`;
-    h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Check</th><th>Value</th><th>Threshold</th><th>Allowance</th><th>Check band</th><th>Result</th></tr>`;
-    for (const c of a.checks) {
-      const higher = c.check === "head_pct", cg = c.grade || (c.ok ? "PASS" : "FAIL");
-      const band = c.check_limit !== undefined && c.check_limit !== null && c.check_limit !== c.limit
-        ? (higher ? "≥ " : "≤ ") + esc(c.check_limit) + (c.gap_pct !== undefined && c.gap_pct !== null && c.value ? `<div class="why">widest gap ${esc(c.gap_pct)}% of the model</div>` : "") : "";
-      h += `<tr><td>${esc(CHECKS[c.check] || c.check)}</td><td class="num">${esc(c.value)}</td><td class="num">${higher ? "≥ " : "≤ "}${esc(c.threshold)}</td>` +
-           `<td>${c.allowance !== undefined && c.allowance !== null ? (higher ? "≥ " : "≤ ") + esc(c.allowance) + (c.reason ? `<div class="why">${esc(c.reason)}</div>` : "") : ""}</td>` +
-           `<td class="num">${band}</td><td><span class="chip ${gradeClass(cg)}">${esc(cg)}</span></td></tr>`;
-    }
-    h += `</table></div>`;
-    const t = a.tears;
-    if (t && t.by_bone && t.by_bone.length) {
-      h += `<h3>Tears by bone</h3><div class="meta">Each bone bent 40° and twisted 60° on its own; the gap is how far the worst edge opens, in % of the model's size. ` +
-           `${a.tear_sites} tear site(s) are in the audit JSON for the viewer.</div><div class="scroll"><table style="margin-top:4px"><tr><th>Bone</th><th>Bend tears</th><th>Gap %</th><th>Twist tears</th><th>Gap %</th></tr>` +
-           t.by_bone.slice(0, 12).map((b) => `<tr><td>${esc(b.bone)}</td><td class="num">${esc(b.bend)}</td><td class="num">${esc(b.bend_gap_pct)}</td><td class="num">${esc(b.twist)}</td><td class="num">${esc(b.twist_gap_pct)}</td></tr>`).join("") +
-           `</table></div>${t.by_bone.length > 12 ? `<div class="meta">and ${t.by_bone.length - 12} more</div>` : ""}`;
-    }
-    if (a.warnings && a.warnings.length) h += `<div class="warns"><b>Warnings</b> (reported, not failed): ${a.warnings.map(esc).join("; ")}</div>`;
-    h += `<h3>Audit sheets</h3><div class="pics">${img(a.skin, "Skin: which bone owns each part") + img(a.bend, "Bends: each joint turned, tears marked")}</div>`;
-    return h;
-  }
-  if (tab === "pictures") {
-    return d.bend_test ? `<div class="pics" style="grid-template-columns:1fr">${img(d.bend_test, "Top: the new skeleton at rest. Bottom: the bend test.")}</div>`
-                       : `<div class="empty">No bend test yet: run Rig.</div>`;
-  }
-  if (tab === "clips") {
-    const f = d.clip_frames || {};
-    const order = d.clips ? d.clips.clips.map((c) => c.name) : [];
-    const names = Object.keys(f).sort((x, y) => (order.indexOf(x) + 1 || 999) - (order.indexOf(y) + 1 || 999) || x.localeCompare(y));
-    let h = "";
-    if (d.clips) h += `<div class="meta">${esc(d.clips.format || "")} · ${d.clips.clips.map((c) => `${esc(c.name)} ${c.seconds}s${c.loops ? " loop" : ""}`).join(" · ")}</div>`;
-    if (!names.length) return h + `<div class="empty">No clip frames yet: press Make clips (needs a clip archetype in rig.json).</div>`;
-    for (const n of names) h += `<div class="cliprow"><div class="cn">${esc(n)}</div><div class="strip">${f[n].map((u) => `<img src="${esc(fileUrl(u))}" alt="${esc(n)}" loading="lazy">`).join("")}</div></div>`;
-    return h;
-  }
-  if (tab === "export") {
-    const can = d.status && (d.status.rigged || d.status.rigged_fbx);
-    if (!can) return `<div class="empty">Model is not rigged yet. Rig the model first to export engine packages.</div>`;
-    let h = `<div class="row"><h3 style="margin:0">Engine Export Presets</h3><span class="meta">Tailor-made asset packages for major game engines and WebGL</span><span style="flex:1"></span>` +
-            `<button class="primary" data-export-target="all">Download All Presets Bundle (.zip)</button></div>` +
-            `<div class="sample-grid" style="margin-top:12px">` +
-            `<div class="sample-card"><div class="row"><h3 style="margin:0">Unreal Engine 4 / 5</h3><span class="chip on">FBX</span><span class="chip pass">Z-up</span></div>` +
-            `<div class="why" style="margin:8px 0">Skeletal mesh FBX mapped to standard UE Mannequin hierarchy, root motion origin guide, and Unreal import profile.</div>` +
-            `<div class="actions"><button class="primary" data-export-target="unreal">Download Unreal Pack (.zip)</button></div></div>` +
-            `<div class="sample-card"><div class="row"><h3 style="margin:0">Unity (Mecanim)</h3><span class="chip on">FBX</span><span class="chip pass">Y-up</span></div>` +
-            `<div class="why" style="margin:8px 0">FBX with Unity HumanDescription Mecanim avatar descriptor JSON, animation clip loop settings, and import walkthrough.</div>` +
-            `<div class="actions"><button class="primary" data-export-target="unity">Download Unity Pack (.zip)</button></div></div>` +
-            `<div class="sample-card"><div class="row"><h3 style="margin:0">Godot 4.x</h3><span class="chip on">GLB</span><span class="chip pass">Scene</span></div>` +
-            `<div class="why" style="margin:8px 0">Self-contained GLB scene with embedded animation library, Godot 4 .import presets, and sample GDScript character loader.</div>` +
-            `<div class="actions"><button class="primary" data-export-target="godot">Download Godot Pack (.zip)</button></div></div>` +
-            `<div class="sample-card"><div class="row"><h3 style="margin:0">Web / glTF</h3><span class="chip on">GLB</span><span class="chip pass">HTML5</span></div>` +
-            `<div class="why" style="margin:8px 0">Optimized standalone GLB with web manifest, clip list, and self-contained interactive HTML 3D previewer.</div>` +
-            `<div class="actions"><button class="primary" data-export-target="web">Download Web Pack (.zip)</button></div></div>` +
-            `</div>` +
-            `<div id="exportStatus" class="msg" style="margin-top:14px"></div>`;
-    return h;
-  }
-  if (tab === "survey") {
-    let h = "";
-    if (d.survey) h += `<table class="kv">${Object.entries(d.survey).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(Array.isArray(v) ? v.join(" × ") : v)}</td></tr>`).join("")}</table>`;
-    else h += `<div class="empty">No survey yet: press Survey.</div>`;
-    h += `<div class="row" style="margin-top:14px"><h3 style="margin:0">Mesh Doctor (Geometry Health)</h3><span style="flex:1"></span>` +
-         `<button id="bRunDoctor" class="small" type="button">Run Diagnostics</button></div>` +
-         `<div id="doctorResult" class="why" style="margin-top:4px">Analyze non-manifold edges, zero-area faces, and duplicate vertices that cause bone heat failures.</div>`;
-    if (d.facing && d.facing.length) h += `<h3>Facing views</h3><div class="meta">Which way it faces in its file: read <code>forward</code> for rig.json off these.</div><div class="pics">${d.facing.map((u) => img(u, u.split("__").pop().replace(".png", "").replace("m", "-").replace("p", "+") + " view")).join("")}</div>`;
-    return h;
-  }
-  if (tab === "spec") {
-    let h = `<div class="row"><span class="meta grow">${esc(d.dir)}</span><button class="primary" data-edit="${esc(d.status.name)}">Edit spec</button></div>`;
-    const notes = d.notes || {};
-    if (Object.keys(notes).length) h += `<h3>Notes</h3><table class="kv">${Object.entries(notes).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>`;
-    h += `<h3>rig.json</h3><pre class="log" style="height:auto;max-height:340px">${esc(d.spec ? JSON.stringify(d.spec, null, 1) : "none yet")}</pre>`;
-    h += `<h3>Card (model.json)</h3><pre class="log" style="height:auto;max-height:340px">${esc(d.card ? JSON.stringify(d.card, null, 1) : "not published yet")}</pre>`;
-    return h;
-  }
-  return "";
-}
-
-// ---- Audit all: every rigged model audited in turn (live in the log, Cancel stops it), then a table worst first
-async function showCollection() {
-  selected = null; renderModels(); renderModel();
-  try { history.replaceState(null, "", "#collection"); } catch (e) {}
-  let d;
-  const r = $("#modelPanel");                                       // the table takes the model's place, above the log
-  $("#results").innerHTML = `<div class="empty">Click a row to see that model's audit.</div>`;
-  try { d = await api("/api/audits"); } catch (e) { r.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
-  const f = (v) => v === null || v === undefined ? "–" : esc(v);
-  const hasFailed = d.models.some((r) => r.grade === "FAIL" || r.pass === false);
-  let h = `<h2>Collection audit</h2><div class="meta">Every model's latest audit, worst first. PASS is within every limit; CHECK is past a limit but inside its warn band ` +
-          `(look at it in the viewer); FAIL is clearly broken. Click a row to open the model.</div>` +
-          `<div class="row" style="margin-top:8px; gap:8px"><button class="small" id="colRigAll">Rig all</button>` +
-          `<button class="small" id="colAuditAll">Audit all</button>` +
-          `<button class="small" id="colAuditFailed"${hasFailed ? "" : " disabled"}>Audit failed</button></div>`;
-  if (!d.models.length) h += `<div class="empty">No models found.</div>`;
-  else h += `<div class="scroll"><table style="margin-top:8px"><tr><th>Model</th><th>Grade</th><th>Tears combined</th><th>Tears bend</th><th>Worst gap %</th><th>Bleed %</th><th>Head %</th><th>Worst bone</th></tr>` +
-    d.models.map((r) => `<tr class="pick" data-name="${esc(r.model)}"><td>${esc(r.model)}<div class="why">${esc(r.group || "")}</div></td>` +
-      `<td>${r.grade ? `<span class="chip ${gradeClass(r.grade)}">${esc(r.grade)}</span>` : `<span class="chip">${esc(r.status || "not audited")}</span>`}</td>` +
-      `<td class="num">${f(r.combined_tears)}</td><td class="num">${f(r.bend_tears)}</td><td class="num">${f(r.worst_gap_pct)}</td>` +
-      `<td class="num">${f(r.bleed_pct)}</td><td class="num">${f(r.head_pct)}</td><td>${f(r.worst_bone)}</td></tr>`).join("") + `</table></div>`;
-  if (selected) return;                                              // a model was picked while it loaded
-  r.innerHTML = h;
-  r.querySelectorAll("tr.pick").forEach((tr) => tr.onclick = () => { tab = "audit"; select(tr.dataset.name); });
-  if ($("#colRigAll")) $("#colRigAll").onclick = () => $("#rigAll").click();
-  if ($("#colAuditAll")) $("#colAuditAll").onclick = () => $("#auditAll").click();
-  if ($("#colAuditFailed")) $("#colAuditFailed").onclick = () => $("#auditFailed").click();
-}
-$("#rigAll").onclick = async () => {
-  try { const j = await api("/api/rig-all", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
-};
-$("#auditAll").onclick = async () => {
-  try { const j = await api("/api/audit-all", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
-};
-$("#auditFailed").onclick = async () => {
-  try { const j = await api("/api/audit-failed", {}); follow(j); await refresh(); } catch (e) { alert(e.message); }
-};
-$("#auditTable").onclick = () => showCollection();
-
-// ---- Sample Models Gallery: browse and load built-in CC0 reference models
-async function showSamplesGallery() {
-  selected = null; renderModels(); renderModel();
-  try { history.replaceState(null, "", "#samples"); } catch (e) {}
-  const p = $("#modelPanel");
-  $("#results").innerHTML = `<div class="empty">Pick a sample model to load into your workbench, or click a model on the left.</div>`;
-  p.innerHTML = `<div class="empty">Loading sample models…</div>`;
-  let data;
-  try { data = await api("/api/samples"); } catch (e) { p.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; return; }
-  let h = `<div class="row"><h2 style="margin:0">Sample Models Gallery</h2><span class="meta">5 built-in CC0 reference models</span><span style="flex:1"></span></div>` +
-          `<div class="why" style="margin:4px 0 12px">Explore and test verified CC0 models with tuned <code>rig.json</code> specs. Load any sample into your workbench with one click to inspect or rig immediately.</div>` +
-          `<div class="sample-grid">`;
-  for (const s of data.samples) {
-    const isInst = state && state.models.some((m) => m.name === s.name);
-    h += `<div class="sample-card" data-sample="${esc(s.name)}">`;
-    if (s.thumbnail) {
-      h += `<img class="thumb" src="${esc(fileUrl(s.thumbnail))}" alt="${esc(s.title)}" loading="lazy">`;
-    }
-    h += `<div class="row" style="margin-top:8px"><h3 style="margin:0;font-size:15px">${esc(s.title)}</h3>` +
-         `<span class="chip">${esc(s.category)}</span><span class="chip on">${esc(s.archetype)}</span>` +
-         (isInst ? `<span class="chip pass">Loaded</span>` : "") +
-         `</div>`;
-    h += `<div class="why" style="margin:6px 0 8px">${esc(s.description)}</div>`;
-    h += `<div class="meta" style="font-size:12px;margin-bottom:8px">Kind: <b>${esc(s.kind)}</b> · Budget: <b>${esc(s.budget)} tris</b></div>`;
-    h += `<div class="actions">`;
-    if (isInst) {
-      h += `<button class="primary" data-sample-open="${esc(s.name)}">Open in Workbench</button>`;
-      h += `<button data-sample-rig="${esc(s.name)}">Rig &amp; Audit</button>`;
-    } else {
-      h += `<button class="primary" data-sample-load="${esc(s.name)}">Load into Workbench</button>`;
-      h += `<button data-sample-load-and-rig="${esc(s.name)}">Load &amp; Rig All</button>`;
-    }
-    h += `</div></div>`;
-  }
-  h += `</div>`;
-  p.innerHTML = h;
-  p.querySelectorAll("img.thumb").forEach((i) => i.onclick = () => { $("#zoom img").src = i.src; $("#zoom").style.display = "flex"; });
-  p.querySelectorAll("button[data-sample-open]").forEach((b) => b.onclick = () => select(b.dataset.sampleOpen));
-  p.querySelectorAll("button[data-sample-load]").forEach((b) => b.onclick = async () => {
-    b.disabled = true; b.textContent = "Loading…";
-    try {
-      await api("/api/samples/load", {name: b.dataset.sampleLoad});
-      await refresh();
-      select(b.dataset.sampleLoad);
-    } catch (e) { alert(e.message); b.disabled = false; b.textContent = "Load into Workbench"; }
-  });
-  p.querySelectorAll("button[data-sample-load-and-rig]").forEach((b) => b.onclick = async () => {
-    b.disabled = true; b.textContent = "Loading…";
-    try {
-      await api("/api/samples/load", {name: b.dataset.sampleLoadAndRig});
-      await refresh();
-      await select(b.dataset.sampleLoadAndRig);
-      run("all");
-    } catch (e) { alert(e.message); b.disabled = false; b.textContent = "Load & Rig All"; }
-  });
-  p.querySelectorAll("button[data-sample-rig]").forEach((b) => b.onclick = async () => {
-    await select(b.dataset.sampleRig);
-    run("all");
-  });
-}
-$("#bSamples").onclick = () => showSamplesGallery();
-$("#bSamplesQuick").onclick = () => showSamplesGallery();
-
-// ---- adding models
-function addMsg(t, ok) { const m = $("#addMsg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
-function stem(p) { const b = p.split(/[\\/]/).filter(Boolean).pop() || ""; return b.replace(/\.[^.]+$/, ""); }
-function suggest(name) { return name.toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, ""); }
-
-async function upload(entries) {
-  if (!entries.length) return;
-  const top = entries[0].path.split("/");
-  const name = $("#name").value.trim() || suggest(top.length > 1 ? top[0] : stem(entries.find((e) => /\.(fbx|glb|gltf|obj|zip)$/i.test(e.path))?.path || top[0]));
-  const batch = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
-  addMsg(`Uploading ${entries.length} file(s) as ${name}…`, true);
-  try {
-    for (const e of entries) {
-      const r = await fetch(`/api/upload?batch=${batch}&path=${encodeURIComponent(e.path)}`, {method: "POST", headers: {"X-Autorig-Token": TOKEN}, body: e.file});
-      if (!r.ok) throw new Error((await r.json()).error);
-    }
-    const res = await api("/api/upload/done", {batch, group: $("#group").value.trim(), name});
-    addMsg(`Added ${res.name} (${res.files.length} files).`, true); $("#name").value = "";
-    await refresh(); select(res.name);
-  } catch (e) { addMsg(e.message, false); }
-}
-
-async function walk(entry, prefix, out) {
-  if (entry.isFile) { out.push({path: prefix + entry.name, file: await new Promise((ok, no) => entry.file(ok, no))}); return; }
-  const reader = entry.createReader();
-  for (;;) {
-    const batch = await new Promise((ok, no) => reader.readEntries(ok, no));
-    if (!batch.length) break;
-    for (const e of batch) await walk(e, prefix + entry.name + "/", out);
-  }
-}
-
-const drop = $("#drop");
-drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
-drop.ondragleave = () => drop.classList.remove("over");
-drop.ondrop = async (e) => {
-  e.preventDefault(); drop.classList.remove("over");
-  const out = [];
-  const items = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
-  if (items.length) { for (const it of items) await walk(it, "", out); }
-  else for (const f of e.dataTransfer.files) out.push({path: f.name, file: f});
-  upload(out);
-};
-$("#pickFiles").onclick = () => $("#files").click();
-$("#pickFolder").onclick = () => $("#folder").click();
-$("#files").onchange = (e) => { upload([...e.target.files].map((f) => ({path: f.name, file: f}))); e.target.value = ""; };
-$("#folder").onchange = (e) => { upload([...e.target.files].map((f) => ({path: f.webkitRelativePath || f.name, file: f}))); e.target.value = ""; };
-$("#addPaths").onclick = async () => {
-  const paths = $("#paths").value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  if (!paths.length) return addMsg("Type at least one path.", false);
-  try {
-    const res = await api("/api/import", {paths, group: $("#group").value.trim(), name: $("#name").value.trim()});
-    addMsg(`Added ${res.name} (${res.files.length} files).`, true); $("#paths").value = ""; $("#name").value = "";
-    await refresh(); select(res.name);
-  } catch (e) { addMsg(e.message, false); }
-};
-
-function select_hash() { try { history.replaceState(null, "", "#model=" + encodeURIComponent(selected || "") + "&tab=" + tab); } catch (e) {} }
-function from_hash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get("tab")) tab = h.get("tab");
-  return h.get("model");
-}
-const wanted = from_hash();
-refresh().then(() => { if (location.hash === "#collection") showCollection(); else if (location.hash === "#samples") showSamplesGallery(); else if (wanted && state.models.some((m) => m.name === wanted)) select(wanted); }).catch((e) => { document.body.insertAdjacentHTML("afterbegin", `<div class="msg err" style="padding:10px">${esc(e.message)}</div>`); });
-setInterval(() => { if (state && state.running) refresh().catch(() => {}); }, 4000);
+window.AUTORIG_TOKEN = "__AUTORIG_TOKEN__";
 </script>
+<script type="module" src="./spec_editor.js"></script>
+<script type="module" src="./workbench.js"></script>
 </body>
 </html>
