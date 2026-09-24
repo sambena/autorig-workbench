@@ -624,6 +624,13 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
         lower = name.lower()
         return any(k in lower for k in ("head", "neck"))
 
+    def is_head(name):
+        lower = name.lower()
+        return any(k in lower for k in ("head", "jaw"))
+
+    def is_neck(name):
+        return "neck" in name.lower()
+
     def is_appendage(name):
         lower = name.lower()
         return any(k in lower for k in ("ear", "antenna", "fluke", "flipper", "wisp", "filament"))
@@ -659,11 +666,28 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     z_neck = None
     if bone_heads:
-        neck_cands = [bone_heads[b][2] for b in bone_names if is_head_or_neck(b) and b in bone_heads]
+        neck_cands = [bone_heads[b][2] for b in bone_names if is_neck(b) and b in bone_heads]
         if neck_cands:
             z_neck = min(neck_cands)
+        elif any(is_head_or_neck(b) for b in bone_names):
+            hn_cands = [bone_heads[b][2] for b in bone_names if is_head_or_neck(b) and b in bone_heads]
+            if hn_cands:
+                z_neck = min(hn_cands)
     if z_neck is None:
         z_neck = z_min + 0.80 * h
+
+    z_head = None
+    if bone_heads:
+        head_cands = [bone_heads[b][2] for b in bone_names if is_head(b) and b in bone_heads]
+        if head_cands:
+            z_head = min(head_cands)
+    if z_head is None:
+        z_head = z_neck + 0.04 * h
+
+    head_cols = [col[b] for b in bone_names if is_head(b)]
+    head_target = head_cols[0] if head_cols else None
+    neck_cols = [col[b] for b in bone_names if is_neck(b)]
+    neck_target = neck_cols[0] if neck_cols else head_target
 
     z_shoulder = None
     if bone_heads:
@@ -764,17 +788,18 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                         if hips_target is not None:
                             W[idx, hips_target] += w_sh
 
-        neck_cols = [col[b] for b in bone_names if is_head_or_neck(b)]
-        neck_target = neck_cols[0] if neck_cols else None
-        if neck_target is not None:
+        if neck_target is not None or head_target is not None:
             neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.12 * h)
             if np.any(neck_zone):
                 nz_indices = np.where(neck_zone)[0]
+                z_head_cut = (z_head - 0.01 * h) if z_head is not None else (z_neck + 0.04 * h)
                 for idx in nz_indices:
                     w_sh = float(W[idx, shoulder_cols].sum())
                     if w_sh > 1e-5:
                         W[idx, shoulder_cols] = 0.0
-                        W[idx, neck_target] += w_sh
+                        target = head_target if (Z[idx] >= z_head_cut and head_target is not None) else neck_target
+                        if target is not None:
+                            W[idx, target] += w_sh
 
     # 5. Upper Torso (Spine1, Spine2, Chest) to Leg Barrier
     upper_torso_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine1", "spine2", "spine_2", "spine_3", "chest"))]
@@ -820,18 +845,18 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 8. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
     arm_cols = [col[b] for b in bone_names if is_arm(b)]
-    head_neck_cols = [col[b] for b in bone_names if is_head_or_neck(b)]
-    if arm_cols:
+    if arm_cols and (neck_target is not None or head_target is not None):
         neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.15 * h)
         if np.any(neck_zone):
             nz_indices = np.where(neck_zone)[0]
-            hn_target = head_neck_cols[0] if head_neck_cols else None
+            z_head_cut = (z_head - 0.01 * h) if z_head is not None else (z_neck + 0.04 * h)
             for idx in nz_indices:
                 w_arm = float(W[idx, arm_cols].sum())
                 if w_arm > 1e-5:
                     W[idx, arm_cols] = 0.0
-                    if hn_target is not None:
-                        W[idx, hn_target] += w_arm
+                    target = head_target if (Z[idx] >= z_head_cut and head_target is not None) else neck_target
+                    if target is not None:
+                        W[idx, target] += w_arm
 
     # 9. Armpit / Flank barrier
     if armpit_barrier:
@@ -865,6 +890,18 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                             W[idx, b_idx] = 0.0
                             if hips_target is not None:
                                 W[idx, hips_target] += w_app
+
+    # 11. Head / Neck boundary refinement: Vertices above z_head belong predominantly to Head
+    if head_target is not None and neck_cols and z_head is not None:
+        above_neck = (Z >= (z_head + 0.005 * h)) & (np.abs(X - sym_plane) < 0.20 * h)
+        if np.any(above_neck):
+            an_indices = np.where(above_neck)[0]
+            for idx in an_indices:
+                w_neck = float(W[idx, neck_cols].sum())
+                if w_neck > 0.05:
+                    transfer = w_neck * 0.40
+                    W[idx, neck_cols] -= transfer
+                    W[idx, head_target] += transfer
 
     # Renormalize rows
     row_sums = W.sum(axis=1, keepdims=True)
