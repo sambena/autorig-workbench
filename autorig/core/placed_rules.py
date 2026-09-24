@@ -624,39 +624,52 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 1. Crotch / Leg bilateral separation
     if left_leg_cols and right_leg_cols:
-        left_mask = X > (sym_plane + crotch_threshold)
-        if np.any(left_mask):
-            W[np.ix_(left_mask, right_leg_cols)] = 0.0
-
-        right_mask = X < (sym_plane - crotch_threshold)
-        if np.any(right_mask):
-            W[np.ix_(right_mask, left_leg_cols)] = 0.0
-
-        transition_mask = np.abs(X - sym_plane) <= crotch_threshold
         hips_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("hips", "pelvis", "root"))]
         hips_target = hips_cols[0] if hips_cols else None
-        if np.any(transition_mask):
+
+        # Contralateral elimination: Right leg bones never own vertices on left side (X > sym_plane),
+        # Left leg bones never own vertices on right side (X < sym_plane).
+        # Any opposing leg weights are cleanly transferred to Hips.
+        left_side = X > sym_plane
+        if np.any(left_side):
+            if hips_target is not None:
+                W[left_side, hips_target] += W[left_side][:, right_leg_cols].sum(axis=1)
+            W[np.ix_(left_side, right_leg_cols)] = 0.0
+
+        right_side = X < sym_plane
+        if np.any(right_side):
+            if hips_target is not None:
+                W[right_side, hips_target] += W[right_side][:, left_leg_cols].sum(axis=1)
+            W[np.ix_(right_side, left_leg_cols)] = 0.0
+
+        # C1 Hermite smooth sagittal anchoring: as vertices approach the sagittal seam (|X - sym_plane| < crotch_threshold),
+        # leg weights fade smoothly to 0 at the seam, transferring influence to Hips/pelvis to prevent seam tearing.
+        transition_mask = np.abs(X - sym_plane) <= crotch_threshold
+        if np.any(transition_mask) and hips_target is not None:
             trans_indices = np.where(transition_mask)[0]
             for idx in trans_indices:
                 x_val = X[idx]
-                if x_val > sym_plane:
-                    fade = (x_val - sym_plane) / max(1e-6, crotch_threshold)
-                    k_fade = fade * fade * (3.0 - 2.0 * fade)
-                    old_w = float(W[idx, right_leg_cols].sum())
-                    W[idx, right_leg_cols] *= (1.0 - k_fade)
-                    freed = old_w - float(W[idx, right_leg_cols].sum())
-                    if hips_target is not None and freed > 1e-5:
-                        W[idx, hips_target] += freed
-                elif x_val < sym_plane:
-                    fade = (sym_plane - x_val) / max(1e-6, crotch_threshold)
-                    k_fade = fade * fade * (3.0 - 2.0 * fade)
-                    old_w = float(W[idx, left_leg_cols].sum())
-                    W[idx, left_leg_cols] *= (1.0 - k_fade)
-                    freed = old_w - float(W[idx, left_leg_cols].sum())
-                    if hips_target is not None and freed > 1e-5:
-                        W[idx, hips_target] += freed
+                t = abs(x_val - sym_plane) / max(1e-6, crotch_threshold)
+                k_fade = t * t * (3.0 - 2.0 * t)  # 0 at seam, 1 at boundary
+                cols = left_leg_cols if x_val >= sym_plane else right_leg_cols
+                w_legs = float(W[idx, cols].sum())
+                if w_legs > 1e-5:
+                    W[idx, cols] *= k_fade
+                    freed = w_legs - float(W[idx, cols].sum())
+                    W[idx, hips_target] += freed
 
-    # 2. Clavicle / Shoulder bilateral isolation
+    # 2. Arm & Shoulder bilateral isolation
+    left_arm_cols = [col[b] for b in bone_names if is_left(b) and is_arm(b)]
+    right_arm_cols = [col[b] for b in bone_names if is_right(b) and is_arm(b)]
+    arm_margin = crotch_threshold * 0.5
+    if left_arm_cols and right_arm_cols:
+        l_side = X > (sym_plane + arm_margin)
+        if np.any(l_side):
+            W[np.ix_(l_side, right_arm_cols)] = 0.0
+        r_side = X < (sym_plane - arm_margin)
+        if np.any(r_side):
+            W[np.ix_(r_side, left_arm_cols)] = 0.0
+
     sh_margin = crotch_threshold * 0.5
     for b in bone_names:
         if is_shoulder(b):
@@ -669,6 +682,16 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                 l_side = X > (sym_plane + sh_margin)
                 if np.any(l_side):
                     W[l_side, c_idx] = 0.0
+
+    # Shoulder height isolation: shoulders cannot own hips or legs
+    shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
+    if shoulder_cols and bone_heads:
+        hips_z = [bone_heads[b][2] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis", "root")) and b in bone_heads]
+        if hips_z:
+            z_pelvis_top = max(hips_z) + (height_span * 0.05 if height_span else 0.05)
+            too_low = Z < z_pelvis_top
+            if np.any(too_low):
+                W[np.ix_(too_low, shoulder_cols)] = 0.0
 
     # 3. Distal leg height isolation (feet / toes cannot own thighs or hips)
     distal_leg_cols = [col[b] for b in bone_names if is_distal_leg(b)]
@@ -923,11 +946,9 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     Z = P[:, 2]
     dx = np.abs(X - sym_plane)
 
-    # C1 smooth Hermite profile in X
-    fx = np.ones_like(X)
-    outer = dx > x_core
-    u = np.clip((dx[outer] - x_core) / max(1e-6, x_span - x_core), 0.0, 1.0)
-    fx[outer] = 1.0 - (u * u * (3.0 - 2.0 * u))
+    # C1 smooth Hermite profile in X: peak at centerline seam (X=sym_plane), smoothly tapering outward to x_span
+    u = np.clip(dx / max(1e-6, x_span), 0.0, 1.0)
+    fx = 1.0 - (u * u * (3.0 - 2.0 * u))
 
     # C1 smooth Hermite profile in Z: peak at hips, gentle descent toward ankles, gentle taper above hips
     gz = np.zeros_like(Z)
@@ -953,7 +974,7 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
         w_legs = w_left + w_right
         if w_legs > 0.01:
             conflict = 2.0 * min(w_left, w_right) / w_legs
-            k = max(K[idx], conflict * gz[idx])
+            k = max(K[idx], conflict)
             if k > 0.01:
                 trans = w_legs * k
                 for g in list(v.groups):

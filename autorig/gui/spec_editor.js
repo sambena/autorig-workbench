@@ -15,10 +15,21 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { mirrorName, mirrorChainData, generateStations, bendVertices, rodriguesRotate, computeHingeAxis } from "./viewer_logic.js";
+import {
+  mirrorName,
+  mirrorChainData,
+  generateStations,
+  bendVertices,
+  rodriguesRotate,
+  computeHingeAxis,
+  computeOrientation,
+  clampAnglesToLocked,
+  calculateLeveledCameraPosition,
+  computeGroundPlaneParameters
+} from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
-const MODEL = new URLSearchParams(location.search).get("model") || "";
+let MODEL = new URLSearchParams(location.search).get("model") || "";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const withToken = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN);
@@ -299,9 +310,13 @@ const fromV = (v) => [v.x, -v.z, v.y];
 
 function resize() {
   const w = stageEl.clientWidth, h = stageEl.clientHeight;
-  renderer.setSize(w, h); labelRenderer.setSize(w, h);
-  camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
+window.addEventListener("resize", resize);
 new ResizeObserver(resize).observe(stageEl);
 
 let model = null;                       // the GLB scene
@@ -309,10 +324,18 @@ const meshes = [];
 const skel = new THREE.Group(); skel.renderOrder = 10; scene.add(skel);
 const marks = new THREE.Group(); scene.add(marks);
 const spotsG = new THREE.Group(); scene.add(spotsG);
+const groundGroup = new THREE.Group(); scene.add(groundGroup);
 const pickables = [];                   // joint spheres (userData.joint)
 const labels = {};                      // joint name -> CSS2DObject
 let showHeightLabels = true;
 let showSpanLabels = true;
+let showGround = true;
+
+let lockX = false;
+let lockY = false;
+let lockZ = false;
+let lockedPolar = Math.PI / 2;
+let lockedAzimuth = 0;
 
 let riggedScene = null;
 let riggedClips = [];
@@ -332,6 +355,10 @@ function tick() {
     updateClipUI();
   }
   controls.update();
+  if (lockZ) {
+    camera.up.set(0, 1, 0);
+  }
+  updateOrientationHUD();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
@@ -383,6 +410,8 @@ async function loadRigged(url) {
     }
     riggedScene.visible = viewMode === "rigged";
     setOpacity();
+    updateGroundPlane();
+    updateOrientationHUD();
   } catch (e) {
     console.error("Could not load rigged preview:", e);
   }
@@ -471,9 +500,11 @@ async function setViewMode(mode) {
     if (action) action.stop();
     isPlaying = false;
   }
+  updateGroundPlane();
 }
 
 async function loadModel(url) {
+  meshes.length = 0;
   const gltf = await new GLTFLoader().loadAsync(withToken(url));
   model = gltf.scene;
   scene.add(model);
@@ -492,10 +523,30 @@ async function loadModel(url) {
   });
   meshVerts = new Float32Array(pts);
   setOpacity();
+
+  // Robustly frame camera on loaded model
+  const box = new THREE.Box3().setFromObject(model);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z, 0.5);
+    controls.target.copy(center);
+    camera.position.set(center.x + maxDim * 0.4, center.y + maxDim * 0.4, center.z + maxDim * 1.6);
+    camera.near = maxDim * 0.01;
+    camera.far = maxDim * 50;
+    camera.updateProjectionMatrix();
+    controls.update();
+    lockedPolar = controls.getPolarAngle();
+    lockedAzimuth = controls.getAzimuthalAngle();
+    applyAxisLocks();
+  }
+  updateGroundPlane();
+  updateOrientationHUD();
 }
 
 function setOpacity() {
-  const a = Number($("opacity").value);
+  const opEl = $("opacity");
+  const a = opEl ? Number(opEl.value) : 1;
   for (const o of meshes) for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m.opacity = a; m.depthWrite = a > 0.95; }
   if (riggedScene) {
     riggedScene.traverse((o) => {
@@ -503,20 +554,174 @@ function setOpacity() {
     });
   }
 }
-$("opacity").oninput = setOpacity;
+if ($("opacity")) $("opacity").oninput = setOpacity;
 
 function frameView(dir) {
-  // dir: a direction in the turned frame (face is -Y, its left +X, up +Z), from the model's middle
-  const c = F.fromUnit([0.5, 0.5, 0.5]);
-  const d = F.dir(dir);
-  const dist = (F.max * 0.62) / Math.tan((camera.fov * Math.PI) / 360);
-  controls.target.copy(V(c));
-  camera.position.copy(V([c[0] + d[0] * dist, c[1] + d[1] * dist, c[2] + d[2] * dist]));
-  camera.near = F.max * 0.01; camera.far = F.max * 50; camera.updateProjectionMatrix();
+  controls.minPolarAngle = 0.001;
+  controls.maxPolarAngle = Math.PI - 0.001;
+  controls.minAzimuthAngle = -Infinity;
+  controls.maxAzimuthAngle = Infinity;
+
+  if (!F || !F.fromUnit) {
+    const targetObj = model || riggedScene;
+    if (targetObj) {
+      const box = new THREE.Box3().setFromObject(targetObj);
+      const c = box.getCenter(new THREE.Vector3());
+      const sz = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(sz.x, sz.y, sz.z, 1);
+      controls.target.copy(c);
+      camera.position.set(c.x + maxDim * (dir[0] || 0.4), c.y + maxDim * (dir[2] || 0.4), c.z + maxDim * (-dir[1] || 1.6));
+      controls.update();
+    }
+  } else {
+    const c = F.fromUnit([0.5, 0.5, 0.5]);
+    const d = F.dir(dir);
+    const dist = (F.max * 0.62) / Math.tan((camera.fov * Math.PI) / 360);
+    controls.target.copy(V(c));
+    camera.position.copy(V([c[0] + d[0] * dist, c[1] + d[1] * dist, c[2] + d[2] * dist]));
+    camera.near = F.max * 0.01; camera.far = F.max * 50; camera.updateProjectionMatrix();
+    controls.update();
+  }
+
+  lockedPolar = controls.getPolarAngle();
+  lockedAzimuth = controls.getAzimuthalAngle();
+  applyAxisLocks();
+  updateOrientationHUD();
 }
-$("vFront").onclick = () => frameView([0.35, -1, 0.3]);
-$("vSide").onclick = () => frameView([1, 0, 0.05]);
-$("vTop").onclick = () => frameView([0, -0.02, 1]);
+if ($("vFront")) $("vFront").onclick = () => frameView([0.35, -1, 0.3]);
+if ($("vSide")) $("vSide").onclick = () => frameView([1, 0, 0.05]);
+if ($("vTop")) $("vTop").onclick = () => frameView([0, -0.02, 1]);
+
+// ---------------------------------------------------------------------------------------------------------------
+// Orientation HUD, Axis Locking, Leveling, and Ground Plane
+// ---------------------------------------------------------------------------------------------------------------
+
+function updateOrientationHUD() {
+  const orient = computeOrientation(controls.getPolarAngle(), controls.getAzimuthalAngle());
+  const elX = $("orientValX");
+  const elY = $("orientValY");
+  const elZ = $("orientValZ");
+  if (elX) elX.textContent = orient.pitchDeg + "°";
+  if (elY) elY.textContent = orient.yawDeg + "°";
+  if (elZ) elZ.textContent = orient.rollDeg + "°";
+}
+
+function applyAxisLocks() {
+  if (lockX) {
+    controls.minPolarAngle = lockedPolar;
+    controls.maxPolarAngle = lockedPolar;
+  } else {
+    controls.minPolarAngle = 0.001;
+    controls.maxPolarAngle = Math.PI - 0.001;
+  }
+
+  if (lockY) {
+    controls.minAzimuthAngle = lockedAzimuth;
+    controls.maxAzimuthAngle = lockedAzimuth;
+  } else {
+    controls.minAzimuthAngle = -Infinity;
+    controls.maxAzimuthAngle = Infinity;
+  }
+
+  if (lockZ) {
+    camera.up.set(0, 1, 0);
+  }
+
+  const btnX = $("btnLockX");
+  if (btnX) {
+    btnX.classList.toggle("locked", lockX);
+    btnX.textContent = lockX ? "🔒 Locked" : "🔓 Lock";
+    btnX.title = lockX ? "Unlock pitch (rotation around X)" : "Lock pitch (rotation around X)";
+  }
+  const btnY = $("btnLockY");
+  if (btnY) {
+    btnY.classList.toggle("locked", lockY);
+    btnY.textContent = lockY ? "🔒 Locked" : "🔓 Lock";
+    btnY.title = lockY ? "Unlock yaw (rotation around Y)" : "Lock yaw (rotation around Y)";
+  }
+  const btnZ = $("btnLockZ");
+  if (btnZ) {
+    btnZ.classList.toggle("locked", lockZ);
+    btnZ.textContent = lockZ ? "🔒 Locked" : "🔓 Lock";
+    btnZ.title = lockZ ? "Unlock roll (rotation around Z)" : "Lock roll (rotation around Z)";
+  }
+}
+
+function toggleLock(axis) {
+  const ax = String(axis).toLowerCase();
+  if (ax === "x") {
+    lockX = !lockX;
+    if (lockX) lockedPolar = controls.getPolarAngle();
+  } else if (ax === "y") {
+    lockY = !lockY;
+    if (lockY) lockedAzimuth = controls.getAzimuthalAngle();
+  } else if (ax === "z") {
+    lockZ = !lockZ;
+  }
+  applyAxisLocks();
+}
+
+function setOrientation({ pitchDeg = null, yawDeg = null }) {
+  const currentPolar = controls.getPolarAngle();
+  const currentAzimuth = controls.getAzimuthalAngle();
+  const currentAngles = computeOrientation(currentPolar, currentAzimuth);
+
+  const targetPitch = (pitchDeg !== null && pitchDeg !== undefined) ? pitchDeg : currentAngles.pitchDeg;
+  const targetYaw = (yawDeg !== null && yawDeg !== undefined) ? yawDeg : currentAngles.yawDeg;
+
+  controls.minPolarAngle = 0.001;
+  controls.maxPolarAngle = Math.PI - 0.001;
+  controls.minAzimuthAngle = -Infinity;
+  controls.maxAzimuthAngle = Infinity;
+
+  const newPos = calculateLeveledCameraPosition(camera.position, controls.target, targetPitch, targetYaw);
+  camera.position.set(newPos.x, newPos.y, newPos.z);
+  camera.up.set(0, 1, 0);
+  controls.update();
+
+  lockedPolar = controls.getPolarAngle();
+  lockedAzimuth = controls.getAzimuthalAngle();
+  applyAxisLocks();
+  updateOrientationHUD();
+}
+
+function levelFeet() {
+  setOrientation({ pitchDeg: 0 });
+}
+
+function updateGroundPlane() {
+  clearGroup(groundGroup);
+  const targetObj = (viewMode === "rigged" && riggedScene) ? riggedScene : (model || riggedScene);
+  if (!targetObj) return;
+
+  const box = new THREE.Box3().setFromObject(targetObj);
+  if (box.isEmpty()) return;
+
+  const params = computeGroundPlaneParameters(box);
+
+  const gridHelper = new THREE.GridHelper(params.gridDim, params.divisions, 0x4378ff, 0x272e3b);
+  gridHelper.position.set(params.center[0], params.groundY, params.center[2]);
+  if (gridHelper.material) {
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.8;
+  }
+  groundGroup.add(gridHelper);
+
+  const discGeo = new THREE.CircleGeometry(params.extent * 1.1, 48);
+  const discMat = new THREE.MeshBasicMaterial({
+    color: 0x07090e,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const disc = new THREE.Mesh(discGeo, discMat);
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.set(params.center[0], params.groundY - 0.0005, params.center[2]);
+  groundGroup.add(disc);
+
+  groundGroup.visible = showGround;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Interactive Limb Bend & Pose Test Preview
@@ -1025,10 +1230,14 @@ function drawSpots() {
   });
 }
 
-function redraw() { F = frame(); L = kind() === "tripo" ? layoutTripo() : { of: {}, chains: [], virtual: {}, dropped: new Set(), unused: new Set(), problems: [], alias: {} }; drawSkeleton(); drawMarks(); drawSpots(); legend(); boneInfo(); }
+function redraw() { F = frame(); L = kind() === "tripo" ? layoutTripo() : { of: {}, chains: [], virtual: {}, dropped: new Set(), unused: new Set(), problems: [], alias: {} }; drawSkeleton(); drawMarks(); drawSpots(); legend(); boneInfo(); updateGroundPlane(); }
 if ($("showSourceLabels")) $("showSourceLabels").onchange = redraw;
 if ($("showSuggestedLabels")) $("showSuggestedLabels").onchange = redraw;
 if ($("showGuides")) $("showGuides").onchange = redraw;
+if ($("showGround")) $("showGround").onchange = (e) => {
+  showGround = e.target.checked;
+  if (groundGroup) groundGroup.visible = showGround;
+};
 if ($("showSpots")) $("showSpots").onchange = redraw;
 
 function legend() {
@@ -1500,7 +1709,7 @@ function renderPane() {
   wirePane(pane);
   if (tab === "flat") drawFlat();
   pane.scrollTop = top;
-  if (tab === "run") { const lg = $("log"); if (lg) lg.scrollTop = lg.scrollHeight; }
+  if (tab === "run") { const lg = $("paneLog") || $("log"); if (lg) lg.scrollTop = lg.scrollHeight; }
 }
 
 // ---- fields
@@ -2107,7 +2316,7 @@ function paneRun() {
     h += `<div>job ${job.id}: <b>${esc(job.step)}</b> · <span class="state ${job.state}">${esc(job.state)}</span>${job.pid ? " · PID " + job.pid : ""}` +
          ` ${job.state === "running" || job.state === "queued" ? `<button class="small" data-act="cancel">Cancel</button>` : ""}</div>`;
   } else h += `<div class="muted">Nothing run from here yet. Save and re-rig runs rig, trim, audit, clips and preview; the log shows here.</div>`;
-  h += `<pre class="log" id="log">${esc((job && job.log || []).join("\n"))}</pre>`;
+  h += `<pre class="log" id="paneLog">${esc((job && job.log || []).join("\n"))}</pre>`;
   if (job && job.state === "done" && job.step === "save and re-rig") {
     const pair = B.before && B.audit_time > B.before.time;
     h += `<h3 style="margin:8px 0 4px">${pair ? "Before and after" : "The audit (the first one: nothing to compare with yet)"}</h3>` + (pair ? verdictTable(B.audit, B.before) : verdictTable(B.audit));
@@ -2349,12 +2558,15 @@ async function autoTune() {
 function flashTop(t) { const d = $("dirty"); d.textContent = t; d.style.color = "var(--ok)"; setTimeout(() => { d.style.color = ""; d.textContent = checked.changed ? "● unsaved changes" : ""; }, 3000); }
 
 function follow(j) {
+  if (window.workbench && typeof window.workbench.followJob === "function") {
+    window.workbench.followJob(j);
+  }
   if (es) es.close();
   job = Object.assign({}, j, { log: [] });
   es = new EventSource(withToken(`/api/jobs/${j.id}/events?from=0`));
   es.onmessage = (ev) => {
     job.log.push(JSON.parse(ev.data));
-    const lg = $("log");
+    const lg = $("paneLog") || $("log");
     if (lg && tab === "run") { const stick = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 30; lg.textContent += JSON.parse(ev.data) + "\n"; if (stick) lg.scrollTop = lg.scrollHeight; }
   };
   es.addEventListener("end", async (ev) => {
@@ -2362,8 +2574,12 @@ function follow(j) {
     Object.assign(job, JSON.parse(ev.data));
     await reload(false);
     redraw();
-    if (job.step === "source view" && SRC && !model) await loadModel(SRC.glb_url).catch(() => {});
-    if (job.step === "source view") { redraw(); frameView([0.35, -1, 0.3]); }
+    if (job.step === "source view" && SRC) {
+      if (SRC.glb_url) await loadModel(SRC.glb_url).catch(() => {});
+      redraw();
+      frameView([0.35, -1, 0.3]);
+      message("");
+    }
     if ((job.step === "save and re-rig" || job.step === "auto-tune") && job.state === "done") {
       tab = "run";
       if (job.step === "auto-tune") {
@@ -2377,10 +2593,11 @@ function follow(j) {
     }
     if (job.step === "flat views") tab = "flat";
     renderTabs(); renderPane(); runCheck();
+    resize();
   });
   const poll = setInterval(async () => {
     if (!job || job.id !== j.id || !(job.state === "running" || job.state === "queued" || job.state === undefined)) return clearInterval(poll);
-    try { const s = await api(`/api/jobs/${j.id}`); job.state = s.state; job.pid = s.pid; if (tab === "run") { const top = $("log") && $("log").scrollTop; renderPane(); } } catch (e) {}
+    try { const s = await api(`/api/jobs/${j.id}`); job.state = s.state; job.pid = s.pid; if (tab === "run") { const lg = $("paneLog") || $("log"); const top = lg && lg.scrollTop; renderPane(); } } catch (e) {}
   }, 2500);
   renderTabs(); renderPane();
 }
@@ -2452,51 +2669,231 @@ function message(big, sub, act) {
   $("msgBig").textContent = big || ""; $("msgSub").textContent = sub || ""; $("msgAct").innerHTML = act || "";
 }
 
-async function main() {
-  if (!MODEL) return message("No model named", "Open the editor from the workbench (Edit spec).");
-  try { await reload(true); } catch (e) { return message("Cannot open " + MODEL, e.message); }
+let isInitialized = false;
+let initResolve = null;
+window.specEditorReady = new Promise((resolve) => {
+  initResolve = resolve;
+});
+function markReady() {
+  isInitialized = true;
+  if (initResolve) { initResolve(); initResolve = null; }
+  document.body.dataset.ready = "1";
+}
+
+async function switchModel(name) {
+  if (!name) return;
+  MODEL = name;
+  if ($("title")) $("title").textContent = MODEL;
+  try { history.replaceState(null, "", "#model=" + encodeURIComponent(name)); } catch (e) {}
+
+  if (model) { scene.remove(model); model = null; }
+  if (riggedScene) {
+    scene.remove(riggedScene);
+    clearGroup(riggedScene);
+    riggedScene = null;
+  }
+  if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
+  action = null;
+  riggedClips = [];
+  curClip = 0;
+  meshes.length = 0;
+  meshVerts = null;
+  clearGroup(skel);
+  clearGroup(marks);
+  clearGroup(spotsG);
+
+  message("");
+  try { await reload(true); } catch (e) { message("Cannot open " + MODEL, e.message); return; }
   renderTabs();
   redraw();
-  if (SRC) frameView([0.35, -1, 0.3]);       // the skeleton shows at once; the model follows when it has loaded
+  if (SRC) frameView([0.35, -1, 0.3]);
   renderPane();
   runCheck();
+
   if (!SRC || SRC.stale) {
     message(SRC ? "The source file changed" : "Making the source view…", "A few seconds: the source model and its own skeleton, exactly as they came.");
     try { follow(await api("/api/spec/source", { model: MODEL })); tab = "run"; renderTabs(); renderPane(); }
     catch (e) { message("Cannot make the source view", e.message); return; }
-    const wait = setInterval(() => { if (job && job.state && !["running", "queued"].includes(job.state)) { clearInterval(wait); message(job.state === "done" ? "" : "The source view failed", job.state === "done" ? "" : "See the Run tab."); if (job.state === "done") { tab = "rig"; renderTabs(); renderPane(); } } }, 400);
-  }
-  if (SRC) {
+    const wait = setInterval(async () => {
+      if (job && job.state && !["running", "queued"].includes(job.state)) {
+        clearInterval(wait);
+        if (job.state === "done") {
+          tab = "rig";
+          await reload(false);
+          if (SRC && SRC.glb_url) {
+            await loadModel(SRC.glb_url).catch(() => {});
+            redraw();
+            frameView([0.35, -1, 0.3]);
+          }
+          renderTabs();
+          renderPane();
+          message("");
+        } else {
+          message("The source view failed", "See the Run tab.");
+        }
+      }
+    }, 400);
+  } else if (SRC && SRC.glb_url) {
     try { await loadModel(SRC.glb_url); } catch (e) { message("Cannot load the source view", e.message); }
     redraw();
     frameView([0.35, -1, 0.3]);
+    message("");
   }
-  if (B.preview_url) {
-    loadRigged(B.preview_url).catch(() => {});
+
+  if (B && B.preview_url) {
+    await loadRigged(B.preview_url).catch(() => {});
   }
-  $("vSource").onclick = () => setViewMode("source");
-  $("vRigged").onclick = () => setViewMode("rigged");
-  $("clipPlay").onclick = togglePlay;
-  $("clipSelect").onchange = (e) => playClip(Number(e.target.value));
+  const targetMode = (viewMode === "rigged" && (!B || !B.preview_url)) ? "source" : viewMode;
+  await setViewMode(targetMode);
+  resize();
+}
+
+async function refreshCurrentModel() {
+  if (!MODEL) return;
+  try {
+    await reload(false);
+    renderTabs();
+    redraw();
+    renderPane();
+    await runCheck();
+    if (B && B.preview_url) {
+      await loadRigged(B.preview_url).catch(() => {});
+    }
+    await setViewMode(viewMode);
+  } catch (e) {
+    console.warn("Could not refresh current model:", e);
+  }
+}
+
+function wireUIEvents() {
+  if ($("vSource")) $("vSource").onclick = () => setViewMode("source");
+  if ($("vRigged")) $("vRigged").onclick = () => setViewMode("rigged");
+  if ($("clipPlay")) $("clipPlay").onclick = togglePlay;
+  if ($("clipSelect")) $("clipSelect").onchange = (e) => playClip(Number(e.target.value));
   const scrubEl = $("clipScrub");
   if (scrubEl) {
     scrubEl.onpointerdown = () => { scrubbing = true; };
     scrubEl.onpointerup = () => { scrubbing = false; };
     scrubEl.oninput = (e) => seekClip(Number(e.target.value) / 1000);
   }
-  document.body.dataset.ready = "1";            // for tests and screenshots: the page has what it needs
-  // for tests and screenshots: the draft, and where a 0..1 point or a joint is on the screen
-  window.specEditor = {
-    draft: () => clone(draft),
-    viewMode: () => viewMode,
-    setViewMode,
-    clips: () => riggedClips.map((c) => c.name),
-    playClip,
-    screen: (u, isJoint) => {
-      const p = V(isJoint ? (joint(u) || L.virtual[u]).head || L.virtual[u].pos : F.fromUnit(u)).project(camera);
-      const r = renderer.domElement.getBoundingClientRect();
-      return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];
-    },
-  };
+  if ($("btnLevelGround")) $("btnLevelGround").onclick = levelFeet;
+  if ($("btnLockX")) $("btnLockX").onclick = () => toggleLock("x");
+  if ($("btnLockY")) $("btnLockY").onclick = () => toggleLock("y");
+  if ($("btnLockZ")) $("btnLockZ").onclick = () => toggleLock("z");
+  if ($("orientValX")) $("orientValX").onclick = () => setOrientation({ pitchDeg: 0 });
+  if ($("orientValY")) $("orientValY").onclick = () => setOrientation({ yawDeg: 0 });
+  if ($("showGround")) {
+    $("showGround").onchange = (e) => {
+      showGround = e.target.checked;
+      if (groundGroup) groundGroup.visible = showGround;
+    };
+  }
+}
+
+// Global specEditor interface exported immediately
+window.specEditor = {
+  getModel: () => MODEL,
+  draft: () => clone(draft),
+  viewMode: () => viewMode,
+  setViewMode,
+  clips: () => riggedClips.map((c) => c.name),
+  playClip,
+  togglePlay,
+  seekClip,
+  switchModel,
+  refreshCurrentModel,
+  save: (rerig) => save(rerig),
+  suggest: () => $("bSuggest") && $("bSuggest").click(),
+  autoTune: () => autoTune(),
+  undo: () => doUndo(),
+  revert: () => $("bRevert") && $("bRevert").click(),
+  frameView,
+  setOrientation,
+  levelFeet,
+  toggleLock,
+  isLocked: (axis) => {
+    const a = String(axis).toLowerCase();
+    if (a === "x") return lockX;
+    if (a === "y") return lockY;
+    if (a === "z") return lockZ;
+    return false;
+  },
+  getOrientation: () => computeOrientation(controls.getPolarAngle(), controls.getAzimuthalAngle()),
+  updateGroundPlane,
+  isGroundVisible: () => showGround,
+  setGroundVisible: (visible) => {
+    showGround = !!visible;
+    const chk = $("showGround");
+    if (chk) chk.checked = showGround;
+    if (groundGroup) groundGroup.visible = showGround;
+  },
+  resize,
+  screen: (u, isJoint) => {
+    const p = V(isJoint ? (joint(u) || L.virtual[u]).head || L.virtual[u].pos : F.fromUnit(u)).project(camera);
+    const r = renderer.domElement.getBoundingClientRect();
+    return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];
+  },
+};
+
+async function main() {
+  if (!MODEL) {
+    const h = new URLSearchParams(location.hash.slice(1));
+    MODEL = h.get("model") || "";
+  }
+  if (!MODEL) {
+    try {
+      const st = await api("/api/state");
+      if (st && st.models && st.models.length > 0) {
+        MODEL = st.models[0].name;
+      }
+    } catch (e) {}
+  }
+  if (!MODEL) {
+    message("No model loaded", "Choose a model from the top menu or import one to begin.");
+    wireUIEvents();
+    markReady();
+    return;
+  }
+  try { await reload(true); } catch (e) { markReady(); return message("Cannot open " + MODEL, e.message); }
+  renderTabs();
+  redraw();
+  if (SRC) frameView([0.35, -1, 0.3]);
+  renderPane();
+  runCheck();
+  if (!SRC || SRC.stale) {
+    message(SRC ? "The source file changed" : "Making the source view…", "A few seconds: the source model and its own skeleton, exactly as they came.");
+    try { follow(await api("/api/spec/source", { model: MODEL })); tab = "run"; renderTabs(); renderPane(); }
+    catch (e) { markReady(); message("Cannot make the source view", e.message); return; }
+    const wait = setInterval(async () => {
+      if (job && job.state && !["running", "queued"].includes(job.state)) {
+        clearInterval(wait);
+        if (job.state === "done") {
+          tab = "rig";
+          await reload(false);
+          if (SRC && SRC.glb_url) {
+            await loadModel(SRC.glb_url).catch(() => {});
+            redraw();
+            frameView([0.35, -1, 0.3]);
+          }
+          renderTabs();
+          renderPane();
+          message("");
+        } else {
+          message("The source view failed", "See the Run tab.");
+        }
+      }
+    }, 400);
+  } else if (SRC && SRC.glb_url) {
+    try { await loadModel(SRC.glb_url); } catch (e) { message("Cannot load the source view", e.message); }
+    redraw();
+    frameView([0.35, -1, 0.3]);
+    message("");
+  }
+  if (B && B.preview_url) {
+    loadRigged(B.preview_url).catch(() => {});
+  }
+  wireUIEvents();
+  resize();
+  markReady();
 }
 main();
