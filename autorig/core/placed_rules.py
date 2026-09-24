@@ -561,11 +561,19 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
 
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None):
-    """Enforces geodesic and air-gap barriers on skin weights:
+    """Enforces geodesic, vertical, and air-gap anatomical barriers on skin weights:
     1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
-    2. Armpit / Flank barrier: prevents arm bones from pulling torso/rib/neck vertices across the underarm/collar gaps.
-    3. Clavicle / Shoulder bilateral isolation: prevents shoulder bones from affecting the contralateral side.
-    4. Distal leg height isolation: prevents foot/toe bones from bleeding onto thighs or pelvis.
+    2. Arm & Shoulder vertical isolation: strictly prevents arms, hands, shoulders, and clavicles
+       from pulling on pelvis, hips, thighs, knees, and feet across the air gap.
+    3. Shoulder-Neck and Shoulder-Spine boundary: prevents shoulder clavicles from bleeding onto the
+       central neck column or middle/lower spine.
+    4. Upper-Torso-to-Leg isolation: prevents upper chest/spine (Spine1, Spine2) and neck from bleeding
+       onto the lower limbs.
+    5. Distal leg height isolation: prevents foot/toe bones from bleeding onto thighs or pelvis.
+    6. Leg-to-Upper-Body isolation: prevents leg bones from bleeding onto the chest and upper body.
+    7. Armpit / Flank barrier: prevents distal arm bones from pulling rib/torso vertices across underarm gaps.
+    8. Non-humanoid appendage isolation: prevents ears, antennae, flukes, flippers, and wisps from bleeding
+       into distant body segments.
     weights: (N, num_bones) array of vertex weights.
     coords: (N, 3) array of vertex positions.
     bone_names: list of bone names matching columns of weights.
@@ -616,17 +624,55 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
         lower = name.lower()
         return any(k in lower for k in ("head", "neck"))
 
+    def is_appendage(name):
+        lower = name.lower()
+        return any(k in lower for k in ("ear", "antenna", "fluke", "flipper", "wisp", "filament"))
+
     X = coords[:, 0]
     Z = coords[:, 2]
+    h = height_span or float(Z.max() - Z.min()) if len(Z) else 1.0
+    z_min = float(Z.min()) if len(Z) else 0.0
 
     left_leg_cols = [col[b] for b in bone_names if is_left(b) and is_leg(b)]
     right_leg_cols = [col[b] for b in bone_names if is_right(b) and is_leg(b)]
 
+    # Target hips / pelvis bone
+    hips_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("hips", "pelvis"))]
+    if not hips_cols:
+        hips_cols = [col[b] for b in bone_names if is_torso(b) and "root" in b.lower()]
+    if not hips_cols:
+        hips_cols = [col[b] for b in bone_names if is_torso(b) and "spine" in b.lower()]
+    hips_target = hips_cols[0] if hips_cols else None
+
+    # Landmark Z coordinates
+    z_hips = None
+    if bone_heads:
+        hips_cands = [bone_heads[b][2] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis")) and b in bone_heads]
+        if hips_cands:
+            z_hips = max(hips_cands)
+        else:
+            sp_cands = [bone_heads[b][2] for b in bone_names if "spine" in b.lower() and b in bone_heads]
+            if sp_cands:
+                z_hips = min(sp_cands)
+    if z_hips is None:
+        z_hips = z_min + 0.45 * h
+
+    z_neck = None
+    if bone_heads:
+        neck_cands = [bone_heads[b][2] for b in bone_names if is_head_or_neck(b) and b in bone_heads]
+        if neck_cands:
+            z_neck = min(neck_cands)
+    if z_neck is None:
+        z_neck = z_min + 0.80 * h
+
+    z_shoulder = None
+    if bone_heads:
+        sh_cands = [bone_heads[b][2] for b in bone_names if is_shoulder(b) and b in bone_heads]
+        if sh_cands:
+            z_shoulder = min(sh_cands)
+
     # 1. Crotch / Leg bilateral separation
     if left_leg_cols and right_leg_cols:
-        hips_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("hips", "pelvis", "root"))]
-        hips_target = hips_cols[0] if hips_cols else None
-
         # Contralateral elimination: Right leg bones never own vertices on left side (X > sym_plane),
         # Left leg bones never own vertices on right side (X < sym_plane).
         # Any opposing leg weights are cleanly transferred to Hips.
@@ -683,17 +729,67 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                 if np.any(l_side):
                     W[l_side, c_idx] = 0.0
 
-    # Shoulder height isolation: shoulders cannot own hips or legs
-    shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
-    if shoulder_cols and bone_heads:
-        hips_z = [bone_heads[b][2] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis", "root")) and b in bone_heads]
-        if hips_z:
-            z_pelvis_top = max(hips_z) + (height_span * 0.05 if height_span else 0.05)
-            too_low = Z < z_pelvis_top
-            if np.any(too_low):
-                W[np.ix_(too_low, shoulder_cols)] = 0.0
+    # 3. Arm & Shoulder vertical isolation (strictly prevent arm/shoulder bleed onto pelvis, hips, and legs)
+    all_arm_cols = [col[b] for b in bone_names if is_shoulder(b) or is_arm(b)]
+    if all_arm_cols and (hips_target is not None or left_leg_cols or right_leg_cols):
+        z_arm_cutoff = z_hips + 0.03 * h
+        below_pelvis = Z < z_arm_cutoff
+        if np.any(below_pelvis):
+            bp_indices = np.where(below_pelvis)[0]
+            for idx in bp_indices:
+                target = hips_target
+                x_val = X[idx]
+                if x_val > (sym_plane + crotch_threshold) and left_leg_cols:
+                    target = left_leg_cols[0]
+                elif x_val < (sym_plane - crotch_threshold) and right_leg_cols:
+                    target = right_leg_cols[0]
+                if target is not None:
+                    w_arms = float(W[idx, all_arm_cols].sum())
+                    if w_arms > 1e-5:
+                        W[idx, all_arm_cols] = 0.0
+                        W[idx, target] += w_arms
 
-    # 3. Distal leg height isolation (feet / toes cannot own thighs or hips)
+    # 4. Shoulder Clavicle Containment: Shoulders cannot own neck or mid/lower spine
+    shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
+    if shoulder_cols:
+        if z_shoulder is not None:
+            z_sh_low = z_shoulder - 0.12 * h
+            too_low_sh = Z < z_sh_low
+            if np.any(too_low_sh):
+                tl_indices = np.where(too_low_sh)[0]
+                for idx in tl_indices:
+                    w_sh = float(W[idx, shoulder_cols].sum())
+                    if w_sh > 1e-5:
+                        W[idx, shoulder_cols] = 0.0
+                        if hips_target is not None:
+                            W[idx, hips_target] += w_sh
+
+        neck_cols = [col[b] for b in bone_names if is_head_or_neck(b)]
+        neck_target = neck_cols[0] if neck_cols else None
+        if neck_target is not None:
+            neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.12 * h)
+            if np.any(neck_zone):
+                nz_indices = np.where(neck_zone)[0]
+                for idx in nz_indices:
+                    w_sh = float(W[idx, shoulder_cols].sum())
+                    if w_sh > 1e-5:
+                        W[idx, shoulder_cols] = 0.0
+                        W[idx, neck_target] += w_sh
+
+    # 5. Upper Torso (Spine1, Spine2, Chest) to Leg Barrier
+    upper_torso_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine1", "spine2", "spine_2", "spine_3", "chest"))]
+    if upper_torso_cols and hips_target is not None:
+        z_leg_zone = z_hips + 0.04 * h
+        in_leg_zone = (Z < z_leg_zone) & (np.abs(X - sym_plane) > crotch_threshold)
+        if np.any(in_leg_zone):
+            lz_indices = np.where(in_leg_zone)[0]
+            for idx in lz_indices:
+                w_up = float(W[idx, upper_torso_cols].sum())
+                if w_up > 1e-5:
+                    W[idx, upper_torso_cols] = 0.0
+                    W[idx, hips_target] += w_up
+
+    # 6. Distal leg height isolation (feet / toes cannot own thighs or hips)
     distal_leg_cols = [col[b] for b in bone_names if is_distal_leg(b)]
     if distal_leg_cols and bone_heads:
         z_feet = [bone_heads[b][2] for b in bone_names if is_distal_leg(b) and b in bone_heads]
@@ -701,21 +797,43 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
             z_ankle_thresh = max(z_feet) + (height_span * 0.08 if height_span else 0.08)
             too_high = Z > z_ankle_thresh
             if np.any(too_high):
-                W[np.ix_(too_high, distal_leg_cols)] = 0.0
+                th_indices = np.where(too_high)[0]
+                for idx in th_indices:
+                    w_fl = float(W[idx, distal_leg_cols].sum())
+                    if w_fl > 1e-5:
+                        W[idx, distal_leg_cols] = 0.0
+                        if hips_target is not None:
+                            W[idx, hips_target] += w_fl
 
-    # 4. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
+    # 7. Leg-to-Upper-Body isolation: Leg bones cannot own chest/ribs/shoulders
+    all_leg_cols = [col[b] for b in bone_names if is_leg(b)]
+    if all_leg_cols and hips_target is not None:
+        z_torso_top = z_hips + 0.15 * h
+        above_pelvis = Z > z_torso_top
+        if np.any(above_pelvis):
+            ap_indices = np.where(above_pelvis)[0]
+            for idx in ap_indices:
+                w_legs = float(W[idx, all_leg_cols].sum())
+                if w_legs > 1e-5:
+                    W[idx, all_leg_cols] = 0.0
+                    W[idx, hips_target] += w_legs
+
+    # 8. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
     arm_cols = [col[b] for b in bone_names if is_arm(b)]
     head_neck_cols = [col[b] for b in bone_names if is_head_or_neck(b)]
-    if arm_cols and bone_heads:
-        z_neck_heads = [bone_heads[b][2] for b in bone_names if is_head_or_neck(b) and b in bone_heads]
-        if z_neck_heads:
-            z_neck = min(z_neck_heads)
-            h = height_span or float(coords[:, 2].max() - coords[:, 2].min())
-            neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.15 * h)
-            if np.any(neck_zone):
-                W[np.ix_(neck_zone, arm_cols)] = 0.0
+    if arm_cols:
+        neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.15 * h)
+        if np.any(neck_zone):
+            nz_indices = np.where(neck_zone)[0]
+            hn_target = head_neck_cols[0] if head_neck_cols else None
+            for idx in nz_indices:
+                w_arm = float(W[idx, arm_cols].sum())
+                if w_arm > 1e-5:
+                    W[idx, arm_cols] = 0.0
+                    if hn_target is not None:
+                        W[idx, hn_target] += w_arm
 
-    # 5. Armpit / Flank barrier
+    # 9. Armpit / Flank barrier
     if armpit_barrier:
         torso_cols = [col[b] for b in bone_names if is_torso(b)]
         distal_arm_cols = [col[b] for b in bone_names if is_distal_arm(b)]
@@ -729,6 +847,24 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
             distal_dominant = distal_weight > 0.40
             if np.any(distal_dominant):
                 W[np.ix_(distal_dominant, torso_cols)] = 0.0
+
+    # 10. Appendage Isolation (ears, antennae, flukes, flippers, wisps)
+    appendage_cols = [col[b] for b in bone_names if is_appendage(b)]
+    if appendage_cols and bone_heads:
+        for b_idx in appendage_cols:
+            b_name = bone_names[b_idx]
+            if b_name in bone_heads:
+                b_pos = np.array(bone_heads[b_name])
+                dists = np.linalg.norm(coords - b_pos, axis=1)
+                too_far = dists > 0.28 * h
+                if np.any(too_far):
+                    tf_indices = np.where(too_far)[0]
+                    for idx in tf_indices:
+                        w_app = float(W[idx, b_idx])
+                        if w_app > 1e-5:
+                            W[idx, b_idx] = 0.0
+                            if hips_target is not None:
+                                W[idx, hips_target] += w_app
 
     # Renormalize rows
     row_sums = W.sum(axis=1, keepdims=True)
