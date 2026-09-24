@@ -2487,9 +2487,15 @@ function doUndo() {
   $("bUndo").disabled = !undo.length;
   changed();
 }
-$("bUndo").onclick = doUndo;
-$("bRevert").onclick = () => { if (!checked.changed || confirm("Throw away every change since the last save?")) { pushUndo(); draft = startDraft(); changed(); } };
-$("bSuggest").onclick = async () => {
+function revertSpec() {
+  if (!checked.changed || confirm("Throw away every change since the last save?")) {
+    pushUndo();
+    draft = startDraft();
+    changed();
+  }
+}
+
+async function suggestSkeleton() {
   try {
     flashTop("Analyzing model and suggesting skeleton…");
     const res = await api("/api/spec/suggest", { model: MODEL });
@@ -2518,7 +2524,11 @@ $("bSuggest").onclick = async () => {
   } catch (e) {
     flashTop("Error: " + e.message);
   }
-};
+}
+
+$("bUndo").onclick = doUndo;
+$("bRevert").onclick = revertSpec;
+$("bSuggest").onclick = suggestSkeleton;
 
 async function save(rerig) {
   endPick(false);
@@ -2803,10 +2813,11 @@ window.specEditor = {
   switchModel,
   refreshCurrentModel,
   save: (rerig) => save(rerig),
-  suggest: () => $("bSuggest") && $("bSuggest").click(),
+  rerig: () => save(true),
+  suggest: () => suggestSkeleton(),
   autoTune: () => autoTune(),
   undo: () => doUndo(),
-  revert: () => $("bRevert") && $("bRevert").click(),
+  revert: () => revertSpec(),
   frameView,
   setOrientation,
   levelFeet,

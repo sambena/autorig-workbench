@@ -107,9 +107,13 @@ def measure(co, lo, size, h, main=None):
         s_knee = slab_z(knee_z, *xs)
         raw[side + "knee"] = (float(np.median(s_knee[:, 0])), float(np.median(s_knee[:, 1])), knee_z)
 
-        foot = M[(M[:, 2] < 0.04) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
-        toe = foot[foot[:, 1].argmin()]
-        fx = float(np.median(foot[:, 0]))
+        foot = M[(M[:, 2] < 0.06) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
+        if len(foot) == 0:
+            foot = M[(M[:, 2] < 0.12) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
+        if len(foot) == 0:
+            foot = slab_z(z["ankle"], *xs)
+        toe = foot[foot[:, 1].argmin()] if len(foot) else np.array([xs[0] * 0.5 + xs[1] * 0.5, -0.1, 0.02])
+        fx = float(np.median(foot[:, 0])) if len(foot) else float(xs[0] * 0.5 + xs[1] * 0.5)
         raw[side + "toe"] = (fx, float(toe[1]), 0.02)
         ay = raw[side + "ankle"][1]
         raw[side + "ball"] = (fx, ay + (toe[1] - ay) * 0.68, 0.035)

@@ -258,7 +258,10 @@ function setupMenus() {
     btnQuickAction.onclick = () => {
       const mode = window.specEditor ? window.specEditor.viewMode() : "source";
       if (mode === "source") {
-        if (window.specEditor && window.specEditor.rerig) window.specEditor.rerig();
+        if (window.specEditor) {
+          if (typeof window.specEditor.rerig === "function") window.specEditor.rerig();
+          else if (typeof window.specEditor.save === "function") window.specEditor.save(true);
+        }
       } else {
         runStep("all");
       }
@@ -352,7 +355,10 @@ async function handleAction(action) {
       if (window.specEditor && window.specEditor.save) window.specEditor.save(false);
       break;
     case "save-rerig":
-      if (window.specEditor && window.specEditor.rerig) window.specEditor.rerig();
+      if (window.specEditor) {
+        if (typeof window.specEditor.rerig === "function") window.specEditor.rerig();
+        else if (typeof window.specEditor.save === "function") window.specEditor.save(true);
+      }
       break;
 
     // Pipeline
@@ -510,9 +516,13 @@ function setupDrawers() {
     badgeEl.onclick = () => openAuditModal();
   }
 
-  // Initialize CSS offsets for HUDs
-  document.documentElement.style.setProperty("--inspector-offset", inspector && inspector.classList.contains("open") ? "440px" : "0px");
-  document.documentElement.style.setProperty("--log-drawer-offset", logDrawer && logDrawer.classList.contains("open") ? "252px" : "34px");
+  // Initialize CSS offsets and body classes for HUDs
+  const inspectorOpen = !!(inspector && inspector.classList.contains("open"));
+  const logOpen = !!(logDrawer && logDrawer.classList.contains("open"));
+  document.body.classList.toggle("inspector-open", inspectorOpen);
+  document.body.classList.toggle("log-open", logOpen);
+  document.documentElement.style.setProperty("--inspector-offset", inspectorOpen ? "440px" : "0px");
+  document.documentElement.style.setProperty("--log-drawer-offset", logOpen ? "252px" : "34px");
 }
 
 function toggleDrawer(sel) {
@@ -527,10 +537,12 @@ function setDrawerOpen(el, open) {
   if (el.id === "inspectorDrawer") {
     const btn = $("#toggleInspector");
     if (btn) btn.classList.toggle("on", open);
+    document.body.classList.toggle("inspector-open", open);
     document.documentElement.style.setProperty("--inspector-offset", open ? "440px" : "0px");
   } else if (el.id === "logDrawer") {
     const btn = $("#toggleLog");
     if (btn) btn.classList.toggle("on", open);
+    document.body.classList.toggle("log-open", open);
     document.documentElement.style.setProperty("--log-drawer-offset", open ? "252px" : "34px");
   }
 }

@@ -1058,6 +1058,7 @@ def skin(mesh, arm, chains, spec, size, log):
         # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
         # Run before rigid-piece pass so loose pieces still end up rigid.
         smooth_weights(mesh, int(spec["smooth"]))
+        placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands") or spec.get("rigid_armor"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
