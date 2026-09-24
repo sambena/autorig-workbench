@@ -283,6 +283,59 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertAlmostEqual(cleaned[0, 0], 1.0, places=5)  # Transferred to Hips
         np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(1), rtol=1e-5)
 
+    def test_compute_hinge_laplacian_smoothing(self):
+        bone_names = ["LeftArm", "LeftForeArm", "Spine"]
+        hinge_pairs = [("LeftArm", "LeftForeArm")]
+        bone_heads = {
+            "LeftArm": [0.2, 0.0, 1.4],
+            "LeftForeArm": [0.4, 0.0, 1.4],  # Elbow joint at (0.4, 0.0, 1.4)
+        }
+        bone_tails = {
+            "LeftArm": [0.4, 0.0, 1.4],
+            "LeftForeArm": [0.6, 0.0, 1.4],
+        }
+        # 4 vertices:
+        # v0: slightly left of elbow (0.38, 0, 1.4) with mostly LeftArm
+        # v1: slightly right of elbow (0.42, 0, 1.4) with mostly LeftForeArm (steep cliff with v0)
+        # v2: far along forearm (0.58, 0, 1.4)
+        # v3: far on body (0.0, 0, 1.0) - outside hinge zone
+        coords = np.array([
+            [0.38, 0.0, 1.4],
+            [0.42, 0.0, 1.4],
+            [0.58, 0.0, 1.4],
+            [0.0, 0.0, 1.0],
+        ])
+        edges = np.array([
+            [0, 1],  # Edge spanning across the elbow hinge with 0.8 weight cliff
+            [1, 2],  # Edge along forearm
+        ])
+        weights = np.array([
+            [0.9, 0.1, 0.0],  # v0: LeftArm 0.9, LeftForeArm 0.1
+            [0.1, 0.9, 0.0],  # v1: LeftArm 0.1, LeftForeArm 0.9 -> initial gradient = 0.8!
+            [0.0, 1.0, 0.0],  # v2: LeftForeArm 1.0
+            [0.0, 0.0, 1.0],  # v3: Spine 1.0 (outside zone)
+        ])
+
+        smoothed = placed_rules.compute_hinge_laplacian_smoothing(
+            weights, coords, edges, hinge_pairs, bone_names,
+            bone_heads=bone_heads, bone_tails=bone_tails,
+            passes=8, max_gradient=0.30, radius_scale=0.6, model_size=[1.0, 1.0, 2.0]
+        )
+
+        # Gradient across edge (0, 1) must be relaxed significantly
+        initial_grad = abs(weights[0, 1] - weights[1, 1])
+        final_grad = abs(smoothed[0, 1] - smoothed[1, 1])
+        self.assertLess(final_grad, initial_grad)
+        self.assertLessEqual(final_grad, 0.45)
+
+        # Outside vertex (v3) must remain 100% untouched
+        self.assertEqual(smoothed[3, 2], 1.0)
+        self.assertEqual(smoothed[3, 0], 0.0)
+        self.assertEqual(smoothed[3, 1], 0.0)
+
+        # All rows must remain normalized to 1.0
+        np.testing.assert_allclose(smoothed.sum(axis=1), np.ones(4), rtol=1e-5)
+
 
     def test_find_nearest_bone_segment(self):
         # Two bone segments:

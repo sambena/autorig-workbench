@@ -399,6 +399,193 @@ def blend_joins_pass(mesh, arm, chains, spec, size, log):
     log["blend_joins_verts"] = blended_count
 
 
+def compute_hinge_laplacian_smoothing(
+    weights, coords, edges, hinge_pairs, bone_names,
+    bone_heads=None, bone_tails=None, passes=6,
+    max_gradient=0.28, radius_scale=0.45, model_size=None
+):
+    """Applies localized edge-aware Laplacian smoothing to skinning weights across joint hinges.
+    Prevents mesh tearing and creasing during bending and twisting by smoothing the relative weight
+    ratio between parent and child articulating pairs within each joint's hinge capsule.
+    
+    weights: (N, num_bones) array of vertex weights.
+    coords: (N, 3) vertex positions.
+    edges: (E, 2) edge vertex indices.
+    hinge_pairs: list of (parent_bone, child_bone) names.
+    bone_names: list of bone names corresponding to columns in weights.
+    bone_heads: dict of {bone_name: (3,)} joint head positions.
+    bone_tails: dict of {bone_name: (3,)} joint tail positions.
+    passes: number of Laplacian smoothing iterations.
+    max_gradient: maximum allowable weight difference across any single edge in the hinge zone.
+    radius_scale: fraction of bone length used for the hinge capsule radius.
+    model_size: optional (3,) bounding box dimensions of the model.
+    Returns: (N, num_bones) smoothed and normalized weights.
+    """
+    W = np.array(weights, copy=True, dtype=float)
+    N, num_bones = W.shape
+    if N == 0 or num_bones == 0 or len(edges) == 0:
+        return W
+
+    col = {name: i for i, name in enumerate(bone_names)}
+    E = np.asarray(edges, dtype=int)
+    P = np.asarray(coords, dtype=float)
+
+    if model_size is not None:
+        S = max(model_size)
+    else:
+        span = P.max(axis=0) - P.min(axis=0) if len(P) else np.array([1.0, 1.0, 1.0])
+        S = max(span) if len(span) else 1.0
+    S = max(1e-4, float(S))
+
+    bone_heads = bone_heads or {}
+    bone_tails = bone_tails or {}
+
+    for p_name, c_name in hinge_pairs:
+        if p_name not in col or c_name not in col:
+            continue
+        p_idx = col[p_name]
+        c_idx = col[c_name]
+
+        # Determine joint pivot and radius
+        if c_name in bone_heads:
+            j_pos = np.array(bone_heads[c_name], dtype=float)
+        else:
+            continue
+
+        if c_name in bone_tails:
+            t_pos = np.array(bone_tails[c_name], dtype=float)
+            L = float(np.linalg.norm(t_pos - j_pos))
+        else:
+            L = 0.15 * S
+
+        R = max(0.05 * S, radius_scale * max(1e-3, L))
+        dists = np.linalg.norm(P - j_pos, axis=1)
+        in_zone = dists <= R
+        if not np.any(in_zone):
+            continue
+
+        w_sum = W[:, p_idx] + W[:, c_idx]
+        active = in_zone & (w_sum > 0.04)
+        if not np.any(active):
+            continue
+
+        t = np.zeros(N, dtype=float)
+        t[active] = W[active, c_idx] / w_sum[active]
+
+        # Find edges where both endpoints are active
+        edge_active = active[E[:, 0]] & active[E[:, 1]]
+        if not np.any(edge_active):
+            continue
+        E_active = E[edge_active]
+
+        # Iterative edge-gradient relaxation and Laplacian smoothing
+        for _ in range(passes):
+            u_idx = E_active[:, 0]
+            v_idx = E_active[:, 1]
+            dt = t[u_idx] - t[v_idx]
+            steep = np.abs(dt) > max_gradient
+            if not np.any(steep):
+                break
+
+            for e_k in np.where(steep)[0]:
+                u = u_idx[e_k]
+                v = v_idx[e_k]
+                diff = t[u] - t[v]
+                falloff_u = max(0.0, 1.0 - (dists[u] / R)) ** 2
+                falloff_v = max(0.0, 1.0 - (dists[v] / R)) ** 2
+                shift = 0.35 * (diff - np.sign(diff) * max_gradient)
+                t[u] = np.clip(t[u] - shift * falloff_u, 0.0, 1.0)
+                t[v] = np.clip(t[v] + shift * falloff_v, 0.0, 1.0)
+
+        # Update weights from relaxed t
+        active_indices = np.where(active)[0]
+        W[active_indices, c_idx] = w_sum[active_indices] * t[active_indices]
+        W[active_indices, p_idx] = w_sum[active_indices] * (1.0 - t[active_indices])
+
+    # Renormalize rows
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
+def joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log):
+    """Blender mesh pass: applies localized joint hinge Laplacian smoothing across articulating
+    parent-child pairs (knees, elbows, hips, shoulders, neck) to eliminate bend and twist tears."""
+    if not spec.get("hinge_smoothing", True):
+        return
+
+    vg = mesh.vertex_groups
+    verts = mesh.data.vertices
+    n = len(verts)
+    if n == 0 or len(mesh.data.edges) == 0:
+        return
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return
+
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((n, len(bone_names)), dtype=float)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+
+    P = np.empty(n * 3, dtype=float)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    edges = np.array([tuple(e.vertices) for e in mesh.data.edges], dtype=int)
+    bone_heads = {b.name: tuple(b.head_local) for b in arm.data.bones}
+    bone_tails = {b.name: tuple(b.tail_local) for b in arm.data.bones}
+
+    # Extract hinge pairs from spec or arm structure
+    hinge_pairs = []
+    if "hinges" in spec:
+        for item in spec["hinges"]:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                hinge_pairs.append((item[0], item[1]))
+            elif isinstance(item, dict) and "parent" in item and "child" in item:
+                hinge_pairs.append((item["parent"], item["child"]))
+    else:
+        for b in arm.data.bones:
+            if b.use_deform and b.parent and b.parent.use_deform:
+                hinge_pairs.append((b.parent.name, b.name))
+
+    passes = int(spec.get("hinge_passes", 8))
+    max_gradient = float(spec.get("hinge_max_gradient", 0.28))
+    radius_scale = float(spec.get("hinge_radius_scale", 0.45))
+    h_span = [float(size[k]) if hasattr(size, '__getitem__') else float(getattr(size, 'xyz'[k])) for k in range(3)]
+
+    cleaned_W = compute_hinge_laplacian_smoothing(
+        W, P, edges, hinge_pairs, bone_names,
+        bone_heads=bone_heads, bone_tails=bone_tails,
+        passes=passes, max_gradient=max_gradient,
+        radius_scale=radius_scale, model_size=h_span
+    )
+
+    diff = np.abs(cleaned_W - W).sum(axis=1)
+    corrected_count = int((diff > 1e-3).sum())
+
+    if corrected_count > 0:
+        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
+        for vi in np.where(diff > 1e-3)[0]:
+            for b_idx, g_obj in group_objs.items():
+                w_new = float(cleaned_W[vi, b_idx])
+                if w_new > 1e-4:
+                    g_obj.add([int(vi)], w_new, 'REPLACE')
+                else:
+                    try:
+                        g_obj.remove([int(vi)])
+                    except RuntimeError:
+                        pass
+
+    log["joint_hinge_smoothed_verts"] = corrected_count
+
+
 def find_nearest_bone_segment(point, bone_segments):
     """Finds the nearest bone segment to a 3D point.
     bone_segments: list of (name, head_xyz, tail_xyz)

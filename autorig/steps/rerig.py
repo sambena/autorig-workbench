@@ -1059,6 +1059,7 @@ def skin(mesh, arm, chains, spec, size, log):
         # Run before rigid-piece pass so loose pieces still end up rigid.
         smooth_weights(mesh, int(spec["smooth"]))
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+    placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands") or spec.get("rigid_armor"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
