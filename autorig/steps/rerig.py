@@ -1060,7 +1060,7 @@ def skin(mesh, arm, chains, spec, size, log):
         smooth_weights(mesh, int(spec["smooth"]))
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("rigid_islands") or spec.get("rigid_armor"):
+    if spec.get("rigid_islands") or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
@@ -1120,6 +1120,8 @@ def skin(mesh, arm, chains, spec, size, log):
     isl = islands_of(mesh)
     biggest = max(len(i) for i in isl)
     limit = spec.get("rigid_pieces", 0.12)
+    if spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories") or spec.get("rigid_islands"):
+        limit = max(limit, 0.45)
     soft = {b for c in chains if c.get("base") in spec.get("soft", []) or c["role"] in spec.get("soft", []) for b in c["bones"]}
     gname = {g.index: g.name for g in mesh.vertex_groups}
     # rigid_to=[(bone, (x0, y0, z0), (x1, y1, z1)), ...]: a loose piece whose middle lies in the box (0..1 of the
@@ -1148,8 +1150,11 @@ def skin(mesh, arm, chains, spec, size, log):
         top = sorted(acc.items(), key=lambda kv: -kv[1])[:2]
         if not top or top[0][1] <= 0: continue
         if gname.get(top[0][0]) in soft: continue
-        # a tooth, a rivet, a whole lid: one bone. Anything larger that two bones share rides both.
-        if spec.get("rigid_single") or ext.length < max(size) * 0.1 or top[0][1] >= 0.6 * sum(acc.values()): top = top[:1]
+        # a tooth, a rivet, a whole lid, armor plates, accessories: one bone.
+        if (spec.get("rigid_single") or spec.get("rigid_armor") or spec.get("rigid_islands") or
+            spec.get("armor") or spec.get("accessories") or ext.length < max(size) * 0.25 or
+            top[0][1] >= 0.5 * sum(acc.values())):
+            top = top[:1]
         tot = sum(w for _, w in top)
         for i in idx:
             for g in list(verts[i].groups): mesh.vertex_groups[g.group].remove([i])

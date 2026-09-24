@@ -661,7 +661,25 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
         else:
             arm_center = center
 
-        best_bone_name, best_dist = find_nearest_bone_segment(arm_center, segments)
+        # Check if the island already has a clear dominant accumulated bone from initial weighting
+        acc_weights = {}
+        for i in idxs:
+            for g in verts[i].groups:
+                if g.group < len(vg):
+                    g_name = vg[g.group].name
+                    if g_name in arm.data.bones and g_name not in soft_bones:
+                        acc_weights[g_name] = acc_weights.get(g_name, 0.0) + g.weight
+
+        if acc_weights:
+            top_bone, top_w = max(acc_weights.items(), key=lambda kv: kv[1])
+            tot_w = sum(acc_weights.values())
+            if tot_w > 0 and (top_w / tot_w) >= 0.50:
+                best_bone_name = top_bone
+            else:
+                best_bone_name, best_dist = find_nearest_bone_segment(arm_center, segments)
+        else:
+            best_bone_name, best_dist = find_nearest_bone_segment(arm_center, segments)
+
         if not best_bone_name or best_bone_name in soft_bones:
             continue
 
@@ -679,11 +697,27 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
     return auto_count
 
 
+def bind_rigid_armor_islands(weights, island_indices_list, host_bone_indices):
+    """Pure mathematical helper: binds specified island vertex sets 100% to single host bones.
+    weights: (N, num_bones) array of vertex weights.
+    island_indices_list: list of lists of vertex indices.
+    host_bone_indices: list of host bone column indices corresponding to each island.
+    Returns: (N, num_bones) updated weights array."""
+    W = np.array(weights, copy=True, dtype=float)
+    for idxs, b_idx in zip(island_indices_list, host_bone_indices):
+        if len(idxs) == 0:
+            continue
+        W[idxs, :] = 0.0
+        W[idxs, b_idx] = 1.0
+    return W
+
+
 def rigid_islands_pass(mesh, arm, chains, spec, size, log):
-    """Enforces 100% rigid binding for armour pieces, pauldrons, and specified islands."""
+    """Enforces 100% rigid binding for armour pieces, pauldrons, shields, scabbards, and accessories."""
     rigid_val = spec.get("rigid_islands")
     rigid_armor = spec.get("rigid_armor", False)
-    if not rigid_val and not rigid_armor:
+    armor_rules = spec.get("armor") or spec.get("accessories") or rigid_val
+    if not rigid_val and not rigid_armor and not armor_rules:
         return
     import rerig
     isl = rerig.islands_of(mesh)
@@ -695,8 +729,8 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
     rigid_count = 0
     assigned_indices = set()
 
-    if isinstance(rigid_val, list):
-        for rule in rigid_val:
+    if isinstance(armor_rules, list):
+        for rule in armor_rules:
             target_bone = rule.get("bone")
             if not target_bone or target_bone not in arm.data.bones:
                 continue
@@ -737,8 +771,8 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
                 assigned_indices.update(matched_indices)
                 rigid_count += 1
 
-    do_auto = (rigid_val in (True, "auto") or rigid_armor or
-               (isinstance(rigid_val, list) and any(isinstance(r, dict) and r.get("auto") for r in rigid_val)))
+    do_auto = (rigid_val in (True, "auto") or rigid_armor or armor_rules is True or
+               (isinstance(armor_rules, list) and any(isinstance(r, dict) and r.get("auto") for r in armor_rules)))
     if do_auto:
         auto_count = auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, assigned_indices)
         rigid_count += auto_count

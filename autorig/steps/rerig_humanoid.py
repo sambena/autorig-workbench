@@ -243,7 +243,9 @@ def rerig_humanoid(key, h, qa_dir, export):
     # envelope: off by default here. Bone heat on a person is already the smooth diffusion an armpit or a hip needs;
     # the envelope's capsules exist to stop a limb owning a shell, and on a body with no shell they only add seams.
     spec = {"kind": "build", "forward": h["forward"], "head_to_snout": False, "rigid_pieces": h.get("rigid_pieces", 0.35),
-            "envelope": h.get("envelope", "root"), "smooth": h.get("smooth", 4)}
+            "envelope": h.get("envelope", "root"), "smooth": h.get("smooth", 4),
+            "rigid_islands": h.get("rigid_islands", "auto"), "rigid_armor": h.get("rigid_armor", True),
+            "armor": h.get("armor"), "accessories": h.get("accessories")}
     log = {"model": key, "kind": "humanoid"}
     mesh, joints = rerig.load(rerig.find_fbx(key, spec))
     mesh.name = key

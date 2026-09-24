@@ -355,6 +355,34 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertEqual(bone, "spine")
         self.assertAlmostEqual(dist, 0.05, places=5)
 
+    def test_bind_rigid_armor_islands(self):
+        # 4 vertices, 3 bones (bones 0, 1, 2)
+        weights = np.array([
+            [0.5, 0.5, 0.0],
+            [0.4, 0.6, 0.0],
+            [0.1, 0.2, 0.7],
+            [0.0, 0.0, 1.0],
+        ])
+        # Island A (verts 0, 1) bound 100% to bone 1 (e.g. pauldron to shoulder)
+        # Island B (vert 3) bound 100% to bone 0 (e.g. scabbard to hip)
+        # Vert 2 is part of body mesh, not in any rigid island
+        islands = [[0, 1], [3]]
+        host_bones = [1, 0]
+        bound = placed_rules.bind_rigid_armor_islands(weights, islands, host_bones)
+
+        # Island A: 100% bone 1
+        self.assertEqual(bound[0, 1], 1.0)
+        self.assertEqual(bound[0, 0], 0.0)
+        self.assertEqual(bound[1, 1], 1.0)
+        self.assertEqual(bound[1, 0], 0.0)
+
+        # Vert 2 untouched
+        np.testing.assert_allclose(bound[2], [0.1, 0.2, 0.7])
+
+        # Island B: 100% bone 0
+        self.assertEqual(bound[3, 0], 1.0)
+        self.assertEqual(bound[3, 2], 0.0)
+
 
 if "bpy" not in sys.modules:
     class TestPlacedRulesUnderBlender(unittest.TestCase):
@@ -424,6 +452,49 @@ else:
                     spine_weight = sum(g.weight for g in v.groups if g.group == vg_spine.index)
                     self.assertAlmostEqual(arm_weight, 1.0, places=4)
                     self.assertEqual(spine_weight, 0.0)
+
+        def test_armor_and_accessories_spec_blender(self):
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=2.0, radius=0.3, location=(0, 0, 1.0))
+            body = bpy.context.active_object
+            # Create a floating scabbard accessory near X=0.5, Z=0.6
+            bpy.ops.mesh.primitive_cube_add(size=0.15, location=(0.5, 0, 0.6))
+            scabbard = bpy.context.active_object
+
+            body.select_set(True)
+            scabbard.select_set(True)
+            bpy.context.view_layer.objects.active = body
+            bpy.ops.object.join()
+            mesh = body
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+            arm_data = bpy.data.armatures.new("Armature")
+            arm = bpy.data.objects.new("Armature", arm_data)
+            bpy.context.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b_hips = arm.data.edit_bones.new("Hips")
+            b_hips.head = (0, 0, 0.5); b_hips.tail = (0, 0, 0.8)
+            b_leg = arm.data.edit_bones.new("LeftUpLeg")
+            b_leg.head = (0.2, 0, 0.5); b_leg.tail = (0.2, 0, 0.1)
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            mesh.select_set(True)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+            log = {}
+            chains = [{"name": "spine", "role": "spine", "bones": ["Hips"]}]
+            spec = {"armor": [{"bone": "Hips", "at": [0.75, 0.5, 0.3]}]}
+            placed_rules.rigid_islands_pass(mesh, arm, chains, spec, Vector((2, 2, 2)), log)
+
+            self.assertGreaterEqual(log.get("rigid_islands_assigned", 0), 1)
+            vg_hips = mesh.vertex_groups.get("Hips")
+            for v in mesh.data.vertices:
+                if v.co.x > 0.4:
+                    hips_weight = sum(g.weight for g in v.groups if g.group == vg_hips.index)
+                    self.assertAlmostEqual(hips_weight, 1.0, places=4)
 
         def test_centerline_armor_pass_blender(self):
             bpy.ops.wm.read_factory_settings(use_empty=True)
