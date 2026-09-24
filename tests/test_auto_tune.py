@@ -171,6 +171,85 @@ class TestAutoTuneCore(unittest.TestCase):
         self.assertEqual(cand["delta_type"], "rip_welds")
         self.assertIn(["tail_2", "wing_1.L"], cand["spec"]["rig"]["rip_welds"])
 
+    def test_propose_candidate_humanoid_landmark_nudge(self):
+        spec = {
+            "kind": "humanoid",
+            "z": {"hip": 0.47, "knee": 0.28, "ankle": 0.08},
+            "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11},
+        }
+        audit = {
+            "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+            "tears": {"combined": 5, "bend_max": 3, "worst_gap_pct": 2.5, "worst_bone": "LeftLeg"},
+            "tear_sites": [
+                {
+                    "bone": "LeftLeg",
+                    "points": [[0.1, -0.05, 0.32, 2.5]],
+                }
+            ],
+        }
+        history = [
+            {"param": "joint_blend_inc_1"},
+            {"param": "smooth_1"},
+            {"param": "limb_radius_inc"},
+        ]
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=4, history=history)
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand["delta_type"], "landmark_nudge")
+        # Knee Z was 0.28, tear centroid at 0.32 -> knee should nudge upward
+        self.assertGreater(cand["spec"]["z"]["knee"], 0.28)
+
+    def test_propose_candidate_joints_dict_nudge(self):
+        spec = {
+            "joints": {
+                "jaw": [0.0, -0.3, 0.5]
+            }
+        }
+        audit = {
+            "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+            "tears": {"combined": 2, "bend_max": 1, "worst_gap_pct": 1.2, "worst_bone": "jaw"},
+            "tear_sites": [
+                {
+                    "bone": "jaw",
+                    "points": [[0.0, -0.35, 0.52, 1.2]],
+                }
+            ],
+        }
+        history = [
+            {"param": "joint_blend_inc_1"},
+            {"param": "smooth_1"},
+            {"param": "limb_radius_inc"},
+        ]
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=4, history=history)
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand["delta_type"], "joint_nudge")
+        # Jaw position should nudge towards centroid
+        self.assertLess(cand["spec"]["joints"]["jaw"][1], -0.3)
+
+    def test_propose_candidate_anti_tear_conditioning(self):
+        spec = {
+            "rig": {
+                "kind": "placed",
+                "joint_blend": 0.7,
+                "smooth": 2,
+            }
+        }
+        audit = {
+            "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+            "tears": {"combined": 4, "bend_max": 2, "worst_gap_pct": 2.0, "worst_bone": "Spine"},
+        }
+        history = [
+            {"param": "joint_blend_inc_1"},
+            {"param": "smooth_1"},
+            {"param": "limb_radius_inc"},
+            {"param": "joint_nudge"},
+            {"param": "humanoid_landmark_nudge"},
+        ]
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=6, history=history)
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand["delta_type"], "hinge_smoothing")
+        self.assertEqual(cand["spec"]["rig"]["hinge_smoothing"], True)
+        self.assertEqual(cand["spec"]["rig"]["hinge_max_gradient"], 0.20)
+
     def test_format_tuning_report(self):
         history = [
             {

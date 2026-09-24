@@ -248,6 +248,68 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
                     "delta_type": "joint_nudge",
                 }
 
+    # Direct joints dictionary in spec
+    joints_dict = cand_spec.get("joints") or rig.get("joints")
+    centroid = calculate_tear_centroid(diag["tear_sites"], worst_bone)
+    if joints_dict and worst_bone and worst_bone in joints_dict and centroid and "joint_nudge" not in tried_params:
+        cur_p = joints_dict[worst_bone]
+        dx = max(-0.025, min(0.025, (centroid[0] - cur_p[0]) * 0.3))
+        dy = max(-0.025, min(0.025, (centroid[1] - cur_p[1]) * 0.3))
+        dz = max(-0.025, min(0.025, (centroid[2] - cur_p[2]) * 0.3))
+        if abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(dz) > 1e-4:
+            joints_dict[worst_bone] = [round(cur_p[0] + dx, 4), round(cur_p[1] + dy, 4), round(cur_p[2] + dz, 4)]
+            return {
+                "description": f"Nudge joint {worst_bone} coordinate toward tear centroid by ({dx:+.3f}, {dy:+.3f}, {dz:+.3f})",
+                "param": "joint_nudge",
+                "spec": cand_spec,
+                "delta_type": "joint_nudge",
+            }
+
+    # Humanoid landmarks (z and x dicts)
+    z_spec = cand_spec.get("z") or rig.get("z")
+    x_spec = cand_spec.get("x") or rig.get("x")
+    if worst_bone and centroid and (z_spec or x_spec) and "humanoid_landmark_nudge" not in tried_params:
+        w_lower = worst_bone.lower()
+        HUMANOID_Z_MAP = {
+            "leftupleg": "hip", "rightupleg": "hip", "hips": "hip", "hip": "hip",
+            "leftleg": "knee", "rightleg": "knee", "knee": "knee",
+            "leftfoot": "ankle", "rightfoot": "ankle", "ankle": "ankle",
+            "spine": "spine", "chest": "spine1", "spine1": "spine1",
+            "upperchest": "spine2", "spine2": "spine2",
+            "neck": "neck", "head": "head",
+        }
+        HUMANOID_X_MAP = {
+            "leftshoulder": "shoulder", "rightshoulder": "shoulder", "shoulder": "shoulder",
+            "leftarm": "elbow", "rightarm": "elbow", "elbow": "elbow",
+            "leftforearm": "wrist", "rightforearm": "wrist", "wrist": "wrist",
+        }
+        if z_spec and w_lower in HUMANOID_Z_MAP:
+            z_key = HUMANOID_Z_MAP[w_lower]
+            if z_key in z_spec:
+                cur_z = z_spec[z_key]
+                dz = max(-0.02, min(0.02, (centroid[2] - cur_z) * 0.25))
+                if abs(dz) > 1e-4:
+                    z_spec[z_key] = round(cur_z + dz, 3)
+                    return {
+                        "description": f"Nudge humanoid Z landmark '{z_key}' by {dz:+.3f} toward tear cluster",
+                        "param": "humanoid_landmark_nudge",
+                        "spec": cand_spec,
+                        "delta_type": "landmark_nudge",
+                    }
+        if x_spec and w_lower in HUMANOID_X_MAP:
+            x_key = HUMANOID_X_MAP[w_lower]
+            if x_key in x_spec:
+                cur_x = x_spec[x_key]
+                dx = max(-0.02, min(0.02, (abs(centroid[0]) - cur_x) * 0.25))
+                if abs(dx) > 1e-4:
+                    x_spec[x_key] = round(cur_x + dx, 3)
+                    return {
+                        "description": f"Nudge humanoid X landmark '{x_key}' by {dx:+.3f} toward tear cluster",
+                        "param": "humanoid_landmark_nudge",
+                        "spec": cand_spec,
+                        "delta_type": "landmark_nudge",
+                    }
+
     # 5. Strategy: Rip Welds for Competing Bone Pairs
     cur_rip = list(rig.get("rip_welds", []))
     existing_rip_pairs = set()
@@ -267,6 +329,36 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
                 "param": param_key,
                 "spec": cand_spec,
                 "delta_type": "rip_welds",
+            }
+
+    # 5b. Strategy: Localized Anti-Tear Joint Hinge Conditioning
+    if "hinge_anti_tear" not in tried_params and (comb_tears > 0 or bend_tears > 0):
+        cur_hinge_grad = float(rig.get("hinge_max_gradient", 0.28))
+        if cur_hinge_grad > 0.20 or not rig.get("hinge_smoothing"):
+            new_hgrad = 0.20
+            rig["hinge_smoothing"] = True
+            rig["hinge_max_gradient"] = new_hgrad
+            rig["hinge_passes"] = int(rig.get("hinge_passes", 8)) + 4
+            return {
+                "description": f"Enable localized joint hinge anti-tear conditioning (hinge_max_gradient={new_hgrad})",
+                "param": "hinge_anti_tear",
+                "spec": cand_spec,
+                "delta_type": "hinge_smoothing",
+            }
+
+    # 5c. Strategy: Localized Twist Shaft Relaxation Conditioning
+    if "twist_relaxation_tune" not in tried_params and (comb_tears > 0 or bend_tears > 0 or diag.get("worst_gap_pct", 0) > 1.0):
+        cur_twist_grad = float(rig.get("twist_max_gradient", 0.25))
+        if cur_twist_grad > 0.18 or not rig.get("twist_relaxation"):
+            new_tgrad = 0.18
+            rig["twist_relaxation"] = True
+            rig["twist_max_gradient"] = new_tgrad
+            rig["twist_passes"] = int(rig.get("twist_passes", 12)) + 4
+            return {
+                "description": f"Enable localized twist shaft anti-tear relaxation (twist_max_gradient={new_tgrad})",
+                "param": "twist_relaxation_tune",
+                "spec": cand_spec,
+                "delta_type": "twist_relaxation",
             }
 
     # 6. Strategy: Girdle Blend (for shoulders / hips)
