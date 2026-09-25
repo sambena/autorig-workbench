@@ -5,6 +5,7 @@
 # curves onto Autorig skeletons, retargeting bone rotations while preserving proportions,
 # rest poses, and twist offsets.
 
+import glob
 import json
 import math
 import os
@@ -142,7 +143,6 @@ def inspect_mocap_file(filepath):
         return meta
 
     elif ext == ".fbx":
-        # Extract bone names and action lengths via fast Blender probe
         cmd = [
             blender.find(),
             "-b",
@@ -154,8 +154,13 @@ arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
 bones = [b.name for b in arm.data.bones] if arm else []
 frames = 0
 fps = bpy.context.scene.render.fps
+act = None
 if arm and arm.animation_data and arm.animation_data.action:
     act = arm.animation_data.action
+elif bpy.data.actions:
+    act = bpy.data.actions[0]
+
+if act:
     frames = int(act.frame_range[1] - act.frame_range[0] + 1)
 print("__FBX_META__" + json.dumps({{"format": "FBX", "joints": bones, "frames": frames, "fps": fps}}))
 """
@@ -199,7 +204,7 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
 
     # 2. Check source bones
     for sb in source_bones:
-        # Check explicit overrides first
+        # Explicit overrides first
         if overrides and sb in overrides:
             tb = overrides[sb]
             if tb in target_bones:
@@ -243,7 +248,6 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
             root_pair = (sb, tb)
             break
     if not root_pair and "root" in target_bones:
-        # If target has root bone, pair with source hips or first mapped bone
         for sb, tb in mapping.items():
             if "hip" in sb.lower() or "pelvis" in sb.lower():
                 root_pair = (sb, tb)
@@ -262,17 +266,35 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
     }
 
 
-def plan_retarget(model_name, mocap_file, clip_name=None, root_motion=True, overrides=None):
+def find_blend_file(model_identifier):
+    """Finds the rigged blend file for a model name, group/model, or file path."""
+    if os.path.isfile(model_identifier) and model_identifier.lower().endswith(".blend"):
+        return os.path.abspath(model_identifier), os.path.splitext(os.path.basename(model_identifier))[0]
+
+    # Try layout.rigged_dir
+    name = layout.leaf(model_identifier)
+    rd = layout.rigged_dir(model_identifier)
+    blend_path = os.path.join(rd, f"{name}.blend")
+    if os.path.isfile(blend_path):
+        return blend_path, name
+
+    # Search directly in models root
+    for g, m in layout.all_models():
+        if m == name:
+            bp = os.path.join(layout.rigged_dir(f"{g}/{m}"), f"{m}.blend")
+            if os.path.isfile(bp):
+                return bp, m
+
+    raise FileNotFoundError(f"Rigged blend file not found for model '{model_identifier}': {blend_path}")
+
+
+def plan_retarget(model_name, mocap_file, clip_name=None, root_motion=True,
+                  solve_offsets=True, overrides=None):
     """Pre-flight planning and validation for retargeting a mocap clip onto a rigged model."""
     mocap_meta = inspect_mocap_file(mocap_file)
+    blend_path, model_leaf = find_blend_file(model_name)
 
-    # Verify model blend exists
-    rd = layout.rigged_dir(model_name)
-    blend_path = os.path.join(rd, f"{model_name}.blend")
-    if not os.path.isfile(blend_path):
-        raise FileNotFoundError(f"Rigged blend file not found for model '{model_name}': {blend_path}")
-
-    # Inspect target bones from blend
+    # Inspect target bones and rest bone vectors from blend
     cmd = [
         blender.find(),
         "-b",
@@ -282,15 +304,23 @@ def plan_retarget(model_name, mocap_file, clip_name=None, root_motion=True, over
 import bpy, json
 arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
 bones = [b.name for b in arm.data.bones] if arm else []
-print("__TGT_BONES__" + json.dumps(bones))
+dirs = {}
+if arm:
+    for b in arm.data.bones:
+        v = (arm.matrix_world.to_3x3() @ (b.tail_local - b.head_local)).normalized()
+        dirs[b.name] = [round(v.x, 3), round(v.y, 3), round(v.z, 3)]
+print("__TGT_BONES__" + json.dumps({"bones": bones, "dirs": dirs}))
 """
     ]
     r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
     tgt_bones = []
+    tgt_dirs = {}
     for line in r.stdout.splitlines():
         if line.startswith("__TGT_BONES__"):
             try:
-                tgt_bones = json.loads(line[len("__TGT_BONES__"):])
+                data = json.loads(line[len("__TGT_BONES__"):])
+                tgt_bones = data.get("bones", [])
+                tgt_dirs = data.get("dirs", {})
             except Exception:
                 pass
             break
@@ -303,13 +333,15 @@ print("__TGT_BONES__" + json.dumps(bones))
     final_clip = clip_name or re.sub(r"[^a-zA-Z0-9_\-]+", "_", stem).lower()
 
     return {
-        "model": model_name,
+        "model": model_leaf,
         "blend_path": blend_path,
         "clip_name": final_clip,
         "mocap": mocap_meta,
         "mapping_result": map_result,
         "root_motion": root_motion and (map_result["root_pair"] is not None),
         "root_pair": map_result["root_pair"],
+        "solve_offsets": solve_offsets,
+        "tgt_dirs": tgt_dirs,
     }
 
 
@@ -319,43 +351,49 @@ def format_retarget_summary(plan):
     res = plan["mapping_result"]
     lines = [
         f"RETARGET PLAN: {m['file']} -> {plan['model']} (Clip: '{plan['clip_name']}')",
-        "-" * 68,
+        "-" * 72,
         f"Mocap Format:     {m['format']} ({m.get('convention', 'unknown').upper()}, {m['frames']} frames @ {m['fps']} fps, {m['duration']}s)",
         f"Target Rig:       {plan['blend_path']}",
         f"Bone Mapping:     {res['mapped_count']} mapped / {res['total_target']} target bones ({int(res['confidence'] * 100)}% confidence)",
         f"Root Motion:      {'ENABLED' if plan['root_motion'] else 'DISABLED'} (Root Pair: {plan['root_pair']})",
-        "-" * 68,
-        f"{'Source Joint':<24} {'Target Bone':<24} {'Semantic Role':<16}",
-        "-" * 68,
+        f"Orientation Solve:{'ENABLED (T-pose/A-pose offset correction)' if plan.get('solve_offsets', True) else 'DISABLED'}",
+        "-" * 72,
+        f"{'Source Joint':<24} {'Target Bone':<24} {'Semantic Role':<20}",
+        "-" * 72,
     ]
     for sb, (tb, role) in sorted(res["roles"].items()):
-        lines.append(f"{sb:<24} {tb:<24} {role:<16}")
-    lines.append("-" * 68)
+        lines.append(f"{sb:<24} {tb:<24} {role:<20}")
+    lines.append("-" * 72)
     if res["unmapped_target"]:
         lines.append(f"Unmapped Target: {', '.join(res['unmapped_target'][:10])}")
     return "\n".join(lines)
 
 
 def retarget_clip(model_name, mocap_file, clip_name=None, root_motion=True,
-                  scale_proportions=True, overrides=None, export_glb=False):
+                  scale_proportions=True, solve_offsets=True, fps=None,
+                  frame_range=None, overrides=None, export_glb=False, preview=False):
     """Executes full retargeting in Blender and returns results dictionary."""
     plan = plan_retarget(model_name, mocap_file, clip_name=clip_name,
-                         root_motion=root_motion, overrides=overrides)
+                         root_motion=root_motion, solve_offsets=solve_offsets,
+                         overrides=overrides)
 
     worker_script = os.path.join(PKG, "steps", "retarget_worker.py")
-    out_json = os.path.join(layout.WORK, "qa", f"{model_name}_{plan['clip_name']}_retarget.json")
+    out_json = os.path.join(layout.WORK, "qa", f"{plan['model']}_{plan['clip_name']}_retarget.json")
     os.makedirs(os.path.dirname(out_json), exist_ok=True)
 
     config = {
         "target_blend": plan["blend_path"],
         "source_file": os.path.abspath(mocap_file),
         "clip_name": plan["clip_name"],
-        "fps": int(plan["mocap"]["fps"]),
+        "fps": int(fps or plan["mocap"]["fps"]),
         "root_motion": plan["root_motion"],
         "root_pair": plan["root_pair"],
         "scale_proportions": scale_proportions,
+        "solve_offsets": solve_offsets,
+        "frame_range": frame_range,
         "mapping": plan["mapping_result"]["mapping"],
         "export_glb": export_glb,
+        "preview": preview,
         "out_json": out_json,
     }
 
@@ -371,3 +409,50 @@ def retarget_clip(model_name, mocap_file, clip_name=None, root_motion=True,
         result = json.load(fh)
     result["plan"] = plan
     return result
+
+
+def retarget_batch(models, mocap_files, clip_names=None, root_motion=True,
+                   scale_proportions=True, solve_offsets=True, fps=None,
+                   frame_range=None, overrides=None, export_glb=False, preview=False):
+    """Retargets a collection of mocap clips onto a collection of models."""
+    if isinstance(models, str):
+        models = [m.strip() for m in models.split(",") if m.strip()]
+    if isinstance(mocap_files, str):
+        if os.path.isdir(mocap_files):
+            mocap_files = sorted(glob.glob(os.path.join(mocap_files, "*.bvh")) +
+                                 glob.glob(os.path.join(mocap_files, "*.fbx")))
+        else:
+            mocap_files = [f.strip() for f in mocap_files.split(",") if f.strip()]
+
+    results = []
+    total_ops = len(models) * len(mocap_files)
+    op_idx = 0
+
+    for m in models:
+        for f_idx, mocap_file in enumerate(mocap_files):
+            op_idx += 1
+            clip_name = None
+            if clip_names and f_idx < len(clip_names):
+                clip_name = clip_names[f_idx]
+
+            print(f"RETARGET_BATCH [{op_idx}/{total_ops}] Retargeting {os.path.basename(mocap_file)} -> {m}...")
+            try:
+                res = retarget_clip(
+                    model_name=m,
+                    mocap_file=mocap_file,
+                    clip_name=clip_name,
+                    root_motion=root_motion,
+                    scale_proportions=scale_proportions,
+                    solve_offsets=solve_offsets,
+                    fps=fps,
+                    frame_range=frame_range,
+                    overrides=overrides,
+                    export_glb=export_glb,
+                    preview=preview,
+                )
+                results.append({"status": "OK", "model": m, "file": mocap_file, "result": res})
+            except Exception as e:
+                print(f"  RETARGET_BATCH ERROR on {m}: {e}", file=sys.stderr)
+                results.append({"status": "ERROR", "model": m, "file": mocap_file, "error": str(e)})
+
+    return results
