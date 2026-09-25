@@ -351,6 +351,16 @@ function setupMenus() {
       }
     };
   }
+
+  // Rebake clips buttons (viewport clipBar & inspector drawer)
+  const btnRebakeClips = $("#btnRebakeClips");
+  if (btnRebakeClips) {
+    btnRebakeClips.onclick = () => rebakeCurrentModelClips();
+  }
+  const bRebakeDrawer = $("#bRebakeClips");
+  if (bRebakeDrawer) {
+    bRebakeDrawer.onclick = () => rebakeCurrentModelClips();
+  }
 }
 
 function closeMenus() {
@@ -446,6 +456,10 @@ async function handleAction(action) {
       break;
 
     // Pipeline
+    case "rebake-model-clips":
+    case "pipe-rebake-clips":
+      rebakeCurrentModelClips();
+      break;
     case "pipe-survey":
     case "pipe-rig":
     case "pipe-trim":
@@ -911,6 +925,24 @@ function updateJobSelect() {
     const id = parseInt(e.target.value, 10);
     if (id) loadJobLog(id);
   };
+}
+
+async function rebakeCurrentModelClips() {
+  if (!currentModel) {
+    alert("Please select or add a model first.");
+    return;
+  }
+  if (window.specEditor && typeof window.specEditor.rebakeClips === "function" && window.specEditor.getModel() === currentModel) {
+    try {
+      await window.specEditor.rebakeClips();
+      setDrawerOpen($("#logDrawer"), true);
+      return;
+    } catch (e) {
+      alert("Re-bake failed: " + e.message);
+      return;
+    }
+  }
+  runStep("rebake-clips");
 }
 
 async function runStep(step) {

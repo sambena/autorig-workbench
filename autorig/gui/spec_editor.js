@@ -2954,7 +2954,7 @@ function follow(j) {
         message("The source view failed", "See the Run tab.");
       }
     }
-    if ((job.step === "save and re-rig" || job.step === "auto-tune") && job.state === "done") {
+    if ((job.step === "save and re-rig" || job.step === "auto-tune" || job.step === "re-bake clips" || job.step === "rebake-clips") && job.state === "done") {
       tab = "run";
       if (job.step === "auto-tune") {
         draft = JSON.parse(JSON.stringify(B.spec || startDraft()));
@@ -3351,6 +3351,8 @@ async function rebakeClipsFromSpec() {
   applyWalkParamsToSpec();
   const btn = $("bBakeWalkClips");
   if (btn) btn.disabled = true;
+  const btnRebake = $("bRebakeClips");
+  if (btnRebake) btnRebake.disabled = true;
   try {
     const r = await api("/api/spec/rebake_clips", {
       model: MODEL,
@@ -3364,8 +3366,10 @@ async function rebakeClipsFromSpec() {
     flashTop("Started re-baking animation clips in Blender...");
   } catch (e) {
     flashTop("Re-bake failed: " + e.message);
+    if (typeof alert === "function") alert("Re-bake failed: " + e.message);
   } finally {
     if (btn) btn.disabled = false;
+    if (btnRebake) btnRebake.disabled = false;
   }
 }
 
@@ -3406,6 +3410,7 @@ function wireUIEvents() {
   }
   if ($("bSaveWalkToSpec")) $("bSaveWalkToSpec").onclick = applyWalkParamsToSpec;
   if ($("bBakeWalkClips")) $("bBakeWalkClips").onclick = rebakeClipsFromSpec;
+  if ($("bRebakeClips")) $("bRebakeClips").onclick = rebakeClipsFromSpec;
   if ($("bResetWalkSliders")) $("bResetWalkSliders").onclick = onWalkPresetChange;
 
   if ($("poseGizmoToggle")) {
@@ -3469,6 +3474,7 @@ window.specEditor = {
   checkDisk: checkDiskChanges,
   save: (rerig) => save(rerig),
   rerig: () => save(true),
+  rebakeClips: () => rebakeClipsFromSpec(),
   suggest: () => suggestSkeleton(),
   autoTune: () => autoTune(),
   undo: () => doUndo(),
