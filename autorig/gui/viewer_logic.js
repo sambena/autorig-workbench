@@ -907,6 +907,15 @@ export function parseJobProgressLine(line) {
     if (mProg[3]) res.model = mProg[3];
   }
 
+  // :: SUBJOB_PREV orc FAILED / PASSED / CHECK
+  const mSubPrev = line.match(/^::\s*SUBJOB_PREV\s+([A-Za-z0-9_\-]+)\s+([A-Za-z0-9_\-]+)/);
+  if (mSubPrev) {
+    let st = mSubPrev[2].toUpperCase();
+    if (st === "FAIL") st = "FAILED";
+    if (st === "PASS" || st === "OK") st = "PASSED";
+    res.prevResult = { model: mSubPrev[1], status: st };
+  }
+
   // :: SUBJOB_RESULT orc FAILED / PASSED / CHECK
   const mSubRes = line.match(/^::\s*SUBJOB_RESULT\s+([A-Za-z0-9_\-]+)\s+([A-Za-z0-9_\-]+)/);
   if (mSubRes) {
@@ -938,11 +947,11 @@ export function parseJobProgressLine(line) {
 
   // (Previous: orc FAILED / PASSED / CHECK)
   const mPrev = line.match(/\(Previous:\s*([A-Za-z0-9_\-]+)\s+(FAILED|PASSED|CHECK|PASS|FAIL|OK)\)/i);
-  if (mPrev && !res.lastResult) {
+  if (mPrev && !res.prevResult) {
     let st = mPrev[2].toUpperCase();
     if (st === "FAIL") st = "FAILED";
     if (st === "PASS" || st === "OK") st = "PASSED";
-    res.lastResult = { model: mPrev[1], status: st };
+    res.prevResult = { model: mPrev[1], status: st };
   }
 
   // 3. Fallback standard step lines:
@@ -991,9 +1000,33 @@ export function parseJobProgressLine(line) {
 
 /**
  * Formats console header HTML and plain text summary.
+ * Supports:
+ *   formatJobHeader(job, subCount, prevResult, lastResult, displayModel)
+ *   formatJobHeader(job, subCount, { prevResult, lastResult }, displayModel)
+ *   formatJobHeader(job, subCount, lastResult, displayModel)
  */
-export function formatJobHeader(job, subCount, lastResult, displayModel) {
+export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optDisplay) {
   if (!job) return { html: "Idle", text: "Idle" };
+
+  let prevResult = null;
+  let lastResult = null;
+  let displayModel = "";
+
+  if (optDisplay !== undefined) {
+    // 5 arguments: (job, subCount, prevResult, lastResult, displayModel)
+    prevResult = prevOrResult;
+    lastResult = lastOrDisplay;
+    displayModel = optDisplay;
+  } else if (prevOrResult && typeof prevOrResult === "object" && ("prevResult" in prevOrResult || "lastResult" in prevOrResult)) {
+    // 4 arguments with result bundle object: (job, subCount, { prevResult, lastResult }, displayModel)
+    prevResult = prevOrResult.prevResult || null;
+    lastResult = prevOrResult.lastResult || null;
+    displayModel = lastOrDisplay || "";
+  } else {
+    // 4 arguments: (job, subCount, lastResult, displayModel)
+    lastResult = prevOrResult;
+    displayModel = lastOrDisplay || "";
+  }
 
   const st = job.state || "unknown";
   const isRunning = st === "running" || st === "queued";
@@ -1012,13 +1045,23 @@ export function formatJobHeader(job, subCount, lastResult, displayModel) {
 
   let prevHtml = "";
   let prevText = "";
-  if (lastResult && lastResult.model && lastResult.status) {
-    const isFail = lastResult.status === "FAILED" || lastResult.status === "FAIL";
-    const isPass = lastResult.status === "PASSED" || lastResult.status === "PASS" || lastResult.status === "OK";
-    const badgeCls = isFail ? "result-failed" : (isPass ? "result-passed" : "result-check");
-    const prefix = (!isRunning) ? "Last" : "Prev";
-    prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${lastResult.model}</b> ${lastResult.status}</span>`;
-    prevText = ` · ${prefix}: ${lastResult.model} ${lastResult.status}`;
+
+  // While running: display the previous completed model (prevResult)
+  // When completed: display the last completed model (lastResult || prevResult)
+  const shownResult = isRunning
+    ? (prevResult || (lastResult && lastResult.model !== model ? lastResult : null))
+    : (lastResult || prevResult);
+
+  if (shownResult && shownResult.model && shownResult.status) {
+    // Safety check: while running, never show the current active model as 'Prev:'!
+    if (!isRunning || shownResult.model !== model) {
+      const isFail = shownResult.status === "FAILED" || shownResult.status === "FAIL";
+      const isPass = shownResult.status === "PASSED" || shownResult.status === "PASS" || shownResult.status === "OK";
+      const badgeCls = isFail ? "result-failed" : (isPass ? "result-passed" : "result-check");
+      const prefix = (!isRunning) ? "Last" : "Prev";
+      prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${shownResult.model}</b> ${shownResult.status}</span>`;
+      prevText = ` · ${prefix}: ${shownResult.model} ${shownResult.status}`;
+    }
   }
 
   let countsSummary = "";

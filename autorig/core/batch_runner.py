@@ -141,8 +141,11 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None):
                     executed.append("auto-tune")
 
             elif st == "clips":
-                r = blender.run("make_clips.py", model)
-                if r.returncode == 0:
+                c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
+                if c_arch:
+                    r = blender.run("make_clips.py", model)
+                    if r.returncode != 0:
+                        raise RuntimeError(f"clips step failed for '{model}'")
                     executed.append("clips")
 
             elif st == "publish":

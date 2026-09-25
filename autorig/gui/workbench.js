@@ -38,6 +38,7 @@ let currentDetails = null;
 let activeJob = null;
 let currentJobWorkingModel = "";
 let currentJobSubCount = null;
+let currentJobPrevResult = null;
 let currentJobLastResult = null;
 let currentJobCounts = { passed: 0, failed: 0 };
 let eventSource = null;
@@ -608,57 +609,71 @@ function setupDrawers() {
     closeInspector.onclick = () => setDrawerOpen(inspector, false);
   }
 
-  if (logToggleHeader && logDrawer) {
-    logToggleHeader.onclick = (e) => {
-      if (e.target.closest("button, select, input")) return;
-      toggleDrawer("#logDrawer");
-    };
-  }
-
+  let lastDragTime = 0;
   if (resizeHandle && logDrawer) {
     let isDragging = false;
     let startY = 0;
     let startH = 0;
+    let dragDistance = 0;
+
+    const onPointerMove = (e) => {
+      if (!isDragging) return;
+      const deltaY = startY - e.clientY;
+      dragDistance += Math.abs(deltaY);
+      const minH = 100;
+      const maxH = Math.max(minH, window.innerHeight - 80);
+      const newH = Math.round(Math.min(maxH, Math.max(minH, startH + deltaY)));
+      applyLogHeight(newH);
+    };
+
+    const finishDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      resizeHandle.classList.remove("active");
+      document.body.classList.remove("resizing");
+      if (dragDistance > 3) {
+        lastDragTime = Date.now();
+      }
+      try {
+        localStorage.setItem("autorig_log_height", String(logHeight));
+      } catch (_) {}
+      if (window.specEditor && typeof window.specEditor.resize === "function") {
+        try { window.specEditor.resize(); } catch (_) {}
+      }
+    };
 
     resizeHandle.onpointerdown = (e) => {
       e.preventDefault();
       e.stopPropagation();
       isDragging = true;
+      dragDistance = 0;
       startY = e.clientY;
       startH = logDrawer.getBoundingClientRect().height;
-      resizeHandle.setPointerCapture(e.pointerId);
       resizeHandle.classList.add("active");
       document.body.classList.add("resizing");
       if (!logDrawer.classList.contains("open")) {
         setDrawerOpen(logDrawer, true);
       }
+      window.addEventListener("pointermove", onPointerMove, { passive: true });
+      window.addEventListener("pointerup", finishDrag);
+      window.addEventListener("pointercancel", finishDrag);
     };
 
-    resizeHandle.onpointermove = (e) => {
-      if (!isDragging) return;
-      const deltaY = startY - e.clientY;
-      const minH = 100;
-      const maxH = Math.max(minH, window.innerHeight - 100);
-      const newH = Math.round(Math.min(maxH, Math.max(minH, startH + deltaY)));
-      applyLogHeight(newH);
+    resizeHandle.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
     };
+  }
 
-    const finishDrag = (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      resizeHandle.classList.remove("active");
-      document.body.classList.remove("resizing");
-      try {
-        resizeHandle.releasePointerCapture(e.pointerId);
-      } catch (_) {}
-      localStorage.setItem("autorig_log_height", String(logHeight));
-      if (window.specEditor && typeof window.specEditor.resize === "function") {
-        window.specEditor.resize();
-      }
+  if (logToggleHeader && logDrawer) {
+    logToggleHeader.onclick = (e) => {
+      if (e.target.closest("button, select, input")) return;
+      if (Date.now() - lastDragTime < 300) return;
+      toggleDrawer("#logDrawer");
     };
-
-    resizeHandle.onpointerup = finishDrag;
-    resizeHandle.onpointercancel = finishDrag;
   }
 
   if (collapseLog && logDrawer) {
@@ -672,6 +687,16 @@ function setupDrawers() {
     clearLogBtn.onclick = (e) => {
       e.stopPropagation();
       setConsoleContent("");
+      currentJobSubCount = null;
+      currentJobPrevResult = null;
+      currentJobLastResult = null;
+      currentJobWorkingModel = "";
+      currentJobCounts = { passed: 0, failed: 0 };
+      const isRunning = activeJob && (activeJob.state === "running" || activeJob.state === "queued");
+      if (!isRunning) {
+        activeJob = null;
+      }
+      updateJobUI();
     };
   }
 
@@ -788,13 +813,8 @@ function detectAndSwitchJobModel(line) {
     if (p.current && p.total) {
       currentJobSubCount = { current: p.current, total: p.total };
     }
-    if (p.model) {
-      currentJobWorkingModel = p.model;
-      if (state && state.models && state.models.some((m) => m.name === p.model)) {
-        if (currentModel !== p.model) {
-          selectModel(p.model);
-        }
-      }
+    if (p.prevResult) {
+      currentJobPrevResult = p.prevResult;
     }
     if (p.lastResult) {
       currentJobLastResult = p.lastResult;
@@ -802,6 +822,18 @@ function detectAndSwitchJobModel(line) {
         currentJobCounts.failed++;
       } else {
         currentJobCounts.passed++;
+      }
+    }
+    if (p.model) {
+      currentJobWorkingModel = p.model;
+      const isBulkJob = Boolean(
+        (currentJobSubCount && currentJobSubCount.total > 1) ||
+        (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
+      );
+      if (!isBulkJob && state && state.models && state.models.some((m) => m.name === p.model)) {
+        if (currentModel !== p.model) {
+          selectModel(p.model);
+        }
       }
     }
     updateJobUI();
@@ -825,7 +857,11 @@ function detectAndSwitchJobModel(line) {
     if (currentJobWorkingModel !== detected) {
       currentJobWorkingModel = detected;
       updateJobUI();
-      if (currentModel !== detected) {
+      const isBulkJob = Boolean(
+        (currentJobSubCount && currentJobSubCount.total > 1) ||
+        (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
+      );
+      if (!isBulkJob && currentModel !== detected) {
         selectModel(detected);
       }
     }
@@ -839,6 +875,7 @@ async function loadJobLog(jobId) {
       activeJob = detail;
       currentJobWorkingModel = (detail.model && !detail.model.startsWith("(")) ? detail.model : "";
       currentJobSubCount = (detail.total && detail.total > 1) ? { current: detail.current || detail.total, total: detail.total } : null;
+      currentJobPrevResult = detail.prev_result || null;
       currentJobLastResult = detail.last_result || null;
       currentJobCounts = { passed: detail.passed || 0, failed: detail.failed || 0 };
       if (Array.isArray(detail.log)) {
@@ -899,6 +936,7 @@ async function followJob(j) {
   activeJob = j;
   currentJobWorkingModel = (j.model && !j.model.startsWith("(")) ? j.model : "";
   currentJobSubCount = (j.total && j.total > 1) ? { current: j.current || 1, total: j.total } : null;
+  currentJobPrevResult = j.prev_result || null;
   currentJobLastResult = j.last_result || null;
   currentJobCounts = { passed: j.passed || 0, failed: j.failed || 0 };
   setDrawerOpen($("#logDrawer"), true);
@@ -920,6 +958,9 @@ async function followJob(j) {
         activeJob = detail;
         if (detail.total && detail.total > 1) {
           currentJobSubCount = { current: detail.current || detail.total, total: detail.total };
+        }
+        if (detail.prev_result) {
+          currentJobPrevResult = detail.prev_result;
         }
         if (detail.last_result) {
           currentJobLastResult = detail.last_result;
@@ -957,6 +998,9 @@ async function followJob(j) {
       if (activeJob) {
         if (activeJob.total && activeJob.total > 1) {
           currentJobSubCount = { current: activeJob.current || activeJob.total, total: activeJob.total };
+        }
+        if (activeJob.prev_result) {
+          currentJobPrevResult = activeJob.prev_result;
         }
         if (activeJob.last_result) {
           currentJobLastResult = activeJob.last_result;
@@ -1003,6 +1047,9 @@ async function followJob(j) {
           if (detail.total && detail.total > 1) {
             currentJobSubCount = { current: detail.current || detail.total, total: detail.total };
           }
+          if (detail.prev_result) {
+            currentJobPrevResult = detail.prev_result;
+          }
           if (detail.last_result) {
             currentJobLastResult = detail.last_result;
           }
@@ -1040,9 +1087,10 @@ function updateJobUI() {
   const displayModel = currentJobWorkingModel || (activeJob.model && !activeJob.model.startsWith("(") ? activeJob.model : "");
 
   const subCount = currentJobSubCount || (activeJob.total && activeJob.total > 1 ? { current: activeJob.current || activeJob.total, total: activeJob.total } : null);
+  const prevResult = currentJobPrevResult || activeJob.prev_result || null;
   const lastResult = currentJobLastResult || activeJob.last_result || null;
 
-  const headerFmt = formatJobHeader(activeJob, subCount, lastResult, displayModel);
+  const headerFmt = formatJobHeader(activeJob, subCount, prevResult, lastResult, displayModel);
 
   if (logHeader) {
     logHeader.innerHTML = headerFmt.html;
@@ -1052,7 +1100,9 @@ function updateJobUI() {
   if (pill) {
     pill.style.display = isRunning ? "inline-flex" : "none";
     let countBadge = (subCount && subCount.total > 1) ? ` (${subCount.current}/${subCount.total})` : "";
-    let prevText = (lastResult && lastResult.model && lastResult.status) ? ` · Prev: ${lastResult.model} ${lastResult.status}` : "";
+    let prevText = (prevResult && prevResult.model && prevResult.status && prevResult.model !== displayModel)
+      ? ` · Prev: ${prevResult.model} ${prevResult.status}`
+      : "";
     pill.innerHTML = `<span class="spinner"></span><b>${esc(activeJob.step)}</b>${countBadge}` +
       (displayModel ? ` on <b>${esc(displayModel)}</b>` : (activeJob.model ? ` on ${esc(activeJob.model)}` : "")) +
       (prevText ? `<span style="opacity:0.85; margin-left:4px">${esc(prevText)}</span>` : "");

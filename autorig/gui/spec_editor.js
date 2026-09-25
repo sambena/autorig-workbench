@@ -320,12 +320,16 @@ const V = (b) => new THREE.Vector3(b[0], b[2], -b[1]);             // Blender (Z
 const fromV = (v) => [v.x, -v.z, v.y];
 
 function resize() {
-  const w = stageEl.clientWidth, h = stageEl.clientHeight;
-  if (!w || !h) return;
-  renderer.setSize(w, h, false);
-  labelRenderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  try {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    if (!w || !h || w <= 0 || h <= 0) return;
+    renderer.setSize(w, h, false);
+    labelRenderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  } catch (err) {
+    console.warn("spec_editor resize error:", err);
+  }
 }
 window.addEventListener("resize", resize);
 new ResizeObserver(resize).observe(stageEl);
@@ -482,21 +486,25 @@ function resetAllGizmoBones() {
 
 function tick() {
   requestAnimationFrame(tick);
-  const delta = clock.getDelta();
-  if (mixer && isPlaying && viewMode === "rigged") {
-    mixer.update(delta);
-    updateClipUI();
+  try {
+    const delta = clock.getDelta();
+    if (mixer && isPlaying && viewMode === "rigged") {
+      mixer.update(delta);
+      updateClipUI();
+    }
+    if (gizmoGroup && gizmoGroup.visible && activeGizmoBone) {
+      activeGizmoBone.getWorldPosition(gizmoGroup.position);
+    }
+    controls.update();
+    if (lockZ) {
+      camera.up.set(0, 1, 0);
+    }
+    updateOrientationHUD();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  } catch (err) {
+    console.warn("spec_editor tick render error:", err);
   }
-  if (gizmoGroup && gizmoGroup.visible && activeGizmoBone) {
-    activeGizmoBone.getWorldPosition(gizmoGroup.position);
-  }
-  controls.update();
-  if (lockZ) {
-    camera.up.set(0, 1, 0);
-  }
-  updateOrientationHUD();
-  renderer.render(scene, camera);
-  labelRenderer.render(scene, camera);
 }
 tick();
 

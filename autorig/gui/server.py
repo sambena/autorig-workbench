@@ -87,6 +87,7 @@ class Job:
         self.current_idx = 0
         self.current_model = None
         self.current_label = None
+        self.prev_result = None
         self.last_result = None
         self.completed_count = 0
         self.passed_count = 0
@@ -108,7 +109,8 @@ class Job:
         return {"id": self.id, "model": self.model, "group": self.group, "step": self.step, "state": self.state,
                 "pid": self.pid, "lines": len(self.lines), "started": self.started, "ended": self.ended,
                 "total": self.total, "current": self.current_idx, "current_model": self.current_model,
-                "last_result": self.last_result, "completed": self.completed_count,
+                "prev_result": self.prev_result, "last_result": self.last_result,
+                "completed": self.completed_count,
                 "passed": self.passed_count, "failed": self.failed_count}
 
 
@@ -162,21 +164,24 @@ class Runner:
                 job.current_idx = idx
                 job.current_model = cmd_model
                 job.current_label = label
+                job.prev_result = job.last_result
 
                 if prep: prep()
 
                 if total_cmds > 1:
                     job.add("--------------------------------------------------------------------------------")
                     job.add(">> [Job %d of %d] Starting: %s" % (idx, total_cmds, cmd_model or label))
-                    if job.last_result:
-                        prev_m = job.last_result.get("model", "")
-                        prev_st = job.last_result.get("status", "")
+                    if job.prev_result:
+                        prev_m = job.prev_result.get("model", "")
+                        prev_st = job.prev_result.get("status", "")
                         job.add("   (Previous: %s %s)" % (prev_m, prev_st))
                     job.add("--------------------------------------------------------------------------------")
 
                 if cmd_model:
                     job.add(":: MODEL_ACTIVE %s" % cmd_model)
                 job.add(":: SUBJOB_PROGRESS %d %d %s" % (idx, total_cmds, cmd_model or ""))
+                if job.prev_result:
+                    job.add(":: SUBJOB_PREV %s %s" % (job.prev_result.get("model", ""), job.prev_result.get("status", "")))
                 job.add("== %s" % label)
                 job.add("   " + " ".join('"%s"' % a if " " in a else a for a in argv))
                 try:
@@ -507,10 +512,22 @@ def audit_failed_job():
     return job
 
 
+def clippable_models():
+    """All models ready for clips: is rigged, and has a clip archetype in rig.json."""
+    if layout is None:
+        return []
+    out = []
+    for g, n in layout.all_models():
+        st = status(g, n)
+        if st["steps"].get("clips") is None:
+            out.append((g, n))
+    return out
+
+
 def rebake_all_clips_job():
-    """Re-bakes animation clips and viewer previews across all rigged models."""
-    ms = rigged_models()
-    if not ms: raise ValueError("no rigged models yet: rig one first")
+    """Re-bakes animation clips and viewer previews across all models with authored clip specs."""
+    ms = clippable_models()
+    if not ms: raise ValueError("no models with a clip archetype in rig.json: author clips on one first")
     cmds = []
     for k, (g, n) in enumerate(ms, 1):
         pv = os.path.join(layout.WORK, "clips", n)

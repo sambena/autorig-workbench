@@ -52,8 +52,16 @@ def main(argv):
         return subprocess.call([sys.executable, os.path.join(HERE, "audit_all.py"), "all"] + rest)
     if cmd == "audit" and rest:
         return subprocess.call([sys.executable, os.path.join(HERE, "audit_all.py")] + rest)
-    if cmd == "clips" and rest:
-        return max(blender_step("make_clips.py", m, *rest[1:]) for m in rest[0].split(","))
+    if cmd == "clips":
+        targets = rest[0].split(",") if rest and not rest[0].startswith("-") else ["all"]
+        extra = rest[1:] if rest and not rest[0].startswith("-") else rest
+        if targets == ["all"] or "all" in targets:
+            import spec_store
+            targets = sorted(list(spec_store.CLIPS))
+            if not targets:
+                print("CLIPS: no models with a \"clips\" section found in rig.json")
+                return 0
+        return max(blender_step("make_clips.py", m, *extra) for m in targets)
     if cmd == "measure" and rest:
         return max(blender_step("measure.py", m, *rest[1:]) for m in rest[0].split(","))
     if cmd == "preview" and rest:                             # results viewer
