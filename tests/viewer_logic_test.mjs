@@ -366,11 +366,11 @@ test("orientation angles, axis locking, camera leveling, and ground plane", () =
 });
 
 test("status filtering: matchesModelFilter", () => {
-  const mPass = { name: "guard", audit: "PASS", rigged: true, spec: true };
-  const mCheck = { name: "crawler", audit: "CHECK", rigged: true, spec: true };
-  const mFail = { name: "dragon", audit: "FAIL", rigged: true, spec: true };
-  const mUnrigged = { name: "crate", audit: null, rigged: false, spec: true };
-  const mNoSpec = { name: "barrel", audit: null, rigged: false, spec: false };
+  const mPass = { name: "biped", audit: "PASS", rigged: true, spec: true };
+  const mCheck = { name: "beetle", audit: "CHECK", rigged: true, spec: true };
+  const mFail = { name: "wyvern", audit: "FAIL", rigged: true, spec: true };
+  const mUnrigged = { name: "pedestal", audit: null, rigged: false, spec: true };
+  const mNoSpec = { name: "canine", audit: null, rigged: false, spec: false };
 
   // All matches everything
   assert.equal(L.matchesModelFilter(mPass, "all"), true);
@@ -401,16 +401,16 @@ test("status filtering: matchesModelFilter", () => {
 
 test("model load sequence validation and race protection", () => {
   // Matching active sequence and model commits safely
-  assert.equal(L.isModelLoadValid(1, 1, "armoured_guard", "armoured_guard"), true);
+  assert.equal(L.isModelLoadValid(1, 1, "biped", "biped"), true);
   assert.equal(L.isModelLoadValid(5, 5, "beetle", "beetle"), true);
 
   // Stale sequence number (new model switch occurred while first was loading) rejected
-  assert.equal(L.isModelLoadValid(2, 1, "armoured_guard", "armoured_guard"), false);
+  assert.equal(L.isModelLoadValid(2, 1, "biped", "biped"), false);
   assert.equal(L.isModelLoadValid(10, 9, "beetle", "beetle"), false);
 
-  // Model mismatch (user switched from armoured_guard to beetle) rejected
-  assert.equal(L.isModelLoadValid(2, 2, "beetle", "armoured_guard"), false);
-  assert.equal(L.isModelLoadValid(1, 1, "wolf", "canine"), false);
+  // Model mismatch (user switched from biped to beetle) rejected
+  assert.equal(L.isModelLoadValid(2, 2, "beetle", "biped"), false);
+  assert.equal(L.isModelLoadValid(1, 1, "wyvern", "canine"), false);
 
   // Empty or uninitialized models rejected
   assert.equal(L.isModelLoadValid(1, 1, "", ""), false);
