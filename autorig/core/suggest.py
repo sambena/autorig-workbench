@@ -525,7 +525,8 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
                 "rig": tripo_rig,
                 "spec": {
                     "schema": "autorig-spec/1",
-                    "rig": tripo_rig
+                    "rig": tripo_rig,
+                    "clips": {"archetype": "walker"}
                 }
             }
 
@@ -598,6 +599,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
             }]
             reasons.append("added wing membrane rule with flank cutoff")
 
+    clip_arch = "winged" if archetype == "winged" else "swimmer" if archetype == "serpent" else "flyer" if archetype == "floater" else "turret" if archetype == "rigid" else "walker"
     return {
         "archetype": archetype,
         "confidence": confidence,
@@ -605,7 +607,8 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
         "rig": rig_spec,
         "spec": {
             "schema": "autorig-spec/1",
-            "rig": rig_spec
+            "rig": rig_spec,
+            "clips": {"archetype": clip_arch}
         }
     }
 

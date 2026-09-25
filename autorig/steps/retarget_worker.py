@@ -86,7 +86,22 @@ def main(argv=None):
     bpy.context.scene.render.fps = fps
     frame_start = 1
     frame_end = 30
-    if src_arm.animation_data and src_arm.animation_data.action:
+
+    source_action_name = config.get("source_action")
+    if source_action_name and bpy.data.actions:
+        matched_act = bpy.data.actions.get(source_action_name)
+        if not matched_act:
+            matched_act = next((a for a in bpy.data.actions if a.name.lower() == source_action_name.lower() or
+                                a.name.endswith("|" + source_action_name) or
+                                a.name.endswith("/" + source_action_name)), None)
+        if matched_act:
+            if not src_arm.animation_data:
+                src_arm.animation_data_create()
+            src_arm.animation_data.action = matched_act
+            frame_start = int(matched_act.frame_range[0])
+            frame_end = int(matched_act.frame_range[1])
+            print(f"RETARGET_WORKER: Bound source action '{matched_act.name}' ({frame_start}..{frame_end})")
+    elif src_arm.animation_data and src_arm.animation_data.action:
         src_action = src_arm.animation_data.action
         frame_start = int(src_action.frame_range[0])
         frame_end = int(src_action.frame_range[1])
@@ -158,10 +173,12 @@ def main(argv=None):
 
     scene = bpy.context.scene
 
+    cur_arm_r = {}
     # Process all frames
     for f in range(frame_start, frame_end + 1):
         scene.frame_set(f)
         bpy.context.view_layer.update()
+        cur_arm_r.clear()
 
         for sb, tb in sorted_pairs:
             src_pb = src_arm.pose.bones[sb]
@@ -183,17 +200,21 @@ def main(argv=None):
 
             # Convert to target armature local coordinates
             r_tgt_local = tgt_w_inv @ r_tgt_w
+            cur_arm_r[tb] = r_tgt_local
 
             # Decompose into parent-relative basis matrix
             if tgt_pb.parent is None:
                 mat_basis = db.matrix_local.to_3x3().inverted() @ r_tgt_local
             else:
                 p_name = tgt_pb.parent.name
-                parent_pb = tgt_arm.pose.bones[p_name]
-                p_rest = tgt_arm.data.bones[p_name].matrix_local
-                c_rest = db.matrix_local
-                rel_rest = p_rest.inverted() @ c_rest
-                mat_basis = (parent_pb.matrix @ rel_rest).to_3x3().inverted() @ r_tgt_local
+                p_rest_r = tgt_arm.data.bones[p_name].matrix_local.to_3x3()
+                c_rest_r = db.matrix_local.to_3x3()
+                rel_rest_r = p_rest_r.inverted() @ c_rest_r
+                p_orient = cur_arm_r.get(p_name)
+                if p_orient is None:
+                    p_orient = tgt_arm.pose.bones[p_name].matrix.to_3x3()
+                p_frame = p_orient @ rel_rest_r
+                mat_basis = p_frame.inverted() @ r_tgt_local
 
             tgt_pb.rotation_mode = "QUATERNION"
             tgt_pb.rotation_quaternion = mat_basis.to_quaternion()

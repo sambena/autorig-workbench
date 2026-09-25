@@ -1079,3 +1079,23 @@ export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optD
 
   return { html, text };
 }
+
+/** Formats a clip for a dropdown option or text label: e.g. "1. walk (1.00s, 24f)" */
+export function formatClipOption(clip, index, fps = 24) {
+  const num = (index !== undefined && index !== null) ? `${index + 1}. ` : "";
+  const name = (clip && clip.name) ? clip.name : "unnamed";
+  const dur = (clip && typeof clip.duration === "number") ? `${clip.duration.toFixed(2)}s` : "";
+  const frames = (clip && typeof clip.duration === "number") ? `${Math.round(clip.duration * (fps || 24))}f` : "";
+  const meta = [dur, frames].filter(Boolean).join(", ");
+  return meta ? `${num}${name} (${meta})` : `${num}${name}`;
+}
+
+/** Finds a clip index by name (case-insensitive or substring match). Returns -1 if not found. */
+export function findClipIndexByName(clips, name) {
+  if (!Array.isArray(clips) || !name) return -1;
+  const target = String(name).trim().toLowerCase();
+  const exact = clips.findIndex((c) => c && c.name && c.name.toLowerCase() === target);
+  if (exact !== -1) return exact;
+  return clips.findIndex((c) => c && c.name && (c.name.toLowerCase().includes(target) || target.includes(c.name.toLowerCase())));
+}
+

@@ -1963,7 +1963,7 @@ def machine_clips(rig, spec):
     return clips, {"windUpEnd": 0.0, "stride": 0.0, "walkFrames": n}
 
 
-CREATURE = {"walker": walker_clips, "flyer": flyer_clips, "exploder": exploder_clips, "swimmer": swimmer_clips,
+CREATURE = {"walker": walker_clips, "quadruped": walker_clips, "flyer": flyer_clips, "exploder": exploder_clips, "swimmer": swimmer_clips,
             "turret": turret_clips, "machine": machine_clips}
 
 
@@ -2265,7 +2265,13 @@ def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not argv: sys.exit("usage: blender -b --python autorig/steps/make_clips.py -- <model> [--preview dir] [--split-clips dir]")
     key = argv[0]
-    spec = MODELS.get(key) or sys.exit("%s has no \"clips\" section in its rig.json" % key)
+    spec = MODELS.get(key)
+    if not spec and "--archetype" in argv:
+        idx = argv.index("--archetype")
+        if idx + 1 < len(argv):
+            spec = {"archetype": argv[idx + 1]}
+    if not spec:
+        sys.exit("%s has no \"clips\" section in its rig.json" % key)
     if spec["archetype"] in CREATURE:
         return author(key, spec, argv)
     pack = layout.pack_dir(key)

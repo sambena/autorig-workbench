@@ -27,7 +27,7 @@ CSP = ("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data:
 SCHEMA_ID = "autorig-spec/1"
 KINDS = ("tripo", "build", "placed", "humanoid", "custom")
 ARCHETYPES = ("quadruped", "hexapod", "octopod", "serpent", "winged", "floater", "rigid", "humanoid")
-CLIP_ARCHETYPES = ("walker", "flyer", "exploder", "swimmer", "turret", "winged")
+CLIP_ARCHETYPES = ("walker", "quadruped", "flyer", "exploder", "swimmer", "turret", "winged")
 WALK_PRESETS = ("natural", "soldier", "swagger", "stealth", "heavy", "quadruped_walk", "quadruped_trot")
 THRESHOLD_KEYS = ("bleed_pct", "combined_tears", "bend_tears", "head_pct", "max_influences")
 ROLE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -852,6 +852,10 @@ def post(h, app, srv, path, body):
                 out["job"] = _job(app, srv, name, "save and re-rig", cmds)
             elif what == "rebake_clips":
                 spec = srv.spec_store.model(name)
+                infer_fn = getattr(srv.spec_store, "infer_clip_archetype", lambda s: None)
+                c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype") or infer_fn(spec)
+                if not c_arch:
+                    c_arch = "walker"
                 steps = ["clips", "preview"]
                 cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
                 out["job"] = _job(app, srv, name, "re-bake clips", cmds)

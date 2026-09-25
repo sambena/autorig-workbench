@@ -278,6 +278,32 @@ print("__ACTIONS__" + str(action_names))
         self.assertEqual(r_dry.returncode, 0)
         self.assertIn("RETARGET_DRY_RUN", r_dry.stdout)
 
+        # List actions CLI execution
+        r_list = subprocess.run(
+            [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"),
+             "biped", self.bvh_file, "--list-actions"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(r_list.returncode, 0)
+        self.assertIn("ACTIONS IN", r_list.stdout)
+        self.assertIn("sample_walk", r_list.stdout)
+
+    def test_clean_action_name(self):
+        self.assertEqual(retargeter.clean_action_name("Armature|Armature|Dance_Loop"), "dance_loop")
+        self.assertEqual(retargeter.clean_action_name("mixamo.com/Run_Fwd_Loop"), "run_fwd_loop")
+        self.assertEqual(retargeter.clean_action_name("Sword_Attack-01"), "sword_attack_01")
+        self.assertEqual(retargeter.clean_action_name(""), "clip")
+
+    def test_plan_with_source_action(self):
+        plan = retargeter.plan_retarget("biped", self.bvh_file, source_action="sample_walk")
+        self.assertEqual(plan["source_action"], "sample_walk")
+        self.assertEqual(plan["clip_name"], "sample_walk")
+
+        with self.assertRaises(ValueError):
+            retargeter.plan_retarget("biped", self.bvh_file, source_action="nonexistent_action")
+
 
 if __name__ == "__main__":
     unittest.main()
+

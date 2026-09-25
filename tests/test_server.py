@@ -312,7 +312,15 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(cmds[0][0].startswith("make clips"))
         self.assertEqual(cmds[1][0], "preview for the viewer")
 
-        # pedestal has no clips section: /api/run with rebake-clips must fail with 409
+        # ensure pedestal has no clips section: /api/run with rebake-clips must fail with 409
+        pedestal_rig = os.path.join(self.models, "pedestal", "rig.json")
+        if os.path.exists(pedestal_rig):
+            with open(pedestal_rig) as f:
+                p_spec = json.load(f)
+            p_spec.pop("clips", None)
+            with open(pedestal_rig, "w") as f:
+                json.dump(p_spec, f)
+
         st = self.call("/api/state")
         pedestal = next((m for m in st["models"] if m["name"] == "pedestal"), None)
         self.assertIsNotNone(pedestal)

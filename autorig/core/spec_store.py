@@ -107,6 +107,31 @@ def reload():
     LICENCE = COLLECTION["licence"]
 
 
+def infer_clip_archetype(spec):
+    """Infers an animation clip archetype from a model's rig spec when not explicitly configured."""
+    if not isinstance(spec, dict):
+        return None
+    clips = spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}
+    if isinstance(clips, dict) and clips.get("archetype"):
+        return clips["archetype"]
+    rig = spec.get("rig") or {}
+    skel = (rig.get("skeleton") or ("humanoid" if rig.get("kind") == "humanoid" else "")).lower()
+    if skel in ("winged", "flyer"):
+        return "winged"
+    if skel in ("serpent", "swimmer", "fish"):
+        return "swimmer"
+    if skel in ("floater",):
+        return "flyer"
+    if skel in ("turret", "rigid"):
+        return "turret"
+    if skel in ("machine",):
+        return "machine"
+    # Quadrupeds, hexapods, octopods, humanoids, tripo creatures default to walker
+    if skel in ("quadruped", "hexapod", "octopod", "humanoid", "creature") or rig.get("kind") in ("humanoid", "tripo"):
+        return "walker"
+    return None
+
+
 class _Section(Mapping):
     """One section of every model's rig.json, read like a dict keyed on model name: SPECS["wolf"] is the wolf's
     "rig" section. Iterating walks the models root."""
@@ -119,6 +144,10 @@ class _Section(Mapping):
         v = m.get(self.section)
         if v is None and self.section == "clips":
             v = (m.get("rig") or {}).get("clips")
+            if v is None:
+                arch = infer_clip_archetype(m)
+                if arch:
+                    v = {"archetype": arch}
         elif v is None and self.section == "humanoid":
             v = (m.get("rig") or {}).get("humanoid")
         if v is None:
@@ -130,6 +159,7 @@ class _Section(Mapping):
             m = model(m_name)
             if self.section in m: return True
             if self.section in ("clips", "humanoid") and self.section in (m.get("rig") or {}): return True
+            if self.section == "clips" and infer_clip_archetype(m): return True
             return False
         return (m for _, m in layout.all_models() if has(m))
 

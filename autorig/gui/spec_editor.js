@@ -2322,7 +2322,12 @@ function paneRig() {
   if (!groups["Basics"] && kind() === "humanoid") {
     h += humanoidHtml();
   }
-  h += `<div class="group ${shut.includes("Output") ? "shut" : ""}" data-group="Output"><h3>Output</h3><div class="fields">${S.other.map(otherHtml).join("")}</div></div>`;
+  const clipFields = (S.other || []).filter((f) => f.section === "clips");
+  const outputFields = (S.other || []).filter((f) => f.section !== "clips");
+  if (clipFields.length) {
+    h += `<div class="group ${shut.includes("Clips & Animation") ? "shut" : ""}" data-group="Clips & Animation"><h3>Clips & Animation</h3><div class="fields">${clipFields.map(otherHtml).join("")}</div></div>`;
+  }
+  h += `<div class="group ${shut.includes("Output") ? "shut" : ""}" data-group="Output"><h3>Output</h3><div class="fields">${outputFields.map(otherHtml).join("")}</div></div>`;
   h += `<datalist id="roles">${ROLES.map((r) => `<option value="${r}">`).join("")}</datalist>`;
   h += `<datalist id="rigbones">${(B.rig_bones || []).map((r) => `<option value="${esc(r)}">`).join("")}</datalist>`;
   return h;
@@ -3349,6 +3354,15 @@ function applyWalkParamsToSpec() {
 
 async function rebakeClipsFromSpec() {
   applyWalkParamsToSpec();
+  if (!draft.clips || !draft.clips.archetype) {
+    const skel = (draft.rig && draft.rig.skeleton) || "";
+    let defaultArch = "walker";
+    if (skel === "winged") defaultArch = "winged";
+    else if (skel === "serpent") defaultArch = "swimmer";
+    else if (skel === "floater") defaultArch = "flyer";
+    else if (skel === "rigid") defaultArch = "turret";
+    setPath(["clips", "archetype"], defaultArch);
+  }
   const btn = $("bBakeWalkClips");
   if (btn) btn.disabled = true;
   const btnRebake = $("bRebakeClips");
