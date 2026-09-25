@@ -66,6 +66,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
               padding: 4px 10px; cursor: pointer; }
 #bar button:hover { border-color: var(--accent); }
 #bar button.on { background: var(--accent); color: #0b0e14; border-color: var(--accent); }
+#bar select#clipSelect { font: inherit; color: var(--ink); background: #252b36; border: 1px solid var(--line); border-radius: 6px;
+                         padding: 4px 8px; cursor: pointer; max-width: 170px; text-overflow: ellipsis; outline: none; }
+#bar select#clipSelect:hover, #bar select#clipSelect:focus { border-color: var(--accent); }
 #bar label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
 #bar input[type=range] { width: 110px; }
 #bar .sep { width: 1px; height: 22px; background: var(--line); }
@@ -149,6 +152,7 @@ a { color: var(--accent); }
   <button id="bNextModel" title="Next model (Right, D-pad right)">model ▶</button>
   <span class="sep"></span>
   <button id="bPrevClip" title="Previous clip (Up, D-pad up)">▲ clip</button>
+  <select id="clipSelect" title="Select animation clip directly"></select>
   <button id="bNextClip" title="Next clip (Down, D-pad down)">clip ▼</button>
   <button id="bPlay" title="Play / pause (Space, A)">Pause</button>
   <label title="Playback speed (- and =)">speed <input type="range" id="speed" min="0.05" max="2" step="0.05" value="1"><span id="speedVal">1.00×</span></label>
@@ -162,7 +166,7 @@ a { color: var(--accent); }
 </div>
 </div>
 <div class="hud" id="keys">
-  <b>←/→</b> model · <b>↑/↓</b> clip · <b>Space</b> play/pause<br>
+  <b>←/→</b> model · <b>↑/↓</b> or <b>1-9</b> clip · <b>Space</b> play/pause<br>
   <b>R</b> overlay · <b>[ ]</b> bone · <b>V</b> view (hero/front/side/orbit) · <b>F</b> frame<br>
   <b>L</b> loop · <b>- =</b> speed · <b>, .</b> step · <b>Home End</b><br>
   Pad: D-pad or left stick model/clip · <b>A</b> play · <b>Y</b> overlay · <b>X</b> view · <b>B</b> frame · <b>LB RB</b> bone · <b>LT RT</b> step

@@ -140,6 +140,9 @@ def inspect_mocap_file(filepath):
         meta["convention_confidence"] = conf
         meta["file"] = os.path.basename(filepath)
         meta["path"] = os.path.abspath(filepath)
+        stem = os.path.splitext(meta["file"])[0]
+        meta["actions"] = [{"name": stem, "frames": meta["frames"], "frame_start": 1, "frame_end": meta["frames"], "fps": meta["fps"]}]
+        meta["active_action"] = stem
         return meta
 
     elif ext == ".fbx":
@@ -152,21 +155,27 @@ import bpy, json
 bpy.ops.import_scene.fbx(filepath="{os.path.abspath(filepath)}", use_anim=True)
 arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
 bones = [b.name for b in arm.data.bones] if arm else []
-frames = 0
 fps = bpy.context.scene.render.fps
+actions = []
+for a in bpy.data.actions:
+    f_start = int(a.frame_range[0])
+    f_end = int(a.frame_range[1])
+    f_count = max(1, f_end - f_start + 1)
+    actions.append({{"name": a.name, "frames": f_count, "frame_start": f_start, "frame_end": f_end, "fps": fps}})
+
 act = None
 if arm and arm.animation_data and arm.animation_data.action:
     act = arm.animation_data.action
 elif bpy.data.actions:
     act = bpy.data.actions[0]
 
-if act:
-    frames = int(act.frame_range[1] - act.frame_range[0] + 1)
-print("__FBX_META__" + json.dumps({{"format": "FBX", "joints": bones, "frames": frames, "fps": fps}}))
+frames = int(act.frame_range[1] - act.frame_range[0] + 1) if act else 0
+active_name = act.name if act else None
+print("__FBX_META__" + json.dumps({{"format": "FBX", "joints": bones, "frames": frames, "fps": fps, "actions": actions, "active_action": active_name}}))
 """
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
-        meta = {"format": "FBX", "joints": [], "frames": 0, "fps": 30.0}
+        meta = {"format": "FBX", "joints": [], "frames": 0, "fps": 30.0, "actions": [], "active_action": None}
         for line in r.stdout.splitlines():
             if line.startswith("__FBX_META__"):
                 try:
@@ -200,6 +209,10 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
     for tb in target_bones:
         role = skeletons.map_bone_to_canonical(tb)
         if role:
+            if role == "hips" and "hips" in tgt_role_to_bone:
+                if tb.lower() in ("hips", "pelvis") and tgt_role_to_bone["hips"].lower() == "root":
+                    tgt_role_to_bone[role] = tb
+                continue
             tgt_role_to_bone[role] = tb
 
     # 2. Check source bones
@@ -288,11 +301,41 @@ def find_blend_file(model_identifier):
     raise FileNotFoundError(f"Rigged blend file not found for model '{model_identifier}': {blend_path}")
 
 
-def plan_retarget(model_name, mocap_file, clip_name=None, root_motion=True,
+def clean_action_name(raw_name):
+    """Strips namespace prefixes and returns a clean snake_case clip name."""
+    name = raw_name.split("|")[-1].split("/")[-1].strip()
+    name = re.sub(r"[^a-zA-Z0-9]+", "_", name).strip("_").lower()
+    return name or "clip"
+
+
+def plan_retarget(model_name, mocap_file, clip_name=None, source_action=None, root_motion=True,
                   solve_offsets=True, overrides=None):
     """Pre-flight planning and validation for retargeting a mocap clip onto a rigged model."""
     mocap_meta = inspect_mocap_file(mocap_file)
     blend_path, model_leaf = find_blend_file(model_name)
+
+    chosen_action = None
+    if source_action and mocap_meta.get("actions"):
+        for act in mocap_meta["actions"]:
+            aname = act["name"]
+            if (aname == source_action or aname.lower() == source_action.lower() or
+                aname.endswith("|" + source_action) or aname.endswith("/" + source_action) or
+                clean_action_name(aname) == source_action.lower()):
+                chosen_action = act
+                break
+        if not chosen_action:
+            available = [a["name"] for a in mocap_meta["actions"][:10]]
+            raise ValueError(f"Action '{source_action}' not found in '{mocap_file}'. Available actions: {available}")
+    elif mocap_meta.get("actions"):
+        active_name = mocap_meta.get("active_action")
+        chosen_action = next((a for a in mocap_meta["actions"] if a["name"] == active_name), mocap_meta["actions"][0])
+
+    if chosen_action:
+        mocap_meta["frames"] = chosen_action["frames"]
+        mocap_meta["duration"] = round(chosen_action["frames"] / (mocap_meta["fps"] or 30.0), 2)
+        mocap_meta["selected_action"] = chosen_action["name"]
+    else:
+        mocap_meta["selected_action"] = None
 
     # Inspect target bones and rest bone vectors from blend
     cmd = [
@@ -329,13 +372,19 @@ print("__TGT_BONES__" + json.dumps({"bones": bones, "dirs": dirs}))
         raise ValueError(f"No armature bones found in '{blend_path}'")
 
     map_result = build_retarget_mapping(mocap_meta["joints"], tgt_bones, overrides=overrides)
-    stem = os.path.splitext(os.path.basename(mocap_file))[0]
-    final_clip = clip_name or re.sub(r"[^a-zA-Z0-9_\-]+", "_", stem).lower()
+    if clip_name:
+        final_clip = clip_name
+    elif chosen_action:
+        final_clip = clean_action_name(chosen_action["name"])
+    else:
+        stem = os.path.splitext(os.path.basename(mocap_file))[0]
+        final_clip = clean_action_name(stem)
 
     return {
         "model": model_leaf,
         "blend_path": blend_path,
         "clip_name": final_clip,
+        "source_action": mocap_meta.get("selected_action"),
         "mocap": mocap_meta,
         "mapping_result": map_result,
         "root_motion": root_motion and (map_result["root_pair"] is not None),
@@ -349,10 +398,15 @@ def format_retarget_summary(plan):
     """Formats an ASCII summary table of the retargeting plan."""
     m = plan["mocap"]
     res = plan["mapping_result"]
+    total_actions = len(m.get("actions", []))
+    act_str = f"Selected Action:  {plan.get('source_action') or '(default)'}"
+    if total_actions > 1:
+        act_str += f" ({total_actions} total in file)"
     lines = [
         f"RETARGET PLAN: {m['file']} -> {plan['model']} (Clip: '{plan['clip_name']}')",
         "-" * 72,
         f"Mocap Format:     {m['format']} ({m.get('convention', 'unknown').upper()}, {m['frames']} frames @ {m['fps']} fps, {m['duration']}s)",
+        act_str,
         f"Target Rig:       {plan['blend_path']}",
         f"Bone Mapping:     {res['mapped_count']} mapped / {res['total_target']} target bones ({int(res['confidence'] * 100)}% confidence)",
         f"Root Motion:      {'ENABLED' if plan['root_motion'] else 'DISABLED'} (Root Pair: {plan['root_pair']})",
@@ -369,11 +423,12 @@ def format_retarget_summary(plan):
     return "\n".join(lines)
 
 
-def retarget_clip(model_name, mocap_file, clip_name=None, root_motion=True,
+def retarget_clip(model_name, mocap_file, clip_name=None, source_action=None, root_motion=True,
                   scale_proportions=True, solve_offsets=True, fps=None,
                   frame_range=None, overrides=None, export_glb=False, preview=False):
     """Executes full retargeting in Blender and returns results dictionary."""
     plan = plan_retarget(model_name, mocap_file, clip_name=clip_name,
+                         source_action=source_action,
                          root_motion=root_motion, solve_offsets=solve_offsets,
                          overrides=overrides)
 
@@ -384,6 +439,7 @@ def retarget_clip(model_name, mocap_file, clip_name=None, root_motion=True,
     config = {
         "target_blend": plan["blend_path"],
         "source_file": os.path.abspath(mocap_file),
+        "source_action": plan.get("source_action"),
         "clip_name": plan["clip_name"],
         "fps": int(fps or plan["mocap"]["fps"]),
         "root_motion": plan["root_motion"],
@@ -411,7 +467,7 @@ def retarget_clip(model_name, mocap_file, clip_name=None, root_motion=True,
     return result
 
 
-def retarget_batch(models, mocap_files, clip_names=None, root_motion=True,
+def retarget_batch(models, mocap_files, clip_names=None, source_actions=None, root_motion=True,
                    scale_proportions=True, solve_offsets=True, fps=None,
                    frame_range=None, overrides=None, export_glb=False, preview=False):
     """Retargets a collection of mocap clips onto a collection of models."""
@@ -434,6 +490,9 @@ def retarget_batch(models, mocap_files, clip_names=None, root_motion=True,
             clip_name = None
             if clip_names and f_idx < len(clip_names):
                 clip_name = clip_names[f_idx]
+            source_action = None
+            if source_actions and f_idx < len(source_actions):
+                source_action = source_actions[f_idx]
 
             print(f"RETARGET_BATCH [{op_idx}/{total_ops}] Retargeting {os.path.basename(mocap_file)} -> {m}...")
             try:
@@ -441,6 +500,7 @@ def retarget_batch(models, mocap_files, clip_names=None, root_motion=True,
                     model_name=m,
                     mocap_file=mocap_file,
                     clip_name=clip_name,
+                    source_action=source_action,
                     root_motion=root_motion,
                     scale_proportions=scale_proportions,
                     solve_offsets=solve_offsets,

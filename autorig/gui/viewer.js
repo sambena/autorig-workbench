@@ -15,7 +15,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { padStep, scrubTicks, scrubTime, keyTimes, isBleed, segDist2, islands as meshIslands, sideOf, hops,
          tearSeverity, tearMarkerRadius, mapTearPoint, defaultCombinedAngle,
-         VIEWS, viewLabel, nextView, isHumanoidOrBiped, defaultCameraView } from "./viewer_logic.js";
+         VIEWS, viewLabel, nextView, isHumanoidOrBiped, defaultCameraView,
+         formatClipOption, findClipIndexByName } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
 const REF_HEIGHT = 1.8;
@@ -353,6 +354,7 @@ function setup(item, gltf) {
   sel = pickDefaultBone();
   ci = Math.min(ci, Math.max(0, clips.length - 1));
   if (!clips.length) ci = 0;
+  updateClipSelect();
   playClip(ci);
   applyOverlay();
   renderChecks(checks());
@@ -360,6 +362,28 @@ function setup(item, gltf) {
   const defView = defaultCameraView(info, cur.bones, box);
   setView(defView);
   layoutPanels();
+}
+
+function updateClipSelect() {
+  const selEl = $("clipSelect");
+  if (!selEl) return;
+  selEl.innerHTML = "";
+  if (!cur || !cur.clips || !cur.clips.length) {
+    const opt = document.createElement("option");
+    opt.value = "-1";
+    opt.textContent = "No clips (bind pose)";
+    selEl.appendChild(opt);
+    selEl.disabled = true;
+    return;
+  }
+  selEl.disabled = false;
+  cur.clips.forEach((c, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    opt.textContent = formatClipOption(c, idx, cur.fps);
+    selEl.appendChild(opt);
+  });
+  selEl.value = String(ci);
 }
 
 // The box the model fills over every clip: its bind-pose mesh, and each clip sampled through, the skeleton's box
@@ -475,6 +499,8 @@ function playClip(i) {
   action.paused = !playing;
   cur.mixer.timeScale = speed;
   if (!playing) cur.mixer.update(0);
+  const selEl = $("clipSelect");
+  if (selEl && selEl.value !== String(ci)) selEl.value = String(ci);
   hud();
   drawScrub();
 }
@@ -1235,8 +1261,9 @@ function drawScrub() {
   g.fillStyle = "#ffffff"; g.fillRect(x - 1, 5, 2, 18);
   g.beginPath(); g.moveTo(x - 5, 3); g.lineTo(x + 5, 3); g.lineTo(x, 9); g.closePath(); g.fill();
   const fr = Math.round(tNow * fps), last = Math.round(dur * fps);
-  $("scrubLeft").textContent = `frame ${fr} / ${last}${scrubbing ? " · scrubbing (paused)" : ""}`;
-  $("scrubRight").textContent = `${keys.length} key${keys.length === 1 ? "" : "s"} · ${tNow.toFixed(2)} s / ${dur.toFixed(2)} s`;
+  const pct = Math.round(dur > 0 ? (tNow / dur) * 100 : 0);
+  $("scrubLeft").textContent = `clip ${ci + 1}/${cur.clips.length}: ${cur.clips[ci].name} · frame ${fr} / ${last}${scrubbing ? " · scrubbing (paused)" : ""}`;
+  $("scrubRight").textContent = `${keys.length} key${keys.length === 1 ? "" : "s"} · ${tNow.toFixed(2)} s / ${dur.toFixed(2)} s (${pct}%)`;
 }
 
 function scrubAt(e) {
@@ -1456,8 +1483,16 @@ const act = {
 };
 
 window.addEventListener("keydown", (e) => {
-  if (e.target && (e.target.tagName === "INPUT" && e.target.type !== "checkbox" && e.target.type !== "range")) return;
+  if (e.target && ((e.target.tagName === "INPUT" && e.target.type !== "checkbox" && e.target.type !== "range") || e.target.tagName === "SELECT")) return;
   const k = e.key;
+  if (k >= "1" && k <= "9" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    const idx = parseInt(k, 10) - 1;
+    if (cur && cur.clips && idx < cur.clips.length) {
+      e.preventDefault();
+      playClip(idx);
+      return;
+    }
+  }
   const map = {
     ArrowLeft: act.prevModel, ArrowRight: act.nextModel, ArrowUp: act.prevClip, ArrowDown: act.nextClip,
     " ": act.play, r: act.overlay, R: act.overlay, v: act.view, V: act.view, f: act.frame, F: act.frame,
@@ -1472,6 +1507,15 @@ const click = (id, fn) => $(id).addEventListener("click", (e) => { fn(); e.curre
 click("bPrevModel", act.prevModel); click("bNextModel", act.nextModel);
 click("bPrevClip", act.prevClip); click("bNextClip", act.nextClip);
 click("bPlay", act.play); click("bOverlay", act.overlay); click("bView", act.view); click("bFrame", act.frame);
+if ($("clipSelect")) {
+  $("clipSelect").addEventListener("change", (e) => {
+    const idx = parseInt(e.target.value, 10);
+    if (cur && cur.clips && idx >= 0 && idx < cur.clips.length) {
+      playClip(idx);
+    }
+    e.target.blur();
+  });
+}
 $("speed").addEventListener("input", (e) => setSpeed(Number(e.target.value)));
 $("speed").addEventListener("change", (e) => e.target.blur());
 $("loop").addEventListener("change", (e) => { setLoop(e.target.checked); e.target.blur(); });

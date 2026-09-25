@@ -126,8 +126,8 @@ def infer_clip_archetype(spec):
         return "turret"
     if skel in ("machine",):
         return "machine"
-    # Quadrupeds, hexapods, octopods, humanoids, and general creatures default to walker
-    if skel in ("quadruped", "hexapod", "octopod", "humanoid", "creature") or rig.get("kind") == "humanoid":
+    # Quadrupeds, hexapods, octopods, humanoids, tripo creatures default to walker
+    if skel in ("quadruped", "hexapod", "octopod", "humanoid", "creature") or rig.get("kind") in ("humanoid", "tripo"):
         return "walker"
     return None
 

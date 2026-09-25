@@ -676,7 +676,33 @@ test("formatJobHeader displays count 'job x of y' and previous job result", () =
   assert.ok(bulkDone.text.includes("(9 passed, 1 failed)"));
 });
 
+test("clip option formatting and index search", () => {
+  const clips = [
+    { name: "idle", duration: 2.0 },
+    { name: "walk", duration: 1.0 },
+    { name: "run", duration: 0.67 },
+    { name: "dance_loop", duration: 1.033 },
+  ];
+
+  // formatClipOption
+  assert.equal(L.formatClipOption(clips[0], 0, 24), "1. idle (2.00s, 48f)");
+  assert.equal(L.formatClipOption(clips[1], 1, 24), "2. walk (1.00s, 24f)");
+  assert.equal(L.formatClipOption(clips[3], 3, 30), "4. dance_loop (1.03s, 31f)");
+  assert.equal(L.formatClipOption(clips[0], null, 24), "idle (2.00s, 48f)");
+
+  // findClipIndexByName exact
+  assert.equal(L.findClipIndexByName(clips, "idle"), 0);
+  assert.equal(L.findClipIndexByName(clips, "WALK"), 1);
+  assert.equal(L.findClipIndexByName(clips, "Dance_Loop"), 3);
+
+  // findClipIndexByName partial / substring
+  assert.equal(L.findClipIndexByName(clips, "dance"), 3);
+  assert.equal(L.findClipIndexByName(clips, "nonexistent"), -1);
+  assert.equal(L.findClipIndexByName([], "walk"), -1);
+});
+
 console.log(`${n} passed`);
+
 
 
 

@@ -35,6 +35,9 @@ def main(argv=None):
     parser.add_argument("model", help="Target model name(s), comma-separated (e.g. 'biped', 'player_blue,armoured_guard').")
     parser.add_argument("mocap_file", help="Path to source mocap or animation file (.bvh or .fbx), or folder of clips.")
     parser.add_argument("--clip-name", default=None, help="Name for the generated animation action/clip.")
+    parser.add_argument("--action", "-a", default=None, help="Name of specific source animation action/take to retarget.")
+    parser.add_argument("--list-actions", action="store_true", help="List all actions embedded in the mocap file and exit.")
+    parser.add_argument("--all-actions", action="store_true", help="Retarget all actions embedded in the mocap file onto the model.")
     parser.add_argument("--no-root-motion", action="store_true", help="Disable root bone translation transfer.")
     parser.add_argument("--no-scale", action="store_true", help="Do not scale root displacement by character height.")
     parser.add_argument("--no-solve-offsets", action="store_true", help="Do not solve orientation offsets between rest poses.")
@@ -60,8 +63,52 @@ def main(argv=None):
             return 1
         files = [mocap_target]
 
+    if args.list_actions:
+        meta = retargeter.inspect_mocap_file(files[0])
+        actions = meta.get("actions", [])
+        print(f"\nACTIONS IN {meta['file']} ({meta['format']}): {len(actions)} total")
+        print("-" * 68)
+        print(f"{'#':<4} {'Action Name':<42} {'Frames':<8} {'Duration':<10}")
+        print("-" * 68)
+        for idx, act in enumerate(actions):
+            dur = f"{round(act['frames'] / (meta['fps'] or 30), 2)}s"
+            is_act = " *" if act["name"] == meta.get("active_action") else ""
+            print(f"{idx + 1:<4} {act['name']:<42} {act['frames']:<8} {dur:<10}{is_act}")
+        print("-" * 68)
+        if meta.get("active_action"):
+            print("(* indicates default / active take)")
+        return 0
+
     frame_range = parse_frame_range(args.frame_range)
     solve_offsets = not args.no_solve_offsets
+
+    if args.all_actions:
+        for m in models:
+            for f in files:
+                meta = retargeter.inspect_mocap_file(f)
+                actions = meta.get("actions", [])
+                if not actions:
+                    print(f"RETARGET_ERROR: No actions found in {f}", file=sys.stderr)
+                    continue
+                print(f"RETARGET_ALL_ACTIONS: Baking {len(actions)} actions from {os.path.basename(f)} onto '{m}'...")
+                for idx, act in enumerate(actions):
+                    cname = retargeter.clean_action_name(act["name"])
+                    print(f"  [{idx + 1}/{len(actions)}] Action '{act['name']}' -> '{cname}'...")
+                    retargeter.retarget_clip(
+                        model_name=m,
+                        mocap_file=f,
+                        source_action=act["name"],
+                        clip_name=cname,
+                        root_motion=not args.no_root_motion,
+                        scale_proportions=not args.no_scale,
+                        solve_offsets=solve_offsets,
+                        fps=args.fps,
+                        frame_range=frame_range,
+                        export_glb=args.export_glb,
+                        preview=args.preview and (idx == len(actions) - 1),
+                    )
+        print("RETARGET_ALL_ACTIONS: Complete!")
+        return 0
 
     # If single model and single file, print full summary
     if len(models) == 1 and len(files) == 1:
@@ -72,6 +119,7 @@ def main(argv=None):
             model_name=model,
             mocap_file=f,
             clip_name=args.clip_name,
+            source_action=args.action,
             root_motion=not args.no_root_motion,
             solve_offsets=solve_offsets,
         )
@@ -87,6 +135,7 @@ def main(argv=None):
             model_name=model,
             mocap_file=f,
             clip_name=plan["clip_name"],
+            source_action=plan.get("source_action"),
             root_motion=plan["root_motion"],
             scale_proportions=not args.no_scale,
             solve_offsets=solve_offsets,
