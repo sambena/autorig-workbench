@@ -589,12 +589,15 @@ test("parseJobProgressLine parses directives, banners, and fallbacks", () => {
   const p3 = L.parseJobProgressLine(":: SUBJOB_RESULT goblin_scout PASSED");
   assert.deepEqual(p3, { lastResult: { model: "goblin_scout", status: "PASSED" } });
 
+  const p3b = L.parseJobProgressLine(":: SUBJOB_PREV troll_warlord FAILED");
+  assert.deepEqual(p3b, { prevResult: { model: "troll_warlord", status: "FAILED" } });
+
   // 2. Banner lines
   const p4 = L.parseJobProgressLine(">> [Job 4 of 10] Starting: dragon_boss");
   assert.deepEqual(p4, { current: 4, total: 10, model: "dragon_boss" });
 
   const p5 = L.parseJobProgressLine("   (Previous: orc_grunt FAILED)");
-  assert.deepEqual(p5, { lastResult: { model: "orc_grunt", status: "FAILED" } });
+  assert.deepEqual(p5, { prevResult: { model: "orc_grunt", status: "FAILED" } });
 
   // 3. Fallback and legacy lines
   const p6 = L.parseJobProgressLine("== 3/12: knight rig done");
@@ -633,6 +636,7 @@ test("formatJobHeader displays count 'job x of y' and previous job result", () =
     { id: 2, step: "batch rig", model: "(all)", state: "running", pid: 5678 },
     { current: 3, total: 10 },
     { model: "orc_grunt", status: "FAILED" },
+    null,
     "goblin_scout"
   );
   assert.ok(bulkActive.html.includes("job 3 of 10"), "HTML must contain current counter 'job x of y'");
@@ -643,10 +647,22 @@ test("formatJobHeader displays count 'job x of y' and previous job result", () =
   assert.ok(bulkActive.text.includes("[job 3 of 10]"), "Plain text must contain counter");
   assert.ok(bulkActive.text.includes("Prev: orc_grunt FAILED"), "Plain text must contain previous result");
 
-  // 4. Completed bulk job with final summary
+  // 4. Active bulk job: Prev must NEVER show the current working model!
+  const activeSameModel = L.formatJobHeader(
+    { id: 3, step: "batch rig", model: "(all)", state: "running" },
+    { current: 1, total: 5 },
+    null, // no previous result yet on job 1
+    { model: "hero_warrior", status: "PASSED" }, // e.g. current model just passed an audit step
+    "hero_warrior" // currently working on hero_warrior
+  );
+  assert.ok(!activeSameModel.html.includes("Prev:"), "Must NOT show current model as Prev while running");
+  assert.ok(!activeSameModel.text.includes("Prev:"));
+
+  // 5. Completed bulk job with final summary
   const bulkDone = L.formatJobHeader(
     { id: 2, step: "batch rig", model: "(all)", state: "done", passed: 9, failed: 1 },
     { current: 10, total: 10 },
+    null,
     { model: "dragon_boss", status: "PASSED" },
     ""
   );

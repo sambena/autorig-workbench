@@ -152,6 +152,13 @@ main.app-main {
   transition: margin-right .22s cubic-bezier(0.16, 1, 0.3, 1), margin-bottom .2s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden; background: #15181e;
 }
+body.resizing {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+body.resizing * {
+  user-select: none !important;
+}
 body.resizing #view, body.resizing #logDrawer {
   transition: none !important;
 }
@@ -357,17 +364,25 @@ body.inspector-open #logDrawer { right: 440px; }
 #logDrawer.open { transform: translateY(0); }
 .drawer-resize-handle {
   position: absolute;
-  top: -4px;
+  top: -6px;
   left: 0;
   right: 0;
-  height: 8px;
+  height: 12px;
   cursor: ns-resize;
-  z-index: 30;
+  z-index: 50;
+  touch-action: none;
 }
-.drawer-resize-handle:hover, .drawer-resize-handle.active {
-  background: var(--accent);
+.drawer-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
   height: 4px;
-  top: -2px;
+  transition: background 0.12s ease;
+}
+.drawer-resize-handle:hover::after, .drawer-resize-handle.active::after {
+  background: var(--accent);
 }
 .log-header {
   height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 8px;

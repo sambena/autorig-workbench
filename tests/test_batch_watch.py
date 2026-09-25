@@ -170,6 +170,34 @@ class BatchWatchTest(unittest.TestCase):
         self.assertEqual(r_watch.returncode, 0)
         self.assertIn("--once", r_watch.stdout)
 
+    def test_batch_clips_skips_non_clip_models(self):
+        # A model with no clips section: pipeline should skip clips without failing
+        with patch("batch_runner.spec_store.model", return_value={"schema": "autorig-spec/1", "rig": {"kind": "placed"}}):
+            res = batch_runner.run_model_pipeline("biped", steps=["clips"])
+            self.assertEqual(res["status"], "OK")
+            self.assertNotIn("clips", res["steps"])
+
+    def test_run_clips_expansion(self):
+        # run.py clips all should expand to models with clips in spec_store
+        from autorig.cli import run
+        with patch("autorig.cli.run.blender_step", return_value=0) as mock_step:
+            rc = run.main(["clips", "all"])
+            self.assertEqual(rc, 0)
+            # canine has clips in samples/
+            mock_step.assert_any_call("make_clips.py", "canine")
+
+    def test_clippable_models_filtering(self):
+        import autorig.gui.server as server
+        server.layout = layout
+        server.spec_store = spec_store
+        clippable = server.clippable_models()
+        self.assertIsInstance(clippable, list)
+        for g, n in clippable:
+            st = server.status(g, n)
+            self.assertIsNotNone(st["clips_spec"])
+            self.assertIsNone(st["steps"]["clips"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

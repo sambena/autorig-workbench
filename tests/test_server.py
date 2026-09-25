@@ -301,6 +301,7 @@ class ServerTest(unittest.TestCase):
         self.wait(job)
 
 
+
 def alive(pid):
     if os.name == "nt":
         out = subprocess.run(["tasklist", "/FI", "PID eq %d" % pid, "/NH"], capture_output=True, text=True).stdout
@@ -335,6 +336,9 @@ class BulkJobTrackingTest(unittest.TestCase):
         self.assertEqual(info["passed"], 1)
         self.assertEqual(info["failed"], 1)
         self.assertEqual(info["completed"], 2)
+        self.assertIsNotNone(info["prev_result"])
+        self.assertEqual(info["prev_result"]["model"], "m1")
+        self.assertEqual(info["prev_result"]["status"], "PASSED")
         self.assertIsNotNone(info["last_result"])
         self.assertEqual(info["last_result"]["model"], "m2")
         self.assertEqual(info["last_result"]["status"], "FAILED")
@@ -345,6 +349,7 @@ class BulkJobTrackingTest(unittest.TestCase):
         self.assertIn(":: SUBJOB_RESULT m1 PASSED", text)
         self.assertIn(">> [Job 2 of 2] Starting: m2", text)
         self.assertIn("(Previous: m1 PASSED)", text)
+        self.assertIn(":: SUBJOB_PREV m1 PASSED", text)
         self.assertIn(":: SUBJOB_RESULT m2 FAILED", text)
         self.assertIn(">> [Job 2 of 2] m2 FAILED", text)
 
