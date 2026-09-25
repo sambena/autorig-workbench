@@ -83,6 +83,14 @@ class Job:
         self.cancelled = False
         self.keep_going = False
         self.started = self.ended = None
+        self.total = len(cmds) if cmds else 0
+        self.current_idx = 0
+        self.current_model = None
+        self.current_label = None
+        self.last_result = None
+        self.completed_count = 0
+        self.passed_count = 0
+        self.failed_count = 0
         self.cond = threading.Condition()
 
     def add(self, line):
@@ -98,7 +106,10 @@ class Job:
 
     def info(self):
         return {"id": self.id, "model": self.model, "group": self.group, "step": self.step, "state": self.state,
-                "pid": self.pid, "lines": len(self.lines), "started": self.started, "ended": self.ended}
+                "pid": self.pid, "lines": len(self.lines), "started": self.started, "ended": self.ended,
+                "total": self.total, "current": self.current_idx, "current_model": self.current_model,
+                "last_result": self.last_result, "completed": self.completed_count,
+                "passed": self.passed_count, "failed": self.failed_count}
 
 
 class Runner:
@@ -135,15 +146,37 @@ class Runner:
             self.current = job
             job.state, job.started = "running", time.time()
             ok = True
-            for item in job.cmds:
+            total_cmds = len(job.cmds)
+            job.total = total_cmds
+            for idx, item in enumerate(job.cmds, 1):
                 if job.cancelled: break
                 label = item[0]
                 argv = item[1]
                 prep = item[2]
                 cmd_model = item[3] if len(item) > 3 else (job.model if job.model and not job.model.startswith("(") else None)
+                if not cmd_model:
+                    m_lbl = re.search(r":\s*([A-Za-z0-9_\-]+)", label)
+                    if m_lbl:
+                        cmd_model = m_lbl.group(1)
+
+                job.current_idx = idx
+                job.current_model = cmd_model
+                job.current_label = label
+
                 if prep: prep()
+
+                if total_cmds > 1:
+                    job.add("--------------------------------------------------------------------------------")
+                    job.add(">> [Job %d of %d] Starting: %s" % (idx, total_cmds, cmd_model or label))
+                    if job.last_result:
+                        prev_m = job.last_result.get("model", "")
+                        prev_st = job.last_result.get("status", "")
+                        job.add("   (Previous: %s %s)" % (prev_m, prev_st))
+                    job.add("--------------------------------------------------------------------------------")
+
                 if cmd_model:
                     job.add(":: MODEL_ACTIVE %s" % cmd_model)
+                job.add(":: SUBJOB_PROGRESS %d %d %s" % (idx, total_cmds, cmd_model or ""))
                 job.add("== %s" % label)
                 job.add("   " + " ".join('"%s"' % a if " " in a else a for a in argv))
                 try:
@@ -155,6 +188,7 @@ class Runner:
                     job.add("!! could not start: %r" % e); ok = False; break
                 job.proc, job.pid = p, p.pid
                 failed = False
+                audit_verdict = None
                 try:
                     import watchdog as _wd
                 except ImportError:
@@ -163,17 +197,56 @@ class Runner:
                 guard.start()
                 for line in p.stdout:
                     job.add(line)
-                    if line.startswith("Traceback") or (TAG.match(line) and '"error"' in line):
+                    if line.startswith("AUDIT_PASS"):
+                        audit_verdict = "PASSED"
+                    elif line.startswith("AUDIT_FAIL"):
+                        audit_verdict = "FAILED"
+                        failed = True
+                    elif line.startswith("AUDIT_CHECK"):
+                        audit_verdict = "CHECK"
+                    elif line.startswith("Traceback") or (TAG.match(line) and '"error"' in line):
                         failed = True
                 rc = p.wait()
                 guard.stop()
                 job.proc = None
                 if job.cancelled: break
-                if rc != 0 or failed:
-                    job.add("!! %s failed (exit code %s)" % (label, rc)); ok = False
+
+                is_err = (rc != 0 or failed or audit_verdict == "FAILED")
+                status_str = "FAILED" if is_err else (audit_verdict or "PASSED")
+                job.completed_count += 1
+                if is_err:
+                    job.failed_count += 1
+                else:
+                    job.passed_count += 1
+
+                job.last_result = {
+                    "model": cmd_model or label,
+                    "status": status_str,
+                    "code": rc,
+                    "label": label,
+                    "index": idx,
+                    "total": total_cmds,
+                }
+                job.add(":: SUBJOB_RESULT %s %s" % (cmd_model or label, status_str))
+
+                if is_err:
+                    job.add("!! %s failed (exit code %s)" % (label, rc))
+                    if total_cmds > 1:
+                        job.add(">> [Job %d of %d] %s FAILED" % (idx, total_cmds, cmd_model or label))
+                    ok = False
                     if job.keep_going: continue
                     break
-                job.add("== %s done" % label)
+                else:
+                    job.add("== %s done" % label)
+                    if total_cmds > 1:
+                        job.add(">> [Job %d of %d] %s %s" % (idx, total_cmds, cmd_model or label, status_str))
+
+            if not job.cancelled and total_cmds > 1:
+                job.add("================================================================================")
+                job.add("BULK RUN FINISHED: %d of %d completed (%d passed, %d failed)" %
+                        (job.completed_count, total_cmds, job.passed_count, job.failed_count))
+                job.add("================================================================================")
+
             job.finish("cancelled" if job.cancelled else "done" if ok else "failed")
             self.current = None
 

@@ -10,8 +10,10 @@
 import json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "autorig", "core"))
 import blender  # noqa: E402
+from autorig.gui.server import Job, Runner
 
 TOKEN = "test-" + secrets.token_hex(4)
 HAVE_BLENDER = blender.find(required=False) is not None
@@ -263,6 +265,10 @@ class ServerTest(unittest.TestCase):
         job = self.call("/api/rig-all", {})
         self.assertEqual(job["step"], "rig-all")
         self.assertEqual(job["model"], "(all rig-ready models)")
+        self.assertIn("total", job)
+        self.assertIn("passed", job)
+        self.assertIn("failed", job)
+        self.assertIn("last_result", job)
         self.call("/api/cancel", {"job": job["id"]})
         self.wait(job)
 
@@ -304,6 +310,72 @@ def alive(pid):
         return True
     except OSError:
         return False
+
+
+class BulkJobTrackingTest(unittest.TestCase):
+    def test_job_bulk_tracking_with_failure(self):
+        cmds = [
+            ("audit 1/2: m1", [sys.executable, "-c", "print('AUDIT_PASS m1')"], None, "m1"),
+            ("audit 2/2: m2", [sys.executable, "-c", "import sys; print('AUDIT_FAIL m2'); sys.exit(1)"], None, "m2"),
+        ]
+        job = Job("(all)", "audit-all", "audit-all", cmds)
+        runner = Runner(dict(os.environ))
+        runner.submit(job)
+
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            if job.state not in ("queued", "running"):
+                break
+            time.sleep(0.05)
+
+        info = job.info()
+        self.assertEqual(info["state"], "failed")
+        self.assertEqual(info["total"], 2)
+        self.assertEqual(info["current"], 2)
+        self.assertEqual(info["passed"], 1)
+        self.assertEqual(info["failed"], 1)
+        self.assertEqual(info["completed"], 2)
+        self.assertIsNotNone(info["last_result"])
+        self.assertEqual(info["last_result"]["model"], "m2")
+        self.assertEqual(info["last_result"]["status"], "FAILED")
+
+        text = "\n".join(job.lines)
+        self.assertIn(":: SUBJOB_PROGRESS 1 2 m1", text)
+        self.assertIn(">> [Job 1 of 2] Starting: m1", text)
+        self.assertIn(":: SUBJOB_RESULT m1 PASSED", text)
+        self.assertIn(">> [Job 2 of 2] Starting: m2", text)
+        self.assertIn("(Previous: m1 PASSED)", text)
+        self.assertIn(":: SUBJOB_RESULT m2 FAILED", text)
+        self.assertIn(">> [Job 2 of 2] m2 FAILED", text)
+
+    def test_job_bulk_tracking_all_pass(self):
+        cmds = [
+            ("audit 1/2: m1", [sys.executable, "-c", "print('AUDIT_PASS m1')"], None, "m1"),
+            ("audit 2/2: m2", [sys.executable, "-c", "print('AUDIT_PASS m2')"], None, "m2"),
+        ]
+        job = Job("(all)", "audit-all", "audit-all", cmds)
+        runner = Runner(dict(os.environ))
+        runner.submit(job)
+
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            if job.state not in ("queued", "running"):
+                break
+            time.sleep(0.05)
+
+        info = job.info()
+        self.assertEqual(info["state"], "done")
+        self.assertEqual(info["total"], 2)
+        self.assertEqual(info["current"], 2)
+        self.assertEqual(info["passed"], 2)
+        self.assertEqual(info["failed"], 0)
+        self.assertEqual(info["completed"], 2)
+        self.assertIsNotNone(info["last_result"])
+        self.assertEqual(info["last_result"]["model"], "m2")
+        self.assertEqual(info["last_result"]["status"], "PASSED")
+
+        text = "\n".join(job.lines)
+        self.assertIn("BULK RUN FINISHED: 2 of 2 completed (2 passed, 0 failed)", text)
 
 
 if __name__ == "__main__":

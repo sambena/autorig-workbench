@@ -3,6 +3,8 @@
 // Coordinates the top application menu bar, 3D viewport modes (Rig & Fix vs Render & Test),
 // slide-over drawers (Rig Inspector, Console Log), and native dialog modals.
 
+import { parseJobProgressLine, formatJobHeader } from "./viewer_logic.js";
+
 const TOKEN = window.AUTORIG_TOKEN;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -35,6 +37,9 @@ let currentModel = "";
 let currentDetails = null;
 let activeJob = null;
 let currentJobWorkingModel = "";
+let currentJobSubCount = null;
+let currentJobLastResult = null;
+let currentJobCounts = { passed: 0, failed: 0 };
 let eventSource = null;
 let activeMenu = null;
 
@@ -778,6 +783,31 @@ function appendConsoleLine(line) {
 
 function detectAndSwitchJobModel(line) {
   if (!line || typeof line !== "string") return;
+  const p = parseJobProgressLine(line);
+  if (p) {
+    if (p.current && p.total) {
+      currentJobSubCount = { current: p.current, total: p.total };
+    }
+    if (p.model) {
+      currentJobWorkingModel = p.model;
+      if (state && state.models && state.models.some((m) => m.name === p.model)) {
+        if (currentModel !== p.model) {
+          selectModel(p.model);
+        }
+      }
+    }
+    if (p.lastResult) {
+      currentJobLastResult = p.lastResult;
+      if (p.lastResult.status === "FAILED") {
+        currentJobCounts.failed++;
+      } else {
+        currentJobCounts.passed++;
+      }
+    }
+    updateJobUI();
+    return;
+  }
+
   let detected = "";
   const mActive = line.match(/^(?:==|::)\s*MODEL_ACTIVE\s+([A-Za-z0-9_\-]+)/);
   if (mActive) {
@@ -807,11 +837,10 @@ async function loadJobLog(jobId) {
     const detail = await api(`/api/jobs/${jobId}`);
     if (detail) {
       activeJob = detail;
-      if (detail.model && !detail.model.startsWith("(")) {
-        currentJobWorkingModel = detail.model;
-      } else {
-        currentJobWorkingModel = "";
-      }
+      currentJobWorkingModel = (detail.model && !detail.model.startsWith("(")) ? detail.model : "";
+      currentJobSubCount = (detail.total && detail.total > 1) ? { current: detail.current || detail.total, total: detail.total } : null;
+      currentJobLastResult = detail.last_result || null;
+      currentJobCounts = { passed: detail.passed || 0, failed: detail.failed || 0 };
       if (Array.isArray(detail.log)) {
         for (const l of detail.log) {
           detectAndSwitchJobModel(l);
@@ -869,6 +898,9 @@ async function followJob(j) {
   }
   activeJob = j;
   currentJobWorkingModel = (j.model && !j.model.startsWith("(")) ? j.model : "";
+  currentJobSubCount = (j.total && j.total > 1) ? { current: j.current || 1, total: j.total } : null;
+  currentJobLastResult = j.last_result || null;
+  currentJobCounts = { passed: j.passed || 0, failed: j.failed || 0 };
   setDrawerOpen($("#logDrawer"), true);
   setConsoleContent("");
   updateJobUI();
@@ -886,6 +918,12 @@ async function followJob(j) {
       startFrom = detail.log.length;
       if (detail.state !== "running" && detail.state !== "queued") {
         activeJob = detail;
+        if (detail.total && detail.total > 1) {
+          currentJobSubCount = { current: detail.current || detail.total, total: detail.total };
+        }
+        if (detail.last_result) {
+          currentJobLastResult = detail.last_result;
+        }
         updateJobUI();
         updateJobSelect();
         return;
@@ -916,6 +954,17 @@ async function followJob(j) {
     }
     try {
       activeJob = JSON.parse(ev.data);
+      if (activeJob) {
+        if (activeJob.total && activeJob.total > 1) {
+          currentJobSubCount = { current: activeJob.current || activeJob.total, total: activeJob.total };
+        }
+        if (activeJob.last_result) {
+          currentJobLastResult = activeJob.last_result;
+        }
+        if (activeJob.passed !== undefined) {
+          currentJobCounts = { passed: activeJob.passed, failed: activeJob.failed };
+        }
+      }
     } catch (_) {}
     updateJobUI();
     updateJobSelect();
@@ -951,6 +1000,12 @@ async function followJob(j) {
         const detail = await api(`/api/jobs/${activeJob.id}`);
         if (detail) {
           activeJob = detail;
+          if (detail.total && detail.total > 1) {
+            currentJobSubCount = { current: detail.current || detail.total, total: detail.total };
+          }
+          if (detail.last_result) {
+            currentJobLastResult = detail.last_result;
+          }
           if (Array.isArray(detail.log)) {
             for (const l of detail.log) {
               detectAndSwitchJobModel(l);
@@ -972,7 +1027,10 @@ function updateJobUI() {
 
   if (!activeJob) {
     if (pill) pill.style.display = "none";
-    if (logHeader) logHeader.textContent = "Idle";
+    if (logHeader) {
+      logHeader.textContent = "Idle";
+      logHeader.removeAttribute("title");
+    }
     if (cancelBtn) cancelBtn.disabled = true;
     return;
   }
@@ -981,16 +1039,23 @@ function updateJobUI() {
   const isRunning = st === "running" || st === "queued";
   const displayModel = currentJobWorkingModel || (activeJob.model && !activeJob.model.startsWith("(") ? activeJob.model : "");
 
-  if (pill) {
-    pill.style.display = isRunning ? "inline-flex" : "none";
-    pill.innerHTML = `<span class="spinner"></span><b>${esc(activeJob.step)}</b>` +
-      (displayModel ? ` on <b>${esc(displayModel)}</b>` : ` on ${esc(activeJob.model)}`);
-  }
+  const subCount = currentJobSubCount || (activeJob.total && activeJob.total > 1 ? { current: activeJob.current || activeJob.total, total: activeJob.total } : null);
+  const lastResult = currentJobLastResult || activeJob.last_result || null;
+
+  const headerFmt = formatJobHeader(activeJob, subCount, lastResult, displayModel);
 
   if (logHeader) {
-    const modelBadge = displayModel ? ` · Working on: <span class="job-active-model">${esc(displayModel)}</span>` : (activeJob.model ? ` · ${esc(activeJob.model)}` : "");
-    logHeader.innerHTML = `Job ${activeJob.id}: <b>${esc(activeJob.step)}</b>${modelBadge} · <span class="state ${st}">${st}</span>` +
-      (activeJob.pid ? ` · PID ${activeJob.pid}` : "");
+    logHeader.innerHTML = headerFmt.html;
+    logHeader.title = headerFmt.text;
+  }
+
+  if (pill) {
+    pill.style.display = isRunning ? "inline-flex" : "none";
+    let countBadge = (subCount && subCount.total > 1) ? ` (${subCount.current}/${subCount.total})` : "";
+    let prevText = (lastResult && lastResult.model && lastResult.status) ? ` · Prev: ${lastResult.model} ${lastResult.status}` : "";
+    pill.innerHTML = `<span class="spinner"></span><b>${esc(activeJob.step)}</b>${countBadge}` +
+      (displayModel ? ` on <b>${esc(displayModel)}</b>` : (activeJob.model ? ` on ${esc(activeJob.model)}` : "")) +
+      (prevText ? `<span style="opacity:0.85; margin-left:4px">${esc(prevText)}</span>` : "");
   }
 
   if (cancelBtn) {

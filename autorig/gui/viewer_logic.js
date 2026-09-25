@@ -886,4 +886,153 @@ export function quaternionToEulerDegrees(q) {
 }
 
 
+// ---------------------------------------------------------------------------------------------------------------
+// Job Progress & Console Header Feedback Helpers
+// ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * Parses progress and result information from a job log line.
+ * Returns an object with any extracted fields: { current, total, model, lastResult: { model, status } }
+ */
+export function parseJobProgressLine(line) {
+  if (!line || typeof line !== "string") return null;
+  const res = {};
+
+  // 1. Explicit protocol directives:
+  // :: SUBJOB_PROGRESS 3 12 hero
+  const mProg = line.match(/^::\s*SUBJOB_PROGRESS\s+(\d+)\s+(\d+)(?:\s+([A-Za-z0-9_\-]+))?/);
+  if (mProg) {
+    res.current = parseInt(mProg[1], 10);
+    res.total = parseInt(mProg[2], 10);
+    if (mProg[3]) res.model = mProg[3];
+  }
+
+  // :: SUBJOB_RESULT orc FAILED / PASSED / CHECK
+  const mSubRes = line.match(/^::\s*SUBJOB_RESULT\s+([A-Za-z0-9_\-]+)\s+([A-Za-z0-9_\-]+)/);
+  if (mSubRes) {
+    let st = mSubRes[2].toUpperCase();
+    if (st === "FAIL") st = "FAILED";
+    if (st === "PASS" || st === "OK") st = "PASSED";
+    res.lastResult = { model: mSubRes[1], status: st };
+  }
+
+  // 2. Banner lines:
+  // >> [Job 3 of 12] Starting: hero
+  const mBannerStart = line.match(/^>>\s*\[Job\s+(\d+)\s+of\s+(\d+)\]\s*(?:Starting:\s*([A-Za-z0-9_\-]+))?/i);
+  if (mBannerStart) {
+    res.current = parseInt(mBannerStart[1], 10);
+    res.total = parseInt(mBannerStart[2], 10);
+    if (mBannerStart[3]) res.model = mBannerStart[3];
+  }
+
+  // >> [Job 3 of 12] orc FAILED / PASSED / CHECK
+  const mBannerRes = line.match(/^>>\s*\[Job\s+(\d+)\s+of\s+(\d+)\]\s+([A-Za-z0-9_\-]+)\s+(FAILED|PASSED|CHECK|PASS|FAIL|OK)/i);
+  if (mBannerRes) {
+    res.current = parseInt(mBannerRes[1], 10);
+    res.total = parseInt(mBannerRes[2], 10);
+    let st = mBannerRes[4].toUpperCase();
+    if (st === "FAIL") st = "FAILED";
+    if (st === "PASS" || st === "OK") st = "PASSED";
+    res.lastResult = { model: mBannerRes[3], status: st };
+  }
+
+  // (Previous: orc FAILED / PASSED / CHECK)
+  const mPrev = line.match(/\(Previous:\s*([A-Za-z0-9_\-]+)\s+(FAILED|PASSED|CHECK|PASS|FAIL|OK)\)/i);
+  if (mPrev && !res.lastResult) {
+    let st = mPrev[2].toUpperCase();
+    if (st === "FAIL") st = "FAILED";
+    if (st === "PASS" || st === "OK") st = "PASSED";
+    res.lastResult = { model: mPrev[1], status: st };
+  }
+
+  // 3. Fallback standard step lines:
+  // == 3/12: hero rig
+  // == audit 3/12: hero
+  // == source view 3/12: hero
+  // == make clips 3/12: hero
+  const mStep = line.match(/^==\s*(?:source view |audit |make clips |preview )?(\d+)\/(\d+):\s*([A-Za-z0-9_\-]+)/i);
+  if (mStep && !res.current) {
+    res.current = parseInt(mStep[1], 10);
+    res.total = parseInt(mStep[2], 10);
+    if (mStep[3]) res.model = mStep[3];
+  }
+
+  // !! 2/12: orc rig failed (exit code 1)
+  const mFail = line.match(/^!!\s*(?:source view |audit |make clips |preview )?(?:(\d+)\/(\d+):\s*)?([A-Za-z0-9_\-]+).*failed/i);
+  if (mFail && !res.lastResult) {
+    if (mFail[1] && mFail[2] && !res.current) {
+      res.current = parseInt(mFail[1], 10);
+      res.total = parseInt(mFail[2], 10);
+    }
+    res.lastResult = { model: mFail[3], status: "FAILED" };
+  }
+
+  // == 2/12: hero rig done
+  const mDone = line.match(/^==\s*(?:source view |audit |make clips |preview )?(?:(\d+)\/(\d+):\s*)?([A-Za-z0-9_\-]+).*done/i);
+  if (mDone && !res.lastResult) {
+    if (mDone[1] && mDone[2] && !res.current) {
+      res.current = parseInt(mDone[1], 10);
+      res.total = parseInt(mDone[2], 10);
+    }
+    res.lastResult = { model: mDone[3], status: "PASSED" };
+  }
+
+  // AUDIT_PASS / AUDIT_FAIL / AUDIT_CHECK
+  const mAudit = line.match(/^AUDIT_(PASS|FAIL|CHECK)\s+([A-Za-z0-9_\-]+)/);
+  if (mAudit && !res.lastResult) {
+    let st = mAudit[1];
+    if (st === "FAIL") st = "FAILED";
+    if (st === "PASS") st = "PASSED";
+    res.lastResult = { model: mAudit[2], status: st };
+  }
+
+  return Object.keys(res).length > 0 ? res : null;
+}
+
+/**
+ * Formats console header HTML and plain text summary.
+ */
+export function formatJobHeader(job, subCount, lastResult, displayModel) {
+  if (!job) return { html: "Idle", text: "Idle" };
+
+  const st = job.state || "unknown";
+  const isRunning = st === "running" || st === "queued";
+  const step = job.step || "";
+  const model = displayModel || (job.model && !job.model.startsWith("(") ? job.model : "");
+
+  let countHtml = "";
+  let countText = "";
+  if (subCount && subCount.total > 1) {
+    const isDone = !isRunning && (st === "done" || st === "failed" || st === "cancelled");
+    const countStr = isDone ? `${subCount.total} of ${subCount.total}` : `job ${subCount.current} of ${subCount.total}`;
+    const doneCls = isDone ? " done" : "";
+    countHtml = ` <span class="job-counter-pill${doneCls}">${countStr}</span>`;
+    countText = ` [${countStr}]`;
+  }
+
+  let prevHtml = "";
+  let prevText = "";
+  if (lastResult && lastResult.model && lastResult.status) {
+    const isFail = lastResult.status === "FAILED" || lastResult.status === "FAIL";
+    const isPass = lastResult.status === "PASSED" || lastResult.status === "PASS" || lastResult.status === "OK";
+    const badgeCls = isFail ? "result-failed" : (isPass ? "result-passed" : "result-check");
+    const prefix = (!isRunning) ? "Last" : "Prev";
+    prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${lastResult.model}</b> ${lastResult.status}</span>`;
+    prevText = ` · ${prefix}: ${lastResult.model} ${lastResult.status}`;
+  }
+
+  let countsSummary = "";
+  if (job.passed !== undefined && job.failed !== undefined && (job.passed > 0 || job.failed > 0)) {
+    countsSummary = ` (${job.passed} passed, ${job.failed} failed)`;
+  }
+
+  const modelHtml = model ? ` · Working on: <span class="job-active-model">${model}</span>` : (job.model && !job.model.startsWith("(") ? ` · ${job.model}` : "");
+  const modelText = model ? ` · ${model}` : "";
+
+  const pidHtml = job.pid ? ` · PID ${job.pid}` : "";
+
+  const html = `Job ${job.id}: <b>${step}</b>${countHtml}${modelHtml}${prevHtml} · <span class="state ${st}">${st}</span>${countsSummary}${pidHtml}`;
+  const text = `Job ${job.id}: ${step}${countText}${modelText}${prevText} · ${st}${countsSummary}`;
+
+  return { html, text };
+}

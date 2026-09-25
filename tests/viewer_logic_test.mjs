@@ -578,7 +578,90 @@ test("dynamic model centering and auto-zoom framing distance", () => {
   assert.ok(L.calculateFramingDistance({ x: 0, y: 0, z: 0 }) >= 0.5);
 });
 
+test("parseJobProgressLine parses directives, banners, and fallbacks", () => {
+  // 1. Explicit directives
+  const p1 = L.parseJobProgressLine(":: SUBJOB_PROGRESS 3 12 hero_warrior");
+  assert.deepEqual(p1, { current: 3, total: 12, model: "hero_warrior" });
+
+  const p2 = L.parseJobProgressLine(":: SUBJOB_RESULT orc_grunt FAILED");
+  assert.deepEqual(p2, { lastResult: { model: "orc_grunt", status: "FAILED" } });
+
+  const p3 = L.parseJobProgressLine(":: SUBJOB_RESULT goblin_scout PASSED");
+  assert.deepEqual(p3, { lastResult: { model: "goblin_scout", status: "PASSED" } });
+
+  // 2. Banner lines
+  const p4 = L.parseJobProgressLine(">> [Job 4 of 10] Starting: dragon_boss");
+  assert.deepEqual(p4, { current: 4, total: 10, model: "dragon_boss" });
+
+  const p5 = L.parseJobProgressLine("   (Previous: orc_grunt FAILED)");
+  assert.deepEqual(p5, { lastResult: { model: "orc_grunt", status: "FAILED" } });
+
+  // 3. Fallback and legacy lines
+  const p6 = L.parseJobProgressLine("== 3/12: knight rig done");
+  assert.deepEqual(p6, { current: 3, total: 12, model: "knight", lastResult: { model: "knight", status: "PASSED" } });
+
+  const p7 = L.parseJobProgressLine("!! 2/12: archer rig failed");
+  assert.deepEqual(p7, { current: 2, total: 12, lastResult: { model: "archer", status: "FAILED" } });
+
+  const p8 = L.parseJobProgressLine("AUDIT_FAIL swamp_monster (score=0.45)");
+  assert.deepEqual(p8, { lastResult: { model: "swamp_monster", status: "FAILED" } });
+
+  const p9 = L.parseJobProgressLine("AUDIT_PASS dwarf_miner");
+  assert.deepEqual(p9, { lastResult: { model: "dwarf_miner", status: "PASSED" } });
+
+  const p10 = L.parseJobProgressLine("AUDIT_CHECK wizard_elder");
+  assert.deepEqual(p10, { lastResult: { model: "wizard_elder", status: "CHECK" } });
+
+  // 4. Irrelevant lines return null
+  assert.equal(L.parseJobProgressLine("Normal blender log line with no progress"), null);
+  assert.equal(L.parseJobProgressLine(null), null);
+  assert.equal(L.parseJobProgressLine(""), null);
+});
+
+test("formatJobHeader displays count 'job x of y' and previous job result", () => {
+  // 1. Idle or null job
+  assert.deepEqual(L.formatJobHeader(null), { html: "Idle", text: "Idle" });
+
+  // 2. Active single job (no subCount)
+  const single = L.formatJobHeader({ id: 1, step: "rig", model: "hero", state: "running", pid: 1234 });
+  assert.ok(single.html.includes("Job 1: <b>rig</b>"));
+  assert.ok(single.html.includes("hero"));
+  assert.ok(single.text.includes("Job 1: rig · hero · running"));
+
+  // 3. Active bulk job with counter and previous job failure
+  const bulkActive = L.formatJobHeader(
+    { id: 2, step: "batch rig", model: "(all)", state: "running", pid: 5678 },
+    { current: 3, total: 10 },
+    { model: "orc_grunt", status: "FAILED" },
+    "goblin_scout"
+  );
+  assert.ok(bulkActive.html.includes("job 3 of 10"), "HTML must contain current counter 'job x of y'");
+  assert.ok(bulkActive.html.includes("job-counter-pill"));
+  assert.ok(bulkActive.html.includes("result-failed"));
+  assert.ok(bulkActive.html.includes("<b>orc_grunt</b> FAILED"), "HTML must show previous result model and FAILED status");
+  assert.ok(bulkActive.html.includes("Working on: <span class=\"job-active-model\">goblin_scout</span>"));
+  assert.ok(bulkActive.text.includes("[job 3 of 10]"), "Plain text must contain counter");
+  assert.ok(bulkActive.text.includes("Prev: orc_grunt FAILED"), "Plain text must contain previous result");
+
+  // 4. Completed bulk job with final summary
+  const bulkDone = L.formatJobHeader(
+    { id: 2, step: "batch rig", model: "(all)", state: "done", passed: 9, failed: 1 },
+    { current: 10, total: 10 },
+    { model: "dragon_boss", status: "PASSED" },
+    ""
+  );
+  assert.ok(bulkDone.html.includes("10 of 10"));
+  assert.ok(bulkDone.html.includes("job-counter-pill done"));
+  assert.ok(bulkDone.html.includes("result-passed"));
+  assert.ok(bulkDone.html.includes("<b>dragon_boss</b> PASSED"));
+  assert.ok(bulkDone.html.includes("(9 passed, 1 failed)"));
+  assert.ok(bulkDone.text.includes("[10 of 10]"));
+  assert.ok(bulkDone.text.includes("Last: dragon_boss PASSED"));
+  assert.ok(bulkDone.text.includes("(9 passed, 1 failed)"));
+});
+
 console.log(`${n} passed`);
+
 
 
 
