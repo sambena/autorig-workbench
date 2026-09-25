@@ -303,11 +303,14 @@ def status(group, name):
     rd = _quiet(layout.rigged_dir, name)
     blend = os.path.join(rd, name + ".blend")
     fbx = os.path.join(rd, name + ".fbx")
+    c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
+    if not c_arch and spec_store:
+        c_arch = spec_store.infer_clip_archetype(spec)
     out.update({
         "source": os.path.relpath(src, d).replace("\\", "/") if src else None,
         "spec": bool(spec), "kind": rig.get("kind"), "rig_folder": os.path.basename(rd),
         "rigged": os.path.exists(blend), "rigged_fbx": os.path.exists(fbx),
-        "clips_spec": (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype"),
+        "clips_spec": c_arch,
         "clips": os.path.exists(os.path.join(d, "clips", name + "_clips.json")) or export_manifest(name)[0] is not None,
         "card": os.path.exists(os.path.join(d, "model.json")),
         "budget": _quiet(layout.budget, name) if spec or True else None,
@@ -386,8 +389,13 @@ def commands(group, name, step, spec):
     def clips():
         pv = os.path.join(work, "clips", name)
         c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
-        return [("make clips (%s)" % c_arch,
-                 blender_cmd("make_clips.py", name, "--preview", pv), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
+        if not c_arch and spec_store:
+            c_arch = spec_store.infer_clip_archetype(spec)
+        args = ["make_clips.py", name, "--preview", pv]
+        if c_arch:
+            args.extend(["--archetype", c_arch])
+        return [("make clips (%s)" % (c_arch or "auto"),
+                 blender_cmd(*args), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
 
     def rebake_clips():
         return clips() + preview()
