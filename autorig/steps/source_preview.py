@@ -88,8 +88,8 @@ def preview(key, out):
             d = sum((j["head"][i] - p["head"][i]) ** 2 for i in range(3)) ** 0.5
             if d < size * MERGE: j["folds_into"] = p["name"]
 
-    os.makedirs(out, exist_ok=True)
     glb = os.path.join(out, key + ".glb")
+    os.makedirs(os.path.dirname(glb), exist_ok=True)
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.export_scene.gltf(filepath=glb, export_format='GLB', use_selection=False, export_yup=True,
                               export_apply=True, export_animations=False, export_skins=False, export_morph=False,

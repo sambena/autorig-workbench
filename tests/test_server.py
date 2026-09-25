@@ -263,6 +263,36 @@ class ServerTest(unittest.TestCase):
         job = self.call("/api/rig-all", {})
         self.assertEqual(job["step"], "rig-all")
         self.assertEqual(job["model"], "(all rig-ready models)")
+        self.call("/api/cancel", {"job": job["id"]})
+        self.wait(job)
+
+    def test_9_abrupt_client_disconnect(self):
+        import socket, struct
+        host, port = "127.0.0.1", int(self.base.split(":")[-1])
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((host, port))
+        req = f"GET /api/state?t={TOKEN} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
+        s.sendall(req.encode("utf-8"))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        s.close()
+
+        time.sleep(0.1)
+        st = self.call("/api/state")
+        self.assertIn("models", st)
+
+    def test_8b_source_all_api(self):
+        job = self.call("/api/source-all", {"missing_only": False})
+        self.assertEqual(job["step"], "source-all")
+        self.assertEqual(job["model"], "(all source views)")
+        self.call("/api/cancel", {"job": job["id"]})
+        self.wait(job)
+
+    def test_8c_clips_all_api(self):
+        job = self.call("/api/clips-all", {})
+        self.assertEqual(job["step"], "rebake-all-clips")
+        self.assertEqual(job["model"], "(all rigged models)")
+        self.call("/api/cancel", {"job": job["id"]})
+        self.wait(job)
 
 
 def alive(pid):

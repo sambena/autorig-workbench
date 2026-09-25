@@ -563,3 +563,327 @@ export function computeGroundPlaneParameters(box) {
   };
 }
 
+/**
+ * Evaluates whether a model matches a status filter ("all", "pass", "check", "fail", "rigged", "unrigged", "nospec").
+ */
+export function matchesModelFilter(m, filter) {
+  if (!filter || filter === "all") return true;
+  const audit = (m?.audit || "").toUpperCase();
+  if (filter === "pass") return audit === "PASS";
+  if (filter === "check") return audit === "CHECK";
+  if (filter === "fail") return audit === "FAIL";
+  if (filter === "rigged") return Boolean(m?.rigged);
+  if (filter === "unrigged") return !m?.rigged;
+  if (filter === "nospec") return !m?.spec;
+  return true;
+}
+
+/**
+ * Calculates camera distance to center and fit a model bounding box without cutting it off.
+ * If the model is wide or the viewport aspect ratio is narrow, zooms out automatically.
+ */
+export function calculateFramingDistance(size, fovDeg = 35, aspect = 1.0, padding = 1.25) {
+  const sx = Math.max(1e-4, size?.x ?? size?.[0] ?? 1);
+  const sy = Math.max(1e-4, size?.y ?? size?.[1] ?? 1);
+  const sz = Math.max(1e-4, size?.z ?? size?.[2] ?? 1);
+  const asp = Math.max(0.01, aspect);
+  const pad = Math.max(1.0, padding);
+
+  const vFovRad = (Math.max(1, Math.min(170, fovDeg)) * Math.PI) / 360;
+  const hFovRad = Math.atan(Math.tan(vFovRad) * asp);
+
+  const distV = (sy * 0.5 * pad) / Math.tan(vFovRad);
+  const distH = (sx * 0.5 * pad) / Math.tan(hFovRad);
+  const radius = 0.5 * Math.hypot(sx, sy, sz);
+  const distSphere = (radius * pad) / Math.min(Math.sin(vFovRad), Math.sin(hFovRad));
+
+  return Math.max(distV, distH, distSphere, 0.5);
+}
+
+/**
+ * Verifies whether an asynchronous model load should be committed to the scene graph.
+ * Returns true only if the load sequence number matches the active sequence and the target
+ * model matches the currently selected model.
+ */
+export function isModelLoadValid(activeSeq, requestSeq, activeModel, requestModel) {
+  return activeSeq === requestSeq && Boolean(activeModel) && activeModel === requestModel;
+}
+
+/**
+ * Computes IK pole target position for a 2-bone or 3-bone limb chain.
+ * Given root position [x,y,z], hinge/knee position [x,y,z], and foot/tip position [x,y,z],
+ * computes the offset position along the bend normal or anatomical forward/backward direction.
+ */
+export function computePoleTargetPosition(root, hinge, tip, isFront = false, offsetDist = 0.3) {
+  const rx = root[0], ry = root[1], rz = root[2];
+  const hx = hinge[0], hy = hinge[1], hz = hinge[2];
+  const tx = tip[0], ty = tip[1], tz = tip[2];
+
+  const cx = tx - rx, cy = ty - ry, cz = tz - rz;
+  const cLenSq = cx * cx + cy * cy + cz * cz;
+
+  let px = 0, py = 0, pz = 0;
+  if (cLenSq > 1e-8) {
+    const dot = (hx - rx) * cx + (hy - ry) * cy + (hz - rz) * cz;
+    const t = dot / cLenSq;
+    const projX = rx + t * cx;
+    const projY = ry + t * cy;
+    const projZ = rz + t * cz;
+
+    const bx = hx - projX;
+    const by = hy - projY;
+    const bz = hz - projZ;
+    const bLen = Math.hypot(bx, by, bz);
+    if (bLen > 1e-4) {
+      px = bx / bLen;
+      py = by / bLen;
+      pz = bz / bLen;
+    }
+  }
+
+  if (Math.hypot(px, py, pz) < 0.5) {
+    px = 0;
+    py = isFront ? 1.0 : -1.0;
+    pz = 0;
+  }
+
+  return [
+    Math.round((hx + px * offsetDist) * 10000) / 10000,
+    Math.round((hy + py * offsetDist) * 10000) / 10000,
+    Math.round((hz + pz * offsetDist) * 10000) / 10000
+  ];
+}
+
+/**
+ * Computes 4-beat lateral sequence gait phase offsets for quadrupeds:
+ * LH (0.00) -> LF (0.25) -> RH (0.50) -> RF (0.75).
+ */
+export function computeQuadrupedGaitPhase(side, isFront) {
+  const isLeft = side === "L" || side === 1 || side === 1.0;
+  if (isLeft) {
+    return isFront ? 0.25 : 0.00;
+  } else {
+    return isFront ? 0.75 : 0.50;
+  }
+}
+
+export const GAIT_PRESET_DEFAULTS = {
+  natural: { stride: 1.0, cadence: 1.0, bob: 1.0, sway: 1.0, yaw: 1.0, lean: 3.5, arm_swing: 1.0, duty_factor: 0.62 },
+  soldier: { stride: 1.15, cadence: 1.10, bob: 1.25, sway: 0.40, yaw: 0.70, lean: 1.0, arm_swing: 1.60, duty_factor: 0.60 },
+  swagger: { stride: 1.05, cadence: 0.90, bob: 1.10, sway: 2.20, yaw: 1.50, lean: 4.5, arm_swing: 1.35, duty_factor: 0.62 },
+  stealth: { stride: 0.85, cadence: 0.75, bob: 0.20, sway: 0.60, yaw: 0.80, lean: 12.0, arm_swing: 0.30, duty_factor: 0.68 },
+  heavy: { stride: 0.90, cadence: 0.85, bob: 1.40, sway: 1.60, yaw: 0.80, lean: 6.0, arm_swing: 0.70, duty_factor: 0.66 },
+  run: { stride: 1.40, cadence: 1.50, bob: 1.60, sway: 0.50, yaw: 1.10, lean: 10.0, arm_swing: 1.50, duty_factor: 0.38 },
+  sprint: { stride: 1.70, cadence: 1.80, bob: 1.90, sway: 0.35, yaw: 1.30, lean: 16.0, arm_swing: 1.80, duty_factor: 0.32 },
+  quadruped_walk: { stride: 1.0, cadence: 1.0, bob: 0.80, sway: 1.0, yaw: 1.0, lean: 0.0, arm_swing: 0.0, duty_factor: 0.65 },
+  quadruped_trot: { stride: 1.30, cadence: 1.50, bob: 1.60, sway: 0.50, yaw: 0.50, lean: 0.0, arm_swing: 0.0, duty_factor: 0.50 },
+  quadruped_gallop: { stride: 1.60, cadence: 1.75, bob: 2.00, sway: 0.40, yaw: 0.40, lean: 0.0, arm_swing: 0.0, duty_factor: 0.28 }
+};
+
+export function mergeGaitParams(presetName = "natural", overrides = null) {
+  const base = Object.assign({}, GAIT_PRESET_DEFAULTS[presetName] || GAIT_PRESET_DEFAULTS.natural);
+  if (overrides && typeof overrides === "object") {
+    for (const [k, v] of Object.entries(overrides)) {
+      if (k in base && typeof v === "number" && !isNaN(v)) base[k] = v;
+    }
+  }
+  base.stride = Math.max(0.2, Math.min(2.5, base.stride));
+  base.cadence = Math.max(0.2, Math.min(3.0, base.cadence));
+  base.bob = Math.max(0.0, Math.min(3.0, base.bob));
+  base.sway = Math.max(0.0, Math.min(3.5, base.sway));
+  base.yaw = Math.max(0.0, Math.min(3.0, base.yaw));
+  base.lean = Math.max(-10.0, Math.min(35.0, base.lean));
+  base.arm_swing = Math.max(0.0, Math.min(3.0, base.arm_swing));
+  base.duty_factor = Math.max(0.25, Math.min(0.85, base.duty_factor));
+  return base;
+}
+
+export function evaluatePelvisTrajectory(phase, params = null) {
+  const p = mergeGaitParams("natural", params);
+  const u = ((phase % 1.0) + 1.0) % 1.0;
+  const w = 2.0 * Math.PI * u;
+  const bob = p.bob * Math.cos(2.0 * w);
+  const sway = p.sway * Math.sin(w);
+  const yaw = p.yaw * Math.sin(w);
+  const lean = p.lean + 0.8 * Math.cos(2.0 * w);
+  return { bob, sway, yaw, lean };
+}
+
+export function quatMultiply(a, b) {
+  return [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]
+  ];
+}
+
+export function quatInvert(q) {
+  const d = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+  if (d < 1e-9) return [0, 0, 0, 1];
+  return [-q[0] / d, -q[1] / d, -q[2] / d, q[3] / d];
+}
+
+export function scaleQuaternionRotation(q, scale, mean = [0, 0, 0, 1]) {
+  const qRel = quatMultiply(quatInvert(mean), q);
+  const w = Math.max(-1, Math.min(1, qRel[3]));
+  const angle = 2 * Math.acos(w);
+  if (Math.abs(angle) < 1e-6) return [q[0], q[1], q[2], q[3]];
+  const s = Math.sqrt(Math.max(0, 1 - w * w));
+  const axis = s < 1e-5 ? [1, 0, 0] : [qRel[0] / s, qRel[1] / s, qRel[2] / s];
+  const half = (angle * scale) / 2;
+  const sinH = Math.sin(half);
+  const qScaled = [axis[0] * sinH, axis[1] * sinH, axis[2] * sinH, Math.cos(half)];
+  return quatMultiply(mean, qScaled);
+}
+
+export function pitchQuaternion(q, pitchDeg) {
+  const half = (pitchDeg * Math.PI) / 360;
+  const qPitch = [Math.sin(half), 0, 0, Math.cos(half)];
+  return quatMultiply(qPitch, q);
+}
+
+export function selectBaseClipForPreset(presetName = "natural", availableClipNames = []) {
+  const names = (availableClipNames || []).map(n => String(n).toLowerCase());
+  const find = (pat) => (availableClipNames || []).find((_, idx) => pat.test(names[idx]));
+
+  if (presetName === "run" || presetName === "sprint") {
+    const c = find(/\brun\b/) || find(/sprint/) || find(/\bwalk\b/);
+    if (c) return c;
+  } else if (presetName === "quadruped_gallop") {
+    const c = find(/gallop/) || find(/trot/) || find(/\bwalk\b/);
+    if (c) return c;
+  } else if (presetName === "quadruped_trot") {
+    const c = find(/trot/) || find(/\bwalk\b/);
+    if (c) return c;
+  } else {
+    const c = find(/\bwalk\b/);
+    if (c) return c;
+  }
+  return availableClipNames && availableClipNames[0] ? availableClipNames[0] : null;
+}
+
+export function modulateGaitTrackValues(trackName, times, values, params, spineCount = 3) {
+  const out = new Float32Array(values.length);
+  out.set(values);
+  if (!params) return out;
+
+  const isPos = trackName.endsWith(".position") || trackName.endsWith(".translation");
+  const isRot = trackName.endsWith(".quaternion") || trackName.endsWith(".rotation");
+
+  if (isPos && /hips|pelvis|root|body/i.test(trackName)) {
+    const n = Math.floor(values.length / 3);
+    if (n > 0) {
+      let sumX = 0, sumY = 0;
+      for (let i = 0; i < n; i++) {
+        sumX += values[i * 3 + 0];
+        sumY += values[i * 3 + 1];
+      }
+      const meanX = sumX / n;
+      const meanY = sumY / n;
+      const swayScale = params.sway ?? 1.0;
+      const bobScale = params.bob ?? 1.0;
+      for (let i = 0; i < n; i++) {
+        const dx = values[i * 3 + 0] - meanX;
+        const dy = values[i * 3 + 1] - meanY;
+        out[i * 3 + 0] = meanX + dx * swayScale;
+        out[i * 3 + 1] = meanY + dy * bobScale;
+      }
+    }
+  } else if (isRot) {
+    const isLeg = /leg|thigh|shin|foot|femur|tibia|knee|calf|up_leg/i.test(trackName);
+    const isArm = /arm|forearm|hand|shoulder|clavicle|elbow|wrist|bicep/i.test(trackName);
+    const isSpine = /hips|pelvis|spine|torso|chest/i.test(trackName);
+
+    const scale = isLeg ? (params.stride ?? 1.0) : (isArm ? (params.arm_swing ?? 1.0) : 1.0);
+    const n = Math.floor(values.length / 4);
+
+    const deltaLean = (params.lean != null ? params.lean - 3.5 : 0.0);
+    const leanPitchPerBone = isSpine && Math.abs(deltaLean) > 1e-4 ? deltaLean / Math.max(1, spineCount) : 0.0;
+
+    if (Math.abs(scale - 1.0) > 1e-4 || Math.abs(leanPitchPerBone) > 1e-4) {
+      for (let i = 0; i < n; i++) {
+        let q = [values[i * 4 + 0], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]];
+        if (Math.abs(scale - 1.0) > 1e-4) {
+          q = scaleQuaternionRotation(q, scale);
+        }
+        if (Math.abs(leanPitchPerBone) > 1e-4) {
+          q = pitchQuaternion(q, leanPitchPerBone);
+        }
+        out[i * 4 + 0] = q[0];
+        out[i * 4 + 1] = q[1];
+        out[i * 4 + 2] = q[2];
+        out[i * 4 + 3] = q[3];
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 3D Bone Posing Gizmo Math (Pillar 5)
+// ---------------------------------------------------------------------------------------------------------------
+
+export function quatNormalize(q) {
+  const len = Math.hypot(q[0], q[1], q[2], q[3]);
+  if (len < 1e-9) return [0, 0, 0, 1];
+  return [q[0] / len, q[1] / len, q[2] / len, q[3] / len];
+}
+
+/** Computes rotation angle delta in radians from 2D pointer drag on screen given an active gizmo axis ('X'|'Y'|'Z'). */
+export function computeGizmoRotationDelta(axis, deltaX, deltaY, sensitivity = 0.015) {
+  if (axis === "X" || axis === "x") {
+    return -deltaY * sensitivity;
+  } else if (axis === "Y" || axis === "y") {
+    return deltaX * sensitivity;
+  } else if (axis === "Z" || axis === "z") {
+    return (deltaX - deltaY) * 0.7071 * sensitivity;
+  }
+  return 0.0;
+}
+
+/** Applies a delta rotation angle around a given local axis ('X'|'Y'|'Z') to an existing quaternion [x, y, z, w]. */
+export function applyBoneRotationDelta(currentQuat, axis, deltaAngleRad) {
+  const half = deltaAngleRad * 0.5;
+  const sinH = Math.sin(half);
+  const cosH = Math.cos(half);
+  let qDelta = [0, 0, 0, 1];
+  if (axis === "X" || axis === "x") {
+    qDelta = [sinH, 0, 0, cosH];
+  } else if (axis === "Y" || axis === "y") {
+    qDelta = [0, sinH, 0, cosH];
+  } else if (axis === "Z" || axis === "z") {
+    qDelta = [0, 0, sinH, cosH];
+  }
+  return quatNormalize(quatMultiply(currentQuat, qDelta));
+}
+
+/** Converts quaternion [x, y, z, w] to Euler angles in degrees [pitchX, yawY, rollZ] (extrinsic XYZ / intrinsic ZYX). */
+export function quaternionToEulerDegrees(q) {
+  const x = q[0], y = q[1], z = q[2], w = q[3];
+
+  // Pitch (X)
+  const sinr_cosp = 2 * (w * x + y * z);
+  const cosr_cosp = 1 - 2 * (x * x + y * y);
+  const pitch = Math.atan2(sinr_cosp, cosr_cosp);
+
+  // Yaw (Y)
+  const sinp = 2 * (w * y - z * x);
+  let yaw = 0;
+  if (Math.abs(sinp) >= 1) {
+    yaw = Math.sign(sinp) * (Math.PI / 2);
+  } else {
+    yaw = Math.asin(sinp);
+  }
+
+  // Roll (Z)
+  const siny_cosp = 2 * (w * z + x * y);
+  const cosy_cosp = 1 - 2 * (y * y + z * z);
+  const roll = Math.atan2(siny_cosp, cosy_cosp);
+
+  const rad2deg = 180 / Math.PI;
+  return [pitch * rad2deg, yaw * rad2deg, roll * rad2deg];
+}
+
+
+

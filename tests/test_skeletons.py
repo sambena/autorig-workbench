@@ -93,9 +93,67 @@ class TestSemanticBoneDictionary(unittest.TestCase):
         self.assertEqual(skeletons.map_bone_to_canonical("CC_Base_L_Upperarm"), "arm.L")
         self.assertEqual(skeletons.map_bone_to_canonical("CC_Base_L_Thigh"), "thigh.L")
 
+        # Mixamo
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:Hips"), "hips")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:Spine"), "spine")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:Spine1"), "spine1")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:Spine2"), "spine2")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftArm"), "arm.L")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftForeArm"), "forearm.L")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftHandIndex1"), "index1.L")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftHandIndex4"), "index4.L")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftToeBase"), "toe.L")
+        self.assertEqual(skeletons.map_bone_to_canonical("mixamorig:LeftToe_End"), "toetip.L")
+
         # Tails
         self.assertEqual(skeletons.map_bone_to_canonical("tail_01"), "tail_1")
         self.assertEqual(skeletons.map_bone_to_canonical("tail_02"), "tail_2")
+
+    def test_extract_chains_from_mixamo_joints(self):
+        mock_mixamo_joints = [
+            {"name": "mixamorig:Hips", "head": [0.0, 0.0, 1.0], "parent": None},
+            {"name": "mixamorig:Spine", "head": [0.0, 0.0, 1.15], "parent": "mixamorig:Hips"},
+            {"name": "mixamorig:Spine1", "head": [0.0, 0.0, 1.3], "parent": "mixamorig:Spine"},
+            {"name": "mixamorig:Spine2", "head": [0.0, 0.0, 1.45], "parent": "mixamorig:Spine1"},
+            {"name": "mixamorig:Neck", "head": [0.0, 0.0, 1.6], "parent": "mixamorig:Spine2"},
+            {"name": "mixamorig:Head", "head": [0.0, 0.0, 1.75], "tail": [0.0, 0.0, 1.9], "parent": "mixamorig:Neck"},
+            {"name": "mixamorig:LeftShoulder", "head": [0.1, 0.0, 1.5], "parent": "mixamorig:Spine2"},
+            {"name": "mixamorig:LeftArm", "head": [0.25, 0.0, 1.5], "parent": "mixamorig:LeftShoulder"},
+            {"name": "mixamorig:LeftForeArm", "head": [0.5, 0.0, 1.5], "parent": "mixamorig:LeftArm"},
+            {"name": "mixamorig:LeftHand", "head": [0.75, 0.0, 1.5], "parent": "mixamorig:LeftForeArm"},
+            {"name": "mixamorig:LeftHandIndex1", "head": [0.8, 0.0, 1.5], "parent": "mixamorig:LeftHand"},
+            {"name": "mixamorig:LeftHandIndex2", "head": [0.85, 0.0, 1.5], "parent": "mixamorig:LeftHandIndex1"},
+            {"name": "mixamorig:LeftHandIndex3", "head": [0.9, 0.0, 1.5], "parent": "mixamorig:LeftHandIndex2"},
+            {"name": "mixamorig:LeftHandIndex4", "head": [0.95, 0.0, 1.5], "parent": "mixamorig:LeftHandIndex3"},
+            {"name": "mixamorig:RightShoulder", "head": [-0.1, 0.0, 1.5], "parent": "mixamorig:Spine2"},
+            {"name": "mixamorig:RightArm", "head": [-0.25, 0.0, 1.5], "parent": "mixamorig:RightShoulder"},
+            {"name": "mixamorig:RightForeArm", "head": [-0.5, 0.0, 1.5], "parent": "mixamorig:RightArm"},
+            {"name": "mixamorig:RightHand", "head": [-0.75, 0.0, 1.5], "parent": "mixamorig:RightForeArm"},
+            {"name": "mixamorig:LeftUpLeg", "head": [0.15, 0.0, 0.95], "parent": "mixamorig:Hips"},
+            {"name": "mixamorig:LeftLeg", "head": [0.15, 0.0, 0.5], "parent": "mixamorig:LeftUpLeg"},
+            {"name": "mixamorig:LeftFoot", "head": [0.15, 0.0, 0.15], "parent": "mixamorig:LeftLeg"},
+            {"name": "mixamorig:LeftToeBase", "head": [0.15, -0.05, 0.05], "parent": "mixamorig:LeftFoot"},
+            {"name": "mixamorig:LeftToe_End", "head": [0.15, -0.15, 0.05], "parent": "mixamorig:LeftToeBase"},
+            {"name": "mixamorig:RightUpLeg", "head": [-0.15, 0.0, 0.95], "parent": "mixamorig:Hips"},
+            {"name": "mixamorig:RightLeg", "head": [-0.15, 0.0, 0.5], "parent": "mixamorig:RightUpLeg"},
+            {"name": "mixamorig:RightFoot", "head": [-0.15, 0.0, 0.15], "parent": "mixamorig:RightLeg"},
+            {"name": "mixamorig:RightToeBase", "head": [-0.15, -0.05, 0.05], "parent": "mixamorig:RightFoot"},
+            {"name": "mixamorig:RightToe_End", "head": [-0.15, -0.15, 0.05], "parent": "mixamorig:RightToeBase"},
+        ]
+        res = skeletons.suggest_from_known_skeleton(mock_mixamo_joints, "mixamo")
+        self.assertEqual(res["archetype"], "humanoid")
+        chain_map = {c["name"]: c for c in res["rig"]["chains"]}
+        self.assertIn("spine", chain_map)
+        # Spine should contain hips, spine, spine1, spine2, neck, head (+ tail if present)
+        self.assertGreaterEqual(len(chain_map["spine"]["points"]), 6)
+        self.assertIn("f_index.L", chain_map)
+        # Finger chain should include joint 4 (tip)
+        self.assertEqual(len(chain_map["f_index.L"]["points"]), 4)
+        # Leg chain should include toe tip
+        self.assertEqual(len(chain_map["leg.L"]["points"]), 5)
+        self.assertIn("humanoid", res["spec"])
+        h_z = res["spec"]["humanoid"]["z"]
+        self.assertTrue(0.01 <= h_z["ankle"] < h_z["knee"] < h_z["hip"] < h_z["spine"] < h_z["spine1"] < h_z["spine2"] <= h_z["arm"] < h_z["neck"] < h_z["head"] <= h_z["top"] <= 1.0)
 
     def test_extract_chains_from_unreal_joints(self):
         mock_unreal_joints = [
@@ -130,6 +188,10 @@ class TestSemanticBoneDictionary(unittest.TestCase):
         self.assertTrue(chain_map["arm.L"].get("girdle"))
         self.assertTrue(chain_map["leg.L"].get("ik"))
         self.assertIn("humanoid", res["spec"])
+        h_x = res["spec"]["humanoid"]["x"]
+        self.assertTrue(0.0 <= h_x["tip"] <= h_x["knuckle"] <= h_x["wrist"] <= h_x["elbow"] <= h_x["shoulder"] <= 0.49)
+        h_z = res["spec"]["humanoid"]["z"]
+        self.assertTrue(0.01 <= h_z["ankle"] < h_z["knee"] < h_z["hip"] < h_z["spine"] < h_z["spine1"] < h_z["spine2"] <= h_z["arm"] < h_z["neck"] < h_z["head"] <= h_z["top"] <= 1.0)
 
 
 if __name__ == "__main__":

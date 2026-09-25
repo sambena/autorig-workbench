@@ -423,6 +423,90 @@ class TestPlacedRulesMath(unittest.TestCase):
         # Partition of unity preserved
         np.testing.assert_allclose(relaxed.sum(axis=1), np.ones(3), rtol=1e-5)
 
+    def test_longitudinal_flank_barrier(self):
+        bone_names = ["leg_front_1.L", "leg_hind_1.L", "hips", "spine_2"]
+        bone_heads = {
+            "leg_front_1.L": [0.3, -0.5, 0.5],
+            "leg_hind_1.L": [0.3, 0.5, 0.5],
+            "hips": [0.0, 0.4, 0.6],
+            "spine_2": [0.0, -0.3, 0.6],
+        }
+        # Point 0: at Y=0.65 (rear flank/rump) with accidental front leg bleed
+        # Point 1: at Y=-0.65 (chest/shoulder) with accidental hind leg bleed
+        # Point 2: at Y=-0.45 (legitimate front leg vertex)
+        coords = np.array([
+            [0.25, 0.65, 0.4],
+            [0.25, -0.65, 0.4],
+            [0.3, -0.45, 0.3],
+        ])
+        weights = np.array([
+            [0.4, 0.1, 0.5, 0.0],   # v0: front bleed on rear flank
+            [0.1, 0.5, 0.0, 0.4],   # v1: hind bleed on chest
+            [0.8, 0.0, 0.0, 0.2],   # v2: valid front leg vertex
+        ])
+        cleaned = placed_rules.apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=bone_heads)
+        # v0: leg_front_1.L must be zeroed, transferred to hips
+        self.assertEqual(cleaned[0, 0], 0.0)
+        self.assertAlmostEqual(cleaned[0, 2], 0.9, places=5)
+        # v1: leg_hind_1.L must be zeroed, transferred to spine_2 (chest)
+        self.assertEqual(cleaned[1, 1], 0.0)
+        self.assertAlmostEqual(cleaned[1, 3], 0.9, places=5)
+        # v2: valid front leg vertex untouched
+        self.assertAlmostEqual(cleaned[2, 0], 0.8, places=5)
+        # Partition of unity preserved
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(3), rtol=1e-5)
+
+    def test_tail_isolation_barrier(self):
+        bone_names = ["tail_1", "tail_2", "leg_hind_1.L", "hips"]
+        bone_heads = {
+            "tail_1": [0.0, 0.6, 0.7],
+            "tail_2": [0.0, 0.8, 0.75],
+            "leg_hind_1.L": [0.25, 0.5, 0.5],
+            "hips": [0.0, 0.4, 0.6],
+        }
+        # Point 0: thigh vertex (dominant on leg_hind_1.L) with accidental distal tail_2 bleed
+        # Point 1: tail tip vertex (dominant on tail_2)
+        coords = np.array([
+            [0.22, 0.52, 0.45],
+            [0.0, 0.85, 0.78],
+        ])
+        weights = np.array([
+            [0.0, 0.35, 0.55, 0.10], # v0: thigh with 0.35 tail_2 weight
+            [0.1, 0.90, 0.0, 0.0],   # v1: tail tip
+        ])
+        cleaned = placed_rules.apply_tail_isolation_barrier(weights, coords, bone_names, bone_heads=bone_heads)
+        # v0: tail_2 must be zeroed, transferred to hips
+        self.assertEqual(cleaned[0, 1], 0.0)
+        self.assertAlmostEqual(cleaned[0, 3], 0.45, places=5)
+        # v1: tail tip vertex untouched
+        self.assertAlmostEqual(cleaned[1, 1], 0.90, places=5)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_radial_limb_sector_isolation(self):
+        bone_names = ["leg1.L", "leg2.L", "leg3.L", "leg1.R", "leg2.R", "leg3.R", "body"]
+        bone_heads = {
+            "leg1.L": [0.4, 0.4, 0.3],    # front left
+            "leg2.L": [0.5, 0.0, 0.3],    # mid left
+            "leg3.L": [0.4, -0.4, 0.3],   # rear left
+            "leg1.R": [-0.4, 0.4, 0.3],   # front right
+            "leg2.R": [-0.5, 0.0, 0.3],   # mid right
+            "leg3.R": [-0.4, -0.4, 0.3],  # rear right
+            "body": [0.0, 0.0, 0.35],
+        }
+        # Point 0: near rear left leg (X=0.45, Y=-0.45), accidental bleed from front left leg1.L
+        coords = np.array([
+            [0.45, -0.45, 0.25],
+        ])
+        weights = np.array([
+            [0.35, 0.1, 0.45, 0.0, 0.0, 0.0, 0.1], # leg1.L bleed of 0.35
+        ])
+        cleaned = placed_rules.apply_radial_limb_sector_isolation(weights, coords, bone_names, bone_heads=bone_heads, center_xy=(0.0, 0.0))
+        # leg1.L must be zeroed and transferred to body
+        self.assertEqual(cleaned[0, 0], 0.0)
+        self.assertAlmostEqual(cleaned[0, 6], 0.45, places=5)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(1), rtol=1e-5)
+
+
 
 if "bpy" not in sys.modules:
     class TestPlacedRulesUnderBlender(unittest.TestCase):

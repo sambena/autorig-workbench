@@ -25,7 +25,7 @@ ROLE_COLOURS = {"tentacle": (0.8, 0.3, 0.6), "flipper": (0.0, 0.7, 0.75), "fluke
                 "wisp": (0.95, 0.6, 0.1), "flame": (0.9, 0.3, 0.05), "lid": (0.75, 0.1, 0.1), "tongue": (0.85, 0.1, 0.45),
                 "lure": (0.95, 0.85, 0.1), "barbel": (0.6, 0.15, 0.75),"ear": (0.6, 0.15, 0.75), "jaw": (0.85, 0.1, 0.45), "claw": (0.75, 0.1, 0.1), "mandible": (0.85, 0.1, 0.45),
                 "spine": (0.1, 0.35, 0.9), "leg": (0.1, 0.65, 0.2), "tail": (0.95, 0.5, 0.05), "head": (0.6, 0.15, 0.75),
-                "ik": (0.95, 0.85, 0.1), "extra": (0.45, 0.45, 0.45), "fin": (0.0, 0.7, 0.75), "wing": (0.0, 0.7, 0.75)}
+                "ik": (0.95, 0.85, 0.1), "pole": (0.3, 0.85, 0.95), "extra": (0.45, 0.45, 0.45), "fin": (0.0, 0.7, 0.75), "wing": (0.0, 0.7, 0.75)}
 
 def args():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -275,7 +275,64 @@ def tripo_chains(joints, spec, bvh, size, mesh):
             chains.append({"role": "tail", "joints": [], "points": tp, "parent": (0, 0), "ik": False})
     return chains
 
-# ---------------------------------------------------------------- chains traced through a mesh that has no skeleton
+def apply_pre_bend(pts, c, size):
+    """Introduces subtle anatomical joint pre-bends to collinear limb chains to prevent IK flipping/popping.
+    - Front legs / arms: elbow hinges backward (+Y in Blender creature space, where creature faces -Y).
+    - Hind legs: knee/stifle hinges forward (-Y), and for 3-bone digitigrade legs, hock hinges backward (+Y)."""
+    start_idx = 1 if c.get("girdle") else 0
+    limb_pts = list(pts[start_idx:])
+    if len(limb_pts) < 3:
+        return pts
+    n = len(limb_pts) - 1
+    H, T = limb_pts[0], limb_pts[-1]
+    L = (T - H).length
+    if L < 1e-4:
+        return pts
+
+    # Explicit pre_bend in chain spec
+    if "pre_bend" in c:
+        pb = c["pre_bend"]
+        if isinstance(pb, (list, tuple)) and len(pb) == 3 and not isinstance(pb[0], (list, tuple)):
+            for k in range(1, n):
+                limb_pts[k] = limb_pts[k] + Vector(pb)
+            return pts[:start_idx] + limb_pts
+        elif isinstance(pb, list):
+            for k, off in enumerate(pb):
+                if k + 1 < len(limb_pts):
+                    limb_pts[k + 1] = limb_pts[k + 1] + Vector(off)
+            return pts[:start_idx] + limb_pts
+
+    cname = c.get("name", "").lower()
+    role = c.get("role", "").lower()
+    is_front = any(k in cname for k in ("front", "fore", "arm", "shoulder")) or "arm" in role
+    is_hind = any(k in cname for k in ("hind", "back", "rear")) or (not is_front and (any(k in cname for k in ("leg", "thigh")) or "leg" in role))
+
+    dir_HT = (T - H).normalized()
+    max_dev = 0.0
+    for k in range(1, n):
+        proj = H + dir_HT * (limb_pts[k] - H).dot(dir_HT)
+        dev = (limb_pts[k] - proj).length
+        if dev > max_dev:
+            max_dev = dev
+
+    if max_dev >= 0.015 * L:
+        return pts
+
+    bend_amount = 0.025 * L
+    if is_front:
+        if n == 2:
+            limb_pts[1] = limb_pts[1] + Vector((0.0, bend_amount, 0.0))
+        elif n == 3:
+            limb_pts[1] = limb_pts[1] + Vector((0.0, bend_amount * 0.5, 0.0))
+            limb_pts[2] = limb_pts[2] + Vector((0.0, bend_amount, 0.0))
+    elif is_hind or "leg" in cname or "leg" in role:
+        if n == 2:
+            limb_pts[1] = limb_pts[1] + Vector((0.0, -bend_amount, 0.0))
+        elif n == 3:
+            limb_pts[1] = limb_pts[1] + Vector((0.0, -bend_amount * 1.2, 0.0))
+            limb_pts[2] = limb_pts[2] + Vector((0.0, bend_amount * 0.8, 0.0))
+
+    return pts[:start_idx] + limb_pts
 
 def build_chains(mesh, spec, size):
     import geo
@@ -387,6 +444,7 @@ def build_chains(mesh, spec, size):
             # A shoulder or pelvis bone (index 0 of the chain) from the spine out to where the limb leaves the body:
             # the scapula a quadruped's front leg swings from, a humanoid's clavicle.
             pts = [on_polyline(chains[pi]["points"], pts[0])] + list(pts)
+        pts = apply_pre_bend(pts, c, size)
         pidx = c["parent"][1] if c.get("parent") else 0
         if pi is not None and pidx < 0: pidx += len(chains[pi]["points"]) - 1
         if pi is not None and c.get("parent_nearest"):
@@ -501,7 +559,36 @@ def build_armature(key, chains, size):
             last = eb[c["bones"][n - 1]]
             ctl.head = last.tail; ctl.tail = last.tail + (last.tail - last.head) * 0.5; ctl.roll = last.roll
         ctl.parent = root; ctl.use_deform = False
-        iks.append((c, ctl.name))
+
+        pole_name = "pole_" + c["base"] + c["side"]
+        pole = eb.new(pole_name)
+        pole.parent = root
+        pole.use_deform = False
+
+        start_idx = 1 if c.get("girdle") else 0
+        root_b = eb[c["bones"][start_idx]]
+        end_idx = n - 2 if foot is not None else n - 1
+        end_b = eb[c["bones"][end_idx]]
+        hinge_pos = root_b.tail.copy()
+
+        chord = end_b.tail - root_b.head
+        chord_len = max(1e-4, chord.length)
+        chord_dir = chord.normalized()
+        proj = root_b.head + chord_dir * (hinge_pos - root_b.head).dot(chord_dir)
+        bend_vec = hinge_pos - proj
+        if bend_vec.length > 1e-4:
+            pole_dir = bend_vec.normalized()
+        else:
+            cname = c["base"].lower()
+            is_front = any(k in cname for k in ("front", "fore", "arm", "shoulder"))
+            pole_dir = Vector((0.0, 1.0, 0.0)) if is_front else Vector((0.0, -1.0, 0.0))
+
+        pole_dist = max(chord_len * 0.45, size.z * 0.15)
+        pole.head = hinge_pos + pole_dir * pole_dist
+        pole.tail = pole.head + Vector((0.0, 0.0, chord_len * 0.12))
+        pole.roll = 0.0
+
+        iks.append((c, ctl.name, pole.name))
     bpy.ops.object.mode_set(mode='OBJECT')
     deform, ctrl = ad.collections.new("Deform"), ad.collections.new("Controls")
     for b in ad.bones: (deform if b.use_deform else ctrl).assign(b)
@@ -509,7 +596,9 @@ def build_armature(key, chains, size):
     return arm, iks
 
 def add_ik(arm, iks):
-    for c, ctl in iks:
+    for entry in iks:
+        c, ctl = entry[0], entry[1]
+        pole_name = entry[2] if len(entry) > 2 else None
         n = len(c["bones"])
         if n >= 3:
             pb = arm.pose.bones[c["bones"][n - 2]]; count = n - 1 - (1 if c.get("girdle") else 0)
@@ -518,6 +607,35 @@ def add_ik(arm, iks):
         else:
             pb = arm.pose.bones[c["bones"][n - 1]]; count = n
         k = pb.constraints.new('IK'); k.target = arm; k.subtarget = ctl; k.chain_count = count; k.use_stretch = False
+
+        if pole_name and pole_name in arm.pose.bones:
+            k.pole_target = arm
+            k.pole_subtarget = pole_name
+            start_idx = n - count
+            root_bone_name = c["bones"][start_idx]
+            root_pb = arm.pose.bones[root_bone_name]
+            root_rest_mat = arm.data.bones[root_bone_name].matrix_local
+
+            best_ang = 0.0
+            min_err = float("inf")
+            for step in range(24):
+                ang = -math.pi + step * (math.pi / 12.0)
+                k.pole_angle = ang
+                bpy.context.view_layer.update()
+                err = sum(abs(x) for row in (root_pb.matrix.to_3x3() - root_rest_mat.to_3x3()) for x in row)
+                if err < min_err:
+                    min_err = err
+                    best_ang = ang
+            for step in range(-15, 16):
+                ang = best_ang + math.radians(step)
+                k.pole_angle = ang
+                bpy.context.view_layer.update()
+                err = sum(abs(x) for row in (root_pb.matrix.to_3x3() - root_rest_mat.to_3x3()) for x in row)
+                if err < min_err:
+                    min_err = err
+                    best_ang = ang
+            k.pole_angle = best_ang
+            bpy.context.view_layer.update()
 
 # ---------------------------------------------------------------- rules A and B: head, jaw, torso envelope
 
@@ -1052,15 +1170,20 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("barrier", False):
+        placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("centerline_armor", False):
+        placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
         # Run before rigid-piece pass so loose pieces still end up rigid.
         smooth_weights(mesh, int(spec["smooth"]))
-        placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
-    placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
+        if spec.get("barrier", False):
+            placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("hinge_smoothing", False):
+        placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("twist_relaxation", False):
+        placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands") or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
@@ -1380,6 +1503,27 @@ def rerig(key, spec, qa_dir, export):
     for bn in dead: arm.data.bones[bn].use_deform = False
     if not skin(mesh, arm, chains, spec, size, log): return log
     add_ik(arm, iks)
+    if spec.get("twist_bones", False):
+        try:
+            import twist_bones
+            added_twists = twist_bones.add_twist_bones_to_armature(arm, mesh=mesh, spec=spec)
+            if added_twists:
+                log["twist_bones"] = [p["twist"] for p in added_twists]
+        except Exception as e:
+            log["twist_err"] = str(e)
+    if spec.get("morph_targets", False):
+        try:
+            import morph_generator
+            head_b = arm.data.bones.get("head") or arm.data.bones.get("Head")
+            head_coord = tuple(head_b.head_local) if head_b else None
+            top_coord = tuple(head_b.tail_local) if head_b else None
+            created_morphs = morph_generator.generate_blender_shape_keys(
+                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
+            )
+            if created_morphs:
+                log["morph_targets"] = created_morphs
+        except Exception as e:
+            log["morph_err"] = str(e)
 
     # does the rig, with its IK switched on, still stand exactly as sculpted?
     dg = bpy.context.evaluated_depsgraph_get()

@@ -34,6 +34,7 @@ let state = null;
 let currentModel = "";
 let currentDetails = null;
 let activeJob = null;
+let currentJobWorkingModel = "";
 let eventSource = null;
 let activeMenu = null;
 
@@ -57,6 +58,7 @@ async function api(path, body) {
 async function init() {
   setupMenus();
   setupDrawers();
+  setupViewbar();
   setupShortcuts();
   setupModals();
   setupDragAndDrop();
@@ -105,19 +107,84 @@ async function refreshState() {
   }
 }
 
+let currentModelFilter = "all";
+
+function matchesFilter(m, filter) {
+  if (!filter || filter === "all") return true;
+  const audit = (m.audit || "").toUpperCase();
+  if (filter === "pass") return audit === "PASS";
+  if (filter === "check") return audit === "CHECK";
+  if (filter === "fail") return audit === "FAIL";
+  if (filter === "rigged") return Boolean(m.rigged);
+  if (filter === "unrigged") return !m.rigged;
+  if (filter === "nospec") return !m.spec;
+  return true;
+}
+
+function setModelFilter(filter) {
+  currentModelFilter = filter;
+  renderModelSelector();
+  const allModels = (state && state.models) || [];
+  const filtered = allModels.filter((m) => matchesFilter(m, currentModelFilter));
+  if (filtered.length > 0 && !filtered.some((m) => m.name === currentModel)) {
+    selectModel(filtered[0].name);
+  }
+}
+
 function renderModelSelector() {
   const sel = $("#modelSelect");
   if (!sel) return;
 
+  const allModels = (state && state.models) || [];
+
+  // Update counts on filter dropdown items
+  const counts = {
+    all: allModels.length,
+    pass: allModels.filter((m) => (m.audit || "").toUpperCase() === "PASS").length,
+    check: allModels.filter((m) => (m.audit || "").toUpperCase() === "CHECK").length,
+    fail: allModels.filter((m) => (m.audit || "").toUpperCase() === "FAIL").length,
+    rigged: allModels.filter((m) => Boolean(m.rigged)).length,
+    unrigged: allModels.filter((m) => !m.rigged).length,
+    nospec: allModels.filter((m) => !m.spec).length,
+  };
+
+  const setCnt = (id, n) => { const el = $(id); if (el) el.textContent = `(${n})`; };
+  setCnt("#filterCountAll", counts.all);
+  setCnt("#filterCountPass", counts.pass);
+  setCnt("#filterCountCheck", counts.check);
+  setCnt("#filterCountFail", counts.fail);
+  setCnt("#filterCountRigged", counts.rigged);
+  setCnt("#filterCountUnrigged", counts.unrigged);
+  setCnt("#filterCountNoSpec", counts.nospec);
+
+  // Update filter button label & styling
+  const filterBtn = $("#modelFilterBtn");
+  if (filterBtn) {
+    const labels = {
+      all: "⚡ All",
+      pass: `⚡ PASS (${counts.pass})`,
+      check: `⚡ CHECK (${counts.check})`,
+      fail: `⚡ FAIL (${counts.fail})`,
+      rigged: `⚡ Rigged (${counts.rigged})`,
+      unrigged: `⚡ Unrigged (${counts.unrigged})`,
+      nospec: `⚡ No Spec (${counts.nospec})`,
+    };
+    filterBtn.innerHTML = `<span>${esc(labels[currentModelFilter] || "⚡ Filter")}</span> ▾`;
+    filterBtn.classList.toggle("on", currentModelFilter !== "all");
+  }
+
+  // Filter models according to current active filter
+  const filteredModels = allModels.filter((m) => matchesFilter(m, currentModelFilter));
+
   const prev = currentModel;
   const byGroup = {};
-  for (const m of (state && state.models) || []) {
+  for (const m of filteredModels) {
     (byGroup[m.group || "Default"] ||= []).push(m);
   }
 
   let html = "";
   for (const group of Object.keys(byGroup).sort()) {
-    html += `<optgroup label="${esc(group)}">`;
+    html += `<optgroup label="${esc(group)} (${byGroup[group].length})">`;
     for (const m of byGroup[group]) {
       const badge = m.audit ? ` [${m.audit}]` : (m.rigged ? " [Rigged]" : (m.spec ? " [Spec]" : ""));
       html += `<option value="${esc(m.name)}" ${m.name === prev ? "selected" : ""}>${esc(m.name)}${badge}</option>`;
@@ -125,8 +192,10 @@ function renderModelSelector() {
     html += `</optgroup>`;
   }
 
-  sel.innerHTML = html || `<option value="">(No models in workspace)</option>`;
-  sel.onchange = (e) => selectModel(e.target.value);
+  sel.innerHTML = html || `<option value="">(No models match filter)</option>`;
+  sel.onchange = (e) => {
+    if (e.target.value) selectModel(e.target.value);
+  };
   updateModelBadge();
 }
 
@@ -241,6 +310,15 @@ function setupMenus() {
     el.onclick = (e) => {
       closeMenus();
       handleAction(el.dataset.action);
+    };
+  });
+
+  // Wire model filter menu items
+  $$("[data-filter]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      closeMenus();
+      setModelFilter(el.dataset.filter);
     };
   });
 
@@ -374,6 +452,20 @@ async function handleAction(action) {
       runStep(step);
       break;
     }
+    case "batch-source-all":
+      try {
+        const j = await api("/api/source-all", { missing_only: false });
+        followJob(j);
+        setDrawerOpen($("#logDrawer"), true);
+      } catch (e) { alert(e.message); }
+      break;
+    case "batch-source-missing":
+      try {
+        const j = await api("/api/source-all", { missing_only: true });
+        followJob(j);
+        setDrawerOpen($("#logDrawer"), true);
+      } catch (e) { alert(e.message); }
+      break;
     case "batch-rig-all":
       try {
         const j = await api("/api/rig-all", {});
@@ -391,6 +483,13 @@ async function handleAction(action) {
     case "batch-audit-failed":
       try {
         const j = await api("/api/audit-failed", {});
+        followJob(j);
+        setDrawerOpen($("#logDrawer"), true);
+      } catch (e) { alert(e.message); }
+      break;
+    case "batch-rebake-clips":
+      try {
+        const j = await api("/api/clips-all", {});
         followJob(j);
         setDrawerOpen($("#logDrawer"), true);
       } catch (e) { alert(e.message); }
@@ -460,8 +559,20 @@ async function handleAction(action) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Drawers (Inspector & Log Console)
+// Drawers (Inspector & Log Console) & Viewbar Controls
 // ---------------------------------------------------------------------------------------------------------------
+
+let logHeight = parseInt(localStorage.getItem("autorig_log_height") || "250", 10);
+if (isNaN(logHeight) || logHeight < 100) logHeight = 250;
+
+function applyLogHeight(h) {
+  logHeight = h;
+  document.documentElement.style.setProperty("--log-drawer-height", `${h}px`);
+  const logDrawer = $("#logDrawer");
+  if (logDrawer && logDrawer.classList.contains("open")) {
+    document.documentElement.style.setProperty("--log-drawer-offset", `${h + 2}px`);
+  }
+}
 
 function setupDrawers() {
   const btnToggleInspector = $("#toggleInspector");
@@ -471,8 +582,11 @@ function setupDrawers() {
   const inspector = $("#inspectorDrawer");
   const logDrawer = $("#logDrawer");
   const logToggleHeader = $("#logToggleHeader");
+  const resizeHandle = $("#logResizeHandle");
   const collapseLog = $("#collapseLog");
   const clearLogBtn = $("#clearLogBtn");
+
+  applyLogHeight(logHeight);
 
   if (btnToggleInspector && inspector) {
     btnToggleInspector.onclick = () => toggleDrawer("#inspectorDrawer");
@@ -491,9 +605,55 @@ function setupDrawers() {
 
   if (logToggleHeader && logDrawer) {
     logToggleHeader.onclick = (e) => {
-      if (e.target.closest("button, select")) return;
+      if (e.target.closest("button, select, input")) return;
       toggleDrawer("#logDrawer");
     };
+  }
+
+  if (resizeHandle && logDrawer) {
+    let isDragging = false;
+    let startY = 0;
+    let startH = 0;
+
+    resizeHandle.onpointerdown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isDragging = true;
+      startY = e.clientY;
+      startH = logDrawer.getBoundingClientRect().height;
+      resizeHandle.setPointerCapture(e.pointerId);
+      resizeHandle.classList.add("active");
+      document.body.classList.add("resizing");
+      if (!logDrawer.classList.contains("open")) {
+        setDrawerOpen(logDrawer, true);
+      }
+    };
+
+    resizeHandle.onpointermove = (e) => {
+      if (!isDragging) return;
+      const deltaY = startY - e.clientY;
+      const minH = 100;
+      const maxH = Math.max(minH, window.innerHeight - 100);
+      const newH = Math.round(Math.min(maxH, Math.max(minH, startH + deltaY)));
+      applyLogHeight(newH);
+    };
+
+    const finishDrag = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      resizeHandle.classList.remove("active");
+      document.body.classList.remove("resizing");
+      try {
+        resizeHandle.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      localStorage.setItem("autorig_log_height", String(logHeight));
+      if (window.specEditor && typeof window.specEditor.resize === "function") {
+        window.specEditor.resize();
+      }
+    };
+
+    resizeHandle.onpointerup = finishDrag;
+    resizeHandle.onpointercancel = finishDrag;
   }
 
   if (collapseLog && logDrawer) {
@@ -522,7 +682,7 @@ function setupDrawers() {
   document.body.classList.toggle("inspector-open", inspectorOpen);
   document.body.classList.toggle("log-open", logOpen);
   document.documentElement.style.setProperty("--inspector-offset", inspectorOpen ? "440px" : "0px");
-  document.documentElement.style.setProperty("--log-drawer-offset", logOpen ? "252px" : "34px");
+  document.documentElement.style.setProperty("--log-drawer-offset", logOpen ? `${logHeight + 2}px` : "34px");
 }
 
 function toggleDrawer(sel) {
@@ -543,8 +703,45 @@ function setDrawerOpen(el, open) {
     const btn = $("#toggleLog");
     if (btn) btn.classList.toggle("on", open);
     document.body.classList.toggle("log-open", open);
-    document.documentElement.style.setProperty("--log-drawer-offset", open ? "252px" : "34px");
+    document.documentElement.style.setProperty("--log-drawer-offset", open ? `${logHeight + 2}px` : "34px");
   }
+  if (window.specEditor && typeof window.specEditor.resize === "function") {
+    setTimeout(() => window.specEditor.resize(), 230);
+  }
+}
+
+function setupViewbar() {
+  const viewbar = $("#viewbar");
+  const btnToggle = $("#btnToggleViewbar");
+  if (!viewbar || !btnToggle) return;
+
+  const savedCollapsed = localStorage.getItem("autorig_viewbar_collapsed") === "true";
+  setViewbarCollapsed(savedCollapsed);
+
+  btnToggle.onclick = (e) => {
+    e.stopPropagation();
+    toggleViewbar();
+  };
+}
+
+function toggleViewbar() {
+  const viewbar = $("#viewbar");
+  if (!viewbar) return;
+  const isCollapsed = viewbar.classList.contains("collapsed");
+  setViewbarCollapsed(!isCollapsed);
+}
+
+function setViewbarCollapsed(collapsed) {
+  const viewbar = $("#viewbar");
+  const btnToggle = $("#btnToggleViewbar");
+  if (!viewbar) return;
+  viewbar.classList.toggle("collapsed", collapsed);
+  if (btnToggle) {
+    btnToggle.title = collapsed ? "Expand toolbox options (Ctrl+U)" : "Collapse toolbox options (Ctrl+U)";
+    const chevron = $("#viewbarChevron");
+    if (chevron) chevron.textContent = collapsed ? "▼" : "▲";
+  }
+  localStorage.setItem("autorig_viewbar_collapsed", collapsed ? "true" : "false");
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -579,16 +776,50 @@ function appendConsoleLine(line) {
   }
 }
 
+function detectAndSwitchJobModel(line) {
+  if (!line || typeof line !== "string") return;
+  let detected = "";
+  const mActive = line.match(/^(?:==|::)\s*MODEL_ACTIVE\s+([A-Za-z0-9_\-]+)/);
+  if (mActive) {
+    detected = mActive[1];
+  } else {
+    const mStep = line.match(/^==\s*(?:\d+\/\d+:|source view \d+\/\d+:|audit \d+\/\d+:|make clips \d+\/\d+:|preview \d+\/\d+:)\s*([A-Za-z0-9_\-]+)/);
+    if (mStep) {
+      detected = mStep[1];
+    } else {
+      const mCli = line.match(/^(?:AUDIT_ALL|BATCH_MODEL)\s+\d+\/\d+\s+([A-Za-z0-9_\-]+)/);
+      if (mCli) detected = mCli[1];
+    }
+  }
+  if (detected && state && state.models && state.models.some((m) => m.name === detected)) {
+    if (currentJobWorkingModel !== detected) {
+      currentJobWorkingModel = detected;
+      updateJobUI();
+      if (currentModel !== detected) {
+        selectModel(detected);
+      }
+    }
+  }
+}
+
 async function loadJobLog(jobId) {
   try {
     const detail = await api(`/api/jobs/${jobId}`);
     if (detail) {
       activeJob = detail;
-      updateJobUI();
-      updateJobSelect();
+      if (detail.model && !detail.model.startsWith("(")) {
+        currentJobWorkingModel = detail.model;
+      } else {
+        currentJobWorkingModel = "";
+      }
       if (Array.isArray(detail.log)) {
+        for (const l of detail.log) {
+          detectAndSwitchJobModel(l);
+        }
         setConsoleContent(detail.log.join("\n") + (detail.log.length ? "\n" : ""));
       }
+      updateJobUI();
+      updateJobSelect();
     }
   } catch (e) {
     console.warn("Could not load job log:", e);
@@ -637,6 +868,7 @@ async function followJob(j) {
     eventSource = null;
   }
   activeJob = j;
+  currentJobWorkingModel = (j.model && !j.model.startsWith("(")) ? j.model : "";
   setDrawerOpen($("#logDrawer"), true);
   setConsoleContent("");
   updateJobUI();
@@ -647,6 +879,9 @@ async function followJob(j) {
   try {
     const detail = await api(`/api/jobs/${j.id}`);
     if (detail && Array.isArray(detail.log) && detail.log.length > 0) {
+      for (const l of detail.log) {
+        detectAndSwitchJobModel(l);
+      }
       setConsoleContent(detail.log.join("\n") + "\n");
       startFrom = detail.log.length;
       if (detail.state !== "running" && detail.state !== "queued") {
@@ -664,12 +899,14 @@ async function followJob(j) {
   eventSource = new EventSource(fileUrl(`/api/jobs/${j.id}/events?from=${startFrom}`));
 
   eventSource.onmessage = (ev) => {
+    let line = "";
     try {
-      const line = JSON.parse(ev.data);
-      appendConsoleLine(line);
+      line = JSON.parse(ev.data);
     } catch (_) {
-      appendConsoleLine(ev.data);
+      line = ev.data;
     }
+    detectAndSwitchJobModel(line);
+    appendConsoleLine(line);
   };
 
   eventSource.addEventListener("end", async (ev) => {
@@ -689,13 +926,17 @@ async function followJob(j) {
       if (activeJob && activeJob.id) {
         const detail = await api(`/api/jobs/${activeJob.id}`);
         if (detail && Array.isArray(detail.log)) {
+          for (const l of detail.log) {
+            detectAndSwitchJobModel(l);
+          }
           setConsoleContent(detail.log.join("\n") + (detail.log.length ? "\n" : ""));
         }
       }
     } catch (_) {}
 
     // Refresh model in viewer when finished
-    if (activeJob && activeJob.model === currentModel && window.specEditor && window.specEditor.refreshCurrentModel) {
+    const targetModel = currentJobWorkingModel || (activeJob && activeJob.model);
+    if (targetModel === currentModel && window.specEditor && window.specEditor.refreshCurrentModel) {
       window.specEditor.refreshCurrentModel();
     }
   });
@@ -711,6 +952,9 @@ async function followJob(j) {
         if (detail) {
           activeJob = detail;
           if (Array.isArray(detail.log)) {
+            for (const l of detail.log) {
+              detectAndSwitchJobModel(l);
+            }
             setConsoleContent(detail.log.join("\n") + (detail.log.length ? "\n" : ""));
           }
           updateJobUI();
@@ -728,21 +972,24 @@ function updateJobUI() {
 
   if (!activeJob) {
     if (pill) pill.style.display = "none";
-    if (logHeader) logHeader.textContent = "Log idle";
+    if (logHeader) logHeader.textContent = "Idle";
     if (cancelBtn) cancelBtn.disabled = true;
     return;
   }
 
   const st = activeJob.state;
   const isRunning = st === "running" || st === "queued";
+  const displayModel = currentJobWorkingModel || (activeJob.model && !activeJob.model.startsWith("(") ? activeJob.model : "");
 
   if (pill) {
     pill.style.display = isRunning ? "inline-flex" : "none";
-    pill.innerHTML = `<span class="spinner"></span><b>${esc(activeJob.step)}</b> on ${esc(activeJob.model)}`;
+    pill.innerHTML = `<span class="spinner"></span><b>${esc(activeJob.step)}</b>` +
+      (displayModel ? ` on <b>${esc(displayModel)}</b>` : ` on ${esc(activeJob.model)}`);
   }
 
   if (logHeader) {
-    logHeader.innerHTML = `Job ${activeJob.id}: <b>${esc(activeJob.step)}</b> on ${esc(activeJob.model)} · <span class="state ${st}">${st}</span>` +
+    const modelBadge = displayModel ? ` · Working on: <span class="job-active-model">${esc(displayModel)}</span>` : (activeJob.model ? ` · ${esc(activeJob.model)}` : "");
+    logHeader.innerHTML = `Job ${activeJob.id}: <b>${esc(activeJob.step)}</b>${modelBadge} · <span class="state ${st}">${st}</span>` +
       (activeJob.pid ? ` · PID ${activeJob.pid}` : "");
   }
 
@@ -1331,6 +1578,13 @@ function setupShortcuts() {
       return;
     }
 
+    // Ctrl+U / Cmd+U: Toggle Toolbox Options
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u") {
+      e.preventDefault();
+      toggleViewbar();
+      return;
+    }
+
     // F: Frame View
     if (e.key.toLowerCase() === "f") {
       e.preventDefault();
@@ -1360,5 +1614,11 @@ window.workbench = {
   openAuditModal,
   openCollectionTable,
   openExportModal,
-  openMeshDoctor
+  openMeshDoctor,
+  setModelFilter,
+  getModelFilter: () => currentModelFilter,
+  toggleViewbar,
+  setViewbarCollapsed,
+  applyLogHeight,
+  getCurrentJobWorkingModel: () => currentJobWorkingModel,
 };

@@ -250,6 +250,59 @@ class TestAutoTuneCore(unittest.TestCase):
         self.assertEqual(cand["spec"]["rig"]["hinge_smoothing"], True)
         self.assertEqual(cand["spec"]["rig"]["hinge_max_gradient"], 0.20)
 
+    def test_calculate_tear_centroid_bbox(self):
+        tear_sites = [
+            {
+                "bone": "LeftForeArm",
+                "clusters": [
+                    {"at_bbox": [0.85, 0.45, 0.72], "edges": 10},
+                    {"at_bbox": [0.87, 0.47, 0.74], "edges": 5},
+                ],
+                "points": [[1.5, -0.2, 1.2, 2.0]],
+            }
+        ]
+        c_world = auto_tune.calculate_tear_centroid(tear_sites, "LeftForeArm", use_bbox=False)
+        c_bbox = auto_tune.calculate_tear_centroid(tear_sites, "LeftForeArm", use_bbox=True)
+        self.assertEqual(c_world, [1.5, -0.2, 1.2])
+        self.assertAlmostEqual(c_bbox[0], 0.86, places=2)
+        self.assertAlmostEqual(c_bbox[1], 0.46, places=2)
+        self.assertAlmostEqual(c_bbox[2], 0.73, places=2)
+
+    def test_propose_candidate_humanoid_x_landmark_nudge_clamped_and_monotonic(self):
+        spec = {
+            "humanoid": {
+                "forward": [0, -1, 0],
+                "z": {"hip": 0.47, "knee": 0.28, "ankle": 0.08},
+                "x": {"tip": 0.02, "knuckle": 0.06, "wrist": 0.12, "elbow": 0.24, "shoulder": 0.38},
+            }
+        }
+        # Tear cluster at x=0.01 (lateral outer margin), targeting wrist
+        audit = {
+            "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+            "tears": {"combined": 5, "bend_max": 3, "worst_gap_pct": 2.5, "worst_bone": "LeftForeArm"},
+            "tear_sites": [
+                {
+                    "bone": "LeftForeArm",
+                    "clusters": [{"at_bbox": [0.99, 0.5, 0.78], "edges": 12}],
+                    "points": [[0.48, -0.1, 0.78, 2.5]],
+                }
+            ],
+        }
+        history = [
+            {"param": "joint_blend_inc_1"},
+            {"param": "smooth_1"},
+            {"param": "limb_radius_inc"},
+        ]
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=4, history=history)
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand["delta_type"], "landmark_nudge")
+        hx = cand["spec"]["humanoid"]["x"]
+        # Wrist should nudge downward toward target_span = 0.01, but never below knuckle (0.06)
+        self.assertGreaterEqual(hx["wrist"], hx["knuckle"])
+        self.assertGreaterEqual(hx["knuckle"], hx["tip"])
+        self.assertGreaterEqual(hx["tip"], 0.0)
+        self.assertLessEqual(hx["wrist"], hx["elbow"])
+
     def test_format_tuning_report(self):
         history = [
             {

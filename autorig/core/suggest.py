@@ -462,18 +462,23 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
         elif all(j["name"].startswith("bone_") for j in joints) and joints:
             skel_kind = "tripo"
 
+    def _get_bounds_data():
+        bounds = (source_data or {}).get("bounds") or (survey_data or {}).get("bounds") or {}
+        lo = (source_data or {}).get("lo") or (survey_data or {}).get("lo") or bounds.get("lo")
+        hi = (source_data or {}).get("hi") or (survey_data or {}).get("hi") or bounds.get("hi")
+        size = (source_data or {}).get("size") or (survey_data or {}).get("size")
+        if size is None and lo is not None and hi is not None:
+            size = [round(hi[i] - lo[i], 5) for i in range(3)]
+        return lo, hi, size
+
     # Strategy 1: Known standard armature (Unreal, Unity, Rigify, Biped, AccuRig, Valve)
     if skel_kind in ("unreal", "unity", "rigify", "biped", "accurig", "valve") and joints:
-        lo = (source_data or {}).get("lo")
-        hi = (source_data or {}).get("hi")
-        size = (source_data or {}).get("size")
+        lo, hi, size = _get_bounds_data()
         return skeletons.suggest_from_known_skeleton(joints, skel_kind, lo=lo, hi=hi, size=size)
 
     # Strategy 2: Existing Mixamo skeleton -> Humanoid
     if skel_kind == "mixamo":
-        lo = (source_data or {}).get("lo")
-        hi = (source_data or {}).get("hi")
-        size = (source_data or {}).get("size")
+        lo, hi, size = _get_bounds_data()
         archetype = "humanoid"
         fwd = detect_mesh_forward(vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices"), joints=joints)
         rig_spec = {

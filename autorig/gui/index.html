@@ -92,6 +92,18 @@ nav.app-menu { display: flex; align-items: center; gap: 1px; }
   font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--bg); max-width: 240px; text-overflow: ellipsis;
 }
+.filter-menu-item { position: relative; }
+#modelFilterBtn {
+  border: 1px solid var(--line); background: var(--chip); border-radius: 6px;
+  padding: 3px 8px; font-size: 11.5px; font-weight: 500; display: flex; align-items: center; gap: 4px;
+  color: var(--ink); white-space: nowrap; cursor: pointer;
+}
+#modelFilterBtn:hover, .filter-menu-item.open #modelFilterBtn {
+  border-color: var(--accent);
+}
+#modelFilterBtn.on {
+  border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
 .mode-pills { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .mode-pills button { border: none; border-radius: 0; padding: 4px 10px; background: var(--chip); font-size: 12px; }
 .mode-pills button.on { background: var(--accent); color: var(--accent-ink); }
@@ -134,7 +146,14 @@ main.app-main {
   flex: 1 1 0; min-height: 0; min-width: 0; position: relative; display: flex; width: 100%; overflow: hidden;
 }
 #view {
-  flex: 1 1 0; position: relative; min-width: 0; min-height: 0; width: 100%; height: 100%; overflow: hidden; background: #15181e;
+  flex: 1 1 0; position: relative; min-width: 0; min-height: 0; width: 100%; height: 100%;
+  margin-right: var(--inspector-offset, 440px);
+  margin-bottom: var(--log-drawer-offset, 34px);
+  transition: margin-right .22s cubic-bezier(0.16, 1, 0.3, 1), margin-bottom .2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden; background: #15181e;
+}
+body.resizing #view, body.resizing #logDrawer {
+  transition: none !important;
 }
 #stage { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
 #stage canvas { display: block; width: 100% !important; height: 100% !important; }
@@ -150,34 +169,40 @@ main.app-main {
 #hudModelInfo .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
 #viewbar {
-  bottom: calc(var(--log-drawer-offset, 34px) + 16px); left: 50%; transform: translateX(-50%); display: flex; gap: 6px;
-  align-items: center; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 24px);
-  z-index: 20; transition: bottom .22s cubic-bezier(0.16, 1, 0.3, 1);
+  top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column;
+  align-items: center; gap: 4px; max-width: calc(100% - 24px);
+  z-index: 20; padding: 4px 8px; transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-body.log-open #viewbar,
-#view:has(#logDrawer.open) #viewbar,
-#logDrawer.open ~ * #viewbar {
-  bottom: 268px;
+.viewbar-primary {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+}
+.viewbar-cams {
+  display: inline-flex; gap: 3px;
+}
+.viewbar-body {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
+  padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.08); width: 100%;
+}
+#viewbar.collapsed .viewbar-body {
+  display: none;
+}
+#viewbar.collapsed #viewbarChevron {
+  transform: rotate(180deg);
 }
 #viewbar label { color: var(--muted); display: flex; gap: 4px; align-items: center; font-size: 12px; }
 #viewbar input[type=range] { width: 85px; }
+#btnToggleViewbar .chevron { display: inline-block; font-size: 10px; transition: transform .18s; }
 
 /* Top-Right Orientation & Axis Lock HUD */
 #orientTool {
   top: 12px;
-  right: calc(var(--inspector-offset, 440px) + 12px);
+  right: 12px;
   min-width: 200px;
   z-index: 15;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  transition: right .22s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
-}
-body.inspector-open #orientTool,
-aside#inspectorDrawer.open ~ #orientTool,
-#view:has(aside#inspectorDrawer.open) #orientTool {
-  right: 454px;
 }
 #orientTool .orient-head {
   display: flex;
@@ -246,11 +271,17 @@ aside#inspectorDrawer.open ~ #orientTool,
 }
 
 #legend { left: 12px; top: 72px; max-width: 250px; font-size: 12px; display: none; }
-#legend h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .5px; }
-#boneinfo { right: 12px; top: 12px; width: 260px; display: none; }
-#boneinfo .n { font-size: 14px; font-weight: 650; }
+#boneinfo {
+  left: 12px; top: 76px; width: 280px; max-width: min(340px, calc(100vw - 32px));
+  max-height: calc(100% - 90px); overflow-y: auto; display: none; z-index: 15;
+}
+#boneinfo h4 { margin: 0 0 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+#boneinfo .n { font-size: 15px; font-weight: 650; color: var(--ink); margin-bottom: 2px; }
+#boneinfo .sub { color: var(--muted); font-size: 11.5px; margin: 1px 0; }
+#boneinfo .note { color: var(--warn); font-size: 11.5px; margin: 3px 0; }
+#boneinfo .acts { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 #banner {
-  left: 50%; top: 12px; transform: translateX(-50%); display: none; background: var(--warn-bg);
+  left: 50%; top: 58px; transform: translateX(-50%); display: none; background: var(--warn-bg);
   color: var(--warn); border-color: var(--warn); font-weight: 600; text-align: center;
 }
 #msg {
@@ -318,16 +349,32 @@ aside#inspectorDrawer.open { transform: translateX(0); }
 #logDrawer {
   position: absolute; left: 0; right: var(--inspector-offset, 0px); bottom: 0; background: var(--log-bg);
   border-top: 1px solid var(--line); z-index: 25; display: flex; flex-direction: column;
-  height: 250px; transform: translateY(calc(100% - 32px));
+  height: var(--log-drawer-height, 250px); transform: translateY(calc(100% - 34px));
   transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1), right .22s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 -4px 20px rgba(0,0,0,.5);
 }
 body.inspector-open #logDrawer { right: 440px; }
 #logDrawer.open { transform: translateY(0); }
+.drawer-resize-handle {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 30;
+}
+.drawer-resize-handle:hover, .drawer-resize-handle.active {
+  background: var(--accent);
+  height: 4px;
+  top: -2px;
+}
 .log-header {
-  height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
   background: var(--panel); border-bottom: 1px solid var(--line); cursor: pointer; flex-shrink: 0;
 }
+.log-title { font-weight: 700; display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); white-space: nowrap; }
+.job-active-model { color: var(--accent); font-weight: 700; padding: 1px 6px; background: rgba(67, 120, 255, 0.15); border-radius: 4px; }
 .log-header .meta { font-size: 12px; color: var(--muted); }
 .log-header .state { font-weight: 600; }
 .log-header .state.done { color: var(--pass); }
@@ -458,9 +505,12 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <hr>
           <button type="button" data-action="pipe-all">⚡ Run All Pipeline Steps</button>
           <hr>
+          <button type="button" data-action="batch-source-all">👁️ Batch: Generate All Source Views</button>
+          <button type="button" data-action="batch-source-missing">👁️ Batch: Generate Missing Source Views</button>
           <button type="button" data-action="batch-rig-all">📦 Batch: Rig All Models</button>
           <button type="button" data-action="batch-audit-all">🔍 Batch: Audit All Models</button>
           <button type="button" data-action="batch-audit-failed">⚠️ Batch: Audit Failed Only</button>
+          <button type="button" data-action="batch-rebake-clips">🎬 Batch: Re-bake All Clips</button>
         </div>
       </div>
 
@@ -530,6 +580,22 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <div class="model-switcher">
         <span class="toolbar-label">Model:</span>
         <select id="modelSelect" title="Switch active model"></select>
+        <div class="menu-item filter-menu-item">
+          <button type="button" id="modelFilterBtn" class="small" title="Filter models list by audit or rig status">
+            <span>⚡ All</span> ▾
+          </button>
+          <div class="menu-dropdown" id="modelFilterDropdown">
+            <button type="button" data-filter="all">🌐 All Models <span class="shortcut" id="filterCountAll"></span></button>
+            <hr>
+            <button type="button" data-filter="pass"><span class="chip pass">PASS</span> Passed Audit <span class="shortcut" id="filterCountPass"></span></button>
+            <button type="button" data-filter="check"><span class="chip check">CHECK</span> Needs Check <span class="shortcut" id="filterCountCheck"></span></button>
+            <button type="button" data-filter="fail"><span class="chip fail">FAIL</span> Failed Audit <span class="shortcut" id="filterCountFail"></span></button>
+            <hr>
+            <button type="button" data-filter="rigged">🎬 Rigged Models <span class="shortcut" id="filterCountRigged"></span></button>
+            <button type="button" data-filter="unrigged">🛠️ Unrigged Models <span class="shortcut" id="filterCountUnrigged"></span></button>
+            <button type="button" data-filter="nospec">📝 Missing Spec <span class="shortcut" id="filterCountNoSpec"></span></button>
+          </div>
+        </div>
         <span id="modelBadge" class="chip" style="display:none" title="Audit grade"></span>
       </div>
 
@@ -593,43 +659,55 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       </div>
     </div>
 
-    <!-- Bottom Viewport Controls HUD -->
+    <!-- Top Viewport Controls HUD (Collapsible) -->
     <div class="hud" id="viewbar">
-      <span style="display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;">
-        <button id="vSource" class="small on" title="Source mesh and skeleton to edit the spec">Source</button>
-        <button id="vRigged" class="small" title="Rigged mesh and animated clips">Rigged &amp; Clips</button>
-      </span>
+      <div class="viewbar-primary">
+        <span style="display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;">
+          <button id="vSource" class="small on" title="Source mesh and skeleton to edit the spec">Source</button>
+          <button id="vRigged" class="small" title="Rigged mesh and animated clips">Rigged &amp; Clips</button>
+        </span>
 
-      <!-- Clip Animation Controls -->
-      <span id="clipBar" style="display:none; align-items:center; gap:6px;">
-        <select id="clipSelect" class="small" style="max-width:140px"></select>
-        <button id="clipPlay" class="small" title="Play / Pause (Space)">▶</button>
-        <span id="clipTime" class="meta" style="font-size:11px"></span>
-        <input type="range" id="clipScrub" min="0" max="1000" step="1" value="0" style="width:100px" title="Scrub frame">
-      </span>
+        <!-- Camera Views -->
+        <span class="viewbar-cams">
+          <button id="vFront" class="small" title="Look at its face (1)">Front</button>
+          <button id="vSide" class="small" title="From its left side (3)">Side</button>
+          <button id="vTop" class="small" title="From above (7)">Top</button>
+        </span>
 
-      <!-- Camera Views -->
-      <button id="vFront" class="small" title="Look at its face (1)">Front</button>
-      <button id="vSide" class="small" title="From its left side (3)">Side</button>
-      <button id="vTop" class="small" title="From above (7)">Top</button>
+        <!-- Collapse/Expand Toolbox Options Button -->
+        <button id="btnToggleViewbar" class="small" title="Toggle toolbox options (Ctrl+U)">
+          <span>🛠️</span><span class="btn-text"> Options</span> <span id="viewbarChevron" class="chevron">▲</span>
+        </button>
+      </div>
 
-      <label title="How see-through the model is">opacity <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></label>
-      <label title="Show or hide source skeleton bone names"><input type="checkbox" id="showSourceLabels"> <span id="lblSourceNames">labels</span></label>
-      <label title="Show or hide suggested spec chain and guide labels"><input type="checkbox" id="showSuggestedLabels" checked> suggested</label>
-      <label title="Show or hide height and span guide lines in 3D"><input type="checkbox" id="showGuides" checked> guides</label>
-      <label title="Show or hide ground plane and floor grid"><input type="checkbox" id="showGround" checked> ground</label>
-      <label title="Show or hide audit issue spots in 3D"><input type="checkbox" id="showSpots" checked> tears</label>
-      <label title="Clicking places points halfway through limb middle"><input type="checkbox" id="throughMiddle" checked> middle pts</label>
-      <label title="Mirror point edits across X=0.5 symmetry plane"><input type="checkbox" id="mirrorEdits" checked> mirror .L/.R</label>
+      <!-- Collapsible Options Body -->
+      <div class="viewbar-body" id="viewbarBody">
+        <!-- Clip Animation Controls -->
+        <span id="clipBar" style="display:none; align-items:center; gap:6px;">
+          <select id="clipSelect" class="small" style="max-width:140px"></select>
+          <button id="clipPlay" class="small" title="Play / Pause (Space)">▶</button>
+          <span id="clipTime" class="meta" style="font-size:11px"></span>
+          <input type="range" id="clipScrub" min="0" max="1000" step="1" value="0" style="width:100px" title="Scrub frame">
+        </span>
 
-      <!-- Live Limb Bend Test Controls -->
-      <span id="poseTestBar" style="display:inline-flex; align-items:center; gap:5px; border-left:1px solid var(--line); padding-left:8px; margin-left:4px;">
-        <label title="Preview limb bending and skin deformation in real time before rerigging"><input type="checkbox" id="poseTestToggle"> bend test</label>
-        <select id="poseChainSelect" class="small" style="display:none; max-width:110px"></select>
-        <input type="range" id="poseAngle" min="-90" max="90" step="1" value="0" style="display:none; width:80px" title="Bend angle (-90° to +90°)">
-        <span id="poseAngleVal" class="meta" style="display:none; font-size:11px; min-width:26px">0°</span>
-        <button id="poseReset" class="small" style="display:none; padding:1px 5px;" title="Reset bend angle to 0°">Reset</button>
-      </span>
+        <label title="How see-through the model is">opacity <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></label>
+        <label title="Show or hide source skeleton bone names"><input type="checkbox" id="showSourceLabels"> <span id="lblSourceNames">labels</span></label>
+        <label title="Show or hide suggested spec chain and guide labels"><input type="checkbox" id="showSuggestedLabels" checked> suggested</label>
+        <label title="Show or hide height and span guide lines in 3D"><input type="checkbox" id="showGuides" checked> guides</label>
+        <label title="Show or hide ground plane and floor grid"><input type="checkbox" id="showGround" checked> ground</label>
+        <label title="Show or hide audit issue spots in 3D"><input type="checkbox" id="showSpots" checked> tears</label>
+        <label title="Clicking places points halfway through limb middle"><input type="checkbox" id="throughMiddle" checked> middle pts</label>
+        <label title="Mirror point edits across X=0.5 symmetry plane"><input type="checkbox" id="mirrorEdits" checked> mirror .L/.R</label>
+
+        <!-- Live Limb Bend Test Controls -->
+        <span id="poseTestBar" style="display:inline-flex; align-items:center; gap:5px; border-left:1px solid var(--line); padding-left:8px; margin-left:4px;">
+          <label title="Preview limb bending and skin deformation in real time before rerigging"><input type="checkbox" id="poseTestToggle"> bend test</label>
+          <select id="poseChainSelect" class="small" style="display:none; max-width:110px"></select>
+          <input type="range" id="poseAngle" min="-90" max="90" step="1" value="0" style="display:none; width:80px" title="Bend angle (-90° to +90°)">
+          <span id="poseAngleVal" class="meta" style="display:none; font-size:11px; min-width:26px">0°</span>
+          <button id="poseReset" class="small" style="display:none; padding:1px 5px;" title="Reset bend angle to 0°">Reset</button>
+        </span>
+      </div>
     </div>
   </section>
 
@@ -660,8 +738,10 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 
   <!-- Collapsible Bottom Log Console Drawer -->
   <div id="logDrawer">
+    <div class="drawer-resize-handle" id="logResizeHandle" title="Drag up or down to resize console"></div>
     <div class="log-header" id="logToggleHeader">
-      <span class="meta" id="logJobInfo">Log idle</span>
+      <span class="log-title"><span>📜</span> Console</span>
+      <span class="meta" id="logJobInfo" style="margin-left:6px;">Idle</span>
       <select id="logJobSelect" class="small" style="display:none; max-width:260px; margin-left:8px;" title="View past job logs"></select>
       <span class="grow"></span>
       <button id="clearLogBtn" class="small" title="Clear console">Clear</button>
@@ -788,6 +868,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Save spec and re-rig</td></tr>
       <tr><td><kbd>Ctrl+O</kbd> / <kbd>Cmd+O</kbd></td><td>Import / Add model</td></tr>
       <tr><td><kbd>Ctrl+I</kbd></td><td>Toggle Rig Inspector drawer</td></tr>
+      <tr><td><kbd>Ctrl+U</kbd></td><td>Toggle Toolbox options</td></tr>
       <tr><td><kbd>Space</kbd></td><td>Play / Pause animation clip</td></tr>
       <tr><td><kbd>1</kbd></td><td>Front camera view</td></tr>
       <tr><td><kbd>3</kbd></td><td>Side camera view</td></tr>

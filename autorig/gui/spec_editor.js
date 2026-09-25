@@ -25,7 +25,17 @@ import {
   computeOrientation,
   clampAnglesToLocked,
   calculateLeveledCameraPosition,
-  computeGroundPlaneParameters
+  calculateFramingDistance,
+  computeGroundPlaneParameters,
+  isModelLoadValid,
+  GAIT_PRESET_DEFAULTS,
+  mergeGaitParams,
+  evaluatePelvisTrajectory,
+  selectBaseClipForPreset,
+  modulateGaitTrackValues,
+  computeGizmoRotationDelta,
+  applyBoneRotationDelta,
+  quaternionToEulerDegrees
 } from "./viewer_logic.js";
 
 const TOKEN = window.AUTORIG_TOKEN;
@@ -62,6 +72,7 @@ let SRC = null;               // the source view's joints and bounds (source_pre
 let draft = null;             // the spec being edited
 let undo = [];                // earlier drafts, as JSON text
 let base = null;              // hash of the rig.json text the page loaded (the server refuses a blind overwrite)
+let userEdited = false;       // whether the user actively modified the draft in the UI
 let checked = { errors: [], warnings: [], diff: "", changed: false };
 let tab = "rig";
 let pick = null;              // {label, mode, path, ...}: what a click on a bone or the model fills in
@@ -100,7 +111,7 @@ function setPath(path, value, opts = {}) {
   if (draft.notes && !Object.keys(draft.notes).length) delete draft.notes;
   changed();
 }
-function pushUndo() { undo.push(JSON.stringify(draft)); if (undo.length > 200) undo.shift(); $("bUndo").disabled = false; }
+function pushUndo() { userEdited = true; undo.push(JSON.stringify(draft)); if (undo.length > 200) undo.shift(); $("bUndo").disabled = false; }
 
 // ---------------------------------------------------------------------------------------------------------------
 // The frame: the turn the rig step makes (rerig.normalise), and the 0..1 box after it
@@ -319,8 +330,12 @@ function resize() {
 window.addEventListener("resize", resize);
 new ResizeObserver(resize).observe(stageEl);
 
-let model = null;                       // the GLB scene
+let model = null;                       // the active source GLB scene
 const meshes = [];
+const sourceGroup = new THREE.Group(); scene.add(sourceGroup);
+const riggedGroup = new THREE.Group(); scene.add(riggedGroup);
+let modelLoadSeq = 0;
+let riggedLoadSeq = 0;
 const skel = new THREE.Group(); skel.renderOrder = 10; scene.add(skel);
 const marks = new THREE.Group(); scene.add(marks);
 const spotsG = new THREE.Group(); scene.add(spotsG);
@@ -347,12 +362,133 @@ let viewMode = "source";
 let scrubbing = false;
 const clock = new THREE.Clock();
 
+// ---------------------------------------------------------------------------------------------------------------
+// Interactive 3D Bone Posing Gizmo (Pillar 5)
+// ---------------------------------------------------------------------------------------------------------------
+let gizmoGroup = null;
+let ringX = null, ringY = null, ringZ = null;
+let activeGizmoBone = null;
+let activeSkinnedMesh = null;
+let activeGizmoAxis = null;
+let isGizmoDragging = false;
+let gizmoDragStart = { x: 0, y: 0 };
+const boneRestQuats = new Map();
+let availableRiggedBones = [];
+
+function initPoseGizmo() {
+  if (gizmoGroup) return;
+  gizmoGroup = new THREE.Group();
+  scene.add(gizmoGroup);
+  gizmoGroup.visible = false;
+
+  const radius = 0.12;
+  const tube = 0.007;
+  const segments = 36;
+
+  // Red Ring (Pitch / X axis)
+  const geomX = new THREE.TorusGeometry(radius, tube, 8, segments);
+  const matX = new THREE.MeshBasicMaterial({ color: 0xff4444, depthTest: false, depthWrite: false });
+  ringX = new THREE.Mesh(geomX, matX);
+  ringX.rotation.y = Math.PI / 2;
+  ringX.renderOrder = 999;
+  ringX.userData = { isGizmoRing: true, axis: "X" };
+  gizmoGroup.add(ringX);
+
+  // Green Ring (Yaw / Y axis)
+  const geomY = new THREE.TorusGeometry(radius, tube, 8, segments);
+  const matY = new THREE.MeshBasicMaterial({ color: 0x44ff44, depthTest: false, depthWrite: false });
+  ringY = new THREE.Mesh(geomY, matY);
+  ringY.rotation.x = Math.PI / 2;
+  ringY.renderOrder = 999;
+  ringY.userData = { isGizmoRing: true, axis: "Y" };
+  gizmoGroup.add(ringY);
+
+  // Blue Ring (Roll / Z axis)
+  const geomZ = new THREE.TorusGeometry(radius, tube, 8, segments);
+  const matZ = new THREE.MeshBasicMaterial({ color: 0x4488ff, depthTest: false, depthWrite: false });
+  ringZ = new THREE.Mesh(geomZ, matZ);
+  ringZ.renderOrder = 999;
+  ringZ.userData = { isGizmoRing: true, axis: "Z" };
+  gizmoGroup.add(ringZ);
+
+  // Center indicator sphere
+  const centerGeom = new THREE.SphereGeometry(0.015, 12, 12);
+  const centerMat = new THREE.MeshBasicMaterial({ color: 0xffff44, depthTest: false, depthWrite: false });
+  const centerSphere = new THREE.Mesh(centerGeom, centerMat);
+  centerSphere.renderOrder = 999;
+  gizmoGroup.add(centerSphere);
+}
+
+function selectGizmoBone(bone) {
+  if (!bone) {
+    activeGizmoBone = null;
+    if (gizmoGroup) gizmoGroup.visible = false;
+    if ($("poseGizmoHUD")) $("poseGizmoHUD").style.display = "none";
+    return;
+  }
+  activeGizmoBone = bone;
+  initPoseGizmo();
+  gizmoGroup.visible = true;
+  bone.getWorldPosition(gizmoGroup.position);
+
+  if (riggedScene) {
+    const box = new THREE.Box3().setFromObject(riggedScene);
+    const sz = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(sz.x, sz.y, sz.z) || 1.0;
+    gizmoGroup.scale.setScalar(maxDim * 0.7);
+  }
+
+  if ($("poseGizmoHUD")) $("poseGizmoHUD").style.display = "block";
+  if ($("gizmoBoneName")) $("gizmoBoneName").textContent = bone.name;
+  updateGizmoHUD();
+}
+
+function updateGizmoHUD() {
+  if (!activeGizmoBone) return;
+  const q = [activeGizmoBone.quaternion.x, activeGizmoBone.quaternion.y, activeGizmoBone.quaternion.z, activeGizmoBone.quaternion.w];
+  const euler = quaternionToEulerDegrees(q);
+  if ($("gizmoPitchVal")) $("gizmoPitchVal").textContent = euler[0].toFixed(1) + "°";
+  if ($("gizmoYawVal")) $("gizmoYawVal").textContent = euler[1].toFixed(1) + "°";
+  if ($("gizmoRollVal")) $("gizmoRollVal").textContent = euler[2].toFixed(1) + "°";
+}
+
+function resetActiveGizmoBone() {
+  if (!activeGizmoBone) return;
+  const restQ = boneRestQuats.get(activeGizmoBone.name);
+  if (restQ) {
+    activeGizmoBone.quaternion.copy(restQ);
+  } else {
+    activeGizmoBone.quaternion.identity();
+  }
+  activeGizmoBone.updateMatrixWorld(true);
+  if (activeSkinnedMesh && activeSkinnedMesh.skeleton) {
+    activeSkinnedMesh.skeleton.update();
+  }
+  updateGizmoHUD();
+}
+
+function resetAllGizmoBones() {
+  for (const b of availableRiggedBones) {
+    const restQ = boneRestQuats.get(b.name);
+    if (restQ) b.quaternion.copy(restQ);
+    else b.quaternion.identity();
+    b.updateMatrixWorld(true);
+  }
+  if (activeSkinnedMesh && activeSkinnedMesh.skeleton) {
+    activeSkinnedMesh.skeleton.update();
+  }
+  updateGizmoHUD();
+}
+
 function tick() {
   requestAnimationFrame(tick);
   const delta = clock.getDelta();
   if (mixer && isPlaying && viewMode === "rigged") {
     mixer.update(delta);
     updateClipUI();
+  }
+  if (gizmoGroup && gizmoGroup.visible && activeGizmoBone) {
+    activeGizmoBone.getWorldPosition(gizmoGroup.position);
   }
   controls.update();
   if (lockZ) {
@@ -379,18 +515,22 @@ function updateClipUI() {
 }
 
 async function loadRigged(url) {
-  if (riggedScene) {
-    scene.remove(riggedScene);
-    clearGroup(riggedScene);
-    riggedScene = null;
-  }
+  const seq = ++riggedLoadSeq;
+  const targetModel = MODEL;
   if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
   action = null;
   riggedClips = [];
   try {
     const gltf = await new GLTFLoader().loadAsync(withToken(url));
+    if (!isModelLoadValid(riggedLoadSeq, seq, MODEL, targetModel)) {
+      clearGroup(gltf.scene);
+      return;
+    }
+    clearGroup(riggedGroup);
     riggedScene = gltf.scene;
     riggedClips = gltf.animations || [];
+    availableRiggedBones = [];
+    boneRestQuats.clear();
     riggedScene.traverse((o) => {
       if (o.isMesh) {
         o.castShadow = true;
@@ -400,20 +540,27 @@ async function loadRigged(url) {
       }
       if (o.isSkinnedMesh) {
         o.frustumCulled = false;
+        activeSkinnedMesh = o;
+      }
+      if (o.isBone) {
+        availableRiggedBones.push(o);
+        boneRestQuats.set(o.name, o.quaternion.clone());
       }
     });
-    scene.add(riggedScene);
+    riggedGroup.add(riggedScene);
     mixer = new THREE.AnimationMixer(riggedScene);
     populateClips();
     if (riggedClips.length > 0) {
       playClip(0);
     }
-    riggedScene.visible = viewMode === "rigged";
+    riggedGroup.visible = viewMode === "rigged";
     setOpacity();
     updateGroundPlane();
     updateOrientationHUD();
   } catch (e) {
-    console.error("Could not load rigged preview:", e);
+    if (seq === riggedLoadSeq && targetModel === MODEL) {
+      console.error("Could not load rigged preview:", e);
+    }
   }
 }
 
@@ -426,6 +573,7 @@ function populateClips() {
     $("clipPlay").disabled = true;
     $("clipScrub").disabled = true;
     $("clipTime").textContent = "bind pose";
+    if ($("walkTuneToggle")) $("walkTuneToggle").style.display = "none";
     return;
   }
   sel.disabled = false;
@@ -433,16 +581,29 @@ function populateClips() {
   $("clipScrub").disabled = false;
   sel.innerHTML = riggedClips.map((c, i) => `<option value="${i}">${esc(c.name || "clip " + (i + 1))} (${c.duration.toFixed(2)}s)</option>`).join("");
   sel.value = String(curClip);
+  const hasWalk = riggedClips.some((c) => c.name && /walk|run|sprint|trot|gallop/i.test(c.name));
+  if ($("walkTuneToggle")) $("walkTuneToggle").style.display = hasWalk ? "inline-block" : "none";
 }
 
 function playClip(idx) {
   if (!mixer || !riggedClips.length) return;
+  if (liveGaitClip) {
+    if (action) action.stop();
+    mixer.uncacheClip(liveGaitClip);
+    liveGaitClip = null;
+  }
   curClip = Math.max(0, Math.min(idx, riggedClips.length - 1));
   const clip = riggedClips[curClip];
   if (!clip) return;
   if (action) action.stop();
   action = mixer.clipAction(clip);
   action.reset();
+  if (clip.name && /walk|run|sprint|trot|gallop/i.test(clip.name)) {
+    const cadence = Number($("slideWalkCadence")?.value || 1.0);
+    mixer.timeScale = cadence;
+  } else {
+    mixer.timeScale = 1.0;
+  }
   action.play();
   isPlaying = true;
   $("clipPlay").textContent = "❚❚";
@@ -476,38 +637,50 @@ async function setViewMode(mode) {
   $("vSource").classList.toggle("on", mode === "source");
   $("vRigged").classList.toggle("on", mode === "rigged");
   $("clipBar").style.display = mode === "rigged" ? "inline-flex" : "none";
+  if ($("poseGizmoBar")) $("poseGizmoBar").style.display = mode === "rigged" ? "inline-flex" : "none";
 
   if (mode === "rigged") {
-    if (model) model.visible = false;
+    sourceGroup.visible = false;
     skel.visible = false;
     marks.visible = false;
     spotsG.visible = false;
     if (!riggedScene && B && B.preview_url) {
       await loadRigged(B.preview_url);
     }
-    if (riggedScene) {
-      riggedScene.visible = true;
-      if (riggedClips.length && (!action || !action.isRunning())) {
-        playClip(curClip);
-      }
+    riggedGroup.visible = true;
+    if (riggedScene && riggedClips.length && (!action || !action.isRunning())) {
+      playClip(curClip);
     }
   } else {
-    if (model) model.visible = true;
+    sourceGroup.visible = true;
     skel.visible = true;
     marks.visible = true;
     spotsG.visible = true;
-    if (riggedScene) riggedScene.visible = false;
+    riggedGroup.visible = false;
     if (action) action.stop();
     isPlaying = false;
+    if ($("walkTuneHUD")) $("walkTuneHUD").style.display = "none";
+    if ($("walkTuneToggle")) $("walkTuneToggle").classList.remove("on");
+    if ($("poseGizmoHUD")) $("poseGizmoHUD").style.display = "none";
+    if ($("poseGizmoToggle")) $("poseGizmoToggle").checked = false;
+    selectGizmoBone(null);
   }
   updateGroundPlane();
 }
 
 async function loadModel(url) {
-  meshes.length = 0;
+  const seq = ++modelLoadSeq;
+  const targetModel = MODEL;
   const gltf = await new GLTFLoader().loadAsync(withToken(url));
+  if (!isModelLoadValid(modelLoadSeq, seq, MODEL, targetModel)) {
+    clearGroup(gltf.scene);
+    return;
+  }
+  clearGroup(sourceGroup);
+  meshes.length = 0;
+  meshVerts = null;
   model = gltf.scene;
-  scene.add(model);
+  sourceGroup.add(model);
   model.updateMatrixWorld(true);
   const pts = [];
   model.traverse((o) => {
@@ -522,25 +695,67 @@ async function loadModel(url) {
     for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld); pts.push(v.x, -v.z, v.y); }
   });
   meshVerts = new Float32Array(pts);
+  sourceGroup.visible = viewMode === "source";
   setOpacity();
 
-  // Robustly frame camera on loaded model
-  const box = new THREE.Box3().setFromObject(model);
-  if (!box.isEmpty()) {
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z, 0.5);
-    controls.target.copy(center);
-    camera.position.set(center.x + maxDim * 0.4, center.y + maxDim * 0.4, center.z + maxDim * 1.6);
-    camera.near = maxDim * 0.01;
-    camera.far = maxDim * 50;
-    camera.updateProjectionMatrix();
-    controls.update();
-    lockedPolar = controls.getPolarAngle();
-    lockedAzimuth = controls.getAzimuthalAngle();
-    applyAxisLocks();
-  }
+  // Robustly frame camera centered on loaded model without cutting off
+  fitCameraToTarget(model, [0.35, -1, 0.3]);
   updateGroundPlane();
+  updateOrientationHUD();
+}
+
+function fitCameraToTarget(target, dir = [0.35, -1, 0.3], padding = 1.25) {
+  controls.minPolarAngle = 0.001;
+  controls.maxPolarAngle = Math.PI - 0.001;
+  controls.minAzimuthAngle = -Infinity;
+  controls.maxAzimuthAngle = Infinity;
+
+  let box;
+  if (target instanceof THREE.Box3) {
+    box = target;
+  } else if (target && target.isObject3D) {
+    box = new THREE.Box3().setFromObject(target);
+  } else if (viewMode === "rigged" && riggedScene) {
+    box = new THREE.Box3().setFromObject(riggedScene);
+  } else if (model) {
+    box = new THREE.Box3().setFromObject(model);
+  } else if (F && F.fromUnit) {
+    const minPt = V(F.fromUnit([0, 0, 0]));
+    const maxPt = V(F.fromUnit([1, 1, 1]));
+    box = new THREE.Box3().setFromPoints([minPt, maxPt]);
+  }
+
+  if (!box || box.isEmpty()) return;
+
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const aspect = Math.max(0.01, camera.aspect || (stageEl.clientWidth / Math.max(1, stageEl.clientHeight)));
+  const dist = calculateFramingDistance(size, camera.fov, aspect, padding);
+
+  controls.target.copy(center);
+
+  let dVec;
+  if (Array.isArray(dir)) {
+    if (F && F.dir) {
+      dVec = V(F.dir(dir)).normalize();
+    } else {
+      dVec = new THREE.Vector3(dir[0] || 0.35, dir[2] || 0.4, -(dir[1] || -1)).normalize();
+    }
+  } else if (dir instanceof THREE.Vector3) {
+    dVec = dir.clone().normalize();
+  } else {
+    dVec = new THREE.Vector3(0.35, 0.4, 1.6).normalize();
+  }
+
+  camera.position.copy(center).addScaledVector(dVec, dist);
+  camera.near = Math.max(0.001, dist * 0.01);
+  camera.far = Math.max(100, dist * 50);
+  camera.updateProjectionMatrix();
+  controls.update();
+
+  lockedPolar = controls.getPolarAngle();
+  lockedAzimuth = controls.getAzimuthalAngle();
+  applyAxisLocks();
   updateOrientationHUD();
 }
 
@@ -557,36 +772,7 @@ function setOpacity() {
 if ($("opacity")) $("opacity").oninput = setOpacity;
 
 function frameView(dir) {
-  controls.minPolarAngle = 0.001;
-  controls.maxPolarAngle = Math.PI - 0.001;
-  controls.minAzimuthAngle = -Infinity;
-  controls.maxAzimuthAngle = Infinity;
-
-  if (!F || !F.fromUnit) {
-    const targetObj = model || riggedScene;
-    if (targetObj) {
-      const box = new THREE.Box3().setFromObject(targetObj);
-      const c = box.getCenter(new THREE.Vector3());
-      const sz = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(sz.x, sz.y, sz.z, 1);
-      controls.target.copy(c);
-      camera.position.set(c.x + maxDim * (dir[0] || 0.4), c.y + maxDim * (dir[2] || 0.4), c.z + maxDim * (-dir[1] || 1.6));
-      controls.update();
-    }
-  } else {
-    const c = F.fromUnit([0.5, 0.5, 0.5]);
-    const d = F.dir(dir);
-    const dist = (F.max * 0.62) / Math.tan((camera.fov * Math.PI) / 360);
-    controls.target.copy(V(c));
-    camera.position.copy(V([c[0] + d[0] * dist, c[1] + d[1] * dist, c[2] + d[2] * dist]));
-    camera.near = F.max * 0.01; camera.far = F.max * 50; camera.updateProjectionMatrix();
-    controls.update();
-  }
-
-  lockedPolar = controls.getPolarAngle();
-  lockedAzimuth = controls.getAzimuthalAngle();
-  applyAxisLocks();
-  updateOrientationHUD();
+  fitCameraToTarget(null, dir);
 }
 if ($("vFront")) $("vFront").onclick = () => frameView([0.35, -1, 0.3]);
 if ($("vSide")) $("vSide").onclick = () => frameView([1, 0, 0.05]);
@@ -1292,11 +1478,15 @@ function findOppositePath(path) {
 function applyPointEdit(path, type, u, isMirror = false) {
   if (!path || !path.length) return;
   if (type === "station" || type === "slice_y") {
-    setPath(path, Math.round(u[1] * 1000) / 1000, { noUndo: true });
+    const clamped = Math.max(0.0, Math.min(1.0, u[1]));
+    setPath(path, Math.round(clamped * 1000) / 1000, { noUndo: true });
   } else if (type === "height") {
-    setPath(path, Math.round(u[2] * 1000) / 1000, { noUndo: true });
+    const clamped = Math.max(0.0, Math.min(1.0, u[2]));
+    setPath(path, Math.round(clamped * 1000) / 1000, { noUndo: true });
   } else if (type === "span") {
-    setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000, { noUndo: true });
+    const rawSpan = Math.min(u[0], 1 - u[0]);
+    const clamped = Math.max(0.0, Math.min(0.5, rawSpan));
+    setPath(path, Math.round(clamped * 1000) / 1000, { noUndo: true });
   } else {
     setPath(path, u, { noUndo: true });
   }
@@ -1319,11 +1509,15 @@ function applyPointEditInMemory(path, type, u, isMirror = false) {
   }
   const last = path[path.length - 1];
   if (type === "station" || type === "slice_y") {
-    o[last] = Math.round(u[1] * 1000) / 1000;
+    const clamped = Math.max(0.0, Math.min(1.0, u[1]));
+    o[last] = Math.round(clamped * 1000) / 1000;
   } else if (type === "height") {
-    o[last] = Math.round(u[2] * 1000) / 1000;
+    const clamped = Math.max(0.0, Math.min(1.0, u[2]));
+    o[last] = Math.round(clamped * 1000) / 1000;
   } else if (type === "span") {
-    o[last] = Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000;
+    const rawSpan = Math.min(u[0], 1 - u[0]);
+    const clamped = Math.max(0.0, Math.min(0.5, rawSpan));
+    o[last] = Math.round(clamped * 1000) / 1000;
   } else {
     o[last] = [Math.round(u[0] * 1000) / 1000, Math.round(u[1] * 1000) / 1000, Math.round(u[2] * 1000) / 1000];
   }
@@ -1372,6 +1566,21 @@ function findPointAtScreen(clientX, clientY) {
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
   downAt = [e.clientX, e.clientY];
+  if (viewMode === "rigged" && gizmoGroup && gizmoGroup.visible && activeGizmoBone) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    ray.setFromCamera(m, camera);
+    const gizmoHits = ray.intersectObjects([ringX, ringY, ringZ], false);
+    if (gizmoHits.length) {
+      activeGizmoAxis = gizmoHits[0].object.userData.axis;
+      isGizmoDragging = true;
+      gizmoDragStart = { x: e.clientX, y: e.clientY };
+      controls.enabled = false;
+      renderer.domElement.style.cursor = "grabbing";
+      try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+  }
   if (!pick) {
     const hitObj = findPointAtScreen(e.clientX, e.clientY);
     if (hitObj) {
@@ -1409,6 +1618,22 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 });
 
 renderer.domElement.addEventListener("pointermove", (e) => {
+  if (isGizmoDragging && activeGizmoBone && activeGizmoAxis) {
+    const dx = e.clientX - gizmoDragStart.x;
+    const dy = e.clientY - gizmoDragStart.y;
+    gizmoDragStart = { x: e.clientX, y: e.clientY };
+    const deltaRad = computeGizmoRotationDelta(activeGizmoAxis, dx, dy);
+    const curQ = [activeGizmoBone.quaternion.x, activeGizmoBone.quaternion.y, activeGizmoBone.quaternion.z, activeGizmoBone.quaternion.w];
+    const nextQ = applyBoneRotationDelta(curQ, activeGizmoAxis, deltaRad);
+    activeGizmoBone.quaternion.set(nextQ[0], nextQ[1], nextQ[2], nextQ[3]);
+    activeGizmoBone.updateMatrixWorld(true);
+    if (activeSkinnedMesh && activeSkinnedMesh.skeleton) {
+      activeSkinnedMesh.skeleton.update();
+    }
+    updateGizmoHUD();
+    return;
+  }
+
   if (drag3D) {
     const rect = renderer.domElement.getBoundingClientRect();
     const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
@@ -1468,6 +1693,15 @@ renderer.domElement.addEventListener("pointermove", (e) => {
 });
 
 renderer.domElement.addEventListener("pointerup", (e) => {
+  if (isGizmoDragging) {
+    try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+    isGizmoDragging = false;
+    activeGizmoAxis = null;
+    controls.enabled = true;
+    renderer.domElement.style.cursor = "";
+    return;
+  }
+
   if (drag3D) {
     try { renderer.domElement.releasePointerCapture(drag3D.pointerId); } catch (_) {}
     const finalU = drag3D.lastU;
@@ -1485,6 +1719,31 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   ray.setFromCamera(m, camera);
+
+  // Bone picking in rigged view
+  if (viewMode === "rigged" && riggedScene && ($("poseGizmoToggle")?.checked || gizmoGroup?.visible)) {
+    const hits = ray.intersectObject(riggedScene, true);
+    if (hits.length) {
+      const hitPt = hits[0].point;
+      let closestBone = null;
+      let closestDist = Infinity;
+      const bPos = new THREE.Vector3();
+      for (const b of availableRiggedBones) {
+        b.getWorldPosition(bPos);
+        const d = bPos.distanceTo(hitPt);
+        if (d < closestDist) {
+          closestDist = d;
+          closestBone = b;
+        }
+      }
+      if (closestBone) {
+        selectGizmoBone(closestBone);
+        if (isPlaying) togglePlay();
+        return;
+      }
+    }
+  }
+
   const wantsPoint = pick && pick.point;
   if (!wantsPoint) {
     const hits = ray.intersectObjects(pickables, false);
@@ -1575,22 +1834,29 @@ const pickers = {
   height: (path, label) => ({
     label,
     text: label + ": click on the model or flat views to pick height (Z)",
-    point: (u) => { setPath(path, Math.round(u[2] * 1000) / 1000); endPick(); },
-    flat: (u) => setPath(path, Math.round(u[2] * 1000) / 1000),
+    point: (u) => { setPath(path, Math.round(Math.max(0.0, Math.min(1.0, u[2])) * 1000) / 1000); endPick(); },
+    flat: (u) => setPath(path, Math.round(Math.max(0.0, Math.min(1.0, u[2])) * 1000) / 1000),
     current: () => [0.5, 0.5, getPath(path) ?? 0.5]
   }),
   span: (path, label) => ({
     label,
     text: label + ": click on an arm/hand or flat views to pick span (X)",
-    point: (u) => { setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000); endPick(); },
-    flat: (u) => setPath(path, Math.round(Math.min(u[0], 1 - u[0]) * 1000) / 1000),
+    point: (u) => {
+      const rawSpan = Math.min(u[0], 1 - u[0]);
+      setPath(path, Math.round(Math.max(0.0, Math.min(0.5, rawSpan)) * 1000) / 1000);
+      endPick();
+    },
+    flat: (u) => {
+      const rawSpan = Math.min(u[0], 1 - u[0]);
+      setPath(path, Math.round(Math.max(0.0, Math.min(0.5, rawSpan)) * 1000) / 1000);
+    },
     current: () => [getPath(path) ?? 0.2, 0.5, 0.7]
   }),
   station: (path, label) => ({
     label,
     text: label + ": click on the model or flat views to set station position (Y)",
-    point: (u) => { setPath(path, Math.round(u[1] * 1000) / 1000); endPick(); },
-    flat: (u) => setPath(path, Math.round(u[1] * 1000) / 1000),
+    point: (u) => { setPath(path, Math.round(Math.max(0.0, Math.min(1.0, u[1])) * 1000) / 1000); endPick(); },
+    flat: (u) => setPath(path, Math.round(Math.max(0.0, Math.min(1.0, u[1])) * 1000) / 1000),
     current: () => [0.5, getPath(path) ?? 0.5, 0.5]
   }),
   stations: (path, label) => ({
@@ -1599,14 +1865,15 @@ const pickers = {
     text: label + ": click along the body in 3D or flat views to place stations (Y)",
     point: (u) => {
       const cur = [...(getPath(path) || [])];
-      cur.push(Math.round(u[1] * 1000) / 1000);
+      cur.push(Math.round(Math.max(0.0, Math.min(1.0, u[1])) * 1000) / 1000);
       cur.sort((a, b) => a - b);
       setPath(path, cur, { keepEmpty: true });
     },
     flat: (u) => {
       const cur = [...(getPath(path) || [])];
-      if (cur.length) cur[cur.length - 1] = Math.round(u[1] * 1000) / 1000;
-      else cur.push(Math.round(u[1] * 1000) / 1000);
+      const val = Math.round(Math.max(0.0, Math.min(1.0, u[1])) * 1000) / 1000;
+      if (cur.length) cur[cur.length - 1] = val;
+      else cur.push(val);
       setPath(path, cur);
     },
     next: () => {
@@ -1631,11 +1898,22 @@ function boneInfo() {
   if (!selected || !SRC) { el.style.display = "none"; return; }
   const j = joint(selected) || (L.virtual[selected] && { name: selected, parent: L.virtual[selected].parent, children: [], head: L.virtual[selected].pos });
   if (!j) { el.style.display = "none"; return; }
+
+  // Dynamically place boneinfo directly below hudModelInfo on the left if present
+  const modelInfoEl = $("hudModelInfo");
+  if (modelInfoEl && modelInfoEl.offsetHeight) {
+    el.style.top = `${modelInfoEl.offsetTop + modelInfoEl.offsetHeight + 8}px`;
+    el.style.left = `${modelInfoEl.offsetLeft}px`;
+  }
+
   const o = L.of[selected];
   const uses = usesOf(selected);
   const made = Object.entries(B.bone_from || {}).filter(([, s]) => s === selected).map(([b]) => b);
   const u = F.toUnit(j.head).map((x) => x.toFixed(2)).join(", ");
-  let h = `<h4>Selected bone</h4><div class="n">${esc(selected)}</div>`;
+  let h = `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px">` +
+    `<h4 style="margin:0">Selected bone</h4>` +
+    `<button id="closeBoneInfo" class="small" style="padding:1px 5px;line-height:1" title="Deselect bone">✕</button>` +
+    `</div><div class="n">${esc(selected)}</div>`;
   h += `<div class="sub">parent ${esc(j.parent || "none")}${(j.children || []).length ? " · children " + esc(j.children.join(", ")) : ""}</div>`;
   if (L.virtual[selected]) h += `<div class="sub">a mirrored copy of ${esc(L.virtual[selected].virtual)}</div>`;
   if (L.alias[selected]) h += `<div class="note">sits on ${esc(L.alias[selected])} (no length): the rig uses ${esc(L.alias[selected])}</div>`;
@@ -1651,6 +1929,14 @@ function boneInfo() {
   }
   el.innerHTML = h + `<datalist id="roles">${ROLES.map((r) => `<option value="${r}">`).join("")}</datalist>`;
   el.style.display = "block";
+  const closeBtn = el.querySelector("#closeBoneInfo");
+  if (closeBtn) {
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      selected = null;
+      redraw();
+    };
+  }
   el.querySelectorAll("button[data-q]").forEach((b) => (b.onclick = () => quick(b.dataset.q)));
 }
 
@@ -1980,18 +2266,18 @@ function humanoidHtml() {
 
   // Spans (X)
   const xKeys = [
-    ["shoulder", "Shoulder span", "center to shoulder joint"],
-    ["elbow", "Elbow span", "center to elbow"],
-    ["wrist", "Wrist span", "center to wrist joint"],
-    ["knuckle", "Knuckle span", "center to base of fingers"],
-    ["tip", "Fingertip span", "outermost fingertips (usually 0.0)"]
+    ["shoulder", "Shoulder span", "inward distance to shoulder (closest to 0.5 center)"],
+    ["elbow", "Elbow span", "inward distance to elbow"],
+    ["wrist", "Wrist span", "inward distance to wrist"],
+    ["knuckle", "Knuckle span", "inward distance to knuckle / base of fingers"],
+    ["tip", "Fingertip span", "outermost fingertips (usually 0.0 at lateral edge)"]
   ];
   const { e: xe, w: xw } = errsAt(["humanoid", "x"]);
   h += `<div class="field ${xe.length ? "err" : ""}"><div class="lab">` +
        `<span>Spans (X)</span><span class="grow"></span>` +
        `<label style="font-size:11px;font-weight:normal;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px">` +
        `<input type="checkbox" data-act="togglespanlabels" ${showSpanLabels ? "checked" : ""}> show labels</label></div>` +
-       `<div class="help">Distance from center (0 outermost tip .. 0.5 center). Click Pick to click an arm/hand in 3D or flat views.</div>` +
+       `<div class="help">Lateral inward distance (0.0 outermost tip .. 0.5 center). Click Pick to click an arm/hand in 3D or flat views.</div>` +
        xe.map((x) => `<div class="ferr">${esc(x.message)}</div>`).join("") +
        xw.map((x) => `<div class="fwarn">${esc(x.message)}</div>`).join("");
   for (const [k, lbl, desc] of xKeys) {
@@ -2463,6 +2749,7 @@ function kindChanged() {
 
 let checkTimer = null;
 function changed() {
+  userEdited = true;
   redraw();
   renderPane();
   clearTimeout(checkTimer);
@@ -2487,11 +2774,16 @@ function doUndo() {
   $("bUndo").disabled = !undo.length;
   changed();
 }
-function revertSpec() {
-  if (!checked.changed || confirm("Throw away every change since the last save?")) {
-    pushUndo();
-    draft = startDraft();
-    changed();
+async function revertSpec() {
+  if (!userEdited || confirm("Throw away every change and reload rig.json from disk?")) {
+    userEdited = false;
+    undo = [];
+    await reload(true);
+    redraw();
+    renderTabs();
+    renderPane();
+    await runCheck();
+    flashTop("Reloaded rig.json from disk.");
   }
 }
 
@@ -2530,18 +2822,75 @@ $("bUndo").onclick = doUndo;
 $("bRevert").onclick = revertSpec;
 $("bSuggest").onclick = suggestSkeleton;
 
-async function save(rerig) {
+async function save(rerig, force = false) {
   endPick(false);
   try {
-    const r = await api("/api/spec/" + (rerig ? "rerig" : "save"), { model: MODEL, spec: draft, base });
+    if (!userEdited && !force) {
+      try {
+        const hRes = await api(`/api/spec/hash?name=${encodeURIComponent(MODEL)}`);
+        if (hRes && hRes.base && base && hRes.base !== base) {
+          await reload(true);
+          userEdited = false;
+          redraw();
+          renderTabs();
+          renderPane();
+          await runCheck();
+          flashTop("Auto-reloaded rig.json from disk.");
+        }
+      } catch (e) {}
+    }
+    const r = await api("/api/spec/" + (rerig ? "rerig" : "save"), {
+      model: MODEL,
+      spec: draft,
+      base: force ? null : base,
+      force
+    });
     base = r.base; B.text = r.text;
+    userEdited = false;
+    undo = [];
     if (r.job) { follow(r.job); tab = "run"; }
     await reload(false);
+    base = r.base;
+    userEdited = false;
     redraw();
     renderTabs(); renderPane();
     await runCheck();
     flashTop(rerig ? "Saved. Re-rigging…" : "Saved rig.json (the old one is rig.json.bak).");
   } catch (e) {
+    if (e.status === 409 && (e.data?.conflict || (e.message && e.message.includes("changed on disk")))) {
+      if (!userEdited) {
+        await reload(true);
+        userEdited = false;
+        undo = [];
+        redraw();
+        renderTabs();
+        renderPane();
+        await runCheck();
+        flashTop("Auto-reloaded rig.json from disk.");
+        if (rerig) {
+          return await save(true, false);
+        }
+        return;
+      }
+      const overwrite = confirm(
+        "rig.json was modified on disk since the editor loaded it.\n\n" +
+        "Click OK to OVERWRITE the file on disk with your current editor changes.\n" +
+        "Click Cancel to DISCARD your editor changes and AUTO-RELOAD the disk version."
+      );
+      if (overwrite) {
+        return await save(rerig, true);
+      } else {
+        userEdited = false;
+        undo = [];
+        await reload(true);
+        redraw();
+        renderTabs();
+        renderPane();
+        await runCheck();
+        flashTop("Auto-reloaded rig.json from disk.");
+        return;
+      }
+    }
     if (e.data && e.data.errors) { checked.errors = e.data.errors; tab = "changes"; renderTabs(); renderPane(); }
     alert(e.message);
   }
@@ -2581,14 +2930,21 @@ function follow(j) {
   };
   es.addEventListener("end", async (ev) => {
     es.close(); es = null;
-    Object.assign(job, JSON.parse(ev.data));
+    const finalJob = JSON.parse(ev.data);
+    Object.assign(job, finalJob);
+    if (job.model !== MODEL) return;
     await reload(false);
     redraw();
-    if (job.step === "source view" && SRC) {
-      if (SRC.glb_url) await loadModel(SRC.glb_url).catch(() => {});
-      redraw();
-      frameView([0.35, -1, 0.3]);
-      message("");
+    if (job.step === "source view") {
+      if (job.state === "done" && SRC && SRC.glb_url) {
+        tab = "rig";
+        await loadModel(SRC.glb_url).catch(() => {});
+        redraw();
+        frameView([0.35, -1, 0.3]);
+        message("");
+      } else if (job.state !== "done") {
+        message("The source view failed", "See the Run tab.");
+      }
     }
     if ((job.step === "save and re-rig" || job.step === "auto-tune") && job.state === "done") {
       tab = "run";
@@ -2607,7 +2963,32 @@ function follow(j) {
   });
   const poll = setInterval(async () => {
     if (!job || job.id !== j.id || !(job.state === "running" || job.state === "queued" || job.state === undefined)) return clearInterval(poll);
-    try { const s = await api(`/api/jobs/${j.id}`); job.state = s.state; job.pid = s.pid; if (tab === "run") { const lg = $("paneLog") || $("log"); const top = lg && lg.scrollTop; renderPane(); } } catch (e) {}
+    try {
+      const s = await api(`/api/jobs/${j.id}`);
+      job.state = s.state; job.pid = s.pid;
+      if (tab === "run") { const lg = $("paneLog") || $("log"); const top = lg && lg.scrollTop; renderPane(); }
+      if (s.state === "done" || s.state === "failed" || s.state === "cancelled") {
+        clearInterval(poll);
+        if (es) { es.close(); es = null; }
+        if (job.model === MODEL) {
+          await reload(false);
+          redraw();
+          if (job.step === "source view") {
+            if (s.state === "done" && SRC && SRC.glb_url) {
+              tab = "rig";
+              await loadModel(SRC.glb_url).catch(() => {});
+              redraw();
+              frameView([0.35, -1, 0.3]);
+              message("");
+            } else if (s.state !== "done") {
+              message("The source view failed", "See the Run tab.");
+            }
+          }
+          renderTabs(); renderPane(); runCheck();
+          resize();
+        }
+      }
+    } catch (e) {}
   }, 2500);
   renderTabs(); renderPane();
 }
@@ -2643,8 +3024,9 @@ function startDraft() {
 
 async function reload(fresh) {
   B = await api("/api/spec?name=" + encodeURIComponent(MODEL));
-  if (B.source) { SRC = B.source; SRC.byName = Object.fromEntries(SRC.joints.map((j) => [j.name, j])); }
-  if (fresh) { draft = startDraft(); base = B.base; undo = []; }
+  SRC = (B && B.source) ? B.source : null;
+  if (SRC) { SRC.byName = Object.fromEntries(SRC.joints.map((j) => [j.name, j])); }
+  if (fresh || !userEdited) { draft = startDraft(); base = B.base; undo = []; userEdited = false; }
   document.title = MODEL + " - spec editor";
   $("title").textContent = MODEL;
   $("sub").textContent = `${B.group || "(root)"} · ${B.source_file || "no source"} · ${B.text ? "rig.json" : "no rig.json yet"}` +
@@ -2690,18 +3072,29 @@ function markReady() {
   document.body.dataset.ready = "1";
 }
 
+let switchModelSeq = 0;
+
 async function switchModel(name) {
   if (!name) return;
+  const seq = ++switchModelSeq;
+  modelLoadSeq++;
+  riggedLoadSeq++;
   MODEL = name;
+  userEdited = false;
+  undo = [];
+  SRC = null;
+  B = null;
+  draft = null;
+  selected = null;
+  pick = null;
   if ($("title")) $("title").textContent = MODEL;
   try { history.replaceState(null, "", "#model=" + encodeURIComponent(name)); } catch (e) {}
 
-  if (model) { scene.remove(model); model = null; }
-  if (riggedScene) {
-    scene.remove(riggedScene);
-    clearGroup(riggedScene);
-    riggedScene = null;
-  }
+  clearGroup(sourceGroup);
+  model = null;
+  clearGroup(riggedGroup);
+  riggedScene = null;
+
   if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
   action = null;
   riggedClips = [];
@@ -2713,7 +3106,15 @@ async function switchModel(name) {
   clearGroup(spotsG);
 
   message("");
-  try { await reload(true); } catch (e) { message("Cannot open " + MODEL, e.message); return; }
+  try {
+    await reload(true);
+  } catch (e) {
+    if (seq !== switchModelSeq) return;
+    message("Cannot open " + MODEL, e.message);
+    return;
+  }
+  if (seq !== switchModelSeq) return;
+
   renderTabs();
   redraw();
   if (SRC) frameView([0.35, -1, 0.3]);
@@ -2722,29 +3123,25 @@ async function switchModel(name) {
 
   if (!SRC || SRC.stale) {
     message(SRC ? "The source file changed" : "Making the source view…", "A few seconds: the source model and its own skeleton, exactly as they came.");
-    try { follow(await api("/api/spec/source", { model: MODEL })); tab = "run"; renderTabs(); renderPane(); }
-    catch (e) { message("Cannot make the source view", e.message); return; }
-    const wait = setInterval(async () => {
-      if (job && job.state && !["running", "queued"].includes(job.state)) {
-        clearInterval(wait);
-        if (job.state === "done") {
-          tab = "rig";
-          await reload(false);
-          if (SRC && SRC.glb_url) {
-            await loadModel(SRC.glb_url).catch(() => {});
-            redraw();
-            frameView([0.35, -1, 0.3]);
-          }
-          renderTabs();
-          renderPane();
-          message("");
-        } else {
-          message("The source view failed", "See the Run tab.");
-        }
-      }
-    }, 400);
+    try {
+      const srcJob = await api("/api/spec/source", { model: MODEL });
+      if (seq !== switchModelSeq) return;
+      follow(srcJob);
+      tab = "run";
+      renderTabs();
+      renderPane();
+    } catch (e) {
+      if (seq !== switchModelSeq) return;
+      message("Cannot make the source view", e.message);
+    }
   } else if (SRC && SRC.glb_url) {
-    try { await loadModel(SRC.glb_url); } catch (e) { message("Cannot load the source view", e.message); }
+    try {
+      await loadModel(SRC.glb_url);
+    } catch (e) {
+      if (seq !== switchModelSeq) return;
+      message("Cannot load the source view", e.message);
+    }
+    if (seq !== switchModelSeq) return;
     redraw();
     frameView([0.35, -1, 0.3]);
     message("");
@@ -2753,6 +3150,7 @@ async function switchModel(name) {
   if (B && B.preview_url) {
     await loadRigged(B.preview_url).catch(() => {});
   }
+  if (seq !== switchModelSeq) return;
   const targetMode = (viewMode === "rigged" && (!B || !B.preview_url)) ? "source" : viewMode;
   await setViewMode(targetMode);
   resize();
@@ -2761,13 +3159,20 @@ async function switchModel(name) {
 async function refreshCurrentModel() {
   if (!MODEL) return;
   try {
-    await reload(false);
+    await reload(!userEdited);
     renderTabs();
     redraw();
     renderPane();
     await runCheck();
-    if (B && B.preview_url) {
+    if (SRC && SRC.glb_url && (viewMode === "source" || !model)) {
+      await loadModel(SRC.glb_url).catch(() => {});
+      if (viewMode === "source") message("");
+    }
+    if (B && B.preview_url && (viewMode === "rigged" || !riggedScene)) {
       await loadRigged(B.preview_url).catch(() => {});
+    }
+    if (SRC || (B && B.preview_url)) {
+      message("");
     }
     await setViewMode(viewMode);
   } catch (e) {
@@ -2775,7 +3180,191 @@ async function refreshCurrentModel() {
   }
 }
 
+let checkDiskInFlight = false;
+async function checkDiskChanges() {
+  if (!MODEL || checkDiskInFlight || pick || drag3D || draggingPick) return;
+  if (checkTimer !== null) return;
+  if (document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+
+  checkDiskInFlight = true;
+  try {
+    const res = await api(`/api/spec/hash?name=${encodeURIComponent(MODEL)}`);
+    if (res && res.base && base && res.base !== base) {
+      if (!userEdited) {
+        await reload(true);
+        userEdited = false;
+        undo = [];
+        redraw();
+        renderTabs();
+        renderPane();
+        await runCheck();
+        flashTop("Auto-reloaded rig.json from disk");
+      } else {
+        const d = $("dirty");
+        if (d) {
+          d.textContent = "● unsaved changes (disk also changed - click Revert to reload)";
+          d.style.color = "var(--warn)";
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore transient network or API errors
+  } finally {
+    checkDiskInFlight = false;
+  }
+}
+
+// ---- Procedural Walk Engine Tuning ----
+
+function updateWalkTuneUIFromDraft() {
+  const w = (draft.clips && draft.clips.walk) || {};
+  const isBiped = kind() === "humanoid" || (draft.clips?.archetype === "walker" && !draft.rig?.legs);
+  const defaultPreset = isBiped ? "natural" : "quadruped_walk";
+  const preset = w.preset || defaultPreset;
+  if ($("walkPresetSelect")) $("walkPresetSelect").value = preset;
+
+  const pDefs = GAIT_PRESET_DEFAULTS[preset] || GAIT_PRESET_DEFAULTS.natural;
+  const stride = w.stride ?? pDefs.stride ?? 1.0;
+  const cadence = w.cadence ?? pDefs.cadence ?? 1.0;
+  const sway = w.sway ?? pDefs.sway ?? 1.0;
+  const bob = w.bob ?? pDefs.bob ?? 1.0;
+  const lean = w.lean ?? pDefs.lean ?? 3.5;
+  const armSwing = w.arm_swing ?? pDefs.arm_swing ?? 1.0;
+
+  if ($("slideWalkStride")) $("slideWalkStride").value = stride;
+  if ($("slideWalkCadence")) $("slideWalkCadence").value = cadence;
+  if ($("slideWalkSway")) $("slideWalkSway").value = sway;
+  if ($("slideWalkBob")) $("slideWalkBob").value = bob;
+  if ($("slideWalkLean")) $("slideWalkLean").value = lean;
+  if ($("slideWalkArmSwing")) $("slideWalkArmSwing").value = armSwing;
+
+  syncWalkSliderLabels();
+  updateLiveGaitPreview();
+}
+
+let liveGaitClip = null;
+
+function updateLiveGaitPreview() {
+  if (!mixer || !riggedClips.length) return;
+  const hud = $("walkTuneHUD");
+  if (!hud || hud.style.display === "none") return;
+
+  const preset = $("walkPresetSelect")?.value || "natural";
+  const params = {
+    stride: Number($("slideWalkStride")?.value || 1.0),
+    cadence: Number($("slideWalkCadence")?.value || 1.0),
+    sway: Number($("slideWalkSway")?.value || 1.0),
+    bob: Number($("slideWalkBob")?.value || 1.0),
+    lean: Number($("slideWalkLean")?.value || 3.5),
+    arm_swing: Number($("slideWalkArmSwing")?.value || 1.0),
+  };
+
+  const clipNames = riggedClips.map((c) => c.name);
+  const baseName = selectBaseClipForPreset(preset, clipNames);
+  let baseClip = riggedClips.find((c) => c.name === baseName) || riggedClips[0];
+  if (!baseClip) return;
+
+  const newTracks = [];
+  for (const track of baseClip.tracks) {
+    const modVals = modulateGaitTrackValues(track.name, track.times, track.values, params);
+    if (track instanceof THREE.QuaternionKeyframeTrack) {
+      newTracks.push(new THREE.QuaternionKeyframeTrack(track.name, track.times, modVals));
+    } else if (track instanceof THREE.VectorKeyframeTrack) {
+      newTracks.push(new THREE.VectorKeyframeTrack(track.name, track.times, modVals));
+    } else {
+      newTracks.push(track.clone());
+    }
+  }
+
+  const oldTime = (action && isPlaying) ? (action.time % baseClip.duration) : 0.0;
+  if (action) action.stop();
+  if (liveGaitClip) mixer.uncacheClip(liveGaitClip);
+
+  liveGaitClip = new THREE.AnimationClip("__live_gait_preview__", baseClip.duration, newTracks);
+  action = mixer.clipAction(liveGaitClip);
+  action.time = oldTime;
+  mixer.timeScale = params.cadence;
+  action.play();
+  isPlaying = true;
+  if ($("clipPlay")) {
+    $("clipPlay").textContent = "❚❚";
+    $("clipPlay").title = "Pause (Space)";
+  }
+}
+
+function syncWalkSliderLabels() {
+  if ($("valWalkStride") && $("slideWalkStride")) $("valWalkStride").textContent = Number($("slideWalkStride").value).toFixed(2) + "x";
+  if ($("valWalkCadence") && $("slideWalkCadence")) {
+    const c = Number($("slideWalkCadence").value);
+    $("valWalkCadence").textContent = c.toFixed(2) + "x";
+    if (mixer && action) {
+      mixer.timeScale = c;
+    }
+  }
+  if ($("valWalkSway") && $("slideWalkSway")) $("valWalkSway").textContent = Number($("slideWalkSway").value).toFixed(2) + "x";
+  if ($("valWalkBob") && $("slideWalkBob")) $("valWalkBob").textContent = Number($("slideWalkBob").value).toFixed(2) + "x";
+  if ($("valWalkLean") && $("slideWalkLean")) $("valWalkLean").textContent = Number($("slideWalkLean").value).toFixed(1) + "°";
+  if ($("valWalkArmSwing") && $("slideWalkArmSwing")) $("valWalkArmSwing").textContent = Number($("slideWalkArmSwing").value).toFixed(2) + "x";
+  updateLiveGaitPreview();
+}
+
+function onWalkPresetChange() {
+  const preset = $("walkPresetSelect")?.value || "natural";
+  const defs = GAIT_PRESET_DEFAULTS[preset] || GAIT_PRESET_DEFAULTS.natural;
+  if ($("slideWalkStride")) $("slideWalkStride").value = defs.stride;
+  if ($("slideWalkCadence")) $("slideWalkCadence").value = defs.cadence;
+  if ($("slideWalkSway")) $("slideWalkSway").value = defs.sway;
+  if ($("slideWalkBob")) $("slideWalkBob").value = defs.bob;
+  if ($("slideWalkLean")) $("slideWalkLean").value = defs.lean;
+  if ($("slideWalkArmSwing")) $("slideWalkArmSwing").value = defs.arm_swing;
+  syncWalkSliderLabels();
+}
+
+function applyWalkParamsToSpec() {
+  if (!$("walkPresetSelect")) return;
+  const p = $("walkPresetSelect").value;
+  setPath(["clips", "walk", "preset"], p);
+  setPath(["clips", "walk", "stride"], Number($("slideWalkStride").value));
+  setPath(["clips", "walk", "cadence"], Number($("slideWalkCadence").value));
+  setPath(["clips", "walk", "sway"], Number($("slideWalkSway").value));
+  setPath(["clips", "walk", "bob"], Number($("slideWalkBob").value));
+  setPath(["clips", "walk", "lean"], Number($("slideWalkLean").value));
+  setPath(["clips", "walk", "arm_swing"], Number($("slideWalkArmSwing").value));
+  renderPane();
+  const btn = $("bSaveWalkToSpec");
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = "Applied to Draft! ✓";
+    setTimeout(() => { btn.textContent = orig; }, 1800);
+  }
+}
+
+async function rebakeClipsFromSpec() {
+  applyWalkParamsToSpec();
+  const btn = $("bBakeWalkClips");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api("/api/spec/rebake_clips", {
+      model: MODEL,
+      spec: draft,
+      base: base,
+      force: true
+    });
+    base = r.base; B.text = r.text;
+    userEdited = false;
+    if (r.job) { follow(r.job); tab = "run"; renderTabs(); renderPane(); }
+    flashTop("Started re-baking animation clips in Blender...");
+  } catch (e) {
+    flashTop("Re-bake failed: " + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let uiEventsWired = false;
 function wireUIEvents() {
+  if (uiEventsWired) return;
+  uiEventsWired = true;
   if ($("vSource")) $("vSource").onclick = () => setViewMode("source");
   if ($("vRigged")) $("vRigged").onclick = () => setViewMode("rigged");
   if ($("clipPlay")) $("clipPlay").onclick = togglePlay;
@@ -2786,6 +3375,53 @@ function wireUIEvents() {
     scrubEl.onpointerup = () => { scrubbing = false; };
     scrubEl.oninput = (e) => seekClip(Number(e.target.value) / 1000);
   }
+  if ($("walkTuneToggle")) {
+    $("walkTuneToggle").onclick = () => {
+      const hud = $("walkTuneHUD");
+      if (!hud) return;
+      const open = hud.style.display === "none";
+      hud.style.display = open ? "block" : "none";
+      $("walkTuneToggle").classList.toggle("on", open);
+      if (open) updateWalkTuneUIFromDraft();
+    };
+  }
+  if ($("walkTuneClose")) {
+    $("walkTuneClose").onclick = () => {
+      if ($("walkTuneHUD")) $("walkTuneHUD").style.display = "none";
+      if ($("walkTuneToggle")) $("walkTuneToggle").classList.remove("on");
+    };
+  }
+  if ($("walkPresetSelect")) $("walkPresetSelect").onchange = onWalkPresetChange;
+  for (const id of ["slideWalkStride", "slideWalkCadence", "slideWalkSway", "slideWalkBob", "slideWalkLean", "slideWalkArmSwing"]) {
+    const el = $(id);
+    if (el) el.oninput = syncWalkSliderLabels;
+  }
+  if ($("bSaveWalkToSpec")) $("bSaveWalkToSpec").onclick = applyWalkParamsToSpec;
+  if ($("bBakeWalkClips")) $("bBakeWalkClips").onclick = rebakeClipsFromSpec;
+  if ($("bResetWalkSliders")) $("bResetWalkSliders").onclick = onWalkPresetChange;
+
+  if ($("poseGizmoToggle")) {
+    $("poseGizmoToggle").onchange = (e) => {
+      if (e.target.checked) {
+        if (!activeGizmoBone && availableRiggedBones.length) {
+          selectGizmoBone(availableRiggedBones[0]);
+        } else if (activeGizmoBone) {
+          selectGizmoBone(activeGizmoBone);
+        }
+      } else {
+        selectGizmoBone(null);
+      }
+    };
+  }
+  if ($("poseGizmoClose")) {
+    $("poseGizmoClose").onclick = () => {
+      if ($("poseGizmoToggle")) $("poseGizmoToggle").checked = false;
+      selectGizmoBone(null);
+    };
+  }
+  if ($("gizmoResetBone")) $("gizmoResetBone").onclick = resetActiveGizmoBone;
+  if ($("gizmoResetAll")) $("gizmoResetAll").onclick = resetAllGizmoBones;
+
   if ($("btnLevelGround")) $("btnLevelGround").onclick = levelFeet;
   if ($("btnLockX")) $("btnLockX").onclick = () => toggleLock("x");
   if ($("btnLockY")) $("btnLockY").onclick = () => toggleLock("y");
@@ -2798,6 +3434,12 @@ function wireUIEvents() {
       if (groundGroup) groundGroup.visible = showGround;
     };
   }
+
+  window.addEventListener("focus", checkDiskChanges);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkDiskChanges();
+  });
+  setInterval(checkDiskChanges, 1500);
 }
 
 // Global specEditor interface exported immediately
@@ -2806,12 +3448,17 @@ window.specEditor = {
   draft: () => clone(draft),
   viewMode: () => viewMode,
   setViewMode,
+  selectGizmoBone,
+  getActiveGizmoBone: () => activeGizmoBone,
+  resetActiveGizmoBone,
+  resetAllGizmoBones,
   clips: () => riggedClips.map((c) => c.name),
   playClip,
   togglePlay,
   seekClip,
   switchModel,
   refreshCurrentModel,
+  checkDisk: checkDiskChanges,
   save: (rerig) => save(rerig),
   rerig: () => save(true),
   suggest: () => suggestSkeleton(),
@@ -2844,6 +3491,8 @@ window.specEditor = {
     const r = renderer.domElement.getBoundingClientRect();
     return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];
   },
+  updateWalkTuneUI: updateWalkTuneUIFromDraft,
+  applyWalkParamsToSpec,
 };
 
 async function main() {
@@ -2873,27 +3522,16 @@ async function main() {
   runCheck();
   if (!SRC || SRC.stale) {
     message(SRC ? "The source file changed" : "Making the source view…", "A few seconds: the source model and its own skeleton, exactly as they came.");
-    try { follow(await api("/api/spec/source", { model: MODEL })); tab = "run"; renderTabs(); renderPane(); }
-    catch (e) { markReady(); message("Cannot make the source view", e.message); return; }
-    const wait = setInterval(async () => {
-      if (job && job.state && !["running", "queued"].includes(job.state)) {
-        clearInterval(wait);
-        if (job.state === "done") {
-          tab = "rig";
-          await reload(false);
-          if (SRC && SRC.glb_url) {
-            await loadModel(SRC.glb_url).catch(() => {});
-            redraw();
-            frameView([0.35, -1, 0.3]);
-          }
-          renderTabs();
-          renderPane();
-          message("");
-        } else {
-          message("The source view failed", "See the Run tab.");
-        }
-      }
-    }, 400);
+    try {
+      follow(await api("/api/spec/source", { model: MODEL }));
+      tab = "run";
+      renderTabs();
+      renderPane();
+    } catch (e) {
+      markReady();
+      message("Cannot make the source view", e.message);
+      return;
+    }
   } else if (SRC && SRC.glb_url) {
     try { await loadModel(SRC.glb_url); } catch (e) { message("Cannot load the source view", e.message); }
     redraw();

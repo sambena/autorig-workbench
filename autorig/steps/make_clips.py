@@ -36,6 +36,9 @@ from mathutils import Vector, Quaternion
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 import layout
+import gait
+import digits
+import morph_generator
 # Per-model clip settings (archetype, display name, category, attack...): rig.json "clips"; the licence line:
 # the collection's autorig.json.
 from spec_store import CLIPS as MODELS, LICENCE
@@ -65,11 +68,15 @@ class Rig:
         while todo:
             b = todo.pop(0); order.append(b.name); todo.extend(b.children)
         self.order = order
-        co = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
-        self.lo = Vector([min(p[k] for p in co) for k in range(3)])
-        self.hi = Vector([max(p[k] for p in co) for k in range(3)])
+        if mesh and len(mesh.data.vertices) > 0:
+            co = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
+            self.lo = Vector([min(p[k] for p in co) for k in range(3)])
+            self.hi = Vector([max(p[k] for p in co) for k in range(3)])
+        else:
+            self.lo = Vector((0.0, 0.0, 0.0))
+            self.hi = Vector((1.0, 1.0, 1.0))
         self.centre = (self.lo + self.hi) * 0.5
-        self.size = max(self.hi - self.lo)
+        self.size = max(max(self.hi - self.lo), 1e-4)
 
     def has(self, n): return n in self.rest3
 
@@ -83,7 +90,11 @@ class Rig:
 
 class Pose:
     def __init__(self):
-        self.turns, self.aims, self.moves, self.scales = {}, {}, {}, {}
+        self.turns, self.aims, self.moves, self.scales, self.morphs = {}, {}, {}, {}, {}
+
+    def morph(self, name, value):
+        """Sets a target blendshape/morph value in [0, 1]."""
+        self.morphs[name] = float(value)
 
     def grow(self, bone, factors):
         """A scale in the bone's own axes (Y along the bone): a bell pulsing, a body swelling. Children inherit it."""
@@ -141,6 +152,17 @@ def apply(rig, pose, frame):
         pb.keyframe_insert("location", frame=frame, group=pb.name)
         pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
         pb.keyframe_insert("scale", frame=frame, group=pb.name)
+
+    # Key morph targets on mesh shape keys if present
+    mesh = getattr(rig, "mesh", None)
+    if mesh and getattr(mesh.data, "shape_keys", None):
+        kb = mesh.data.shape_keys.key_blocks
+        for name in kb.keys():
+            if name == "Basis":
+                continue
+            val = pose.morphs.get(name, 0.0) if hasattr(pose, "morphs") else 0.0
+            kb[name].value = float(val)
+            kb[name].keyframe_insert("value", frame=frame)
 
 
 def ease(t):
@@ -566,8 +588,9 @@ class CreatureRig:
     rig pipeline from the chains it built); a rig with no role map yet (an older lift) falls back to the documented
     names in SKELETONS.md. Also carries what apply() needs."""
 
-    def __init__(self, arm, card, body=None):
+    def __init__(self, arm, card, body=None, mesh=None):
         self.arm = arm
+        self.mesh = mesh or (next((o for o in bpy.data.objects if o.type == 'MESH' and o.find_armature() == arm), None) if 'bpy' in globals() else None)
         self.pose = arm.pose.bones
         self.bones = arm.data.bones
         self.rest = {b.name: b.matrix_local.copy() for b in arm.data.bones}
@@ -602,6 +625,15 @@ class CreatureRig:
         for side in (1.0, -1.0):
             row = sorted((f for f in self.feet if f["side"] == side), key=lambda f: -f["along"])
             for i, f in enumerate(row): f["group"] = (i + (0 if side > 0 else 1)) % 2
+        # True 4-beat lateral sequence walk for quadrupeds: LH -> LF -> RH -> RF
+        if len(self.feet) == 4:
+            left_feet = sorted([f for f in self.feet if f["side"] == 1.0], key=lambda f: -f["along"])
+            right_feet = sorted([f for f in self.feet if f["side"] == -1.0], key=lambda f: -f["along"])
+            if len(left_feet) == 2 and len(right_feet) == 2:
+                left_feet[1]["lateral_phase"] = 0.00   # Left Hind
+                left_feet[0]["lateral_phase"] = 0.25   # Left Front
+                right_feet[1]["lateral_phase"] = 0.50  # Right Hind
+                right_feet[0]["lateral_phase"] = 0.75  # Right Front
         along = [v.dot(FORWARD) for b in arm.data.bones for v in (b.head_local, b.tail_local)]
         self.length = (max(along) - min(along)) if along else 1.0
         ups = [v.dot(UP) for b in arm.data.bones for v in (b.head_local, b.tail_local)]
@@ -647,17 +679,26 @@ def walker_clips(rig, spec):
     rigged to its own convention (legged or not)."""
     style = spec.get("attack", "bite")
     if rig.humanoid:
-        return humanoid_walker(rig, style)
+        return humanoid_walker(rig, style, spec)
     return creature_walker(rig, style, spec)
 
 
 def creature_walker(rig, style, spec=None):
     L = rig.size
-    stride = 0.26 * L      # how far a planted foot travels back in one stance
-    lift = 0.06 * L        # how high a swinging foot clears the ground
+    spec = spec or {}
+    walk_spec = spec.get("walk") if isinstance(spec.get("walk"), dict) else {}
+    preset_name = walk_spec.get("preset") or spec.get("gait") or ("quadruped_trot" if spec.get("gait") == "trot" else "quadruped_walk")
+    overrides = dict(walk_spec)
+    for k in ("stride", "cadence", "sway", "bob", "foot_lift", "duty_factor", "tail_wave"):
+        if k in spec and k not in overrides:
+            overrides[k] = spec[k]
+    gait_params = gait.merge_gait_params(preset_name, overrides)
+
+    stride = 0.26 * L * gait_params.get("stride", 1.0)
+    lift = 0.06 * L * gait_params.get("foot_lift", 1.0)
+    duty = gait_params.get("duty_factor", 0.65)
     legless = not rig.feet
     discharge = style == "discharge"
-    spec = spec or {}
     # windup: "rear" (up on the hind legs, forelegs raised: the default bite) or "head_down" (a big beast bracing to
     # charge: front end dropped, neck and head lowered, then the lunge); hit_rear scales how far a hit rocks it
     # back and up (a heavy animal barely rears)
@@ -666,10 +707,22 @@ def creature_walker(rig, style, spec=None):
 
     clips = {}
 
-    def tail_wave(p, t, amount, axis=UP):
-        """A travelling wave down the tail: each link lags the one before, so it whips."""
-        for i, bone in enumerate(rig.tail):
-            p.turn(bone, axis, amount * (0.6 + 0.2 * i) * math.sin(t - 0.7 * (i + 1)))
+    def tail_wave(p, t, amount, axis=UP, impulse_time=None):
+        """Analytical 2nd-order spring-damper wave propagation down the tail."""
+        if not rig.tail:
+            return
+        angles = gait.evaluate_secondary_chain(
+            len(rig.tail),
+            phase=t / (2.0 * math.pi) if t > 1.0 else t,
+            frequency=1.0,
+            base_amplitude=amount * 0.6,
+            amplitude_growth=1.22,
+            phase_lag=0.45,
+            damping=1.8 if impulse_time is not None else 0.0,
+            impulse_time=impulse_time,
+        )
+        for bone, ang in zip(rig.tail, angles):
+            p.turn(bone, axis, ang)
 
     # ---- idle: 2 s loop. Breathing, jaws working, feet planted -------------------------------
     # A creature standing still has to look alive rather than paused, but anything bigger than
@@ -686,17 +739,44 @@ def creature_walker(rig, style, spec=None):
             side = 1.0 if j.endswith(".L") else -1.0
             turn_jaw(p, j, side * 6.0 * max(0.0, math.sin(t * 2.0)))
         tail_wave(p, t, 5.0)
+        # Periodic blink
+        blink_u = (f % 24) / 4.0
+        blink_val = math.sin(math.pi * blink_u) if blink_u <= 1.0 else 0.0
+        p.morph("eyeBlink_L", blink_val)
+        p.morph("eyeBlink_R", blink_val)
         return p
 
     clips["idle"] = (48, idle, True)
 
-    # ---- walk: two-thirds of a second, looping ------------------------------------------------
-    # Each group spends half the cycle planted, sliding back as the body passes over it, and
-    # half swinging forward through the air. The body rises as each group lands: two bobs a
-    # cycle, which is what a six-legged scuttle actually looks like.
+    is_quad = len(rig.feet) == 4 and any("lateral_phase" in f for f in rig.feet) and spec.get("gait") != "trot" and preset_name != "quadruped_trot"
+
+    # ---- walk: 4-beat lateral sequence for quadrupeds, 2-group trot/scuttle otherwise -------
     def walk(f, n):
         p = Pose()
         phase = f / float(n)
+        if is_quad:
+            for foot in rig.feet:
+                offset = foot.get("lateral_phase", 0.0)
+                local = (phase - offset) % 1.0
+                if local < duty:
+                    s = local / duty
+                    along = stride * (0.5 - s)
+                    up = 0.0
+                else:
+                    s = (local - duty) / (1.0 - duty)
+                    along = stride * (-0.5 + s)
+                    up = lift * math.sin(math.pi * s)
+                p.move(foot["name"], FORWARD * along + UP * up)
+            t = 2 * math.pi * phase
+            p.move(rig.body, UP * (0.010 * L * gait_params.get("bob", 1.0) * math.cos(4 * t)))
+            p.turn(rig.body, UP, 2.5 * gait_params.get("sway", 1.0) * math.sin(t))             # horizontal S-curve spine sway
+            p.turn(rig.body, FORWARD, 1.8 * gait_params.get("sway", 1.0) * math.cos(t))         # roll with the lateral gait
+            p.turn(rig.head, UP, -2.5 * gait_params.get("sway", 1.0) * math.sin(t))
+            for i, a in enumerate(rig.abdomen):
+                p.turn(a, UP, 3.0 * gait_params.get("sway", 1.0) * math.sin(t - 0.9 * (i + 1)))
+            tail_wave(p, t, 9.0 * (gait_params.get("tail_wave", 1.0) if "tail_wave" in gait_params else 1.0))
+            return p
+
         for foot in rig.feet:
             local = (phase + 0.5 * foot["group"]) % 1.0
             if local < 0.5:                       # stance: planted, moving back
@@ -724,7 +804,52 @@ def creature_walker(rig, style, spec=None):
             p.move(rig.body, UP * (0.03 * L * abs(math.sin(2 * t))))
         return p
 
-    clips["walk"] = (16, walk, True)
+    def trot(f, n):
+        p = Pose()
+        phase = f / float(n)
+        for foot in rig.feet:
+            local = (phase + 0.5 * foot["group"]) % 1.0
+            if local < 0.5:
+                s = local / 0.5
+                along = stride * (0.5 - s)
+                up = 0.0
+            else:
+                s = (local - 0.5) / 0.5
+                along = stride * (-0.5 + s)
+                up = lift * math.sin(math.pi * s)
+            p.move(foot["name"], FORWARD * along + UP * up)
+        t = 2 * math.pi * phase
+        p.move(rig.body, UP * (0.018 * L * math.cos(2 * t)))
+        p.turn(rig.body, FORWARD, 3.0 * math.sin(t))
+        p.turn(rig.head, UP, -2.0 * math.sin(t))
+        tail_wave(p, t, 12.0)
+        return p
+
+    def gallop(f, n):
+        p = Pose()
+        phase = f / float(n)
+        st = gait.evaluate_quadruped_gallop(phase, L, L, feet_info=rig.feet)
+        feet_st = st["feet"]
+        body_st = st["body"]
+        for foot in rig.feet:
+            fname = foot["name"]
+            if fname in feet_st:
+                pos = feet_st[fname]
+                p.move(fname, FORWARD * pos["along"] + UP * pos["up"])
+        t = 2 * math.pi * phase
+        p.move(rig.body, UP * (0.025 * L * math.sin(2 * t)))
+        p.turn(rig.body, LATERAL, body_st["rot"][0])
+        p.turn(rig.body, FORWARD, body_st["rot"][1])
+        p.turn(rig.body, UP, body_st["rot"][2])
+        p.turn(rig.head, LATERAL, st["head"]["pitch"])
+        p.turn(rig.head, UP, st["head"]["yaw"])
+        tail_wave(p, t, 16.0)
+        return p
+
+    clips["walk"] = (24 if is_quad else 16, walk, True)
+    if is_quad:
+        clips["trot"] = (16, trot, True)
+        clips["gallop"] = (14, gallop, True)
 
     # ---- attack: rear, hold, strike, recover --------------------------------------------------
     # The wind-up is most of the clip and the strike is four frames, because the wind-up is the
@@ -907,7 +1032,7 @@ def creature_walker(rig, style, spec=None):
     return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 16}
 
 
-def humanoid_walker(rig, style):
+def humanoid_walker(rig, style, spec=None):
     """The Walker set for a Mixamo skeleton: forward kinematics, by role.
 
     These rigs were kept from Mixamo rather than rebuilt, so there are no IK targets to plant
@@ -920,6 +1045,15 @@ def humanoid_walker(rig, style):
     swings them from there. A Walker marching with its arms held out like a scarecrow is the
     first thing anyone would notice.
     """
+    spec = spec or {}
+    walk_spec = spec.get("walk") if isinstance(spec.get("walk"), dict) else {}
+    preset_name = walk_spec.get("preset") or spec.get("preset") or ("soldier" if style == "shoot" else "natural")
+    overrides = dict(walk_spec)
+    for k in ("stride", "cadence", "sway", "bob", "lean", "hip_drop", "counter_twist", "arm_swing", "foot_lift"):
+        if k in spec and k not in overrides:
+            overrides[k] = spec[k]
+    gait_params = gait.merge_gait_params(preset_name, overrides)
+
     r = rig.humanoid
     H = rig.rest[r["hips"]].to_translation().dot(UP)       # hip height: the leg's length, near enough
     spine = [b for b in (r["spine"], r["spine1"], r["spine2"]) if b]
@@ -934,14 +1068,61 @@ def humanoid_walker(rig, style):
     slam = {a: rig.aim(a, Vector((side_of(a) * 0.15, -1.0, -0.7))) for a, _ in arms}
 
     shooter = style == "shoot"
-    swing_arm = 7.0 if shooter else 14.0     # a soldier walks with the weapon held, not swinging
-    thigh_swing = 24.0
+    cadence = gait_params.get("cadence", 1.0)
+    walk_frames = max(12, int(round(24.0 / cadence)))
+    thigh_swing = 22.0 * gait_params.get("stride", 1.0)
     stride = 2.0 * H * math.sin(math.radians(thigh_swing))
 
-    def arms_down(p, bend=10.0):
+    # Automated finger / digit articulation (Pillar 2)
+    fingers = []
+    for side in ("Left", "Right"):
+        side_sign = 1.0 if side == "Left" else -1.0
+        for fname in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+            f_bones = [b for b in [f"{side}Hand{fname}1", f"{side}Hand{fname}2", f"{side}Hand{fname}3"] if b in rig.names]
+            if f_bones:
+                fingers.append((side, fname, side_sign, f_bones))
+
+    def curl_fingers(p, state="relax", intensity=1.0):
+        if not fingers:
+            return
+        angles = digits.compute_finger_curl_angles(state, intensity)
+        for side, fname, side_sign, f_bones in fingers:
+            pitch_curl, spread = angles.get(fname, (18.0, 0.0))
+            per_seg = pitch_curl / float(len(f_bones))
+            for i, fb in enumerate(f_bones):
+                p.turn(fb, UP, -side_sign * per_seg)
+                if i == 0 and abs(spread) > 1e-4:
+                    p.turn(fb, LATERAL, spread)
+
+    # Dynamic secondary physics (Pillar 3: Tails, Capes, Hair, Ears)
+    secondary_chains = []
+    tail_bones = sorted([n for n in rig.names if n.lower().startswith("tail")], key=trailing_number)
+    if tail_bones:
+        secondary_chains.append(("tail", UP, tail_bones, 10.0, 1.25, 0.45))
+    cape_bones = sorted([n for n in rig.names if any(k in n.lower() for k in ("cape", "coat", "skirt"))], key=trailing_number)
+    if cape_bones:
+        secondary_chains.append(("cape", LATERAL, cape_bones, 8.0, 1.15, 0.35))
+    hair_bones = sorted([n for n in rig.names if "hair" in n.lower() or "ponytail" in n.lower()], key=trailing_number)
+    if hair_bones:
+        secondary_chains.append(("hair", LATERAL, hair_bones, 6.0, 1.20, 0.40))
+
+    def animate_secondary(p, phase_or_t, impulse_time=None):
+        for kind, axis, bones, base_amp, growth, lag in secondary_chains:
+            u = phase_or_t if phase_or_t <= 1.0 else phase_or_t / (2.0 * math.pi)
+            angles = gait.evaluate_secondary_chain(
+                len(bones), phase=u, frequency=1.0, base_amplitude=base_amp,
+                amplitude_growth=growth, phase_lag=lag, damping=2.0 if impulse_time is not None else 0.0,
+                impulse_time=impulse_time
+            )
+            for b, ang in zip(bones, angles):
+                p.turn(b, axis, ang)
+
+    def arms_down(p, bend=None):
         for a, fa in arms:
             p.orient(a, at_side[a])
-            p.turn(fa, LATERAL, -bend)
+            if bend is not None and abs(bend) > 1e-5:
+                side_sign = 1.0 if side_of(a) > 0 else -1.0
+                p.turn(fa, UP, -side_sign * bend)
 
     def lean(p, degrees):
         """Spread a pitch across the spine, so the back curves rather than hinging at one joint."""
@@ -959,31 +1140,199 @@ def humanoid_walker(rig, style):
         p.turn(r["head"], UP, 3.0 * math.sin(t * 0.5))
         for a, _ in arms:
             p.turn(a, LATERAL, 2.0 * math.sin(t + (0 if side_of(a) > 0 else math.pi)))
+        curl_fingers(p, "relax")
+        animate_secondary(p, f / float(n))
+        blink_u = (f % 24) / 4.0
+        blink_val = math.sin(math.pi * blink_u) if blink_u <= 1.0 else 0.0
+        p.morph("eyeBlink_L", blink_val)
+        p.morph("eyeBlink_R", blink_val)
         return p
 
     clips["idle"] = (48, idle, True)
 
-    # ---- walk: one second, looping. Thighs swing, knees fold on the way forward, feet kept
-    # roughly flat, arms swing against the legs, the hips dip twice a cycle.
+    # ---- walk: analytical biomechanical gait synthesis ---------------------------------------
     def walk(f, n):
         p = Pose()
-        t = 2 * math.pi * f / n
-        arms_down(p, 12.0 if not shooter else 30.0)
-        for side, phase in (("L", 0.0), ("R", math.pi)):
-            x = t + phase
-            thigh = -thigh_swing * math.sin(x)
-            knee = 38.0 * max(0.0, math.cos(x))          # folded while the leg travels forward
-            p.turn(r["thigh." + side], LATERAL, thigh)
-            p.turn(r["shin." + side], LATERAL, knee)
-            p.turn(r["foot." + side], LATERAL, -0.8 * (thigh + knee))
-        p.move(r["hips"], UP * (0.02 * H * math.cos(2 * t)))
-        p.turn(r["hips"], FORWARD, 3.0 * math.sin(t))
-        lean(p, 3.0)
-        p.turn(r["arm.L"], LATERAL, swing_arm * math.sin(t))
-        p.turn(r["arm.R"], LATERAL, -swing_arm * math.sin(t))
+        phase = f / float(n)
+        st = gait.evaluate_biped_walk(phase, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+        head_st = st["head"]
+
+        # Base arm orientation (arms down at sides, no static bend so dynamic bend keys cleanly)
+        arms_down(p, bend=None)
+
+        # Pelvis translation and 6-DoF rotation
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+        p.turn(r["hips"], FORWARD, pelvis["rot"][1])
+        p.turn(r["hips"], UP, pelvis["rot"][2])
+
+        # Spine and thoracic counter-rotation
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+                p.turn(s, FORWARD, spine_st["roll"] / num_spine)
+                p.turn(s, UP, spine_st["yaw"] / num_spine)
+
+        # Head stabilization
+        if r.get("head"):
+            p.turn(r["head"], LATERAL, head_st["pitch"])
+            p.turn(r["head"], FORWARD, head_st["roll"])
+            p.turn(r["head"], UP, head_st["yaw"])
+
+        # Legs: thigh, shin, foot roll
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            thigh_p = leg["thigh_pitch"]
+            knee_p = leg["knee_pitch"]
+            foot_p = leg["foot_pitch"]
+            p.turn(r["thigh." + side], LATERAL, thigh_p)
+            p.turn(r["shin." + side], LATERAL, knee_p)
+            p.turn(r["foot." + side], LATERAL, -foot_p - (thigh_p + knee_p))
+
+        # Arms: contralateral reciprocal swing and forward elbow flexion
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "relax")
+        animate_secondary(p, phase)
         return p
 
-    clips["walk"] = (24, walk, True)
+    clips["walk"] = (walk_frames, walk, True)
+
+    # ---- run: ballistic flight, spring-mass bounce, high knee drive -------------------------
+    run_params = gait.merge_gait_params("run", walk_spec.get("run") if isinstance(walk_spec.get("run"), dict) else {})
+    run_frames = max(10, int(round(24.0 / run_params.get("cadence", 1.5))))
+
+    def run(f, n):
+        p = Pose()
+        phase = f / float(n)
+        st = gait.evaluate_biped_run(phase, H, H, run_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+        head_st = st["head"]
+
+        arms_down(p, bend=None)
+
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+        p.turn(r["hips"], FORWARD, pelvis["rot"][1])
+        p.turn(r["hips"], UP, pelvis["rot"][2])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+                p.turn(s, FORWARD, spine_st["roll"] / num_spine)
+                p.turn(s, UP, spine_st["yaw"] / num_spine)
+
+        if r.get("head"):
+            p.turn(r["head"], LATERAL, head_st["pitch"])
+            p.turn(r["head"], FORWARD, head_st["roll"])
+            p.turn(r["head"], UP, head_st["yaw"])
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            thigh_p = leg["thigh_pitch"]
+            knee_p = leg["knee_pitch"]
+            foot_p = leg["foot_pitch"]
+            p.turn(r["thigh." + side], LATERAL, thigh_p)
+            p.turn(r["shin." + side], LATERAL, knee_p)
+            p.turn(r["foot." + side], LATERAL, -foot_p - (thigh_p + knee_p))
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "splay" if st.get("is_flight") else "relax")
+        animate_secondary(p, phase)
+        return p
+
+    clips["run"] = (run_frames, run, True)
+
+    # ---- transitions: walk_to_idle and idle_to_walk -----------------------------------------
+    def walk_to_idle(f, n):
+        p = Pose()
+        tau = f / float(n)
+        st = gait.evaluate_biped_walk_to_idle(tau, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, -(leg["thigh_pitch"] + leg["knee_pitch"]))
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "relax")
+        animate_secondary(p, tau)
+        return p
+
+    clips["walk_to_idle"] = (24, walk_to_idle, False)
+
+    def idle_to_walk(f, n):
+        p = Pose()
+        tau = f / float(n)
+        st = gait.evaluate_biped_idle_to_walk(tau, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, -(leg["thigh_pitch"] + leg["knee_pitch"]))
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "relax")
+        animate_secondary(p, tau)
+        return p
+
+    clips["idle_to_walk"] = (20, idle_to_walk, False)
 
     windup_end = 14
     strike_end = 18
@@ -1006,7 +1355,8 @@ def humanoid_walker(rig, style):
         for a, fa in arms:
             p.orient(a, at_side[a].slerp(level[a], rear * (1 - recover)))
             p.turn(a, LATERAL, -16.0 * kick)                   # the muzzle climbs on the shot
-            p.turn(fa, LATERAL, -8.0 * (1 - rear))
+            side_sign = 1.0 if side_of(a) > 0 else -1.0
+            p.turn(fa, UP, -side_sign * 8.0 * (1 - rear))
         crouch = rear * (1 - recover)
         for side in ("L", "R"):
             p.turn(r["thigh." + side], LATERAL, -12.0 * crouch)
@@ -1015,6 +1365,9 @@ def humanoid_walker(rig, style):
         p.move(r["hips"], -UP * (0.05 * H * crouch) - FORWARD * (0.03 * H * kick))
         lean(p, 6.0 * crouch - 8.0 * kick)
         p.turn(r["head"], LATERAL, -6.0 * crouch)
+        curl_fingers(p, "fist", 1.0 if kick > 0.1 else 0.8)
+        p.morph("jawOpen", 0.5 * kick)
+        animate_secondary(p, f / float(n), impulse_time=kick)
         return p
 
     def smash(f, n):
@@ -1027,7 +1380,8 @@ def humanoid_walker(rig, style):
         for a, fa in arms:
             up = at_side[a].slerp(overhead[a], rear)
             p.orient(a, up.slerp(slam[a], strike) if strike < 1 else slam[a].slerp(at_side[a], recover))
-            p.turn(fa, LATERAL, -20.0 * rear * (1 - strike))
+            side_sign = 1.0 if side_of(a) > 0 else -1.0
+            p.turn(fa, UP, -side_sign * 20.0 * rear * (1 - strike))
         lean(p, -14.0 * rear * (1 - strike) + 22.0 * strike * (1 - recover))
         drop = strike * (1 - recover)
         p.move(r["hips"], UP * (0.03 * H * rear * (1 - strike)) - UP * (0.07 * H * drop))
@@ -1035,6 +1389,10 @@ def humanoid_walker(rig, style):
             p.turn(r["thigh." + side], LATERAL, -18.0 * drop)
             p.turn(r["shin." + side], LATERAL, 34.0 * drop)
             p.turn(r["foot." + side], LATERAL, -16.0 * drop)
+        curl_fingers(p, "fist")
+        p.morph("jawOpen", 0.8 * strike)
+        p.morph("viseme_aa", 0.6 * strike)
+        animate_secondary(p, f / float(n), impulse_time=strike)
         return p
 
     clips["attack"] = (24, shoot if shooter else smash, False)
@@ -1051,6 +1409,11 @@ def humanoid_walker(rig, style):
         p.move(r["hips"], -FORWARD * (0.06 * H * k))
         for a, _ in arms:
             p.turn(a, LATERAL, -28.0 * k)
+        curl_fingers(p, "splay", 0.8 * k)
+        p.morph("eyeBlink_L", k * 0.8)
+        p.morph("eyeBlink_R", k * 0.8)
+        p.morph("jawOpen", k * 0.5)
+        animate_secondary(p, f / float(n), impulse_time=k)
         return p
 
     clips["hit"] = (8, hit, False)
@@ -1071,11 +1434,16 @@ def humanoid_walker(rig, style):
         # the floor, and a little back, the way a falling body travels.
         p.move(r["hips"], -UP * (0.08 * H * buckle + 0.8 * H * fall) - FORWARD * (0.25 * H * fall))
         p.turn(r["head"], LATERAL, -10.0 * fall)
+        curl_fingers(p, "relax", 0.4)
+        p.morph("eyeBlink_L", min(1.0, fall * 1.2))
+        p.morph("eyeBlink_R", min(1.0, fall * 1.2))
+        p.morph("jawOpen", fall * 0.35)
+        animate_secondary(p, f / float(n), impulse_time=fall)
         return p
 
     clips["die"] = (18, die, False)
 
-    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 24}
+    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": walk_frames}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1693,8 +2061,9 @@ def author(key, spec, argv):
     export_fbx(fbx, [arm, dup], 1.0, True)
 
     co = [mesh.matrix_world @ v.co for v in mesh.data.vertices]
-    longest = max(max(p[k] for p in co) - min(p[k] for p in co) for k in range(3))
-    metres = float(card.get("metres") or longest)
+    longest = max(max(p[k] for p in co) - min(p[k] for p in co) for k in range(3)) if co else 1.0
+    longest = max(1e-4, float(longest))
+    metres = max(1e-4, float(card.get("metres") or longest))
     per_metre = longest / metres
     ev = arche.events(made)
     facts = arche.facts
@@ -1702,12 +2071,13 @@ def author(key, spec, argv):
     speed_m = 2.0 * facts["stride"] / per_metre / walk_s if facts.get("stride") else None
     data = {
         "format": "autorig-clips/1",
-        "model": key, "display": spec["display"], "category": spec["category"],
+        "model": key, "display": spec.get("display") or key.replace("_", " ").title(),
+        "category": spec.get("category") or "Characters",
         "fbx": key + ".fbx", "blend": key + "_clips.blend",
         "rig": "%s/%s.fbx" % (layout.rig_folder(key), key),
         "units": "the model's own units, as rigged/<model>.fbx (Y up in the FBX, facing +Z); unitsPerMetre converts",
         "metres": metres, "unitsPerMetre": round(per_metre, 6),
-        "fps": CREATURE_FPS, "archetype": spec["archetype"],
+        "fps": CREATURE_FPS, "archetype": spec.get("archetype", "walker"),
         "skeleton": rig.skeleton or None,
         "clips": [{"name": n, "take": n, "frames": (last if loops else last + 1),
                    "seconds": round((last if loops else last + 1) / float(CREATURE_FPS), 4), "loops": loops,
@@ -1928,8 +2298,8 @@ def main():
         tex_file = name + os.path.splitext(src)[1].lower()
         shutil.copyfile(src, os.path.join(out, tex_file))
         img.filepath = "//" + tex_file                     # what the FBX will name: the copy beside it
-    longest = max(rig.hi - rig.lo)
-    metres = float(card["metres"])
+    longest = max(1e-4, float(max(rig.hi - rig.lo)))
+    metres = max(1e-4, float(card.get("metres") or longest))
     export_fbx(os.path.join(out, name + ".fbx"), [arm, dup], metres / longest, True)
     if img: img.filepath = src
 
@@ -2005,7 +2375,10 @@ def preview(rig, dup, mesh, made, out_dir):
     cam.rotation_euler = (math.radians(90), 0, math.radians(-90))
     cd.clip_end = 20 * rig.size
     ad = rig.arm.animation_data
-    for t in ad.nla_tracks: t.mute = True
+    if ad:
+        for t in ad.nla_tracks: t.mute = True
+    else:
+        ad = rig.arm.animation_data_create()
     for n, last, loops in made:
         ad.action = bpy.data.actions[n]
         k = 6

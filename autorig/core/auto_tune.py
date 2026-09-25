@@ -122,21 +122,31 @@ def find_bone_in_spec(spec, bone_name):
     return None
 
 
-def calculate_tear_centroid(tear_sites, bone_name=None):
-    """Calculates the 3D centroid of tear points, optionally filtered by bone."""
+def calculate_tear_centroid(tear_sites, bone_name=None, use_bbox=False):
+    """Calculates the 3D centroid of tear points, optionally filtered by bone or in 0..1 bbox space."""
     points = []
     for site in tear_sites:
         if bone_name and site.get("bone") != bone_name:
             continue
-        for pt in site.get("points", []):
-            if len(pt) >= 3:
-                points.append(pt[:3])
-    if not points and bone_name:
-        # Fallback to all points if bone-specific points not found
-        for site in tear_sites:
+        if use_bbox:
+            for cl in site.get("clusters", []):
+                if "at_bbox" in cl and len(cl["at_bbox"]) >= 3:
+                    points.append(cl["at_bbox"][:3])
+        else:
             for pt in site.get("points", []):
                 if len(pt) >= 3:
                     points.append(pt[:3])
+    if not points and bone_name:
+        # Fallback to all points if bone-specific points not found
+        for site in tear_sites:
+            if use_bbox:
+                for cl in site.get("clusters", []):
+                    if "at_bbox" in cl and len(cl["at_bbox"]) >= 3:
+                        points.append(cl["at_bbox"][:3])
+            else:
+                for pt in site.get("points", []):
+                    if len(pt) >= 3:
+                        points.append(pt[:3])
     if not points:
         return None
     n = len(points)
@@ -175,140 +185,196 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
     bend_tears = diag["bend_tears"]
     bleed_pct = diag["bleed_pct"]
 
-    # 1. Strategy: Joint Blend tuning (widens transition zone to stop tearing at spine/limbs)
-    cur_jb = float(rig.get("joint_blend", 0.4))
-    if "joint_blend_inc_1" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.8:
-        new_jb = round(min(0.8, cur_jb + 0.15), 2)
-        rig["joint_blend"] = new_jb
-        return {
-            "description": f"Increase joint_blend from {cur_jb} to {new_jb}",
-            "param": "joint_blend_inc_1",
-            "spec": cand_spec,
-            "delta_type": "joint_blend",
-        }
+    is_humanoid = bool(cand_spec.get("humanoid") or rig.get("kind") == "humanoid")
 
-    # 2. Strategy: Weight Smoothing (diffuses discrete triangular face weights)
-    cur_smooth = int(rig.get("smooth", 0))
-    if "smooth_1" not in tried_params and cur_smooth < 2 and (comb_tears > 0 or bend_tears > 0):
-        new_smooth = cur_smooth + 1
-        rig["smooth"] = new_smooth
-        return {
-            "description": f"Enable weight smoothing passes (smooth={new_smooth})",
-            "param": "smooth_1",
-            "spec": cand_spec,
-            "delta_type": "smooth",
-        }
+    # 1. Strategy for Humanoids: Landmark Nudges (Z and X landmarks)
+    if is_humanoid:
+        z_spec = cand_spec.get("z") or rig.get("z")
+        if not z_spec and "humanoid" in cand_spec and isinstance(cand_spec["humanoid"], dict):
+            z_spec = cand_spec["humanoid"].get("z")
+        x_spec = cand_spec.get("x") or rig.get("x")
+        if not x_spec and "humanoid" in cand_spec and isinstance(cand_spec["humanoid"], dict):
+            x_spec = cand_spec["humanoid"].get("x")
 
-    # 3. Strategy: Limb Capsule Radius (expands envelope capsule if limb drops periphery vertices)
-    cur_lr = float(rig.get("limb_radius", 1.0))
-    is_limb_bone = worst_bone and any(
-        k in worst_bone.lower() for k in ("arm", "leg", "wing", "finger", "tentacle", "claw", "fin")
-    )
-    if is_limb_bone and "limb_radius_inc" not in tried_params and cur_lr < 2.0:
-        new_lr = round(cur_lr * 1.25, 2)
-        rig["limb_radius"] = new_lr
-        return {
-            "description": f"Increase limb capsule radius (limb_radius from {cur_lr} to {new_lr})",
-            "param": "limb_radius_inc",
-            "spec": cand_spec,
-            "delta_type": "limb_radius",
-        }
+        centroid_bbox = calculate_tear_centroid(diag["tear_sites"], worst_bone, use_bbox=True)
+        if not centroid_bbox:
+            centroid_bbox = calculate_tear_centroid(diag["tear_sites"], worst_bone)
 
-    # 4. Strategy: Micro-nudge Station / Joint Position along Error Gradient
-    bone_info = find_bone_in_spec(cand_spec, worst_bone) if worst_bone else None
-    if bone_info and "joint_nudge" not in tried_params:
-        chain = bone_info["chain"]
-        bi = bone_info["bone_index"]
-        pts = chain.get("points")
-        stations = chain.get("stations")
-        centroid = calculate_tear_centroid(diag["tear_sites"], worst_bone)
-        if pts and bi < len(pts) and centroid:
-            p = pts[bi]
-            # Nudge point toward tear centroid
-            dx = max(-0.025, min(0.025, (centroid[0] - p[0]) * 0.3))
-            dy = max(-0.025, min(0.025, (centroid[1] - p[1]) * 0.3))
-            dz = max(-0.025, min(0.025, (centroid[2] - p[2]) * 0.3))
-            if abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(dz) > 1e-4:
-                pts[bi] = [round(p[0] + dx, 4), round(p[1] + dy, 4), round(p[2] + dz, 4)]
-                return {
-                    "description": f"Nudge joint {worst_bone} station toward tear centroid by ({dx:+.3f}, {dy:+.3f}, {dz:+.3f})",
-                    "param": "joint_nudge",
-                    "spec": cand_spec,
-                    "delta_type": "joint_nudge",
-                }
-        elif stations and bi < len(stations) and centroid:
-            st = stations[bi]
-            dz = max(-0.025, min(0.025, (centroid[2] - st) * 0.3))
-            if abs(dz) > 1e-4:
-                stations[bi] = round(st + dz, 4)
-                return {
-                    "description": f"Nudge station {worst_bone} height by {dz:+.3f}",
-                    "param": "joint_nudge",
-                    "spec": cand_spec,
-                    "delta_type": "joint_nudge",
-                }
-
-    # Direct joints dictionary in spec
-    joints_dict = cand_spec.get("joints") or rig.get("joints")
-    centroid = calculate_tear_centroid(diag["tear_sites"], worst_bone)
-    if joints_dict and worst_bone and worst_bone in joints_dict and centroid and "joint_nudge" not in tried_params:
-        cur_p = joints_dict[worst_bone]
-        dx = max(-0.025, min(0.025, (centroid[0] - cur_p[0]) * 0.3))
-        dy = max(-0.025, min(0.025, (centroid[1] - cur_p[1]) * 0.3))
-        dz = max(-0.025, min(0.025, (centroid[2] - cur_p[2]) * 0.3))
-        if abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(dz) > 1e-4:
-            joints_dict[worst_bone] = [round(cur_p[0] + dx, 4), round(cur_p[1] + dy, 4), round(cur_p[2] + dz, 4)]
-            return {
-                "description": f"Nudge joint {worst_bone} coordinate toward tear centroid by ({dx:+.3f}, {dy:+.3f}, {dz:+.3f})",
-                "param": "joint_nudge",
-                "spec": cand_spec,
-                "delta_type": "joint_nudge",
+        if worst_bone and centroid_bbox and (z_spec or x_spec):
+            w_lower = worst_bone.lower()
+            HUMANOID_Z_CANDS = {
+                "leftupleg": ("hip", "knee"), "rightupleg": ("hip", "knee"), "hips": ("hip",), "hip": ("hip",),
+                "leftleg": ("knee", "ankle"), "rightleg": ("knee", "ankle"), "knee": ("knee",),
+                "leftfoot": ("ankle",), "rightfoot": ("ankle",), "ankle": ("ankle",),
+                "spine": ("spine",), "chest": ("spine1",), "spine1": ("spine1",),
+                "upperchest": ("spine2",), "spine2": ("spine2",),
+                "neck": ("neck", "head", "spine2"), "head": ("head", "top", "neck"),
+            }
+            HUMANOID_X_CANDS = {
+                "leftshoulder": ("shoulder", "elbow"), "rightshoulder": ("shoulder", "elbow"), "shoulder": ("shoulder", "elbow"),
+                "leftarm": ("shoulder", "elbow"), "rightarm": ("shoulder", "elbow"), "elbow": ("elbow",),
+                "leftforearm": ("elbow", "wrist"), "rightforearm": ("elbow", "wrist"), "wrist": ("wrist",),
+                "lefthand": ("wrist", "knuckle"), "righthand": ("wrist", "knuckle"), "hand": ("knuckle",),
             }
 
-    # Humanoid landmarks (z and x dicts)
-    z_spec = cand_spec.get("z") or rig.get("z")
-    x_spec = cand_spec.get("x") or rig.get("x")
-    if worst_bone and centroid and (z_spec or x_spec) and "humanoid_landmark_nudge" not in tried_params:
-        w_lower = worst_bone.lower()
-        HUMANOID_Z_MAP = {
-            "leftupleg": "hip", "rightupleg": "hip", "hips": "hip", "hip": "hip",
-            "leftleg": "knee", "rightleg": "knee", "knee": "knee",
-            "leftfoot": "ankle", "rightfoot": "ankle", "ankle": "ankle",
-            "spine": "spine", "chest": "spine1", "spine1": "spine1",
-            "upperchest": "spine2", "spine2": "spine2",
-            "neck": "neck", "head": "head",
-        }
-        HUMANOID_X_MAP = {
-            "leftshoulder": "shoulder", "rightshoulder": "shoulder", "shoulder": "shoulder",
-            "leftarm": "elbow", "rightarm": "elbow", "elbow": "elbow",
-            "leftforearm": "wrist", "rightforearm": "wrist", "wrist": "wrist",
-        }
-        if z_spec and w_lower in HUMANOID_Z_MAP:
-            z_key = HUMANOID_Z_MAP[w_lower]
-            if z_key in z_spec:
-                cur_z = z_spec[z_key]
-                dz = max(-0.02, min(0.02, (centroid[2] - cur_z) * 0.25))
+            if z_spec and w_lower in HUMANOID_Z_CANDS:
+                cands = [k for k in HUMANOID_Z_CANDS[w_lower] if k in z_spec]
+                if cands:
+                    # Pick candidate closest to tear centroid along Z
+                    z_key = min(cands, key=lambda k: abs(centroid_bbox[2] - float(z_spec[k])))
+                    param_name = f"humanoid_z_{z_key}"
+                    if param_name not in tried_params:
+                        cur_z = float(z_spec[z_key])
+                        dz = max(-0.02, min(0.02, (centroid_bbox[2] - cur_z) * 0.25))
+                        if abs(dz) > 1e-4:
+                            new_z = max(0.02, min(0.99, round(cur_z + dz, 3)))
+                            z_spec[z_key] = new_z
+                            return {
+                                "description": f"Nudge humanoid Z landmark '{z_key}' by {dz:+.3f} toward tear cluster",
+                                "param": param_name,
+                                "spec": cand_spec,
+                                "delta_type": "landmark_nudge",
+                            }
+
+            if x_spec and w_lower in HUMANOID_X_CANDS:
+                cands = [k for k in HUMANOID_X_CANDS[w_lower] if k in x_spec]
+                if cands:
+                    target_span = min(centroid_bbox[0], 1.0 - centroid_bbox[0]) if centroid_bbox[0] >= 0 else abs(centroid_bbox[0])
+                    x_key = min(cands, key=lambda k: abs(target_span - float(x_spec[k])))
+                    param_name = f"humanoid_x_{x_key}"
+                    if param_name not in tried_params:
+                        cur_x = float(x_spec[x_key])
+                        dx = max(-0.02, min(0.02, (target_span - cur_x) * 0.25))
+                        if abs(dx) > 1e-4:
+                            new_x = max(0.0, min(0.49, round(cur_x + dx, 3)))
+                            t_val = float(x_spec.get("tip", 0.0))
+                            kn_val = float(x_spec.get("knuckle", 0.05))
+                            wr_val = float(x_spec.get("wrist", 0.11))
+                            el_val = float(x_spec.get("elbow", 0.23))
+                            sh_val = float(x_spec.get("shoulder", 0.38))
+                            if x_key == "knuckle":
+                                new_x = max(t_val, min(new_x, wr_val))
+                            elif x_key == "wrist":
+                                new_x = max(kn_val, min(new_x, el_val))
+                            elif x_key == "elbow":
+                                new_x = max(wr_val, min(new_x, sh_val))
+                            elif x_key == "shoulder":
+                                new_x = max(el_val, min(new_x, 0.49))
+                            x_spec[x_key] = new_x
+                            return {
+                                "description": f"Nudge humanoid X landmark '{x_key}' by {dx:+.3f} toward tear cluster",
+                                "param": param_name,
+                                "spec": cand_spec,
+                                "delta_type": "landmark_nudge",
+                            }
+
+        h_dict = cand_spec.get("humanoid") if isinstance(cand_spec.get("humanoid"), dict) else rig
+        if "humanoid_twist_relax" not in tried_params and not h_dict.get("twist_relaxation", False):
+            h_dict["twist_relaxation"] = True
+            return {
+                "description": "Enable humanoid twist shaft relaxation",
+                "param": "humanoid_twist_relax",
+                "spec": cand_spec,
+                "delta_type": "twist_relaxation",
+            }
+        if "humanoid_hinge_smooth" not in tried_params and not h_dict.get("hinge_smoothing", False):
+            h_dict["hinge_smoothing"] = True
+            return {
+                "description": "Enable humanoid hinge angle smoothing",
+                "param": "humanoid_hinge_smooth",
+                "spec": cand_spec,
+                "delta_type": "hinge_smoothing",
+            }
+
+    if not is_humanoid:
+        # 1. Strategy: Joint Blend tuning (widens transition zone to stop tearing at spine/limbs)
+        cur_jb = float(rig.get("joint_blend", 0.4))
+        if "joint_blend_inc_1" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.8:
+            new_jb = round(min(0.8, cur_jb + 0.15), 2)
+            rig["joint_blend"] = new_jb
+            return {
+                "description": f"Increase joint_blend from {cur_jb} to {new_jb}",
+                "param": "joint_blend_inc_1",
+                "spec": cand_spec,
+                "delta_type": "joint_blend",
+            }
+
+        # 2. Strategy: Weight Smoothing (diffuses discrete triangular face weights)
+        cur_smooth = int(rig.get("smooth", 0))
+        if "smooth_1" not in tried_params and cur_smooth < 2 and (comb_tears > 0 or bend_tears > 0):
+            new_smooth = cur_smooth + 1
+            rig["smooth"] = new_smooth
+            return {
+                "description": f"Enable weight smoothing passes (smooth={new_smooth})",
+                "param": "smooth_1",
+                "spec": cand_spec,
+                "delta_type": "smooth",
+            }
+
+        # 3. Strategy: Limb Capsule Radius (expands envelope capsule if limb drops periphery vertices)
+        cur_lr = float(rig.get("limb_radius", 1.0))
+        is_limb_bone = worst_bone and any(
+            k in worst_bone.lower() for k in ("arm", "leg", "wing", "finger", "tentacle", "claw", "fin")
+        )
+        if is_limb_bone and "limb_radius_inc" not in tried_params and cur_lr < 2.0:
+            new_lr = round(cur_lr * 1.25, 2)
+            rig["limb_radius"] = new_lr
+            return {
+                "description": f"Increase limb capsule radius (limb_radius from {cur_lr} to {new_lr})",
+                "param": "limb_radius_inc",
+                "spec": cand_spec,
+                "delta_type": "limb_radius",
+            }
+
+        # 4. Strategy: Micro-nudge Station / Joint Position along Error Gradient
+        bone_info = find_bone_in_spec(cand_spec, worst_bone) if worst_bone else None
+        if bone_info and "joint_nudge" not in tried_params:
+            chain = bone_info["chain"]
+            bi = bone_info["bone_index"]
+            pts = chain.get("points")
+            stations = chain.get("stations")
+            centroid = calculate_tear_centroid(diag["tear_sites"], worst_bone)
+            if pts and bi < len(pts) and centroid:
+                p = pts[bi]
+                dx = max(-0.025, min(0.025, (centroid[0] - p[0]) * 0.3))
+                dy = max(-0.025, min(0.025, (centroid[1] - p[1]) * 0.3))
+                dz = max(-0.025, min(0.025, (centroid[2] - p[2]) * 0.3))
+                if abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(dz) > 1e-4:
+                    pts[bi] = [round(p[0] + dx, 4), round(p[1] + dy, 4), round(p[2] + dz, 4)]
+                    return {
+                        "description": f"Nudge joint {worst_bone} station toward tear centroid by ({dx:+.3f}, {dy:+.3f}, {dz:+.3f})",
+                        "param": "joint_nudge",
+                        "spec": cand_spec,
+                        "delta_type": "joint_nudge",
+                    }
+            elif stations and bi < len(stations) and centroid:
+                st = stations[bi]
+                dz = max(-0.025, min(0.025, (centroid[2] - st) * 0.3))
                 if abs(dz) > 1e-4:
-                    z_spec[z_key] = round(cur_z + dz, 3)
+                    stations[bi] = round(st + dz, 4)
                     return {
-                        "description": f"Nudge humanoid Z landmark '{z_key}' by {dz:+.3f} toward tear cluster",
-                        "param": "humanoid_landmark_nudge",
+                        "description": f"Nudge station {worst_bone} height by {dz:+.3f}",
+                        "param": "joint_nudge",
                         "spec": cand_spec,
-                        "delta_type": "landmark_nudge",
+                        "delta_type": "joint_nudge",
                     }
-        if x_spec and w_lower in HUMANOID_X_MAP:
-            x_key = HUMANOID_X_MAP[w_lower]
-            if x_key in x_spec:
-                cur_x = x_spec[x_key]
-                dx = max(-0.02, min(0.02, (abs(centroid[0]) - cur_x) * 0.25))
-                if abs(dx) > 1e-4:
-                    x_spec[x_key] = round(cur_x + dx, 3)
-                    return {
-                        "description": f"Nudge humanoid X landmark '{x_key}' by {dx:+.3f} toward tear cluster",
-                        "param": "humanoid_landmark_nudge",
-                        "spec": cand_spec,
-                        "delta_type": "landmark_nudge",
-                    }
+
+        # Direct joints dictionary in spec
+        joints_dict = cand_spec.get("joints") or rig.get("joints")
+        centroid = calculate_tear_centroid(diag["tear_sites"], worst_bone)
+        if joints_dict and worst_bone and worst_bone in joints_dict and centroid and "joint_nudge" not in tried_params:
+            cur_p = joints_dict[worst_bone]
+            dx = max(-0.025, min(0.025, (centroid[0] - cur_p[0]) * 0.3))
+            dy = max(-0.025, min(0.025, (centroid[1] - cur_p[1]) * 0.3))
+            dz = max(-0.025, min(0.025, (centroid[2] - cur_p[2]) * 0.3))
+            if abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(dz) > 1e-4:
+                joints_dict[worst_bone] = [round(cur_p[0] + dx, 4), round(cur_p[1] + dy, 4), round(cur_p[2] + dz, 4)]
+                return {
+                    "description": f"Nudge joint {worst_bone} coordinate toward tear centroid by ({dx:+.3f}, {dy:+.3f}, {dz:+.3f})",
+                    "param": "joint_nudge",
+                    "spec": cand_spec,
+                    "delta_type": "joint_nudge",
+                }
 
     # 5. Strategy: Rip Welds for Competing Bone Pairs
     cur_rip = list(rig.get("rip_welds", []))

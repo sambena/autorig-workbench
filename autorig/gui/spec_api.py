@@ -18,7 +18,7 @@
 #
 # The editor edits a copy of the parsed file: fields it does not know are kept as they are, key order is kept, and
 # the file is written in the same compact style people write it in (short lists and objects on one line).
-import difflib, hashlib, json, os, re, shutil, sys, time
+import difflib, hashlib, json, math, os, re, shutil, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8"}
@@ -28,6 +28,7 @@ SCHEMA_ID = "autorig-spec/1"
 KINDS = ("tripo", "build", "placed", "humanoid", "custom")
 ARCHETYPES = ("quadruped", "hexapod", "octopod", "serpent", "winged", "floater", "rigid", "humanoid")
 CLIP_ARCHETYPES = ("walker", "flyer", "exploder", "swimmer", "turret", "winged")
+WALK_PRESETS = ("natural", "soldier", "swagger", "stealth", "heavy", "quadruped_walk", "quadruped_trot")
 THRESHOLD_KEYS = ("bleed_pct", "combined_tears", "bend_tears", "head_pct", "max_influences")
 ROLE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -138,12 +139,28 @@ RIG_FIELDS = [
       "needs a reason, written in the note below it.", group="Audit"),
 ]
 BUILD_CHAIN_FIELDS = {"name", "role", "bones", "slice", "stations", "tube", "tip", "base", "base_f", "points",
-                      "names", "parent", "parent_nearest", "ik", "width", "first", "snap_end", "centre", "girdle"}
+                      "names", "parent", "parent_nearest", "ik", "width", "first", "snap_end", "centre", "girdle", "pre_bend"}
 OTHER_FIELDS = [
     F("budget", "Triangle budget", "int_or_null", "The engine's triangle budget. Empty: the collection's default; "
       "\"full\" keeps full resolution.", section="budget"),
     F("clips.archetype", "Clips", "enum", "Which clips to author.", options=[""] + list(CLIP_ARCHETYPES),
       section="clips"),
+    F("clips.gait", "Gait", "enum", "Walking gait: lateral sequence walk or trot.", options=["", "walk", "trot"],
+      section="clips"),
+    F("clips.walk.preset", "Walk style preset", "enum", "Biomechanical gait style preset.",
+      options=[""] + list(WALK_PRESETS), section="clips"),
+    F("clips.walk.stride", "Walk stride scale", "number", "Step length multiplier (0.2 .. 2.5, default 1.0).",
+      min=0.2, max=2.5, step=0.05, section="clips"),
+    F("clips.walk.cadence", "Walk cadence scale", "number", "Step frequency multiplier (0.2 .. 3.0, default 1.0).",
+      min=0.2, max=3.0, step=0.05, section="clips"),
+    F("clips.walk.sway", "Pelvis sway scale", "number", "Lateral pelvis weight shifting (0.0 .. 3.5, default 1.0).",
+      min=0.0, max=3.5, step=0.05, section="clips"),
+    F("clips.walk.bob", "Pelvis bounce scale", "number", "Vertical bounce amplitude (0.0 .. 3.0, default 1.0).",
+      min=0.0, max=3.0, step=0.05, section="clips"),
+    F("clips.walk.lean", "Forward lean (deg)", "number", "Trunk forward tilt angle (-10° .. 35°, default 3.5°).",
+      min=-10.0, max=35.0, step=0.5, section="clips"),
+    F("clips.walk.arm_swing", "Arm swing scale", "number", "Reciprocal arm swing amplitude (0.0 .. 3.0, default 1.0).",
+      min=0.0, max=3.0, step=0.05, section="clips"),
     F("clips.display", "Display name", "text", "", section="clips"),
     F("clips.category", "Category", "text", "", section="clips"),
     F("card.metres", "Real size (m)", "number", "The real length of the longest axis, in metres.", min=0,
@@ -410,6 +427,16 @@ def check(spec, source=None):
         if not isinstance(clips, dict): E("clips", "clips must be an object")
         elif clips.get("archetype") not in (None,) + CLIP_ARCHETYPES:
             E("clips.archetype", "one of " + ", ".join(CLIP_ARCHETYPES))
+        if isinstance(clips, dict) and "walk" in clips:
+            w = clips["walk"]
+            if not isinstance(w, dict):
+                E("clips.walk", "walk must be an object")
+            else:
+                if "preset" in w and w["preset"] and w["preset"] not in WALK_PRESETS:
+                    W("clips.walk.preset", "unknown walk preset %r" % w["preset"])
+                for k in ("stride", "cadence", "sway", "bob", "lean", "hip_drop", "counter_twist", "arm_swing", "foot_lift", "duty_factor"):
+                    if k in w and w[k] is not None and not _num(w[k]):
+                        E("clips.walk." + k, "must be a number")
     card = spec.get("card")
     if isinstance(card, dict) and "metres" in card and card["metres"] is not None and not (_num(card["metres"]) and card["metres"] > 0):
         E("card.metres", "a size in metres, above 0")
@@ -538,8 +565,8 @@ def _check_humanoid(spec, E, W):
                 E("humanoid.z." + k, "missing height %s" % k)
             elif not _num(z[k]):
                 E("humanoid.z." + k, "a number (0 floor .. 1 top)")
-            elif not (-0.01 <= z[k] <= 1.01):
-                W("humanoid.z." + k, "outside the model's 0..1 box")
+            elif z[k] < 0.0 or z[k] > 1.05:
+                E("humanoid.z." + k, "heights must be within 0.0 (floor) and 1.0 (top)")
         for k in z:
             if k not in HUMANOID_Z_KEYS:
                 W("humanoid.z." + k, "not a standard humanoid height")
@@ -562,8 +589,8 @@ def _check_humanoid(spec, E, W):
                 E("humanoid.x." + k, "missing span %s" % k)
             elif not _num(x[k]):
                 E("humanoid.x." + k, "a number (0 tip .. 0.5 center)")
-            elif not (-0.01 <= x[k] <= 0.55):
-                W("humanoid.x." + k, "spans are measured from outer tip (0) towards center (0.5)")
+            elif x[k] < 0.0 or x[k] > 0.55:
+                E("humanoid.x." + k, "spans must be between 0.0 (outer tip) and 0.5 (center)")
         for k in x:
             if k not in HUMANOID_X_KEYS:
                 W("humanoid.x." + k, "not a standard humanoid span")
@@ -666,16 +693,21 @@ def bundle(srv, name):
             "backup": os.path.exists(path + ".bak")}
 
 
-def write_spec(srv, name, spec, base):
+def write_spec(srv, name, spec, base, force=False):
     """Validates and writes rig.json, keeping the file it replaces as rig.json.bak. Returns (text, errors, warns)."""
     path, old = read_spec_text(srv, name)
-    if base is not None and text_hash(old) != base:
-        raise Conflict("rig.json changed on disk since the editor loaded it: reload the page first (your edit is "
-                       "not lost until you do; copy it from the JSON view)")
+    text = dumps(spec)
+    if not force and base is not None and text_hash(old) != base:
+        if old is not None and text_hash(old) == text_hash(text):
+            srv.spec_store.reload()
+            src = _load(os.path.join(srv.layout.WORK, "source", name + ".json"))
+            errs, warns = check(spec, src)
+            return text, errs, warns
+        raise Conflict("rig.json changed on disk since the editor loaded it: reload or overwrite to continue (your edit is "
+                       "not lost; copy it from the JSON view)", disk_base=text_hash(old))
     src = _load(os.path.join(srv.layout.WORK, "source", name + ".json"))
     errs, warns = check(spec, src)
     if errs: return None, errs, warns
-    text = dumps(spec)
     if old is not None:
         shutil.copy2(path, path + ".bak")
     tmp = path + ".tmp"
@@ -686,7 +718,9 @@ def write_spec(srv, name, spec, base):
 
 
 class Conflict(Exception):
-    pass
+    def __init__(self, message, disk_base=None):
+        super().__init__(message)
+        self.disk_base = disk_base
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -706,6 +740,21 @@ def page(token):
 
 def get(h, app, srv, path, q):
     """GET routes under the token. True when handled."""
+    if path == "/api/anim/presets":
+        try:
+            import gait
+        except ImportError:
+            from autorig.core import gait
+        h._send(200, {"presets": gait.GAIT_PRESETS})
+        return True
+    if path == "/api/spec/hash":
+        name = (q.get("name") or [""])[0]
+        if srv.find_group(name) is None:
+            h._send(404, {"error": "no model " + name}); return True
+        path_file, text = read_spec_text(srv, name)
+        mtime = os.path.getmtime(path_file) if path_file and os.path.exists(path_file) else 0
+        h._send(200, {"name": name, "base": text_hash(text), "mtime": mtime})
+        return True
     if path != "/api/spec": return False
     name = (q.get("name") or [""])[0]
     if srv.find_group(name) is None:
@@ -722,6 +771,50 @@ def _job(app, srv, name, label, cmds):
 
 def post(h, app, srv, path, body):
     """POST routes under the token. True when handled."""
+    if path == "/api/anim/evaluate":
+        try:
+            import gait
+        except ImportError:
+            from autorig.core import gait
+        preset_name = body.get("preset", "natural")
+        overrides = body.get("overrides", {})
+        num_frames = int(body.get("frames", 24))
+        is_biped = body.get("type", "biped") == "biped"
+        params = gait.merge_gait_params(preset_name, overrides)
+        frames_out = []
+        for i in range(num_frames):
+            phase = i / float(num_frames)
+            if is_biped:
+                action = body.get("action") or (preset_name if preset_name in ("attack", "hit", "death") else None)
+                if action == "attack":
+                    st = gait.evaluate_biped_attack(phase, 1.0, 1.0, is_shooter=bool(body.get("shooter", False)))
+                elif action == "hit":
+                    st = gait.evaluate_biped_hit(phase, 1.0, 1.0, direction=body.get("direction", "front"))
+                elif action == "death":
+                    st = gait.evaluate_biped_death(phase, 1.0, 1.0)
+                elif preset_name in ("run", "sprint"):
+                    st = gait.evaluate_biped_run(phase, 1.0, 1.0, params, is_shooter=bool(body.get("shooter", False)))
+                else:
+                    st = gait.evaluate_biped_walk(phase, 1.0, 1.0, params, is_shooter=bool(body.get("shooter", False)))
+            else:
+                if preset_name == "quadruped_gallop":
+                    st = gait.evaluate_quadruped_gallop(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
+                else:
+                    st = gait.evaluate_quadruped_walk(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
+            frames_out.append(st)
+        thigh_swing = 22.0 * params.get("stride", 1.0)
+        stride = 2.0 * math.sin(math.radians(thigh_swing))
+        cadence = params.get("cadence", 1.0)
+        h._send(200, {
+            "preset": preset_name,
+            "params": params,
+            "frames": frames_out,
+            "stride": stride,
+            "cadence": cadence,
+            "walk_frames": max(10, int(round(24.0 / cadence)))
+        })
+        return True
+
     if not path.startswith("/api/spec/"): return False
     name = body.get("model", "")
     g = srv.find_group(name)
@@ -736,8 +829,9 @@ def post(h, app, srv, path, body):
             new = dumps(body.get("spec")) if isinstance(body.get("spec"), dict) else ""
             h._send(200, {"errors": errs, "warnings": warns, "text": new, "diff": diff(old, new),
                           "changed": (old or "") != new})
-        elif what in ("save", "rerig"):
-            text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"))
+        elif what in ("save", "rerig", "rebake_clips"):
+            force = bool(body.get("force", False))
+            text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
             if errs:
                 h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
                               "errors": errs, "warnings": warns}); return True
@@ -752,11 +846,23 @@ def post(h, app, srv, path, body):
                 st = srv.status(g, name)
                 if st["steps"].get("rig"):
                     h._send(409, {"error": st["steps"]["rig"]}); return True
-                steps = ["rig", "trim", "audit"] + (["clips"] if (spec.get("clips") or {}).get("archetype") else []) + ["preview"]
+                c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
+                steps = ["rig", "trim", "audit"] + (["clips"] if c_arch else []) + ["preview"]
                 cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
                 out["job"] = _job(app, srv, name, "save and re-rig", cmds)
+            elif what == "rebake_clips":
+                spec = srv.spec_store.model(name)
+                steps = ["clips", "preview"]
+                cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
+                out["job"] = _job(app, srv, name, "re-bake clips", cmds)
             h._send(200, out)
         elif what == "auto-tune":
+            if body.get("spec"):
+                force = bool(body.get("force", True))
+                text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
+                if errs:
+                    h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
+                                  "errors": errs, "warnings": warns}); return True
             ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
             cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
             if cur:
@@ -798,5 +904,5 @@ def post(h, app, srv, path, body):
         else:
             h._send(404, {"error": "not found"})
     except Conflict as e:
-        h._send(409, {"error": str(e)})
+        h._send(409, {"error": str(e), "conflict": True, "disk_base": getattr(e, "disk_base", None)})
     return True

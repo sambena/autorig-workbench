@@ -354,7 +354,231 @@ test("orientation angles, axis locking, camera leveling, and ground plane", () =
   assert.equal(ground.center[1], -0.1);
   assert.equal(ground.center[2], 0.1);
   assert.ok(ground.gridDim >= 4);
+
+  // 5. Dynamic Camera Framing Distance (centering & auto-zoom)
+  const dStandard = L.calculateFramingDistance({ x: 1, y: 1.8, z: 0.5 }, 35, 1.33);
+  const dNarrow = L.calculateFramingDistance({ x: 1, y: 1.8, z: 0.5 }, 35, 0.6);
+  assert.ok(dNarrow > dStandard, "Narrow aspect ratio must zoom out to prevent horizontal clipping");
+
+  const dWide = L.calculateFramingDistance({ x: 4, y: 1.0, z: 0.5 }, 35, 1.0);
+  const dCube = L.calculateFramingDistance({ x: 1, y: 1.0, z: 0.5 }, 35, 1.0);
+  assert.ok(dWide > dCube * 2, "Wide model must zoom out significantly to prevent lateral clipping");
+});
+
+test("status filtering: matchesModelFilter", () => {
+  const mPass = { name: "guard", audit: "PASS", rigged: true, spec: true };
+  const mCheck = { name: "crawler", audit: "CHECK", rigged: true, spec: true };
+  const mFail = { name: "dragon", audit: "FAIL", rigged: true, spec: true };
+  const mUnrigged = { name: "crate", audit: null, rigged: false, spec: true };
+  const mNoSpec = { name: "barrel", audit: null, rigged: false, spec: false };
+
+  // All matches everything
+  assert.equal(L.matchesModelFilter(mPass, "all"), true);
+  assert.equal(L.matchesModelFilter(mFail, "all"), true);
+  assert.equal(L.matchesModelFilter(mNoSpec, "all"), true);
+
+  // Status-specific filters
+  assert.equal(L.matchesModelFilter(mPass, "pass"), true);
+  assert.equal(L.matchesModelFilter(mCheck, "pass"), false);
+  assert.equal(L.matchesModelFilter(mFail, "pass"), false);
+
+  assert.equal(L.matchesModelFilter(mCheck, "check"), true);
+  assert.equal(L.matchesModelFilter(mPass, "check"), false);
+
+  assert.equal(L.matchesModelFilter(mFail, "fail"), true);
+  assert.equal(L.matchesModelFilter(mPass, "fail"), false);
+
+  // Rigged vs unrigged
+  assert.equal(L.matchesModelFilter(mPass, "rigged"), true);
+  assert.equal(L.matchesModelFilter(mUnrigged, "rigged"), false);
+  assert.equal(L.matchesModelFilter(mUnrigged, "unrigged"), true);
+  assert.equal(L.matchesModelFilter(mPass, "unrigged"), false);
+
+  // Missing spec
+  assert.equal(L.matchesModelFilter(mNoSpec, "nospec"), true);
+  assert.equal(L.matchesModelFilter(mPass, "nospec"), false);
+});
+
+test("model load sequence validation and race protection", () => {
+  // Matching active sequence and model commits safely
+  assert.equal(L.isModelLoadValid(1, 1, "armoured_guard", "armoured_guard"), true);
+  assert.equal(L.isModelLoadValid(5, 5, "beetle", "beetle"), true);
+
+  // Stale sequence number (new model switch occurred while first was loading) rejected
+  assert.equal(L.isModelLoadValid(2, 1, "armoured_guard", "armoured_guard"), false);
+  assert.equal(L.isModelLoadValid(10, 9, "beetle", "beetle"), false);
+
+  // Model mismatch (user switched from armoured_guard to beetle) rejected
+  assert.equal(L.isModelLoadValid(2, 2, "beetle", "armoured_guard"), false);
+  assert.equal(L.isModelLoadValid(1, 1, "wolf", "canine"), false);
+
+  // Empty or uninitialized models rejected
+  assert.equal(L.isModelLoadValid(1, 1, "", ""), false);
+  assert.equal(L.isModelLoadValid(1, 1, null, "beetle"), false);
+});
+
+test("quadruped IK pole target position calculation", () => {
+  // Bent hind leg: hip at (0, 0, 1), knee forward at (0, -0.1, 0.5), foot at (0, 0, 0)
+  const hindPole = L.computePoleTargetPosition([0, 0, 1.0], [0, -0.1, 0.5], [0, 0, 0], false, 0.4);
+  // Knee bends forward (-Y), so pole target must be in front (-Y < -0.1)
+  assert.ok(hindPole[1] < -0.1);
+  assert.equal(hindPole[0], 0);
+
+  // Collinear front leg: elbow at (0, 0, 0.5), hip at (0, 0, 1.0), tip at (0, 0, 0)
+  const frontPole = L.computePoleTargetPosition([0, 0, 1.0], [0, 0, 0.5], [0, 0, 0], true, 0.3);
+  // Front leg anatomical fallback elbow bends backward (+Y)
+  assert.ok(frontPole[1] > 0);
+  assert.equal(frontPole[0], 0);
+});
+
+test("quadruped 4-beat lateral sequence gait phases", () => {
+  // LH (0.00) -> LF (0.25) -> RH (0.50) -> RF (0.75)
+  assert.equal(L.computeQuadrupedGaitPhase("L", false), 0.00); // Left Hind
+  assert.equal(L.computeQuadrupedGaitPhase("L", true), 0.25);  // Left Front
+  assert.equal(L.computeQuadrupedGaitPhase("R", false), 0.50); // Right Hind
+  assert.equal(L.computeQuadrupedGaitPhase("R", true), 0.75);  // Right Front
+});
+
+test("procedural gait params merging and pelvis kinematics", () => {
+  const merged = L.mergeGaitParams("soldier", { stride: 1.5, sway: 0.8 });
+  assert.equal(merged.stride, 1.5);
+  assert.equal(merged.sway, 0.8);
+  assert.equal(merged.cadence, 1.10); // from soldier preset
+
+  // Clamp checks
+  const clamped = L.mergeGaitParams("natural", { stride: 10.0, sway: -5.0 });
+  assert.equal(clamped.stride, 2.5);
+  assert.equal(clamped.sway, 0.0);
+
+  // Pelvis trajectory periodic evaluation f(0) === f(1)
+  const p0 = L.evaluatePelvisTrajectory(0.0, merged);
+  const p1 = L.evaluatePelvisTrajectory(1.0, merged);
+  assert.ok(Math.abs(p0.bob - p1.bob) < 1e-9);
+  assert.ok(Math.abs(p0.sway - p1.sway) < 1e-9);
+  assert.ok(Math.abs(p0.yaw - p1.yaw) < 1e-9);
+  assert.ok(Math.abs(p0.lean - p1.lean) < 1e-9);
+});
+
+test("quaternion rotation scaling and forward pitch tilt", () => {
+  // 10 degree rotation about X axis
+  const angRad = (10.0 * Math.PI) / 180.0;
+  const q = [Math.sin(angRad / 2), 0, 0, Math.cos(angRad / 2)];
+
+  // Scale 1.5x -> 15 degrees
+  const scaled15 = L.scaleQuaternionRotation(q, 1.5);
+  const ang15 = 2 * Math.acos(scaled15[3]) * 180 / Math.PI;
+  assert.ok(Math.abs(ang15 - 15.0) < 1e-4);
+
+  // Scale 0.5x -> 5 degrees
+  const scaled05 = L.scaleQuaternionRotation(q, 0.5);
+  const ang05 = 2 * Math.acos(scaled05[3]) * 180 / Math.PI;
+  assert.ok(Math.abs(ang05 - 5.0) < 1e-4);
+
+  // Identity / 0 scale -> 0 degrees
+  const scaled00 = L.scaleQuaternionRotation(q, 0.0);
+  const ang00 = 2 * Math.acos(scaled00[3]) * 180 / Math.PI;
+  assert.ok(Math.abs(ang00) < 1e-4);
+
+  // Forward pitch tilt
+  const qPitched = L.pitchQuaternion([0, 0, 0, 1], 12.0);
+  const angPitched = 2 * Math.acos(qPitched[3]) * 180 / Math.PI;
+  assert.ok(Math.abs(angPitched - 12.0) < 1e-4);
+});
+
+test("base locomotion clip selection for style presets", () => {
+  const clips = ["idle", "attack", "walk", "run", "trot", "gallop", "death"];
+  assert.equal(L.selectBaseClipForPreset("natural", clips), "walk");
+  assert.equal(L.selectBaseClipForPreset("soldier", clips), "walk");
+  assert.equal(L.selectBaseClipForPreset("run", clips), "run");
+  assert.equal(L.selectBaseClipForPreset("sprint", clips), "run");
+  assert.equal(L.selectBaseClipForPreset("quadruped_gallop", clips), "gallop");
+  assert.equal(L.selectBaseClipForPreset("quadruped_trot", clips), "trot");
+
+  // Fallbacks when specific clip not baked
+  const walkOnly = ["idle", "walk", "attack"];
+  assert.equal(L.selectBaseClipForPreset("run", walkOnly), "walk");
+  assert.equal(L.selectBaseClipForPreset("quadruped_gallop", walkOnly), "walk");
+});
+
+test("live procedural track modulation for hips and limbs", () => {
+  // 1. Root/Hips translation: X sway, Y bob
+  const posTimes = [0, 0.25, 0.5, 0.75];
+  const posVals = new Float32Array([
+    -0.04, 1.00, 0.0,
+     0.00, 1.04, 0.0,
+     0.04, 1.00, 0.0,
+     0.00, 1.04, 0.0
+  ]);
+  const modPos = L.modulateGaitTrackValues("Hips.position", posTimes, posVals, { sway: 2.0, bob: 0.5 });
+  // Mean X was 0.0, amplitude was 0.04 -> scaled 2.0x amplitude should be 0.08
+  assert.ok(Math.abs(modPos[0] - (-0.08)) < 1e-4);
+  assert.ok(Math.abs(modPos[6] - 0.08) < 1e-4);
+  // Mean Y was 1.02, delta was +0.02 at t=0.25 -> scaled 0.5x delta should be +0.01 -> 1.03
+  assert.ok(Math.abs(modPos[4] - 1.03) < 1e-4);
+
+  // 2. Leg rotation: scaled by stride
+  const angRad = (10.0 * Math.PI) / 180.0;
+  const rotVals = new Float32Array([
+    Math.sin(angRad / 2), 0, 0, Math.cos(angRad / 2),
+    0, 0, 0, 1
+  ]);
+  const modLeg = L.modulateGaitTrackValues("LeftUpLeg.quaternion", [0, 1.0], rotVals, { stride: 1.4 });
+  const modAng = 2 * Math.acos(modLeg[3]) * 180 / Math.PI;
+  assert.ok(Math.abs(modAng - 14.0) < 1e-4);
+});
+
+test("interactive 3D bone posing gizmo rotation math", () => {
+  // 1. computeGizmoRotationDelta
+  assert.equal(L.computeGizmoRotationDelta("X", 0, 10, 0.01), -0.1);
+  assert.equal(L.computeGizmoRotationDelta("Y", 10, 0, 0.01), 0.1);
+  assert.ok(Math.abs(L.computeGizmoRotationDelta("Z", 10, 10, 0.01) - 0.0) < 1e-6);
+
+  // 2. applyBoneRotationDelta on identity quaternion
+  const q0 = [0, 0, 0, 1];
+  const deltaRad = (30 * Math.PI) / 180;
+  const qRotX = L.applyBoneRotationDelta(q0, "X", deltaRad);
+  const eulerX = L.quaternionToEulerDegrees(qRotX);
+  assert.ok(Math.abs(eulerX[0] - 30.0) < 1e-4);
+  assert.ok(Math.abs(eulerX[1] - 0.0) < 1e-4);
+  assert.ok(Math.abs(eulerX[2] - 0.0) < 1e-4);
+
+  // 3. Yaw rotation (Y)
+  const qRotY = L.applyBoneRotationDelta(q0, "Y", deltaRad);
+  const eulerY = L.quaternionToEulerDegrees(qRotY);
+  assert.ok(Math.abs(eulerY[0] - 0.0) < 1e-4);
+  assert.ok(Math.abs(eulerY[1] - 30.0) < 1e-4);
+  assert.ok(Math.abs(eulerY[2] - 0.0) < 1e-4);
+
+  // 4. Roll rotation (Z)
+  const qRotZ = L.applyBoneRotationDelta(q0, "Z", deltaRad);
+  const eulerZ = L.quaternionToEulerDegrees(qRotZ);
+  assert.ok(Math.abs(eulerZ[0] - 0.0) < 1e-4);
+  assert.ok(Math.abs(eulerZ[1] - 0.0) < 1e-4);
+  assert.ok(Math.abs(eulerZ[2] - 30.0) < 1e-4);
+});
+
+test("dynamic model centering and auto-zoom framing distance", () => {
+  // 1. Tall model in standard 16:9 aspect (aspect = 1.77)
+  const tallSize = { x: 0.5, y: 2.0, z: 0.5 };
+  const dTall = L.calculateFramingDistance(tallSize, 35, 1.77, 1.25);
+  assert.ok(dTall > 3.0, "Camera distance should comfortably fit tall model");
+
+  // 2. Wide model in portrait/narrow aspect (e.g. aspect = 0.5 when inspector panel is open)
+  const wideSize = { x: 4.0, y: 1.0, z: 1.0 };
+  const dWideNarrow = L.calculateFramingDistance(wideSize, 35, 0.5, 1.25);
+  const dWideNormal = L.calculateFramingDistance(wideSize, 35, 1.77, 1.25);
+  assert.ok(dWideNarrow > dWideNormal, "Narrow aspect must automatically zoom out further to avoid cutting off sides");
+
+  // 3. Diagonal bounding sphere ensures extremities don't clip
+  const dSphere = L.calculateFramingDistance({ x: 2, y: 2, z: 2 }, 35, 1.0, 1.0);
+  assert.ok(dSphere > 2.5);
+
+  // 4. Fallback on invalid inputs
+  assert.ok(L.calculateFramingDistance(null) > 3.0);
+  assert.ok(L.calculateFramingDistance({ x: 0, y: 0, z: 0 }) >= 0.5);
 });
 
 console.log(`${n} passed`);
+
+
 

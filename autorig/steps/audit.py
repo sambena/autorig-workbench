@@ -149,8 +149,10 @@ VA = np.concatenate(F_area) if F_area else np.empty(0)
 ISL = np.concatenate(island_of) if island_of else np.empty(0, int)
 NV = len(P)
 lo, hi = (P.min(0), P.max(0)) if NV else (np.zeros(3), np.zeros(3))
-size = hi - lo; S = float(size.max()) if NV else 1.0
-area_total = float(VA.sum()) if NV else 1.0
+size = hi - lo; S_val = float(size.max()) if NV else 1.0
+S = S_val if (math.isfinite(S_val) and S_val > 1e-9) else 1.0
+raw_area = float(VA.sum()) if NV else 1.0
+area_total = raw_area if (math.isfinite(raw_area) and raw_area > 1e-9) else 1.0
 if nb > 0:
     wsum = W.sum(1)
     unweighted = wsum < 1e-4
@@ -294,7 +296,7 @@ for c in deform:
     m = (dist < r) & ((W[:, p] + W[:, c]) > 0.5 * np.maximum(wsum, 1e-9))
     if m.sum() < 3:
         joints.append(dict(joint=BN[c], parent=BN[p], verts=int(m.sum()), blend=None, hard_edges=0)); continue
-    t = W[m, c] / (W[m, p] + W[m, c])
+    t = W[m, c] / np.maximum(W[m, p] + W[m, c], 1e-9)
     blend = float(((t > 0.15) & (t < 0.85)).mean())
     tt = np.full(NV, np.nan); tt[m] = t
     em = m[E[:, 0]] & m[E[:, 1]]
@@ -457,7 +459,7 @@ rest = dict(bbox_min=[round(x, 3) for x in lo], bbox_max=[round(x, 3) for x in h
             L_mean_x=lx and round(lx, 3), R_mean_x=rx and round(rx, 3), L_skin_x=lskin_x and round(lskin_x, 3),
             R_skin_x=rskin_x and round(rskin_x, 3), feet_on_floor=round(float(lo[2]), 3))
 if hips is not None:
-    rest["hips_height_frac"] = round(float((heads[hips, 2] - lo[2]) / size[2]), 3)
+    rest["hips_height_frac"] = round(float((heads[hips, 2] - lo[2]) / max(float(size[2]), 1e-9)), 3)
 if hips is not None and headb is not None:
     d = heads[headb] - heads[hips]
     rest["hips_to_head"] = [round(float(x), 3) for x in d]

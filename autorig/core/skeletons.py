@@ -63,7 +63,9 @@ def describe(chains, archetype):
         entry = {"name": c.get("base", role) + (("." + side_of(bones[0])) if side_of(bones[0]) else ""),
                  "side": side_of(bones[0]), "bones": bones}
         if c.get("girdle"): entry["girdle"] = bones[0]; entry["bones"] = bones[1:]
-        if c.get("ik") and len(bones) >= 2: entry["ik"] = "ik_" + c.get("base", "") + c.get("side", "")
+        if c.get("ik") and len(bones) >= 2:
+            entry["ik"] = "ik_" + c.get("base", "") + c.get("side", "")
+            entry["pole"] = "pole_" + c.get("base", "") + c.get("side", "")
         if c["parent"] is not None:
             pc, pi = c["parent"]; entry["parent"] = chains[pc]["bones"][pi]
         if role == "leg":
@@ -143,9 +145,9 @@ CORE_ROLES = {
     # Pelvis / Hips / Root
     "hips": "hips", "pelvis": "hips", "root": "hips", "waist": "hips", "body": "hips",
     # Spine levels
-    "spine": "spine", "spine01": "spine", "spine1": "spine", "spine001": "spine", "lowerbody": "spine",
-    "spine02": "spine1", "spine2": "spine1", "chest": "spine1", "spine002": "spine1", "midbody": "spine1",
-    "spine03": "spine2", "spine3": "spine2", "upperchest": "spine2", "spine003": "spine2", "thorax": "spine2",
+    "spine": "spine", "spine01": "spine", "spine001": "spine", "lowerbody": "spine",
+    "spine1": "spine1", "spine02": "spine1", "chest": "spine1", "spine002": "spine1", "midbody": "spine1",
+    "spine2": "spine2", "spine03": "spine2", "spine3": "spine2", "upperchest": "spine2", "spine003": "spine2", "thorax": "spine2",
     # Neck / Head / Face
     "neck": "neck", "neck01": "neck", "neck1": "neck", "necktwist01": "neck", "spine004": "neck",
     "head": "head", "head1": "head", "spine005": "head", "spine006": "head", "skull": "head",
@@ -161,6 +163,7 @@ CORE_ROLES = {
     "calf": "shin", "shin": "shin", "lowerleg": "shin", "leg": "shin", "tibia": "shin", "knee": "shin",
     "foot": "foot", "ankle": "foot",
     "toebase": "toe", "toe": "toe", "toes": "toe", "ball": "toe", "toe0": "toe",
+    "toeend": "toetip", "toesend": "toetip", "toebaseend": "toetip",
 }
 
 
@@ -352,6 +355,13 @@ def extract_chains_from_joints(joints, lo=None, hi=None, size=None):
     for side in ("L", "R"):
         leg_roles = [f"thigh.{side}", f"shin.{side}", f"foot.{side}", f"toe.{side}"]
         leg_pts = [to_u(role_to_joint[r]["head"]) for r in leg_roles if r in role_to_joint]
+        tip_role = f"toetip.{side}"
+        if tip_role in role_to_joint and "head" in role_to_joint[tip_role]:
+            leg_pts.append(to_u(role_to_joint[tip_role]["head"]))
+        elif f"toe.{side}" in role_to_joint and "tail" in role_to_joint[f"toe.{side}"]:
+            t_coord = to_u(role_to_joint[f"toe.{side}"]["tail"])
+            if leg_pts and t_coord != leg_pts[-1]:
+                leg_pts.append(t_coord)
         if len(leg_pts) >= 2:
             chains.append({
                 "name": f"leg.{side}",
@@ -367,6 +377,8 @@ def extract_chains_from_joints(joints, lo=None, hi=None, size=None):
         arm_name = f"arm.{side}"
         for f_type in ("thumb", "index", "middle", "ring", "pinky"):
             f_roles = [f"{f_type}1.{side}", f"{f_type}2.{side}", f"{f_type}3.{side}"]
+            if f"{f_type}4.{side}" in role_to_joint:
+                f_roles.append(f"{f_type}4.{side}")
             f_pts = [to_u(role_to_joint[r]["head"]) for r in f_roles if r in role_to_joint]
             if len(f_pts) >= 2:
                 chains.append({
@@ -437,24 +449,74 @@ def suggest_from_known_skeleton(joints, convention, lo=None, hi=None, size=None)
             size = [max(1e-5, hi[i] - lo[i]) for i in range(3)]
         def to_u(pt): return [round((pt[i] - lo[i]) / size[i], 3) for i in range(3)]
 
+        def get_z(roles, default_val):
+            for r in roles:
+                if r in role_to_joint and "head" in role_to_joint[r]:
+                    return round(to_u(role_to_joint[r]["head"])[2], 3)
+            return default_val
+
+        # Extract calibrated heights
+        ankle_z = get_z(["foot.L", "foot.R", "toe.L", "toe.R"], 0.08)
+        knee_z = get_z(["shin.L", "shin.R"], 0.28)
+        hip_z = get_z(["hips"], 0.52)
+        spine_z = get_z(["spine"], 0.57)
+        spine1_z = get_z(["spine1"], 0.65)
+        spine2_z = get_z(["spine2"], 0.72)
+        arm_z = get_z(["shoulder.L", "shoulder.R", "arm.L", "arm.R"], 0.77)
+        neck_z = get_z(["neck"], 0.83)
+        head_z = get_z(["head"], 0.92)
+
+        # Enforce monotonic z ordering and range clamping [0.01, 1.0]
+        ankle_z = max(0.01, min(0.20, ankle_z))
+        knee_z = max(ankle_z + 0.05, min(0.45, knee_z))
+        hip_z = max(knee_z + 0.05, min(0.60, hip_z))
+        spine_z = max(hip_z + 0.02, min(0.70, spine_z))
+        spine1_z = max(spine_z + 0.02, min(0.78, spine1_z))
+        spine2_z = max(spine1_z + 0.02, min(0.85, spine2_z))
+        arm_z = max(spine2_z, min(0.88, arm_z))
+        neck_z = max(arm_z + 0.02, min(0.92, neck_z))
+        head_z = max(neck_z + 0.02, min(0.98, head_z))
+
         z_params = {
             "top": 1.0,
-            "head": to_u(role_to_joint["head"]["head"])[2],
-            "neck": to_u(role_to_joint["neck"]["head"])[2] if "neck" in role_to_joint else 0.83,
-            "arm": to_u(role_to_joint["shoulder.L"]["head"])[2] if "shoulder.L" in role_to_joint else (to_u(role_to_joint["arm.L"]["head"])[2] if "arm.L" in role_to_joint else 0.77),
-            "spine2": to_u(role_to_joint["spine2"]["head"])[2] if "spine2" in role_to_joint else 0.72,
-            "spine1": to_u(role_to_joint["spine1"]["head"])[2] if "spine1" in role_to_joint else 0.65,
-            "spine": to_u(role_to_joint["spine"]["head"])[2] if "spine" in role_to_joint else 0.57,
-            "hip": to_u(role_to_joint["hips"]["head"])[2],
-            "knee": to_u(role_to_joint["shin.L"]["head"])[2] if "shin.L" in role_to_joint else 0.28,
-            "ankle": to_u(role_to_joint["foot.L"]["head"])[2] if "foot.L" in role_to_joint else 0.08
+            "head": round(head_z, 3),
+            "neck": round(neck_z, 3),
+            "arm": round(arm_z, 3),
+            "spine2": round(spine2_z, 3),
+            "spine1": round(spine1_z, 3),
+            "spine": round(spine_z, 3),
+            "hip": round(hip_z, 3),
+            "knee": round(knee_z, 3),
+            "ankle": round(ankle_z, 3)
         }
+
+        def get_span(roles, default_val):
+            for r in roles:
+                if r in role_to_joint and "head" in role_to_joint[r]:
+                    x_coord = to_u(role_to_joint[r]["head"])[0]
+                    # Inward distance from outer lateral edge (0.0 = outer edge, 0.5 = centerline)
+                    return max(0.0, min(0.49, 0.5 - abs(x_coord - 0.5)))
+            return default_val
+
+        raw_sh = get_span(["shoulder.L", "shoulder.R", "arm.L", "arm.R"], 0.38)
+        raw_el = get_span(["forearm.L", "forearm.R"], 0.23)
+        raw_wr = get_span(["hand.L", "hand.R"], 0.11)
+        raw_kn = 0.05
+        raw_tip = 0.0
+
+        # Monotonically order spans: 0.0 <= tip <= knuckle <= wrist <= elbow <= shoulder <= 0.49
+        sh = max(0.20, min(0.49, raw_sh))
+        el = max(0.10, min(sh - 0.02, raw_el))
+        wr = max(0.04, min(el - 0.02, raw_wr))
+        kn = max(0.01, min(wr - 0.01, raw_kn))
+        tip = max(0.0, min(kn - 0.005, raw_tip))
+
         x_params = {
-            "shoulder": round(abs(to_u(role_to_joint["shoulder.L"]["head"])[0] - 0.5), 3) if "shoulder.L" in role_to_joint else 0.38,
-            "elbow": round(abs(to_u(role_to_joint["forearm.L"]["head"])[0] - 0.5), 3) if "forearm.L" in role_to_joint else 0.23,
-            "wrist": round(abs(to_u(role_to_joint["hand.L"]["head"])[0] - 0.5), 3) if "hand.L" in role_to_joint else 0.11,
-            "knuckle": 0.05,
-            "tip": 0.0
+            "shoulder": round(sh, 3),
+            "elbow": round(el, 3),
+            "wrist": round(wr, 3),
+            "knuckle": round(kn, 3),
+            "tip": round(tip, 3)
         }
         res["spec"]["humanoid"] = {
             "forward": [0, -1, 0],

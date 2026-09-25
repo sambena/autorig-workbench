@@ -33,7 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 import rerig
 from layout import work_dir
-from spec_store import HUMANOIDS
+from spec_store import HUMANOIDS, SPECS
 
 # HUMANOIDS (rig.json "humanoid"): heights (z) and spans (x) as 0..1 of the model's bounds after it is turned to face
 # -Y, read off measure.py's front view; everything else about a joint is measured from the mesh.
@@ -47,22 +47,50 @@ def args():
     return val("-only"), os.path.abspath(val("-qa") or work_dir("qa")), "-noExport" in a
 
 
+import math
+
 def measure(co, lo, size, h, main=None):
     """Joint positions (world) from cross-sections. co: (n, 3) vertices; main: mask of the body's own mesh (the
     largest pieces), so pouches, holsters and backpacks - loose pieces on generated sculpts - never drag a joint."""
     N = (co - lo) / size                           # 0..1 coordinates
     M = N if main is None else N[main]
-    z, x = h["z"], h["x"]
+
+    # Defensively copy and sanitize humanoid landmarks
+    z = dict(h["z"])
+    for k in z:
+        z[k] = max(0.01, min(1.0, float(z[k])))
+
+    x = dict(h["x"])
+    for k in ("tip", "knuckle", "wrist", "elbow", "shoulder"):
+        if k in x:
+            x[k] = max(0.0, min(0.49, float(x[k])))
+
+    # Enforce standard inward monotonic ordering: tip <= knuckle <= wrist <= elbow <= shoulder
+    t_val = x.get("tip", 0.0)
+    kn_val = max(t_val, x.get("knuckle", max(t_val + 0.02, 0.05)))
+    wr_val = max(kn_val, x.get("wrist", max(kn_val + 0.03, 0.11)))
+    el_val = max(wr_val, x.get("elbow", max(wr_val + 0.05, 0.23)))
+    sh_val = max(el_val, x.get("shoulder", max(el_val + 0.05, 0.38)))
+    x["tip"], x["knuckle"], x["wrist"], x["elbow"], x["shoulder"] = t_val, kn_val, wr_val, el_val, sh_val
+
     P = lambda u, v, w: Vector((lo[0] + size[0] * u, lo[1] + size[1] * v, lo[2] + size[2] * w))
     out = {}
 
     def slab_z(level, xlo, xhi, half=0.012, pts=M):
         m = (np.abs(pts[:, 2] - level) < half) & (pts[:, 0] >= xlo) & (pts[:, 0] <= xhi)
-        return pts[m]
+        res = pts[m]
+        if len(res) == 0:
+            m = (np.abs(pts[:, 2] - level) < half * 3) & (pts[:, 0] >= xlo - 0.05) & (pts[:, 0] <= xhi + 0.05)
+            res = pts[m]
+        return res
 
     def slab_x(level, zlo, zhi, half=0.012):
         m = (np.abs(M[:, 0] - level) < half) & (M[:, 2] >= zlo) & (M[:, 2] <= zhi)
-        return M[m]
+        res = M[m]
+        if len(res) == 0:
+            m = (np.abs(M[:, 0] - level) < half * 3) & (M[:, 2] >= zlo - 0.05) & (M[:, 2] <= zhi + 0.05)
+            res = M[m]
+        return res
 
     # The spine: the front of the torso's middle strip, fitted smooth up the body, and the spine a fixed share of the
     # waist's depth behind it (the waist has no backpack or chest rig to confuse the depth).
@@ -72,15 +100,24 @@ def measure(co, lo, size, h, main=None):
         s = slab_z(lv, 0.42, 0.58)
         fr.append(np.percentile(s[:, 1], 3) if len(s) > 5 else np.nan)
     fr = np.array(fr); ok = ~np.isnan(fr)
-    fit = np.polyfit(zs[ok], fr[ok], 2)
+    if ok.sum() >= 3:
+        fit = np.polyfit(zs[ok], fr[ok], 2)
+    elif ok.sum() >= 2:
+        fit = np.polyfit(zs[ok], fr[ok], 1)
+        fit = np.array([0.0, fit[0], fit[1]])
+    else:
+        med_m1 = float(np.median(M[:, 1])) if len(M) else 0.5
+        fit = np.array([0.0, 0.0, med_m1])
+
     waist = slab_z(z["spine"], 0.42, 0.58)
-    depth = np.percentile(waist[:, 1], 97) - np.percentile(waist[:, 1], 3)
+    depth = (np.percentile(waist[:, 1], 97) - np.percentile(waist[:, 1], 3)) if len(waist) > 5 else 0.15
     spine_y = lambda lv: float(np.polyval(fit, lv) + 0.5 * depth)
     for k in ("hip", "spine", "spine1", "spine2", "neck"):
         out[k] = P(0.5, spine_y(z[k]), z[k])
     head = slab_z(z["head"], 0.35, 0.65, pts=N)
-    out["head"] = P(0.5, float(np.median(head[:, 1])), z["head"])
-    out["top"] = P(0.5, float(np.median(head[:, 1])), z["top"])
+    head_y = float(np.median(head[:, 1])) if len(head) else float(spine_y(z["head"]))
+    out["head"] = P(0.5, head_y, z["head"])
+    out["top"] = P(0.5, head_y, z["top"])
 
     raw = {}
     for side, sgn in (("Left", 1), ("Right", -1)):
@@ -103,24 +140,37 @@ def measure(co, lo, size, h, main=None):
 
         for j in ("hip", "ankle"):
             s = slab_z(z[j], *xs)
-            raw[side + j] = (float(np.median(s[:, 0])), float(np.median(s[:, 1])), z[j])
+            if len(s) == 0:
+                s = slab_z(z[j], *xs, half=0.036)
+            s_x = float(np.median(s[:, 0])) if len(s) else float(xs[0] * 0.5 + xs[1] * 0.5)
+            s_y = float(np.median(s[:, 1])) if len(s) else float(spine_y(z[j]))
+            raw[side + j] = (s_x, s_y, z[j])
         s_knee = slab_z(knee_z, *xs)
-        raw[side + "knee"] = (float(np.median(s_knee[:, 0])), float(np.median(s_knee[:, 1])), knee_z)
+        if len(s_knee) == 0:
+            s_knee = slab_z(knee_z, *xs, half=0.036)
+        k_x = float(np.median(s_knee[:, 0])) if len(s_knee) else float(xs[0] * 0.5 + xs[1] * 0.5)
+        k_y = float(np.median(s_knee[:, 1])) if len(s_knee) else float(spine_y(knee_z))
+        raw[side + "knee"] = (k_x, k_y, knee_z)
 
         foot = M[(M[:, 2] < 0.06) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
         if len(foot) == 0:
             foot = M[(M[:, 2] < 0.12) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
         if len(foot) == 0:
             foot = slab_z(z["ankle"], *xs)
-        toe = foot[foot[:, 1].argmin()] if len(foot) else np.array([xs[0] * 0.5 + xs[1] * 0.5, -0.1, 0.02])
-        fx = float(np.median(foot[:, 0])) if len(foot) else float(xs[0] * 0.5 + xs[1] * 0.5)
-        raw[side + "toe"] = (fx, float(toe[1]), 0.02)
+        if len(foot) > 0:
+            toe_pt = foot[foot[:, 1].argmin()]
+            toe_y = float(toe_pt[1])
+            fx = float(np.median(foot[:, 0]))
+        else:
+            fx = float(xs[0] * 0.5 + xs[1] * 0.5)
+            toe_y = float(raw[side + "ankle"][1] - 0.08)
+        raw[side + "toe"] = (fx, toe_y, 0.02)
         ay = raw[side + "ankle"][1]
-        raw[side + "ball"] = (fx, ay + (toe[1] - ay) * 0.68, 0.035)
+        raw[side + "ball"] = (fx, ay + (toe_y - ay) * 0.68, 0.035)
 
         # Anatomical crease refinement for elbow via cross-section pinch analysis
         # Ensure shoulder span is anatomically valid (never placed inside the chest column)
-        shoulder_x = min(x.get("shoulder", 0.38), 0.385)
+        shoulder_x = x.get("shoulder", 0.38)
         elbow_x = x["elbow"]
         forearm_span = abs(elbow_x - x.get("wrist", 0.11))
         if forearm_span > 0.05 and (shoulder_x - elbow_x) > 1.35 * forearm_span:
@@ -143,17 +193,41 @@ def measure(co, lo, size, h, main=None):
             except Exception:
                 pass
 
+        torso_y = (spine_y(z["spine2"]) + spine_y(z["neck"])) * 0.5
         arm = {}
         for j, f in (("upper", (shoulder_x + elbow_x) / 2), ("elbow", elbow_x), ("wrist", x["wrist"]),
                      ("knuckle", x["knuckle"])):
-            s = slab_x(X(f), z["arm"] - 0.09, z["arm"] + 0.09)
-            arm[j] = np.array((X(f), float(np.median(s[:, 1])), float(np.median(s[:, 2]))))
-        # Shoulder joint aligned in the coronal plane of the upper torso and upper arm
-        torso_y = (spine_y(z["spine2"]) + spine_y(z["neck"])) * 0.5
-        raw[side + "shoulder"] = (X(shoulder_x), torso_y, float(arm["upper"][2]))
+            xf = X(f)
+            s = slab_x(xf, z["arm"] - 0.09, z["arm"] + 0.09)
+            if len(s) == 0:
+                s = slab_x(xf, z["arm"] - 0.18, z["arm"] + 0.18, half=0.036)
+            if len(s) > 0:
+                sy = float(np.median(s[:, 1]))
+                sz = float(np.median(s[:, 2]))
+            elif len(arm_m) > 0:
+                sy = float(np.median(arm_m[:, 1]))
+                sz = float(np.median(arm_m[:, 2]))
+            else:
+                sy = float(torso_y)
+                sz = float(z["arm"])
+            arm[j] = np.array((xf, sy, sz))
+        d = arm["elbow"] - arm["upper"]
+        if abs(d[0]) > 1e-4:
+            t = (X(shoulder_x) - arm["upper"][0]) / d[0]
+            raw[side + "shoulder"] = tuple(arm["upper"] + d * t)
+        else:
+            raw[side + "shoulder"] = (X(shoulder_x), torso_y, float(arm["upper"][2]))
         for j in ("elbow", "wrist", "knuckle"): raw[side + j] = tuple(arm[j])
         tip = N[(N[:, 0] >= 0.985) if sgn > 0 else (N[:, 0] <= 0.015)]
-        raw[side + "tip"] = (X(x["tip"]), float(np.median(tip[:, 1])), float(np.median(tip[:, 2])))
+        if len(tip) == 0:
+            tip = N[(N[:, 0] >= 0.95) if sgn > 0 else (N[:, 0] <= 0.05)]
+        if len(tip) > 0:
+            tip_y = float(np.median(tip[:, 1]))
+            tip_z = float(np.median(tip[:, 2]))
+        else:
+            tip_y = float(arm["knuckle"][1])
+            tip_z = float(arm["knuckle"][2])
+        raw[side + "tip"] = (X(x["tip"]), tip_y, tip_z)
     # the hip joints mirror each other: a stride moves the knees and feet, never the pelvis
     hx = (raw["Lefthip"][0] - raw["Righthip"][0]) / 2; hy = (raw["Lefthip"][1] + raw["Righthip"][1]) / 2
     raw["Lefthip"] = (0.5 + hx, hy, z["hip"]); raw["Righthip"] = (0.5 - hx, hy, z["hip"])
@@ -189,18 +263,28 @@ def straighten(arm, size):
     down, fwd = Vector((0, 0, -1)), Vector((0, -1, 0))
 
     def aim(name, target, keep_pitch=False):
+        if name not in arm.pose.bones:
+            return
         pb = arm.pose.bones[name]
         bpy.context.view_layer.update()
         m = arm.matrix_world @ pb.matrix
         h = m.to_translation(); d = (m.to_3x3() @ Vector((0, 1, 0))).normalized()
         t = Vector(target)
+        if not (math.isfinite(d.x) and math.isfinite(d.y) and math.isfinite(d.z) and d.length > 1e-6):
+            return
+        if not (math.isfinite(h.x) and math.isfinite(h.y) and math.isfinite(h.z)):
+            return
         if keep_pitch:  # turn about Z only: the foot keeps its slope, points straight ahead
             flat = Vector((d.x, d.y, 0))
-            if flat.length < 1e-6: return
+            if flat.length < 1e-6 or not (math.isfinite(flat.x) and math.isfinite(flat.y)): return
             r = flat.normalized().rotation_difference(Vector((t.x, t.y, 0)).normalized())
         else:
             r = d.rotation_difference(t.normalized())
-        pb.matrix = arm.matrix_world.inverted() @ Matrix.Translation(h) @ r.to_matrix().to_4x4() @ Matrix.Translation(-h) @ m
+        new_mat = arm.matrix_world.inverted() @ Matrix.Translation(h) @ r.to_matrix().to_4x4() @ Matrix.Translation(-h) @ m
+        for row in new_mat:
+            if not all(math.isfinite(val) for val in row):
+                return
+        pb.matrix = new_mat
         bpy.context.view_layer.update()
 
     for side, sx in (("Left", 1), ("Right", -1)):
@@ -220,8 +304,12 @@ def straighten(arm, size):
     m2 = mesh.modifiers.new("Armature", 'ARMATURE'); m2.object = arm
     # stand it on z=0 with the hips over the origin
     co = np.array([v.co[:] for v in mesh.data.vertices])
-    hips = arm.data.bones["Hips"].head_local
-    off = Vector((-hips.x, -hips.y, -float(co[:, 2].min())))
+    hips = arm.data.bones["Hips"].head_local if "Hips" in arm.data.bones else Vector((0, 0, 0))
+    min_z = float(co[:, 2].min()) if (len(co) and np.all(np.isfinite(co[:, 2]))) else 0.0
+    if math.isfinite(hips.x) and math.isfinite(hips.y) and math.isfinite(min_z):
+        off = Vector((-hips.x, -hips.y, -min_z))
+    else:
+        off = Vector((0.0, 0.0, 0.0))
     mesh.data.transform(Matrix.Translation(off)); mesh.data.update()
     # the whole rest pose at once: moving edit bones one by one moves a connected parent's tail twice
     arm.data.transform(Matrix.Translation(off))
@@ -236,18 +324,40 @@ def straighten(arm, size):
     return [round(x, 4) for x in off]
 
 
-def rerig_humanoid(key, h, qa_dir, export):
+def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     t0 = time.time()
-    # rigid_pieces: every loose piece up to a third of the body (hat, backpack, chest rig, pouches) rides its bones
-    # whole; the envelope would otherwise spread a backpack over three spine bones and a clavicle, and it stretched.
-    # envelope: off by default here. Bone heat on a person is already the smooth diffusion an armpit or a hip needs;
-    # the envelope's capsules exist to stop a limb owning a shell, and on a body with no shell they only add seams.
-    spec = {"kind": "build", "forward": h["forward"], "head_to_snout": False, "rigid_pieces": h.get("rigid_pieces", 0.35),
-            "envelope": h.get("envelope", "root"), "smooth": h.get("smooth", 4),
-            "rigid_islands": h.get("rigid_islands", "auto"), "rigid_armor": h.get("rigid_armor", True),
-            "armor": h.get("armor"), "accessories": h.get("accessories")}
+    if rig_spec is None:
+        try:
+            import spec_store
+            rig_spec = spec_store.SPECS.get(key) or {}
+        except Exception:
+            rig_spec = {}
+    spec = {"kind": "build", "forward": h.get("forward", rig_spec.get("forward", [0, -1, 0])),
+            "head_to_snout": False,
+            "joint_blend": h.get("joint_blend", rig_spec.get("joint_blend", 0.4)),
+            "smooth": h.get("smooth", rig_spec.get("smooth", 4)),
+            "rigid_pieces": h.get("rigid_pieces", rig_spec.get("rigid_pieces", 0.35)),
+            "envelope": h.get("envelope", rig_spec.get("envelope", "root")),
+            "barrier": h.get("barrier", rig_spec.get("barrier", True)),
+            "rigid_islands": h.get("rigid_islands", rig_spec.get("rigid_islands", "auto")),
+            "rigid_armor": h.get("rigid_armor", rig_spec.get("rigid_armor", True)),
+            "armor": h.get("armor", rig_spec.get("armor")),
+            "accessories": h.get("accessories", rig_spec.get("accessories")),
+            "hinge_smoothing": h.get("hinge_smoothing", rig_spec.get("hinge_smoothing", True)),
+            "hinge_max_gradient": h.get("hinge_max_gradient", rig_spec.get("hinge_max_gradient", 0.28)),
+            "hinge_passes": h.get("hinge_passes", rig_spec.get("hinge_passes", 8)),
+            "twist_relaxation": h.get("twist_relaxation", rig_spec.get("twist_relaxation", True)),
+            "twist_max_gradient": h.get("twist_max_gradient", rig_spec.get("twist_max_gradient", 0.25)),
+            "twist_passes": h.get("twist_passes", rig_spec.get("twist_passes", 12)),
+            "girdle_blend": h.get("girdle_blend", rig_spec.get("girdle_blend", 0.9)),
+            "limb_radius": h.get("limb_radius", rig_spec.get("limb_radius", 1.0)),
+            "rip_welds": h.get("rip_welds", rig_spec.get("rip_welds", []))}
     log = {"model": key, "kind": "humanoid"}
-    mesh, joints = rerig.load(rerig.find_fbx(key, spec))
+    src_path = rerig.find_fbx(key, spec)
+    if not src_path or not os.path.exists(src_path):
+        log["error"] = f"no source model file found for {key}"
+        return log
+    mesh, joints = rerig.load(src_path)
     mesh.name = key
     log["turned_deg"] = rerig.normalise(mesh, joints, spec)
     lo, hi = rerig.bounds(mesh); size = hi - lo
@@ -262,6 +372,27 @@ def rerig_humanoid(key, h, qa_dir, export):
     arm, _ = rerig.build_armature(key, chains, size)
     if not rerig.skin(mesh, arm, chains, spec, size, log): return log
     log["rest_offset"] = straighten(arm, size)
+    if spec.get("twist_bones", False):
+        try:
+            import twist_bones
+            added_twists = twist_bones.add_twist_bones_to_armature(arm, mesh=mesh, spec=spec)
+            if added_twists:
+                log["twist_bones"] = [p["twist"] for p in added_twists]
+        except Exception as e:
+            log["twist_err"] = str(e)
+    if spec.get("morph_targets", False):
+        try:
+            import morph_generator
+            head_b = arm.data.bones.get("Head") or arm.data.bones.get("head")
+            head_coord = tuple(head_b.head_local) if head_b else None
+            top_coord = tuple(head_b.tail_local) if head_b else None
+            created_morphs = morph_generator.generate_blender_shape_keys(
+                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
+            )
+            if created_morphs:
+                log["morph_targets"] = created_morphs
+        except Exception as e:
+            log["morph_err"] = str(e)
     lo, hi = rerig.bounds(mesh); size = hi - lo
     log["size"] = [round(x, 4) for x in size]
     log["chains"] = [{"bones": c["bones"], "role": c["role"]} for c in chains]
@@ -288,7 +419,8 @@ def main():
     only, qa, no_export = args()
     for k in (only.split(",") if only else list(HUMANOIDS)):
         spec_h = HUMANOIDS.get(k) or DEFAULT_HUMANOID
-        try: r = rerig_humanoid(k, spec_h, qa, not no_export)
+        rig_s = SPECS.get(k) or {}
+        try: r = rerig_humanoid(k, spec_h, qa, not no_export, rig_spec=rig_s)
         except Exception as e:
             import traceback; traceback.print_exc(); r = {"model": k, "error": repr(e)}
         json.dump(r, open(os.path.join(qa, k + ".json"), "w"), indent=1, default=str)

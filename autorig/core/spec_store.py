@@ -115,13 +115,23 @@ class _Section(Mapping):
         self.section = section
 
     def __getitem__(self, key):
-        v = model(key).get(self.section)
+        m = model(key)
+        v = m.get(self.section)
+        if v is None and self.section == "clips":
+            v = (m.get("rig") or {}).get("clips")
+        elif v is None and self.section == "humanoid":
+            v = (m.get("rig") or {}).get("humanoid")
         if v is None:
             raise KeyError(key)
         return v
 
     def __iter__(self):
-        return (m for _, m in layout.all_models() if self.section in model(m))
+        def has(m_name):
+            m = model(m_name)
+            if self.section in m: return True
+            if self.section in ("clips", "humanoid") and self.section in (m.get("rig") or {}): return True
+            return False
+        return (m for _, m in layout.all_models() if has(m))
 
     def __len__(self):
         return sum(1 for _ in self)

@@ -135,9 +135,15 @@ class Runner:
             self.current = job
             job.state, job.started = "running", time.time()
             ok = True
-            for label, argv, prep in job.cmds:
+            for item in job.cmds:
                 if job.cancelled: break
+                label = item[0]
+                argv = item[1]
+                prep = item[2]
+                cmd_model = item[3] if len(item) > 3 else (job.model if job.model and not job.model.startswith("(") else None)
                 if prep: prep()
+                if cmd_model:
+                    job.add(":: MODEL_ACTIVE %s" % cmd_model)
                 job.add("== %s" % label)
                 job.add("   " + " ".join('"%s"' % a if " " in a else a for a in argv))
                 try:
@@ -223,7 +229,7 @@ def status(group, name):
         "source": os.path.relpath(src, d).replace("\\", "/") if src else None,
         "spec": bool(spec), "kind": rig.get("kind"), "rig_folder": os.path.basename(rd),
         "rigged": os.path.exists(blend), "rigged_fbx": os.path.exists(fbx),
-        "clips_spec": (spec.get("clips") or {}).get("archetype"),
+        "clips_spec": (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype"),
         "clips": os.path.exists(os.path.join(d, "clips", name + "_clips.json")) or export_manifest(name)[0] is not None,
         "card": os.path.exists(os.path.join(d, "model.json")),
         "budget": _quiet(layout.budget, name) if spec or True else None,
@@ -283,31 +289,32 @@ def commands(group, name, step, spec):
     rig = spec.get("rig") or {}
 
     def survey():
-        return [("survey", blender_cmd("survey.py", "-only", name), None),
-                ("facing views", blender_cmd("facing.py", "-only", name, "-out", os.path.join(work, "facing")), None)]
+        return [("survey", blender_cmd("survey.py", "-only", name), None, name),
+                ("facing views", blender_cmd("facing.py", "-only", name, "-out", os.path.join(work, "facing")), None, name)]
 
     def rig_step():
         if rig.get("kind") == "humanoid": script = "rerig_humanoid.py"
         elif rig.get("kind") == "custom": script = os.path.join(model_dir(group, name), rig["builder"])
         else: script = "rerig.py"
-        return [("rig (%s)" % (rig.get("kind") or "?"), blender_cmd(script, "-only", name, "-qa", os.path.join(work, "qa")), None)]
+        return [("rig (%s)" % (rig.get("kind") or "?"), blender_cmd(script, "-only", name, "-qa", os.path.join(work, "qa")), None, name)]
 
     def trim():
-        return [("trim to budget", blender_cmd("decimate.py", "-only", name), None)]
+        return [("trim to budget", blender_cmd("decimate.py", "-only", name), None, name)]
 
     def audit():
-        return [("audit", blender_cmd("audit.py", "-model", name, "-out", os.path.join(work, "audit")), None)]
+        return [("audit", blender_cmd("audit.py", "-model", name, "-out", os.path.join(work, "audit")), None, name)]
 
     def clips():
         pv = os.path.join(work, "clips", name)
-        return [("make clips (%s)" % (spec.get("clips") or {}).get("archetype"),
-                 blender_cmd("make_clips.py", name, "--preview", pv), lambda: shutil.rmtree(pv, ignore_errors=True))]
+        c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
+        return [("make clips (%s)" % c_arch,
+                 blender_cmd("make_clips.py", name, "--preview", pv), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
 
     def publish():
-        return [("publish card", py + [os.path.join(STEPS, "publish.py"), group or ".", "-only", name], None)]
+        return [("publish card", py + [os.path.join(STEPS, "publish.py"), group or ".", "-only", name], None, name)]
 
     def preview():                                                # results viewer: rigged/preview.glb
-        return [("preview for the viewer", blender_cmd("preview_glb.py", "-only", name), None)]
+        return [("preview for the viewer", blender_cmd("preview_glb.py", "-only", name), None, name)]
 
     if step == "survey": return survey()
     if step == "rig": return rig_step()
@@ -319,7 +326,8 @@ def commands(group, name, step, spec):
     if step == "all":
         # the card goes before the clips (they read its size) and again after (it lists them)
         out = rig_step() + trim() + audit() + publish()
-        if (spec.get("clips") or {}).get("archetype"): out += clips() + publish()
+        c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
+        if c_arch: out += clips() + publish()
         return out + preview()                                    # the viewer's copy, last: it carries the clips
     raise ValueError(step)
 
@@ -357,9 +365,35 @@ def rig_all_job():
     cmds = []
     for k, (g, n) in enumerate(ms, 1):
         model_cmds = commands(g, n, "rig", spec_store.model(n))
-        for lbl, argv, prep in model_cmds:
-            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep))
+        for item in model_cmds:
+            lbl, argv, prep = item[0], item[1], item[2]
+            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep, n))
     job = Job("(all rig-ready models)", "", "rig-all", cmds)
+    job.keep_going = True
+    return job
+
+
+def source_all_job(missing_only=False):
+    work = os.path.join(layout.WORK, "source")
+    os.makedirs(work, exist_ok=True)
+    ms = []
+    for g, n in layout.all_models():
+        src = _quiet(layout.source_model, n)
+        if not src:
+            continue
+        if missing_only:
+            glb = os.path.join(work, n + ".glb")
+            meta = os.path.join(work, n + ".json")
+            if os.path.exists(glb) and os.path.exists(meta):
+                continue
+        ms.append((g, n))
+    if not ms:
+        msg = "no models missing source views" if missing_only else "no models with a source 3D file found"
+        raise ValueError(msg)
+    cmds = [("source view %d/%d: %s" % (k, len(ms), n), blender_cmd("source_preview.py", "-only", n, "-out", work), None, n)
+            for k, (g, n) in enumerate(ms, 1)]
+    title = "(missing source views)" if missing_only else "(all source views)"
+    job = Job(title, "", "source-all", cmds)
     job.keep_going = True
     return job
 
@@ -370,7 +404,7 @@ def audit_all_job():
     if not ms: raise ValueError("no rigged models yet: rig one first")
     def forget(n):                                    # an audit that fails leaves no stale grade in the table
         return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
-    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n))
+    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
             for k, (g, n) in enumerate(ms, 1)]
     job = Job("(all rigged models)", "", "audit-all", cmds)
     job.keep_going = True
@@ -393,9 +427,29 @@ def audit_failed_job():
     if not ms: raise ValueError("no failed models to audit: all audited models pass or check")
     def forget(n):
         return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
-    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n))
+    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
             for k, (g, n) in enumerate(ms, 1)]
     job = Job("(all failed models)", "", "audit-failed", cmds)
+    job.keep_going = True
+    return job
+
+
+def rebake_all_clips_job():
+    """Re-bakes animation clips and viewer previews across all rigged models."""
+    ms = rigged_models()
+    if not ms: raise ValueError("no rigged models yet: rig one first")
+    cmds = []
+    for k, (g, n) in enumerate(ms, 1):
+        pv = os.path.join(layout.WORK, "clips", n)
+        cmds.append(("make clips %d/%d: %s" % (k, len(ms), n),
+                     blender_cmd("make_clips.py", n, "--preview", pv),
+                     lambda n=n, pv=pv: shutil.rmtree(pv, ignore_errors=True),
+                     n))
+        cmds.append(("preview %d/%d: %s" % (k, len(ms), n),
+                     blender_cmd("preview_glb.py", "-only", n),
+                     None,
+                     n))
+    job = Job("(all rigged models)", "", "rebake-all-clips", cmds)
     job.keep_going = True
     return job
 
@@ -689,16 +743,19 @@ def make_handler(app):
             return secrets.compare_digest(t, app.token)
 
         def _send(self, code, body, ctype="application/json; charset=utf-8", extra=None):
-            if isinstance(body, (dict, list)): body = json.dumps(body)
-            if isinstance(body, str): body = body.encode("utf-8")
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            for k, v in (extra or {}).items(): self.send_header(k, v)
-            self.end_headers()
-            if self.command != "HEAD": self.wfile.write(body)
+            try:
+                if isinstance(body, (dict, list)): body = json.dumps(body)
+                if isinstance(body, str): body = body.encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                for k, v in (extra or {}).items(): self.send_header(k, v)
+                self.end_headers()
+                if self.command != "HEAD": self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
 
         def _json_body(self):
             n = int(self.headers.get("Content-Length") or 0)
@@ -841,8 +898,13 @@ def make_handler(app):
                     with open(p, "rb") as fh:
                         return self._send(200, fh.read(), ctype)
                 self._send(404, {"error": "not found"})
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                return
             except Exception as e:
-                self._send(500, {"error": repr(e)})
+                try:
+                    self._send(500, {"error": repr(e)})
+                except Exception:
+                    pass
 
         def state(self):
             spec_store.reload()
@@ -931,12 +993,19 @@ def make_handler(app):
                     if st["steps"].get(step): return self._send(409, {"error": st["steps"][step]})
                     job = app.runner.submit(Job(name, g, step, commands(g, name, step, spec_store.model(name))))
                     return self._send(200, job.info())
+                if path == "/api/source-all":
+                    if app.runner.current: return self._send(409, {"error": "a step is running"})
+                    missing_only = bool(body.get("missing_only", False))
+                    return self._send(200, app.runner.submit(source_all_job(missing_only=missing_only)).info())
                 if path == "/api/rig-all":
                     if app.runner.current: return self._send(409, {"error": "a step is running"})
                     return self._send(200, app.runner.submit(rig_all_job()).info())
                 if path == "/api/audit-all":
                     if app.runner.current: return self._send(409, {"error": "a step is running"})
                     return self._send(200, app.runner.submit(audit_all_job()).info())
+                if path in ("/api/clips-all", "/api/rebake-all-clips"):
+                    if app.runner.current: return self._send(409, {"error": "a step is running"})
+                    return self._send(200, app.runner.submit(rebake_all_clips_job()).info())
                 if path in ("/api/audit-failed", "/api/audit-all-failed"):
                     if app.runner.current: return self._send(409, {"error": "a step is running"})
                     return self._send(200, app.runner.submit(audit_failed_job()).info())
@@ -991,12 +1060,30 @@ def make_handler(app):
                     reaped = _wd.reap_orphaned_blender_processes()
                     return self._send(200, {"reaped_pids": reaped, "count": len(reaped)})
                 self._send(404, {"error": "not found"})
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                return
             except ValueError as e:
-                self._send(400, {"error": str(e)})
+                try:
+                    self._send(400, {"error": str(e)})
+                except Exception:
+                    pass
             except Exception as e:
-                self._send(500, {"error": repr(e)})
+                try:
+                    self._send(500, {"error": repr(e)})
+                except Exception:
+                    pass
 
     return Handler
+
+
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        cls, val, tb = sys.exc_info()
+        if cls in (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return
+        super().handle_error(request, client_address)
 
 
 def main(argv=None):
@@ -1017,7 +1104,7 @@ def main(argv=None):
     os.makedirs(layout.ROOT, exist_ok=True)
     os.makedirs(layout.WORK, exist_ok=True)
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", a.port), None)
+    httpd = QuietThreadingHTTPServer(("127.0.0.1", a.port), None)
     httpd.daemon_threads = True
     app = App(httpd.server_address[1])
     if a.token: app.token = a.token

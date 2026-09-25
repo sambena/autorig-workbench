@@ -223,6 +223,39 @@ class WriterAndChecks(unittest.TestCase):
         placed_keys = {f["key"] for f in placed_fields}
         self.assertTrue({"parts", "blends", "rip_welds", "membranes", "rigid_islands"}.issubset(placed_keys))
 
+    def test_check_clips_walk(self):
+        s = {
+            "schema": "autorig-spec/1",
+            "rig": {"kind": "tripo", "head": "bone_3", "hips": "bone_1"},
+            "clips": {
+                "archetype": "walker",
+                "walk": {
+                    "preset": "soldier",
+                    "stride": 1.15,
+                    "cadence": 1.10,
+                    "lean": 2.5
+                }
+            }
+        }
+        errs, warns = spec_api.check(s)
+        self.assertEqual(errs, [])
+        self.assertEqual(warns, [])
+
+        bad = {
+            "schema": "autorig-spec/1",
+            "rig": {"kind": "tripo", "head": "bone_3", "hips": "bone_1"},
+            "clips": {
+                "archetype": "walker",
+                "walk": {
+                    "preset": "imaginary_preset",
+                    "stride": "not_a_number"
+                }
+            }
+        }
+        errs, warns = spec_api.check(bad)
+        self.assertIn("clips.walk.stride", {e["path"] for e in errs})
+        self.assertIn("clips.walk.preset", {w["path"] for w in warns})
+
 
 class EditorServer(unittest.TestCase):
     @classmethod
@@ -301,8 +334,21 @@ class EditorServer(unittest.TestCase):
         c = self.call("/api/spec/check", {"model": "flat", "spec": spec})
         self.assertTrue(c["changed"])
         self.assertIn('+    "legs": ["bone_5"]', c["diff"])
-        # a file changed on disk since the page loaded it is not overwritten
-        self.assertEqual(self.status("/api/spec/save", {"model": "flat", "spec": spec, "base": "stale"}), 409)
+        # /api/spec/hash returns base and mtime
+        h = self.call("/api/spec/hash?name=flat")
+        self.assertEqual(h["base"], b["base"])
+        self.assertGreater(h["mtime"], 0)
+
+        # a file changed on disk since the page loaded it is not overwritten without force
+        try:
+            self.call("/api/spec/save", {"model": "flat", "spec": spec, "base": "stale"})
+            self.fail("expected 409 Conflict")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 409)
+            body = json.loads(e.read().decode("utf-8"))
+            self.assertTrue(body.get("conflict"))
+            self.assertEqual(body.get("disk_base"), b["base"])
+
         # nor is a broken spec written
         bad = json.loads(json.dumps(spec)); del bad["rig"]["kind"]
         self.assertEqual(self.status("/api/spec/save", {"model": "flat", "spec": bad, "base": b["base"]}), 400)
@@ -314,6 +360,12 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(saved["rig"]["future_field"], {"kept": True})
         self.assertEqual(saved["rig"]["legs"], ["bone_5"])
         self.assertEqual(self.call("/api/spec?name=flat")["base"], r["base"])
+
+        # saving with force=True succeeds even if base is stale
+        spec["rig"]["legs"] = ["bone_4", "bone_5"]
+        rf = self.call("/api/spec/save", {"model": "flat", "spec": spec, "base": "stale", "force": True})
+        self.assertTrue(rf["saved"])
+        self.assertEqual(self.call("/api/spec?name=flat")["base"], rf["base"])
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_3_source_view_and_rerig(self):
@@ -404,6 +456,79 @@ class EditorServer(unittest.TestCase):
         res = self.call("/api/spec/auto-tune", {"model": "boned", "max_iterations": 1})
         self.assertIn("job", res)
         self.assertEqual(res["job"]["step"], "auto-tune")
+
+    def test_6_anim_api(self):
+        presets = self.call("/api/anim/presets")
+        self.assertIn("presets", presets)
+        for key in ("natural", "soldier", "swagger", "stealth", "heavy", "quadruped_walk", "quadruped_trot"):
+            self.assertIn(key, presets["presets"])
+
+        eval_biped = self.call("/api/anim/evaluate", {
+            "model": "boned",
+            "preset": "soldier",
+            "overrides": {"stride": 1.2, "cadence": 1.1},
+            "frames": 16,
+            "type": "biped"
+        })
+        self.assertEqual(len(eval_biped["frames"]), 16)
+        self.assertIn("pelvis", eval_biped["frames"][0])
+        self.assertIn("legs", eval_biped["frames"][0])
+        self.assertIn("arms", eval_biped["frames"][0])
+        self.assertIn("stride", eval_biped)
+        self.assertEqual(eval_biped["preset"], "soldier")
+
+        eval_quad = self.call("/api/anim/evaluate", {
+            "model": "boned",
+            "preset": "quadruped_walk",
+            "overrides": {"sway": 1.5},
+            "frames": 12,
+            "type": "quadruped",
+            "feet": [{"name": "foot_FL", "side": 1.0, "is_front": True},
+                     {"name": "foot_BL", "side": 1.0, "is_front": False}]
+        })
+        self.assertEqual(len(eval_quad["frames"]), 12)
+        self.assertIn("body", eval_quad["frames"][0])
+        self.assertIn("feet", eval_quad["frames"][0])
+
+        # Combat action evaluations
+        eval_atk = self.call("/api/anim/evaluate", {
+            "model": "boned",
+            "action": "attack",
+            "frames": 10,
+            "type": "biped"
+        })
+        self.assertEqual(len(eval_atk["frames"]), 10)
+        self.assertIn("pelvis", eval_atk["frames"][0])
+
+        eval_hit = self.call("/api/anim/evaluate", {
+            "model": "boned",
+            "action": "hit",
+            "frames": 8,
+            "type": "biped"
+        })
+        self.assertEqual(len(eval_hit["frames"]), 8)
+
+        eval_death = self.call("/api/anim/evaluate", {
+            "model": "boned",
+            "action": "death",
+            "frames": 18,
+            "type": "biped"
+        })
+        self.assertEqual(len(eval_death["frames"]), 18)
+
+    def test_7_rebake_clips_endpoint(self):
+        bundle = self.call("/api/spec?name=flat")
+        spec = bundle["spec"]
+        res = self.call("/api/spec/rebake_clips", {
+            "model": "flat",
+            "spec": spec,
+            "base": bundle["base"],
+            "force": True
+        })
+        self.assertTrue(res.get("saved"))
+        self.assertIn("job", res)
+        if res.get("job"):
+            self.assertIn("bake", res["job"]["step"].lower())
 
 
 if __name__ == "__main__":

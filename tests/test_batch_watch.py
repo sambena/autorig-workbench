@@ -63,6 +63,12 @@ class BatchWatchTest(unittest.TestCase):
         self.assertIn("biped", pattern_models)
         self.assertIn("pedestal", pattern_models)
 
+        # Resolve riggable
+        riggable = batch_runner.resolve_models(["riggable"])
+        self.assertIn("canine", riggable)
+        riggable_flag = batch_runner.resolve_models(["all"], riggable_only=True)
+        self.assertEqual(riggable, riggable_flag)
+
     def test_format_batch_table(self):
         summary = {
             "models_count": 2,

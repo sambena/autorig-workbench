@@ -11,6 +11,8 @@
 #   4. blends: smooth weight blending at joins (e.g. limb root to torso capsule).
 #   5. rigid_islands: loose pieces or armour plates (pauldrons) riding a single bone whole without bending.
 import fnmatch
+import math
+import re
 import numpy as np
 
 
@@ -458,7 +460,7 @@ def compute_hinge_laplacian_smoothing(
         else:
             L = 0.15 * S
 
-        R = max(0.05 * S, radius_scale * max(1e-3, L))
+        R = max(1e-6, max(0.05 * max(S, 1e-6), radius_scale * max(1e-3, L)))
         dists = np.linalg.norm(P - j_pos, axis=1)
         in_zone = dists <= R
         if not np.any(in_zone):
@@ -712,8 +714,8 @@ def twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log):
             p_name, c_name = b.parent.name, b.name
             p_lower, c_lower = p_name.lower(), c_name.lower()
             is_shaft = (
-                any(k in c_lower for k in ("spine", "neck", "head", "shoulder", "clavicle", "arm", "forearm")) or
-                any(k in p_lower for k in ("spine", "hips", "neck", "shoulder", "clavicle", "arm"))
+                any(k in c_lower for k in ("spine", "neck", "head", "shoulder", "clavicle", "arm", "forearm", "upleg", "thigh", "leg")) or
+                any(k in p_lower for k in ("spine", "hips", "neck", "shoulder", "clavicle", "arm", "upleg", "thigh"))
             )
             if is_shaft:
                 shaft_pairs.append((p_name, c_name))
@@ -940,8 +942,235 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
     log["rigid_islands_assigned"] = rigid_count
 
 
+def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=None, y_mid=None, blend_width=0.08):
+    """Enforces longitudinal separation between front limbs and hindquarters on quadrupeds/creatures.
+    Prevents distal front leg/shoulder bones from stealing weights from the rear flank/pelvis,
+    and hind leg bones from stealing weights from the chest/ribcage."""
+    W = np.array(weights, copy=True, dtype=float)
+    N, num_bones = W.shape
+    if N == 0 or num_bones == 0 or not bone_heads:
+        return W
+
+    col = {name: i for i, name in enumerate(bone_names)}
+
+    def is_front_leg(name):
+        lower = name.lower()
+        return (any(k in lower for k in ("leg_front", "front_leg", "arm", "foreleg", "forearm")) or
+                ("leg" in lower and any(k in lower for k in ("_1.", "_1_")))) and "hind" not in lower and "back" not in lower
+
+    def is_hind_leg(name):
+        lower = name.lower()
+        return (any(k in lower for k in ("leg_hind", "leg_back", "hind_leg", "hindleg", "thigh", "shin", "foot", "toe", "ankle", "hock")) or
+                ("leg" in lower and any(k in lower for k in ("_2.", "_2_", "_back", "_hind")))) and "front" not in lower and "arm" not in lower
+
+    def is_torso(name):
+        lower = name.lower()
+        return any(k in lower for k in ("spine", "hips", "chest", "root", "body", "pelvis"))
+
+    front_cols = [col[b] for b in bone_names if is_front_leg(b) and b in bone_heads]
+    hind_cols = [col[b] for b in bone_names if is_hind_leg(b) and b in bone_heads]
+
+    if not front_cols or not hind_cols:
+        return W
+
+    torso_cols = [col[b] for b in bone_names if is_torso(b)]
+    if not torso_cols:
+        return W
+
+    y_front_vals = [bone_heads[bone_names[c]][1] for c in front_cols]
+    y_hind_vals = [bone_heads[bone_names[c]][1] for c in hind_cols]
+    y_front_mean = float(np.mean(y_front_vals))
+    y_hind_mean = float(np.mean(y_hind_vals))
+
+    if abs(y_hind_mean - y_front_mean) < 0.05:
+        return W
+
+    front_is_negative_y = y_front_mean < y_hind_mean
+    mid_y = y_mid if y_mid is not None else 0.5 * (y_front_mean + y_hind_mean)
+    half_span = abs(y_hind_mean - y_front_mean)
+    bw = max(0.02, blend_width * half_span)
+
+    Y = coords[:, 1]
+
+    hips_targets = [col[b] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis", "root"))]
+    hips_target = hips_targets[0] if hips_targets else torso_cols[0]
+    chest_targets = [col[b] for b in bone_names if any(k in b.lower() for k in ("spine_2", "spine2", "chest", "spine_1"))]
+    chest_target = chest_targets[0] if chest_targets else torso_cols[-1]
+
+    if front_is_negative_y:
+        in_rear = Y > (mid_y + bw)
+        if np.any(in_rear):
+            rear_indices = np.where(in_rear)[0]
+            for idx in rear_indices:
+                w_front = float(W[idx, front_cols].sum())
+                if w_front > 1e-4:
+                    W[idx, front_cols] = 0.0
+                    W[idx, hips_target] += w_front
+
+        in_front = Y < (mid_y - bw)
+        if np.any(in_front):
+            front_indices = np.where(in_front)[0]
+            for idx in front_indices:
+                w_hind = float(W[idx, hind_cols].sum())
+                if w_hind > 1e-4:
+                    W[idx, hind_cols] = 0.0
+                    W[idx, chest_target] += w_hind
+    else:
+        in_rear = Y < (mid_y - bw)
+        if np.any(in_rear):
+            rear_indices = np.where(in_rear)[0]
+            for idx in rear_indices:
+                w_front = float(W[idx, front_cols].sum())
+                if w_front > 1e-4:
+                    W[idx, front_cols] = 0.0
+                    W[idx, hips_target] += w_front
+
+        in_front = Y > (mid_y + bw)
+        if np.any(in_front):
+            front_indices = np.where(in_front)[0]
+            for idx in front_indices:
+                w_hind = float(W[idx, hind_cols].sum())
+                if w_hind > 1e-4:
+                    W[idx, hind_cols] = 0.0
+                    W[idx, chest_target] += w_hind
+
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
+def apply_tail_isolation_barrier(weights, coords, bone_names, bone_heads=None):
+    """Prevents tail vertebrae from bleeding onto buttocks, thighs, and hamstrings,
+    eliminating severe stretching and tearing when the tail articulates."""
+    W = np.array(weights, copy=True, dtype=float)
+    N, num_bones = W.shape
+    if N == 0 or num_bones == 0:
+        return W
+
+    col = {name: i for i, name in enumerate(bone_names)}
+    tail_cols = [col[b] for b in bone_names if "tail" in b.lower()]
+    if not tail_cols:
+        return W
+
+    distal_tail_cols = [
+        col[b] for b in bone_names
+        if "tail" in b.lower() and not any(b.lower().endswith(s) for s in ("_1", "1", "_base", "base"))
+    ]
+    if not distal_tail_cols:
+        distal_tail_cols = tail_cols[1:] if len(tail_cols) > 1 else []
+
+    if not distal_tail_cols:
+        return W
+
+    def is_hind_leg(name):
+        lower = name.lower()
+        return any(k in lower for k in ("leg_hind", "leg_back", "hind_leg", "thigh", "shin", "foot", "upleg", "leg")) and "tail" not in lower
+
+    hind_cols = [col[b] for b in bone_names if is_hind_leg(b)]
+    hips_targets = [col[b] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis", "root", "spine"))]
+    hips_target = hips_targets[0] if hips_targets else None
+    if hips_target is None:
+        return W
+
+    if hind_cols:
+        hind_weight = W[:, hind_cols].sum(axis=1)
+        on_leg = hind_weight > 0.25
+        if np.any(on_leg):
+            leg_indices = np.where(on_leg)[0]
+            for idx in leg_indices:
+                w_tail = float(W[idx, distal_tail_cols].sum())
+                if w_tail > 1e-4:
+                    W[idx, distal_tail_cols] = 0.0
+                    W[idx, hips_target] += w_tail
+
+    if bone_heads:
+        base_tail = [b for b in bone_names if "tail" in b.lower() and b in bone_heads]
+        if base_tail:
+            z_tail_base = bone_heads[base_tail[0]][2]
+            Z = coords[:, 2]
+            well_below_tail = Z < (z_tail_base - 0.08 * (float(Z.max() - Z.min()) if len(Z) else 1.0))
+            if np.any(well_below_tail):
+                below_indices = np.where(well_below_tail)[0]
+                for idx in below_indices:
+                    w_tail = float(W[idx, distal_tail_cols].sum())
+                    if w_tail > 1e-4:
+                        W[idx, distal_tail_cols] = 0.0
+                        W[idx, hips_target] += w_tail
+
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
+def apply_radial_limb_sector_isolation(weights, coords, bone_names, bone_heads=None, center_xy=None, max_sector_angle=1.1):
+    """For multi-legged creatures (hexapods, octopods, beetles, crabs), isolates legs into radial angular sectors.
+    Prevents adjacent legs (e.g. leg1 vs leg2 vs leg3) from bleeding into each other across narrow crevices."""
+    W = np.array(weights, copy=True, dtype=float)
+    N, num_bones = W.shape
+    if N == 0 or num_bones == 0 or not bone_heads:
+        return W
+
+    col = {name: i for i, name in enumerate(bone_names)}
+
+    leg_pat = re.compile(r"^leg_?(\d+)[._]([LR])$", re.IGNORECASE)
+    chain_bones = {}
+    for b in bone_names:
+        m = leg_pat.match(b)
+        if m:
+            key = (int(m.group(1)), m.group(2).upper())
+            chain_bones.setdefault(key, []).append(col[b])
+
+    if len(chain_bones) < 4:
+        return W
+
+    torso_cols = [col[b] for b in bone_names if any(k in b.lower() for k in ("body", "spine", "abdomen", "thorax", "hips", "root"))]
+    if not torso_cols:
+        return W
+    body_target = torso_cols[0]
+
+    if center_xy is not None:
+        cx, cy = center_xy
+    else:
+        torso_heads = [bone_heads[b] for b in bone_names if col[b] in torso_cols and b in bone_heads]
+        if torso_heads:
+            cx = float(np.mean([h[0] for h in torso_heads]))
+            cy = float(np.mean([h[1] for h in torso_heads]))
+        else:
+            cx = float(np.median(coords[:, 0]))
+            cy = float(np.median(coords[:, 1]))
+
+    X = coords[:, 0]
+    Y = coords[:, 1]
+    vert_angles = np.arctan2(Y - cy, X - cx)
+
+    for key, cols in chain_bones.items():
+        root_bone = bone_names[cols[0]]
+        if root_bone not in bone_heads:
+            continue
+        rx, ry = bone_heads[root_bone][0], bone_heads[root_bone][1]
+        leg_angle = math.atan2(ry - cy, rx - cx)
+
+        diff = np.abs(np.arctan2(np.sin(vert_angles - leg_angle), np.cos(vert_angles - leg_angle)))
+        outside_sector = diff > max_sector_angle
+        if np.any(outside_sector):
+            out_indices = np.where(outside_sector)[0]
+            for idx in out_indices:
+                w_leg = float(W[idx, cols].sum())
+                if w_leg > 1e-4:
+                    W[idx, cols] = 0.0
+                    W[idx, body_target] += w_leg
+
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
-                                crotch_threshold=0.04, armpit_barrier=True, height_span=None):
+                                crotch_threshold=0.04, armpit_barrier=True, height_span=None,
+                                flank_barrier=True, tail_barrier=True, radial_barrier=True):
     """Enforces geodesic, vertical, and air-gap anatomical barriers on skin weights:
     1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
     2. Arm & Shoulder vertical isolation: strictly prevents arms, hands, shoulders, and clavicles
@@ -1227,7 +1456,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
     # 8. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
     arm_cols = [col[b] for b in bone_names if is_arm(b)]
     if arm_cols and (neck_target is not None or head_target is not None):
-        neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.15 * h)
+        neck_zone = (Z >= z_neck - 0.01 * h) & (np.abs(X - sym_plane) < 0.06 * h)
         if np.any(neck_zone):
             nz_indices = np.where(neck_zone)[0]
             z_head_cut = (z_head - 0.01 * h) if z_head is not None else (z_neck + 0.04 * h)
@@ -1284,6 +1513,18 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                     W[idx, neck_cols] -= transfer
                     W[idx, head_target] += transfer
 
+    # 12. Longitudinal Flank barrier for quadrupeds/creatures
+    if flank_barrier and bone_heads:
+        W = apply_longitudinal_flank_barrier(W, coords, bone_names, bone_heads=bone_heads)
+
+    # 13. Tail-to-Hindquarters / Buttocks isolation
+    if tail_barrier:
+        W = apply_tail_isolation_barrier(W, coords, bone_names, bone_heads=bone_heads)
+
+    # 14. Radial limb sector isolation for multi-legged creatures (hexapods/octopods)
+    if radial_barrier and bone_heads:
+        W = apply_radial_limb_sector_isolation(W, coords, bone_names, bone_heads=bone_heads)
+
     # Renormalize rows
     row_sums = W.sum(axis=1, keepdims=True)
     valid = (row_sums > 1e-6).ravel()
@@ -1330,7 +1571,10 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
         sym_plane=sym_plane,
         crotch_threshold=crotch_thresh,
         armpit_barrier=spec.get("armpit_barrier", True),
-        height_span=h_span
+        height_span=h_span,
+        flank_barrier=spec.get("flank_barrier", True),
+        tail_barrier=spec.get("tail_barrier", True),
+        radial_barrier=spec.get("radial_barrier", True)
     )
 
     diff = np.abs(cleaned_W - W).sum(axis=1)
@@ -1471,12 +1715,19 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     island_delta = float(spec.get("island_delta", 0.005 * span_x))
     bound_islands = 0
 
+    max_island_len = max(len(i) for i in isl) if isl else 0
     for idxs in isl:
-        if len(idxs) >= 0.6 * n:
-            continue  # Main body, not a loose accessory
+        if len(idxs) == max_island_len or len(idxs) >= 0.35 * n:
+            continue  # Main body or major component, not a loose accessory
         island_P = P[idxs]
         ix_min, ix_max = float(island_P[:, 0].min()), float(island_P[:, 0].max())
         iz_min, iz_max = float(island_P[:, 2].min()), float(island_P[:, 2].max())
+
+        # Accessory must be localized to pelvic region, not span the body or reach chest/head
+        if (iz_max - iz_min) > 0.35 * height:
+            continue
+        if iz_max > (z_hips + 0.25 * height):
+            continue
 
         # Check if straddling sagittal plane in pelvic / waist region
         if ix_min < (sym_plane - island_delta) and ix_max > (sym_plane + island_delta):

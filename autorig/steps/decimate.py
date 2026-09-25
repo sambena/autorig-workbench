@@ -16,7 +16,7 @@ import bpy, sys, os, json, math
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
-from layout import ROOT, rigged_dir, leaf, source_fbx, budget, models_in, group_of
+from layout import ROOT, rigged_dir, leaf, source_fbx, budget, models_in, group_of, work_dir
 import source_io
 
 # Budgets: rig.json "budget", then the collection's autorig.json ("full_resolution_groups", "budget"), read through
@@ -120,7 +120,20 @@ def run(key):
     # consumer cuts its own copy; only a model with a budget of its own is cut here.
     target = budget(key)
     out = os.path.join(rigged_dir(key), leaf(key) + ".fbx")
-    if target is None and os.path.exists(out):
+    audit_file = os.path.join(work_dir("audit"), leaf(key) + ".json")
+    has_excess_influences = False
+    if os.path.exists(audit_file):
+        try:
+            with open(audit_file, "r", encoding="utf-8") as fh:
+                aj = json.load(fh)
+            for m in aj.get("meshes", []):
+                if m.get("max_influences", 0) > 4 or m.get("verts_over_4", 0) > 0:
+                    has_excess_influences = True
+                    break
+        except Exception:
+            pass
+
+    if target is None and os.path.exists(out) and not has_excess_influences:
         return {"model": key, "skipped": "kept at full resolution (no budget for %s)" % (group_of(key) or "the root")}
 
     if rigged:

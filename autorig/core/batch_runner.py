@@ -34,13 +34,15 @@ DEFAULT_STEPS = ["rig", "trim", "audit"]
 ALL_STEPS = ["survey", "rig", "trim", "audit", "clips", "publish", "preview"]
 
 
-def resolve_models(names=None, group=None, pattern=None):
+def resolve_models(names=None, group=None, pattern=None, riggable_only=False):
     """Resolves a list of model names from targets, group filter, and wildcard patterns."""
     all_pairs = layout.all_models()  # [(group, name), ...]
     if group is not None:
         all_pairs = [p for p in all_pairs if p[0] == (group or "")]
 
-    if not names or names == ["all"] or "all" in names:
+    is_riggable_query = (names and ("riggable" in names or names == ["riggable"])) or riggable_only
+
+    if not names or names == ["all"] or "all" in names or is_riggable_query:
         resolved = [p[1] for p in all_pairs]
     else:
         # Check explicit names
@@ -54,6 +56,9 @@ def resolve_models(names=None, group=None, pattern=None):
 
     if pattern:
         resolved = [m for m in resolved if fnmatch.fnmatch(m, pattern) or fnmatch.fnmatch(m.lower(), pattern.lower())]
+
+    if is_riggable_query:
+        resolved = [m for m in resolved if (spec_store.model(m) or {}).get("rig")]
 
     return sorted(list(dict.fromkeys(resolved)))
 
@@ -182,10 +187,10 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None):
     }
 
 
-def run_batch(models=None, group=None, pattern=None, steps=None, auto_tune=False, export_target=None, continue_on_error=True):
+def run_batch(models=None, group=None, pattern=None, steps=None, auto_tune=False, export_target=None, continue_on_error=True, riggable_only=False, workers=1):
     """Executes the pipeline in batch across resolved models.
     Returns: dict with summary metrics and per-model results list."""
-    target_models = resolve_models(names=models, group=group, pattern=pattern)
+    target_models = resolve_models(names=models, group=group, pattern=pattern, riggable_only=riggable_only)
     if not target_models:
         return {"models_count": 0, "results": [], "passed": 0, "failed": 0, "elapsed": 0.0}
 
@@ -194,14 +199,35 @@ def run_batch(models=None, group=None, pattern=None, steps=None, auto_tune=False
     passed = 0
     failed = 0
 
-    for m in target_models:
-        res = run_model_pipeline(m, steps=steps, auto_tune=auto_tune, export_target=export_target)
-        results.append(res)
-        if res["status"] in ("OK", "PASS", "CHECK"):
-            passed += 1
-        else:
-            failed += 1
-            if not continue_on_error:
+    if workers and workers > 1:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_model = {
+                executor.submit(run_model_pipeline, m, steps=steps, auto_tune=auto_tune, export_target=export_target): m
+                for m in target_models
+            }
+            for future in concurrent.futures.as_completed(future_to_model):
+                res = future.result()
+                results.append(res)
+                if res["status"] in ("OK", "PASS", "CHECK"):
+                    passed += 1
+                else:
+                    failed += 1
+                print(f"[{len(results)}/{len(target_models)}] {res['model']} ({res['group']}): {res['status']} {res['grade']} ({res['duration']}s)", flush=True)
+                if not continue_on_error and res["status"] not in ("OK", "PASS", "CHECK"):
+                    break
+        model_order = {m: i for i, m in enumerate(target_models)}
+        results.sort(key=lambda r: model_order.get(r["model"], 999999))
+    else:
+        for m in target_models:
+            res = run_model_pipeline(m, steps=steps, auto_tune=auto_tune, export_target=export_target)
+            results.append(res)
+            if res["status"] in ("OK", "PASS", "CHECK"):
+                passed += 1
+            else:
+                failed += 1
+            print(f"[{len(results)}/{len(target_models)}] {res['model']} ({res['group']}): {res['status']} {res['grade']} ({res['duration']}s)", flush=True)
+            if not continue_on_error and res["status"] not in ("OK", "PASS", "CHECK"):
                 break
 
     total_time = round(time.time() - t_start, 2)
