@@ -122,6 +122,9 @@ class RetargeterTest(unittest.TestCase):
         with open(cls.bvh_file, "w", encoding="utf-8") as fh:
             fh.write(SAMPLE_BVH)
 
+        # Locate sample FBX if present
+        cls.sample_fbx = "/var/home/cosmo/Work/Smeltdown/Library/PackageCache/com.unity.timeline@9cd41035b3ab/Samples~/GameplaySequenceDemo/Animation/Victory-anim1.fbx"
+
     @classmethod
     def tearDownClass(cls):
         if cls.orig_models:
@@ -184,6 +187,7 @@ class RetargeterTest(unittest.TestCase):
         self.assertEqual(plan["clip_name"], "walk_cycle")
         self.assertEqual(plan["model"], "biped")
         self.assertTrue(plan["root_motion"])
+        self.assertTrue(plan["solve_offsets"])
         self.assertGreater(plan["mapping_result"]["mapped_count"], 5)
 
         summary = retargeter.format_retarget_summary(plan)
@@ -199,6 +203,7 @@ class RetargeterTest(unittest.TestCase):
             clip_name="test_walk",
             root_motion=True,
             scale_proportions=True,
+            solve_offsets=True,
             export_glb=False,
         )
         self.assertEqual(res["status"], "OK")
@@ -208,9 +213,6 @@ class RetargeterTest(unittest.TestCase):
         self.assertGreater(res["mapped_bones"], 5)
 
         # Verify action exists in target .blend via Blender inspect
-        b_cmd = [
-            layout.os.path.join(REPO, "autorig", "core", "blender.py"),
-        ]
         verify_cmd = [
             "blender", "-b", res["target_blend"],
             "--python-expr",
@@ -224,6 +226,37 @@ print("__ACTIONS__" + str(action_names))
         r = subprocess.run(verify_cmd, capture_output=True, text=True)
         self.assertIn("'test_walk'", r.stdout)
 
+    def test_retarget_fbx_and_batch(self):
+        if not os.path.isfile(self.sample_fbx):
+            self.skipTest("Sample FBX not found on system")
+
+        meta = retargeter.inspect_mocap_file(self.sample_fbx)
+        self.assertEqual(meta["format"], "FBX")
+        self.assertEqual(meta["convention"], "unity")
+        self.assertGreater(meta["frames"], 100)
+
+        # Test single FBX retarget with frame range
+        res = retargeter.retarget_clip(
+            model_name="biped",
+            mocap_file=self.sample_fbx,
+            clip_name="test_fbx_victory",
+            frame_range=[1, 5],
+            solve_offsets=True,
+            root_motion=True,
+        )
+        self.assertEqual(res["status"], "OK")
+        self.assertEqual(res["frames"], 5)
+        self.assertEqual(res["clip_name"], "test_fbx_victory")
+
+        # Test batch retarget
+        batch_res = retargeter.retarget_batch(
+            models=["biped"],
+            mocap_files=[self.bvh_file],
+            clip_names=["batch_walk"],
+        )
+        self.assertEqual(len(batch_res), 1)
+        self.assertEqual(batch_res[0]["status"], "OK")
+
     def test_retarget_cli(self):
         r = subprocess.run(
             [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"), "--help"],
@@ -232,7 +265,18 @@ print("__ACTIONS__" + str(action_names))
         )
         self.assertEqual(r.returncode, 0)
         self.assertIn("--no-root-motion", r.stdout)
+        self.assertIn("--no-solve-offsets", r.stdout)
         self.assertIn("--dry-run", r.stdout)
+
+        # Dry run CLI execution
+        r_dry = subprocess.run(
+            [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"),
+             "biped", self.bvh_file, "--dry-run"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(r_dry.returncode, 0)
+        self.assertIn("RETARGET_DRY_RUN", r_dry.stdout)
 
 
 if __name__ == "__main__":
