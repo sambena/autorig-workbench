@@ -1169,21 +1169,23 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("barrier", False):
+    if spec.get("barrier", True):
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("centerline_armor", False):
+    if spec.get("sibling_isolation", True):
+        placed_rules.sibling_appendage_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("centerline_armor", True):
         placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
         # Run before rigid-piece pass so loose pieces still end up rigid.
         smooth_weights(mesh, int(spec["smooth"]))
-        if spec.get("barrier", False):
+        if spec.get("barrier", True):
             placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("hinge_smoothing", False):
+    if spec.get("hinge_smoothing", True):
         placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("twist_relaxation", False):
+    if spec.get("twist_relaxation", True):
         placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("rigid_islands") or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
+    if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
@@ -1333,6 +1335,8 @@ def skin(mesh, arm, chains, spec, size, log):
         for v in verts:
             for g in list(v.groups): mesh.vertex_groups[g.group].remove([v.index])
             (up if v.co.z > cut else down).add([v.index], 1.0, 'REPLACE')
+    if spec.get("auto_heal", True):
+        placed_rules.closed_loop_healing_pass(mesh, arm, spec, size, log)
     select_only(mesh)
     bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
     bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)

@@ -1267,6 +1267,85 @@ def compute_sibling_appendage_isolation(weights, coords, bone_names, bone_heads=
     return W
 
 
+def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0.20, passes=3, blend_factor=0.5):
+    """Closed-loop Laplacian tear healer:
+    Identifies connected mesh edges across which weight gradients exceed max_gradient (which
+    causes tears/holes in QA bend tests), and applies localized topological Laplacian relaxation
+    to diffuse the gradient smoothly along the mesh surface without jumping across air gaps.
+
+    weights: (N, M) array of vertex bone weights.
+    coords: (N, 3) array of vertex coordinates.
+    edges: list or array of (u, v) vertex index pairs.
+    max_gradient: maximum allowable weight difference on any bone across a connected edge (default 0.20).
+    passes: number of relaxation iterations (default 3).
+    blend_factor: blend weight towards neighbor average per pass (default 0.5).
+
+    Returns: (healed_weights, modified_vert_count)
+    """
+    if len(weights) == 0 or len(edges) == 0:
+        return weights, 0
+
+    W = np.array(weights, copy=True, dtype=float)
+    N, M = W.shape
+    modified_mask = np.zeros(N, dtype=bool)
+
+    edges_arr = np.array(edges, dtype=int)
+    if edges_arr.ndim != 2 or edges_arr.shape[1] != 2:
+        return weights, 0
+
+    u_idx = edges_arr[:, 0]
+    v_idx = edges_arr[:, 1]
+    valid_mask = (u_idx >= 0) & (u_idx < N) & (v_idx >= 0) & (v_idx < N) & (u_idx != v_idx)
+    u_idx = u_idx[valid_mask]
+    v_idx = v_idx[valid_mask]
+    if len(u_idx) == 0:
+        return weights, 0
+
+    # Build adjacency list: adj[u] = list of neighbor vertex indices
+    adj = [[] for _ in range(N)]
+    for u, v in zip(u_idx, v_idx):
+        adj[u].append(v)
+        adj[v].append(u)
+
+    for p in range(passes):
+        edge_diffs = np.max(np.abs(W[u_idx] - W[v_idx]), axis=1)
+        violating = edge_diffs > max_gradient
+        if not np.any(violating):
+            break
+
+        violating_u = u_idx[violating]
+        violating_v = v_idx[violating]
+        violating_verts = np.unique(np.concatenate([violating_u, violating_v]))
+
+        new_W_vals = np.zeros((len(violating_verts), M), dtype=float)
+        for i, u in enumerate(violating_verts):
+            nbrs = adj[u]
+            if nbrs:
+                avg = np.mean(W[nbrs], axis=0)
+                new_W_vals[i] = (1.0 - blend_factor) * W[u] + blend_factor * avg
+            else:
+                new_W_vals[i] = W[u]
+
+        W[violating_verts] = new_W_vals
+        modified_mask[violating_verts] = True
+
+        row_sums = W[violating_verts].sum(axis=1, keepdims=True)
+        valid = (row_sums > 1e-6).ravel()
+        if np.any(valid):
+            v_valid = violating_verts[valid]
+            W[v_valid] /= row_sums[valid]
+
+    mod_indices = np.where(modified_mask)[0]
+    if len(mod_indices) > 0:
+        sums = W[mod_indices].sum(axis=1, keepdims=True)
+        valid = (sums > 1e-6).ravel()
+        if np.any(valid):
+            m_valid = mod_indices[valid]
+            W[m_valid] /= sums[valid]
+
+    return W, int(np.sum(modified_mask))
+
+
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None,
                                 flank_barrier=True, tail_barrier=True, radial_barrier=True):
@@ -1636,6 +1715,32 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                     W[idx, neck_cols] -= transfer
                     W[idx, head_target] += transfer
 
+    # 11b. Snout / Head vs. Paws / Hooves vertical & distance isolation:
+    # Paw/hoof bones cannot own head/jaw/snout vertices, and head/jaw bones cannot own paws.
+    if head_target is not None and distal_leg_cols and bone_heads:
+        z_head_min = (z_head - 0.05 * h) if z_head is not None else (z_neck + 0.02 * h)
+        on_head = Z >= z_head_min
+        if np.any(on_head):
+            oh_indices = np.where(on_head)[0]
+            for idx in oh_indices:
+                w_paws = float(W[idx, distal_leg_cols].sum())
+                if w_paws > 1e-4:
+                    W[idx, distal_leg_cols] = 0.0
+                    W[idx, head_target] += w_paws
+
+        z_foot_max = z_min + 0.15 * h
+        head_neck_all = head_cols + neck_cols
+        if head_neck_all:
+            on_feet = Z <= z_foot_max
+            if np.any(on_feet):
+                of_indices = np.where(on_feet)[0]
+                for idx in of_indices:
+                    w_hn = float(W[idx, head_neck_all].sum())
+                    if w_hn > 1e-4:
+                        W[idx, head_neck_all] = 0.0
+                        best_foot = distal_leg_cols[0]
+                        W[idx, best_foot] += w_hn
+
     # 12. Longitudinal Flank barrier for quadrupeds/creatures
     if flank_barrier and bone_heads:
         W = apply_longitudinal_flank_barrier(W, coords, bone_names, bone_heads=bone_heads)
@@ -1920,4 +2025,119 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
 
     log["centerline_verts_anchored"] = adjusted_verts
     return bound_islands + adjusted_verts
+
+
+def sibling_appendage_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """Enforces sibling appendage isolation (e.g. tentacles, spider legs, crab legs):
+    Prevents adjacent parallel appendages from cross-contaminating each other's distal vertices."""
+    if spec is None:
+        spec = {}
+    if log is None:
+        log = {}
+    if not spec.get("sibling_isolation", True):
+        return 0
+
+    verts = mesh.data.vertices
+    vg = mesh.vertex_groups
+    n = len(verts)
+    if n == 0:
+        return 0
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return 0
+
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((n, len(bone_names)), dtype=np.float32)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+
+    P = np.empty(n * 3, dtype=np.float32)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    bone_heads = {b.name: list(b.head_local) for b in arm.data.bones}
+    cleaned_W = compute_sibling_appendage_isolation(
+        W, P, bone_names, bone_heads=bone_heads, chains=chains
+    )
+
+    diff = np.abs(cleaned_W - W).sum(axis=1)
+    corrected_count = int((diff > 1e-3).sum())
+
+    if corrected_count > 0:
+        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
+        for vi in np.where(diff > 1e-3)[0]:
+            for bi, g_obj in group_objs.items():
+                w = float(cleaned_W[vi, bi])
+                if w > 1e-4:
+                    g_obj.add([int(vi)], w, 'REPLACE')
+                else:
+                    g_obj.remove([int(vi)])
+
+    log["sibling_appendage_fixed_verts"] = corrected_count
+    return corrected_count
+
+
+def closed_loop_healing_pass(mesh, arm, spec=None, size=None, log=None):
+    """Closed-loop tear healing pass on mesh vertex groups:
+    Identifies connected mesh edges across which weight gradients exceed max_gradient,
+    and diffuses the gradient along topological edges to prevent tears during joint bends."""
+    if spec is None:
+        spec = {}
+    if log is None:
+        log = {}
+    if not spec.get("auto_heal", True):
+        return 0
+
+    verts = mesh.data.vertices
+    vg = mesh.vertex_groups
+    n = len(verts)
+    if n == 0 or len(mesh.data.edges) == 0:
+        return 0
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return 0
+
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((n, len(bone_names)), dtype=np.float32)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+
+    edges = [(e.vertices[0], e.vertices[1]) for e in mesh.data.edges]
+    max_gradient = float(spec.get("heal_max_gradient", 0.20))
+    passes = int(spec.get("heal_passes", 4))
+    blend_factor = float(spec.get("heal_blend", 0.5))
+
+    P = np.empty(n * 3, dtype=np.float32)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+
+    healed_W, modified_count = compute_closed_loop_laplacian_healing(
+        W, P, edges, max_gradient=max_gradient, passes=passes, blend_factor=blend_factor
+    )
+
+    diff = np.abs(healed_W - W).sum(axis=1)
+    corrected_count = int((diff > 1e-3).sum())
+
+    if corrected_count > 0:
+        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
+        for vi in np.where(diff > 1e-3)[0]:
+            for bi, g_obj in group_objs.items():
+                w = float(healed_W[vi, bi])
+                if w > 1e-4:
+                    g_obj.add([int(vi)], w, 'REPLACE')
+                else:
+                    g_obj.remove([int(vi)])
+
+    log["closed_loop_healed_verts"] = corrected_count
+    return corrected_count
 

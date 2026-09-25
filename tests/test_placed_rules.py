@@ -283,6 +283,127 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertAlmostEqual(cleaned[0, 0], 1.0, places=5)  # Transferred to Hips
         np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(1), rtol=1e-5)
 
+    def test_geodesic_skin_barrier_arm_leg_separation_low_hands(self):
+        bone_names = ["Hips", "LeftArm", "LeftForeArm", "LeftUpLeg"]
+        bone_heads = {
+            "Hips": [0.0, 0.0, 0.5],
+            "LeftArm": [0.35, 0.0, 0.75],
+            "LeftForeArm": [0.38, 0.0, 0.40],
+            "LeftUpLeg": [0.12, 0.0, 0.45],
+        }
+        # Vert 0: low-hanging hand/wrist (Z=0.35, X=0.38) -> closer to ForeArm than UpLeg
+        # Vert 1: outer thigh (Z=0.35, X=0.14) -> closer to UpLeg than ForeArm
+        coords = np.array([
+            [0.38, 0.0, 0.35],
+            [0.14, 0.0, 0.35],
+        ])
+        weights = np.array([
+            [0.0, 0.1, 0.6, 0.3],   # Hand vert with accidental leg bleed
+            [0.1, 0.2, 0.2, 0.5],   # Thigh vert with accidental arm bleed
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, bone_heads=bone_heads, sym_plane=0.0, height_span=1.0
+        )
+        # Vert 0 is on hand: leg weights quenched, restored to arm
+        self.assertEqual(cleaned[0, 3], 0.0)
+        self.assertAlmostEqual(cleaned[0, 1] + cleaned[0, 2], 1.0, places=4)
+        # Vert 1 is on thigh: arm weights quenched, restored to leg
+        self.assertEqual(cleaned[1, 1], 0.0)
+        self.assertEqual(cleaned[1, 2], 0.0)
+        self.assertGreater(cleaned[1, 3], 0.5)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_geodesic_skin_barrier_head_paw_isolation(self):
+        bone_names = ["Head", "Neck", "LeftUpLeg", "LeftFoot"]
+        bone_heads = {
+            "Head": [0.0, 0.0, 0.90],
+            "Neck": [0.0, 0.0, 0.80],
+            "LeftUpLeg": [0.15, 0.0, 0.45],
+            "LeftFoot": [0.15, 0.0, 0.05],
+        }
+        # Vert 0: snout/head (Z=0.88, X=0.0) with accidental LeftFoot bleed
+        # Vert 1: paw/foot (Z=0.04, X=0.15) with accidental Head bleed
+        coords = np.array([
+            [0.0, 0.0, 0.88],
+            [0.15, 0.0, 0.04],
+        ])
+        weights = np.array([
+            [0.6, 0.1, 0.0, 0.3],  # Head with paw bleed
+            [0.3, 0.0, 0.1, 0.6],  # Paw with head bleed
+        ])
+        cleaned = placed_rules.apply_geodesic_skin_barrier(
+            weights, coords, bone_names, bone_heads=bone_heads, sym_plane=0.0, height_span=1.0
+        )
+        # Foot weights on head vert must be eliminated
+        self.assertEqual(cleaned[0, 3], 0.0)
+        self.assertGreater(cleaned[0, 0], 0.6)
+        # Head weights on paw vert must be eliminated
+        self.assertEqual(cleaned[1, 0], 0.0)
+        self.assertGreater(cleaned[1, 3], 0.6)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_compute_sibling_appendage_isolation(self):
+        bone_names = ["tentacle1_base.L", "tentacle1_mid.L", "tentacle1_tip.L",
+                      "tentacle2_base.L", "tentacle2_mid.L", "tentacle2_tip.L"]
+        bone_heads = {
+            "tentacle1_base.L": [0.2, 0.0, 1.0],
+            "tentacle1_mid.L": [0.2, 0.3, 1.0],
+            "tentacle1_tip.L": [0.2, 0.6, 1.0],
+            "tentacle2_base.L": [0.4, 0.0, 1.0],
+            "tentacle2_mid.L": [0.4, 0.3, 1.0],
+            "tentacle2_tip.L": [0.4, 0.6, 1.0],
+        }
+        chains = [
+            {"role": "tentacle", "bones": ["tentacle1_base.L", "tentacle1_mid.L", "tentacle1_tip.L"]},
+            {"role": "tentacle", "bones": ["tentacle2_base.L", "tentacle2_mid.L", "tentacle2_tip.L"]},
+        ]
+        # Vert 0: on tentacle 1 distal segment (X=0.2, Y=0.5) with tentacle 2 bleed
+        # Vert 1: on tentacle 2 distal segment (X=0.4, Y=0.5) with tentacle 1 bleed
+        coords = np.array([
+            [0.21, 0.5, 1.0],
+            [0.39, 0.5, 1.0],
+        ])
+        weights = np.array([
+            [0.0, 0.5, 0.2, 0.0, 0.2, 0.1],  # tentacle 1 with tentacle 2 bleed
+            [0.0, 0.2, 0.1, 0.0, 0.5, 0.2],  # tentacle 2 with tentacle 1 bleed
+        ])
+        cleaned = placed_rules.compute_sibling_appendage_isolation(
+            weights, coords, bone_names, bone_heads=bone_heads, chains=chains
+        )
+        # Vert 0: tentacle 2 distal weights must be zeroed
+        self.assertEqual(cleaned[0, 4], 0.0)
+        self.assertEqual(cleaned[0, 5], 0.0)
+        self.assertAlmostEqual(cleaned[0, 1] + cleaned[0, 2], 1.0, places=4)
+
+        # Vert 1: tentacle 1 distal weights must be zeroed
+        self.assertEqual(cleaned[1, 1], 0.0)
+        self.assertEqual(cleaned[1, 2], 0.0)
+        self.assertAlmostEqual(cleaned[1, 4] + cleaned[1, 5], 1.0, places=4)
+        np.testing.assert_allclose(cleaned.sum(axis=1), np.ones(2), rtol=1e-5)
+
+    def test_compute_closed_loop_laplacian_healing(self):
+        # 3 vertices connected in a line: 0 -- 1 -- 2
+        # Vertex 0 and 1 have a steep weight step: w[0] = [1.0, 0.0], w[1] = [0.0, 1.0] (diff = 1.0 > 0.20)
+        coords = np.array([
+            [0.0, 0.0, 0.0],
+            [0.1, 0.0, 0.0],
+            [0.2, 0.0, 0.0],
+        ])
+        weights = np.array([
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        ])
+        edges = [(0, 1), (1, 2)]
+        healed, count = placed_rules.compute_closed_loop_laplacian_healing(
+            weights, coords, edges, max_gradient=0.20, passes=6, blend_factor=0.5
+        )
+        self.assertGreater(count, 0)
+        # After healing, the maximum gradient across edge (0, 1) must be significantly reduced
+        max_diff = float(np.max(np.abs(healed[0] - healed[1])))
+        self.assertLess(max_diff, 0.50)
+        np.testing.assert_allclose(healed.sum(axis=1), np.ones(3), rtol=1e-5)
+
     def test_compute_hinge_laplacian_smoothing(self):
         bone_names = ["LeftArm", "LeftForeArm", "Spine"]
         hinge_pairs = [("LeftArm", "LeftForeArm")]
@@ -687,6 +808,98 @@ else:
                     self.assertAlmostEqual(w_hips, 1.0, places=4)
                     self.assertEqual(w_lleg, 0.0)
                     self.assertEqual(w_rleg, 0.0)
+
+        def test_sibling_appendage_pass_blender(self):
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            # Create two cylinders side by side: cyl1 at X=0.2, cyl2 at X=0.6
+            bpy.ops.mesh.primitive_cylinder_add(vertices=8, depth=1.0, radius=0.1, location=(0.2, 0, 0.5))
+            c1 = bpy.context.active_object
+            bpy.ops.mesh.primitive_cylinder_add(vertices=8, depth=1.0, radius=0.1, location=(0.6, 0, 0.5))
+            c2 = bpy.context.active_object
+
+            c1.select_set(True)
+            c2.select_set(True)
+            bpy.context.view_layer.objects.active = c1
+            bpy.ops.object.join()
+            mesh = c1
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+            arm_data = bpy.data.armatures.new("Armature")
+            arm = bpy.data.objects.new("Armature", arm_data)
+            bpy.context.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b1_base = arm.data.edit_bones.new("tentacle1_base.L")
+            b1_base.head = (0.2, 0, 0.0); b1_base.tail = (0.2, 0, 0.2)
+            b1 = arm.data.edit_bones.new("tentacle1_tip.L")
+            b1.head = (0.2, 0, 0.2); b1.tail = (0.2, 0, 0.8)
+            b1.parent = b1_base
+
+            b2_base = arm.data.edit_bones.new("tentacle2_base.L")
+            b2_base.head = (0.6, 0, 0.0); b2_base.tail = (0.6, 0, 0.2)
+            b2 = arm.data.edit_bones.new("tentacle2_tip.L")
+            b2.head = (0.6, 0, 0.2); b2.tail = (0.6, 0, 0.8)
+            b2.parent = b2_base
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            vg1 = mesh.vertex_groups.new(name="tentacle1_tip.L")
+            vg2 = mesh.vertex_groups.new(name="tentacle2_tip.L")
+            for v in mesh.data.vertices:
+                if v.co.x < 0.4:
+                    vg1.add([v.index], 0.8, 'REPLACE')
+                    vg2.add([v.index], 0.2, 'REPLACE')  # accidental cross-bleed
+                else:
+                    vg1.add([v.index], 0.2, 'REPLACE')  # accidental cross-bleed
+                    vg2.add([v.index], 0.8, 'REPLACE')
+
+            log = {}
+            chains = [
+                {"role": "tentacle", "bones": ["tentacle1_base.L", "tentacle1_tip.L"]},
+                {"role": "tentacle", "bones": ["tentacle2_base.L", "tentacle2_tip.L"]},
+            ]
+            placed_rules.sibling_appendage_pass(mesh, arm, chains, {}, Vector((1.0, 1.0, 1.0)), log)
+            self.assertGreater(log.get("sibling_appendage_fixed_verts", 0), 0)
+
+            # Check that cross-bleed has been eliminated
+            for v in mesh.data.vertices:
+                if v.co.x < 0.4:
+                    w2 = sum(g.weight for g in v.groups if g.group == vg2.index)
+                    self.assertEqual(w2, 0.0)
+                else:
+                    w1 = sum(g.weight for g in v.groups if g.group == vg1.index)
+                    self.assertEqual(w1, 0.0)
+
+        def test_closed_loop_healing_pass_blender(self):
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            # Create a subdivided plane with connected vertices
+            bpy.ops.mesh.primitive_grid_add(x_subdivisions=4, y_subdivisions=4, size=1.0)
+            mesh = bpy.context.active_object
+
+            arm_data = bpy.data.armatures.new("Armature")
+            arm = bpy.data.objects.new("Armature", arm_data)
+            bpy.context.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b1 = arm.data.edit_bones.new("Bone1")
+            b1.head = (-0.25, 0, 0); b1.tail = (-0.25, 0, 0.5)
+            b2 = arm.data.edit_bones.new("Bone2")
+            b2.head = (0.25, 0, 0); b2.tail = (0.25, 0, 0.5)
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            vg1 = mesh.vertex_groups.new(name="Bone1")
+            vg2 = mesh.vertex_groups.new(name="Bone2")
+            # Step discontinuity: left half 100% Bone1, right half 100% Bone2 (steep cliff across centerline)
+            for v in mesh.data.vertices:
+                if v.co.x <= 0.0:
+                    vg1.add([v.index], 1.0, 'REPLACE')
+                else:
+                    vg2.add([v.index], 1.0, 'REPLACE')
+
+            log = {}
+            spec = {"heal_max_gradient": 0.20, "heal_passes": 4, "heal_blend": 0.5}
+            healed = placed_rules.closed_loop_healing_pass(mesh, arm, spec, Vector((1.0, 1.0, 1.0)), log)
+            self.assertGreater(log.get("closed_loop_healed_verts", 0), 0)
+            self.assertGreater(healed, 0)
 
 
 if __name__ == "__main__":
