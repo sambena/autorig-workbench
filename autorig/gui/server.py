@@ -31,7 +31,7 @@ UPLOAD_EXTS = {".fbx", ".glb", ".gltf", ".bin", ".obj", ".mtl", ".png", ".jpg", 
                ".tiff", ".webp", ".zip", ".json", ".py"}
 SKIP_FILES = {"model.json", "pack.json"}          # outputs: publish writes them again
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
-STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all")
+STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all", "rebake-clips", "rebake_clips")
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
 layout = spec_store = blender = grades = exporter = None    # imported in main(), once the environment names the folders
@@ -348,6 +348,7 @@ def availability(st, spec, d):
         why["clips"] = "no rig yet: run Rig"
     else:
         why["clips"] = None
+    why["rebake-clips"] = why["rebake_clips"] = why["clips"]
     why["publish"] = None if st["rigged_fbx"] else "no rigged FBX yet: run Rig"
     why["preview"] = None if (st["rigged"] or st["rigged_fbx"]) else "no rig yet: run Rig"     # results viewer
     why["all"] = why["rig"]
@@ -388,6 +389,9 @@ def commands(group, name, step, spec):
         return [("make clips (%s)" % c_arch,
                  blender_cmd("make_clips.py", name, "--preview", pv), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
 
+    def rebake_clips():
+        return clips() + preview()
+
     def publish():
         return [("publish card", py + [os.path.join(STEPS, "publish.py"), group or ".", "-only", name], None, name)]
 
@@ -399,6 +403,7 @@ def commands(group, name, step, spec):
     if step == "trim": return trim()
     if step == "audit": return audit()
     if step == "clips": return clips()
+    if step in ("rebake-clips", "rebake_clips"): return rebake_clips()
     if step == "publish": return publish()
     if step == "preview": return preview()
     if step == "all":

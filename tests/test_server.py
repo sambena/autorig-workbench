@@ -300,6 +300,25 @@ class ServerTest(unittest.TestCase):
         self.call("/api/cancel", {"job": job["id"]})
         self.wait(job)
 
+    def test_8d_rebake_clips_endpoint_and_commands(self):
+        import autorig.gui.server as server
+        import layout
+        import blender
+        server.layout = layout
+        server.blender = blender
+        mock_spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "clips": {"archetype": "walker"}}}
+        cmds = server.commands(".", "test_creature", "rebake-clips", mock_spec)
+        self.assertEqual(len(cmds), 2)
+        self.assertTrue(cmds[0][0].startswith("make clips"))
+        self.assertEqual(cmds[1][0], "preview for the viewer")
+
+        # pedestal has no clips section: /api/run with rebake-clips must fail with 409
+        st = self.call("/api/state")
+        pedestal = next((m for m in st["models"] if m["name"] == "pedestal"), None)
+        self.assertIsNotNone(pedestal)
+        self.assertIsNotNone(pedestal["steps"].get("rebake-clips"))
+        self.assertEqual(self.status("/api/run", body={"model": "pedestal", "step": "rebake-clips"}), 409)
+
 
 
 def alive(pid):

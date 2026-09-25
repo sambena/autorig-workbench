@@ -513,6 +513,8 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <button type="button" data-action="model-details">📋 Model Details &amp; Notes…</button>
           <button type="button" data-action="mesh-doctor">🩺 Mesh Doctor (Diagnostics)…</button>
           <button type="button" data-action="facing-views">🖼️ Survey Facing Views…</button>
+          <hr>
+          <button type="button" data-action="rebake-model-clips">🎬 Re-bake Clips…</button>
         </div>
       </div>
 
@@ -540,6 +542,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <button type="button" data-action="pipe-trim">3️⃣ Trim &amp; Decimate</button>
           <button type="button" data-action="pipe-audit">4️⃣ QA Audit</button>
           <button type="button" data-action="pipe-clips">5️⃣ Author Clips</button>
+          <button type="button" data-action="rebake-model-clips">🎬 Re-bake Model Clips</button>
           <button type="button" data-action="pipe-publish">6️⃣ Publish Card</button>
           <button type="button" data-action="pipe-preview">7️⃣ Compile Preview GLB</button>
           <hr>
@@ -728,6 +731,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <button id="clipPlay" class="small" title="Play / Pause (Space)">▶</button>
           <span id="clipTime" class="meta" style="font-size:11px"></span>
           <input type="range" id="clipScrub" min="0" max="1000" step="1" value="0" style="width:100px" title="Scrub frame">
+          <button type="button" id="btnRebakeClips" class="small" title="Re-bake animation clips and compile viewer preview for this model">🎬 Re-bake</button>
         </span>
 
         <label title="How see-through the model is">opacity <input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></label>
@@ -764,6 +768,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <button id="bRevert" class="small" title="Throw away changes: back to rig.json on disk">Revert</button>
       <button id="bSuggest" class="small" title="Heuristically suggest an archetype and chains">Suggest</button>
       <button id="bAutoTune" class="small" title="Closed-loop auto-tuning optimizer">Auto-tune</button>
+      <button type="button" id="bRebakeClips" class="small" title="Re-bake animation clips and compile viewer preview for this model">Re-bake Clips</button>
       <button id="bSave" class="small primary" title="Write rig.json (Ctrl+S)">Save</button>
       <button id="bRerig" class="small primary" title="Save, then rig, trim, audit, clips and preview">Save &amp; Re-rig</button>
       <!-- Hidden compatibility hook for spec_editor.js -->
