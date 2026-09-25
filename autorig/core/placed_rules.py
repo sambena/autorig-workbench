@@ -1168,6 +1168,105 @@ def apply_radial_limb_sector_isolation(weights, coords, bone_names, bone_heads=N
     return W
 
 
+def compute_sibling_appendage_isolation(weights, coords, bone_names, bone_heads=None, chains=None):
+    """Prevents adjacent sibling appendages (e.g. tentacle1, tentacle2 or leg1, leg2 on same side)
+    from cross-contaminating each other's distal surfaces."""
+    if len(weights) == 0 or len(coords) == 0 or not bone_heads:
+        return weights
+
+    W = np.array(weights, copy=True, dtype=float)
+    col = {b: i for i, b in enumerate(bone_names)}
+
+    groups = {}
+    if chains:
+        for c in chains:
+            role = c.get("role", "")
+            bones = [b for b in c.get("bones", []) if b in col]
+            if len(bones) < 2:
+                continue
+            if any(".l" in b.lower() or "left" in b.lower() for b in bones):
+                side = ".L"
+            elif any(".r" in b.lower() or "right" in b.lower() for b in bones):
+                side = ".R"
+            else:
+                side = ""
+            category = None
+            if any(k in role.lower() for k in ("tentacle", "tendril", "streamer")):
+                category = f"tentacles{side}"
+            elif any(k in role.lower() for k in ("leg", "claw", "fin")):
+                category = f"legs{side}"
+            elif any(k in role.lower() for k in ("wing", "spar")):
+                category = f"wings{side}"
+            if category:
+                groups.setdefault(category, []).append(bones)
+    else:
+        prefix_pat = re.compile(r"^([a-zA-Z]+)(\d+)[._](.+)$")
+        pat_groups = {}
+        for b in bone_names:
+            m = prefix_pat.match(b)
+            if m:
+                kind, num, rest = m.groups()
+                side = ".L" if (".l" in b.lower() or "left" in b.lower()) else (".R" if (".r" in b.lower() or "right" in b.lower()) else "")
+                cat = f"{kind.lower()}{side}"
+                chain_key = f"{cat}_{num}"
+                pat_groups.setdefault(cat, {}).setdefault(chain_key, []).append(b)
+        for cat, ch_dict in pat_groups.items():
+            if len(ch_dict) >= 2:
+                groups[cat] = list(ch_dict.values())
+
+    for cat, chain_list in groups.items():
+        if len(chain_list) < 2:
+            continue
+        for i in range(len(chain_list)):
+            for j in range(i + 1, len(chain_list)):
+                c1_bones = chain_list[i]
+                c2_bones = chain_list[j]
+                c1_distal = c1_bones[1:]
+                c2_distal = c2_bones[1:]
+                if not c1_distal or not c2_distal:
+                    continue
+                c1_cols = [col[b] for b in c1_distal]
+                c2_cols = [col[b] for b in c2_distal]
+
+                w1 = W[:, c1_cols].sum(axis=1)
+                w2 = W[:, c2_cols].sum(axis=1)
+                overlap = (w1 > 1e-4) & (w2 > 1e-4)
+                if not np.any(overlap):
+                    continue
+
+                ov_idx = np.where(overlap)[0]
+                ov_co = coords[ov_idx]
+
+                pts1 = np.array([bone_heads[b] for b in c1_bones if b in bone_heads])
+                pts2 = np.array([bone_heads[b] for b in c2_bones if b in bone_heads])
+                if len(pts1) == 0 or len(pts2) == 0:
+                    continue
+
+                d1 = np.min(np.linalg.norm(ov_co[:, None, :] - pts1[None, :, :], axis=2), axis=1)
+                d2 = np.min(np.linalg.norm(ov_co[:, None, :] - pts2[None, :, :], axis=2), axis=1)
+
+                on_c1 = d1 < d2
+                if np.any(on_c1):
+                    for vi in ov_idx[on_c1]:
+                        freed = float(W[vi, c2_cols].sum())
+                        W[vi, c2_cols] = 0.0
+                        best_col = c1_cols[int(np.argmax(W[vi, c1_cols]))]
+                        W[vi, best_col] += freed
+
+                on_c2 = d2 <= d1
+                if np.any(on_c2):
+                    for vi in ov_idx[on_c2]:
+                        freed = float(W[vi, c1_cols].sum())
+                        W[vi, c1_cols] = 0.0
+                        best_col = c2_cols[int(np.argmax(W[vi, c2_cols]))]
+                        W[vi, best_col] += freed
+
+    row_sums = W.sum(axis=1, keepdims=True)
+    valid = (row_sums > 1e-6).ravel()
+    W[valid] /= row_sums[valid]
+    return W
+
+
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None,
                                 flank_barrier=True, tail_barrier=True, radial_barrier=True):
@@ -1370,18 +1469,40 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
         below_pelvis = Z < z_arm_cutoff
         if np.any(below_pelvis):
             bp_indices = np.where(below_pelvis)[0]
+            arm_pts = np.array([bone_heads[b] for b in bone_names if (is_shoulder(b) or is_arm(b)) and b in bone_heads]) if bone_heads else None
+            leg_pts = np.array([bone_heads[b] for b in bone_names if is_leg(b) and b in bone_heads]) if bone_heads else None
+
             for idx in bp_indices:
-                target = hips_target
                 x_val = X[idx]
+                target = hips_target
                 if x_val > (sym_plane + crotch_threshold) and left_leg_cols:
                     target = left_leg_cols[0]
                 elif x_val < (sym_plane - crotch_threshold) and right_leg_cols:
                     target = right_leg_cols[0]
-                if target is not None:
+
+                # Determine whether vertex belongs to leg/thigh or hanging hand/arm
+                is_on_leg = True
+                if arm_pts is not None and leg_pts is not None and len(arm_pts) > 0 and len(leg_pts) > 0:
+                    pt = coords[idx]
+                    d_arm = float(np.min(np.linalg.norm(pt - arm_pts, axis=1)))
+                    d_leg = float(np.min(np.linalg.norm(pt - leg_pts, axis=1)))
+                    is_on_leg = d_leg <= d_arm
+                else:
+                    is_on_leg = abs(x_val - sym_plane) < (crotch_threshold * 2.5)
+
+                if is_on_leg and target is not None:
                     w_arms = float(W[idx, all_arm_cols].sum())
                     if w_arms > 1e-5:
                         W[idx, all_arm_cols] = 0.0
                         W[idx, target] += w_arms
+                elif not is_on_leg:
+                    # Vertex is on hand/forearm: quench accidental leg weights and restore to arm
+                    leg_all = left_leg_cols + right_leg_cols
+                    w_legs = float(W[idx, leg_all].sum())
+                    if w_legs > 1e-5:
+                        W[idx, leg_all] = 0.0
+                        best_arm = all_arm_cols[int(np.argmax(W[idx, all_arm_cols]))] if float(W[idx, all_arm_cols].sum()) > 0 else all_arm_cols[0]
+                        W[idx, best_arm] += w_legs
 
     # 4. Shoulder Clavicle Containment: Shoulders cannot own neck or mid/lower spine
     shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
@@ -1391,12 +1512,14 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
             too_low_sh = Z < z_sh_low
             if np.any(too_low_sh):
                 tl_indices = np.where(too_low_sh)[0]
+                spine_cand_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine2", "spine1", "chest", "spine"))]
+                torso_target = spine_cand_cols[0] if spine_cand_cols else hips_target
                 for idx in tl_indices:
                     w_sh = float(W[idx, shoulder_cols].sum())
                     if w_sh > 1e-5:
                         W[idx, shoulder_cols] = 0.0
-                        if hips_target is not None:
-                            W[idx, hips_target] += w_sh
+                        if torso_target is not None:
+                            W[idx, torso_target] += w_sh
 
         if neck_target is not None or head_target is not None:
             neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.12 * h)
