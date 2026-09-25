@@ -2151,7 +2151,7 @@ def lowest_point(mesh):
 def ground_deaths(rig, mesh, clips, made):
     """A standing creature's death ends lying on the floor it stood on: its lowest point, measured on the skinned mesh
     in the last frame, where its lowest point was at rest. Poses are authored from bones, and a body lowered by its
-    hip height with a tail curled under it ended with the tail tip 0.19 of its size under the floor (the Exploder);
+    hip height with a tail curled under it can end with the tail tip below the floor;
     a game that lifts a corpse out of the floor then stood it on that tail tip. Clips that end off the floor get the
     difference as a root move. Only for models that stand on z=0 (flyers are centred and fall
     in the engine). Returns the clips it changed; `clips` is updated in place, to be built again."""

@@ -131,17 +131,16 @@ def repair(joints, spec, size):
             p = joints[n]["pos"]
             joints[n + "_m"] = {"pos": Vector((-p.x, p.y, p.z)), "parent": prev}
             prev = n + "_m"
-    # reparent={joint: new parent joint}: a chain the source hung from the wrong place. A moth's wing tails (its
-    # streamers) hung from the hips, so a wingbeat tore the wing from its own tail; hung from the hind wing, they beat
+    # reparent={joint: new parent joint}: a chain the source hung from the wrong place. For example, if wing streamers
+    # hung from hips, a wingbeat would tear the wing from its streamers; hung from the hind wing, they beat
     # with it. After mirror, so a mirrored joint (<joint>_m) can be named.
     for n, par in spec.get("reparent", {}).items():
         if n in joints and par in joints: joints[n]["parent"] = par
 
 def move_joints(joints, spec, lo, size):
     """move={joint: [x, y, z]}: a source joint put where it belongs, in 0..1 of the turned model's bounds (measured
-    with measure.py). A Tripo-style skeleton sometimes plants a joint outside the body: the Lurker's scapulae start
-    on the spikes above its withers, next to the spine, so the girdles could not own the shoulder blades without
-    also owning the back."""
+    with measure.py). An imported generator skeleton sometimes plants a joint outside the body (e.g. scapulae starting
+    on spikes above withers next to the spine), preventing girdles from owning shoulder blades without also owning the back."""
     for n, u in spec.get("move", {}).items():
         if n in joints:
             joints[n]["pos"] = Vector(tuple(lo[k] + size[k] * u[k] for k in range(3)))
