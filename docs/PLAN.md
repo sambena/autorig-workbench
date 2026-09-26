@@ -324,9 +324,10 @@ one pull request each, code first; models are run through the tool only in R6.
     deformed mesh and graded for foot slide, floor contact, pops, loop seams and left/right reach; run after every
     Clips (GUI and batch), shown beside the skin audit. On the samples it found: the bundled specs had no IK on their
     legs, so every walk was the legless heave (fixed: the samples' legs have "ik": true, and make_clips warns when a
-    walker's legs have none); with IK, planted feet still slide at about a quarter of the walk speed (canine,
-    biped), the beetle's walk is far off and its feet sink 12-19% of its height in attack, block and the jumps, and
-    the canine's trot and gallop pop. Those are the next fixes.
+    walker's legs have none). With IK every walk's planted feet hold (slide 3-4% of the walk speed). Still found:
+    the beetle's leg skin sinks 10-18% of its height into the floor in attack, block, the jumps and death, and
+    pops in the canine's trot and gallop, the beetle's death and two of the wyvern's attacks. Tried and dropped: a
+    stride capped at the legs' reach, and the body lowered to bend straight legs (no better, or worse, measured).
 
 ## Risks
 

@@ -5,8 +5,10 @@
 # Blender's.
 #
 # Per clip, from what the step samples every frame:
-#   feet      {name: (F, 3)} each foot per frame: the middle of the skin it owns across the ground, and the lowest
-#             point of that skin for its height; rest {name: (3,)} the same at rest
+#   feet      {name: (F, 3)} each foot's contact point per frame (the tip of the leg's last bone, which the walk
+#             plants on its target), and rest {name: (3,)} where it stands at rest
+#   soles     {name: (F,)} the lowest point of the skin that foot owns, and sole_rest {name: float}: the floor checks
+#             read these (a bone's tip dips under the floor when the foot flexes, the skin need not)
 #   root      (F, 3) the body bone's head, to tell a clip that carries its own travel (root motion) from one played
 #             in place while the engine moves the body
 #   rots      (F, B, 4) every deform bone's armature-space rotation as quaternions (w, x, y, z)
@@ -187,7 +189,7 @@ def _mirror(name, names):
 
 
 def grade_clip(slot, loops, rate_follows_speed, fps, rots, feet=None, rest=None, root=None, speed_units=None,
-               height=1.0, side_of=None, forward=(0.0, -1.0, 0.0), grounded=True):
+               height=1.0, side_of=None, forward=(0.0, -1.0, 0.0), grounded=True, soles=None, sole_rest=None):
     """Every check that applies to one clip: {"grade", "checks": {name: {"value", "grade", ...}}}. `grounded`: the
     creature walks (has a locomotion clip whose rate follows ground speed); a flyer's idle hovers on purpose."""
     checks = {}
@@ -200,7 +202,12 @@ def grade_clip(slot, loops, rate_follows_speed, fps, rots, feet=None, rest=None,
         checks["seam"] = {"value": s_pose, "grade": worst([grade("seam_deg", s_pose), grade("seam_jump_deg", s_jump)]),
                           "jump_deg": s_jump}
     if feet and rest is not None and (walking or not locomotion):     # a flyer's fly keeps its feet off the floor
-        pen, hover = contact(feet, rest, height, locomotion_or_idle=walking or (slot == "idle" and grounded))
+        if soles and sole_rest is not None:
+            flo = {n: np.column_stack([np.zeros(len(soles[n])), np.zeros(len(soles[n])), soles[n]]) for n in soles}
+            flo_rest = {n: np.array([0.0, 0.0, sole_rest[n]]) for n in soles}
+        else:
+            flo, flo_rest = feet, rest
+        pen, hover = contact(flo, flo_rest, height, locomotion_or_idle=walking or (slot == "idle" and grounded))
         checks["floor"] = {"value": pen, "grade": worst([grade("penetration_pct", pen), grade("hover_pct", hover)]),
                            "hover_pct": hover}
     if walking and feet and root is not None:

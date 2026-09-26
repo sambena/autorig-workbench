@@ -107,12 +107,22 @@ def main():
     bpy.context.view_layer.update()
     # each foot is the skin it owns (weight at least half), measured on the deformed mesh: a bone's tip dips under
     # the floor whenever the foot flexes, with the sole still on it
+    # Only the end of the bone: on a leg with no foot bone the last bone is the shin, and the middle of the whole
+    # shin swings with the knee while the sole stays put (the audit read that swing as a slide).
     vg = {g.name: g.index for g in mesh.vertex_groups}
     own = {n: [] for n in feet}
     for v in mesh.data.vertices:
         for g in v.groups:
             for n in feet:
                 if g.group == vg.get(n) and g.weight >= 0.5: own[n].append(v.index)
+    for n in feet:
+        if not own[n]: continue
+        b = arm.data.bones[n]
+        tail = np.array(M @ b.tail_local)
+        idx = np.array(own[n])
+        dist = np.linalg.norm(co[idx] - tail, axis=1)
+        near = idx[dist <= 0.3 * b.length + 1e-9]
+        own[n] = (near if len(near) >= 3 else idx[np.argsort(dist)[:max(3, len(idx) // 5)]]).tolist()
     feet = [n for n in feet if own[n]]
     own = {n: np.array(own[n]) for n in feet}
     nv = len(mesh.data.vertices)
@@ -124,12 +134,9 @@ def main():
         ev.to_mesh_clear()
         c = c.reshape(-1, 3).astype(np.float64) @ mw[:3, :3].T + mw[:3, 3]
         if len(c) != nv: return None
-        out = {}
-        for n in feet:
-            q = c[own[n]]
-            out[n] = np.array([q[:, 0].mean(), q[:, 1].mean(), q[:, 2].min()])
-        return out
-    rest = foot_points() or {}
+        return {n: float(c[own[n], 2].min()) for n in feet}
+    sole_rest = foot_points() or {}
+    rest = {n: np.array(M @ arm.pose.bones[n].tail) for n in feet}
 
     grounded = any(c.get("slot") == "locomotion" and c.get("rateFollowsSpeed") for c in man.get("clips", []))
     results = []
@@ -144,19 +151,23 @@ def main():
         last = frames if loops else frames - 1
         ad.action = act
         P = {n: np.zeros((last + 1, 3)) for n in feet}
+        S = {n: np.zeros(last + 1) for n in feet}
         R = np.zeros((last + 1, 3))
         Q = np.zeros((last + 1, len(deform), 4))
         for f in range(last + 1):
             bpy.context.scene.frame_set(f)
             fp = foot_points() if feet else {}
-            for n in feet: P[n][f] = fp[n] if fp else tuple(M @ arm.pose.bones[n].tail)
+            for n in feet:
+                P[n][f] = tuple(M @ arm.pose.bones[n].tail)
+                S[n][f] = fp[n] if fp else P[n][f][2]
             R[f] = tuple(M @ arm.pose.bones[body].head)
             for k, n in enumerate(deform): Q[f, k] = tuple(arm.pose.bones[n].matrix.to_quaternion())
         slot = c.get("slot") or ("locomotion" if name in ("walk", "swim") else "extra")
         follows = c.get("rateFollowsSpeed", slot == "locomotion" and name != "fly")
         speed_u = float(c["speed"]) * per_metre if c.get("speed") else None
         g = clip_grades.grade_clip(slot, loops, follows, fps, Q, feet=P or None, rest=rest, root=R,
-                                   speed_units=speed_u, height=height, side_of=bone_side, grounded=grounded)
+                                   speed_units=speed_u, height=height, side_of=bone_side, grounded=grounded,
+                                   soles=S if sole_rest else None, sole_rest=sole_rest or None)
         where = g["checks"]["pops"].get("at")
         if where: g["checks"]["pops"]["at"] = {"frame": where[0], "bone": deform[where[1]]}
         results.append({"name": name, "slot": slot, "frames": last + 1, **g})

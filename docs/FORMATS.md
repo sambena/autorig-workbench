@@ -140,8 +140,8 @@ by frame on the deformed mesh:
 }
 ```
 
-A foot is the skin its last leg bone owns (weight at least a half): its middle across the ground and its lowest
-point. `slide` is the median speed of planted feet over the ground as a share of the walk's `speed` (a clip played
+A foot's contact point is the tip of its leg's last bone (what the walk plants on its IK target); its sole is the
+lowest point of the skin that bone owns near that tip, which the floor checks read. `slide` is the median speed of planted feet over the ground as a share of the walk's `speed` (a clip played
 in place is moved at that speed, one carrying its own travel is taken as it is); `floor` is the deepest a foot goes
 under where it stands at rest, and on a walker's walk and idle how high the lowest foot hovers, in % of the height;
 `pops` counts frames where a bone turns far more than it usually does in a frame (hits and deaths get more room);
