@@ -298,11 +298,21 @@ def find_blend_file(model_identifier):
             if os.path.isfile(bp):
                 return bp, m
 
-    # Check relative to cwd
+    # Check relative to cwd and subdirectories (e.g. Heartroot, Smeltdown, etc.)
     cwd = os.getcwd()
-    for cand in (os.path.join(cwd, name, "rigged", f"{name}.blend"),
-                 os.path.join(cwd, "Heartroot", name, "rigged", f"{name}.blend"),
-                 os.path.join(cwd, "Kaiju", name, "rigged", f"{name}.blend")):
+    direct_cand = os.path.join(cwd, model_identifier, "rigged", f"{name}.blend")
+    if os.path.isfile(direct_cand):
+        return os.path.abspath(direct_cand), name
+
+    search_dirs = [cwd]
+    try:
+        search_dirs += [os.path.join(cwd, d) for d in os.listdir(cwd)
+                        if os.path.isdir(os.path.join(cwd, d)) and not d.startswith((".", "_"))]
+    except OSError:
+        pass
+
+    for sdir in search_dirs:
+        cand = os.path.join(sdir, name, "rigged", f"{name}.blend")
         if os.path.isfile(cand):
             return os.path.abspath(cand), name
 
