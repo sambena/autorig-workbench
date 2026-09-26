@@ -84,6 +84,9 @@ def warn_if_untested(path=None, file=sys.stderr):
     return None
 
 
+_FOUND = {}
+
+
 def find(required=True):
     if os.environ.get("AUTORIG_NO_BLENDER"):  # tests: behave as if Blender is not installed
         if required:
@@ -92,12 +95,20 @@ def find(required=True):
     for var in ("AUTORIG_BLENDER", "BLENDER"):
         if os.environ.get(var):
             return os.environ[var]
+    # the PATH search and the install-folder globs, remembered while PATH is the same and the answer still exists
+    # (the GUI asked on every state refresh)
+    key = os.environ.get("PATH", "")
+    hit = _FOUND.get(key)
+    if hit and os.path.exists(hit):
+        return hit
     on_path = shutil.which("blender")
     if on_path:
+        _FOUND[key] = on_path
         return on_path
     for pattern in _CANDIDATES:
         hits = sorted(glob.glob(pattern), key=_version_key, reverse=True)
         if hits:
+            _FOUND[key] = hits[0]
             return hits[0]
     if required:
         sys.exit("Blender not found: install Blender (the steps are tested on 5.2) or set AUTORIG_BLENDER to its "
@@ -108,8 +119,11 @@ def find(required=True):
 def command(script, *args):
     """blender -b --python <steps/script> -- args. A script given as a path (a model's own builder) runs through
     run_builder.py, which puts the tool's steps and core on its import path first."""
-    # --python-exit-code: a step whose script raises exits 1 (Blender's own default is 0 even after a traceback)
-    head = [find(), "-b", "--python-exit-code", "1", "--python"]
+    # --python-exit-code: a step whose script raises exits 1 (Blender's own default is 0 even after a traceback).
+    # --factory-startup: no user preferences or add-ons to load (quicker to start, and the same on every machine;
+    # the FBX and glTF add-ons the steps use are on in the factory settings). AUTORIG_USER_PREFS=1 keeps them.
+    prefs = [] if os.environ.get("AUTORIG_USER_PREFS") else ["--factory-startup"]
+    head = [find(), "-b"] + prefs + ["--python-exit-code", "1", "--python"]
     if os.path.isabs(script) or os.sep in script or "/" in script:
         return head + [os.path.join(STEPS, "run_builder.py"), "--", script] + list(args)
     return head + [os.path.join(STEPS, script), "--"] + list(args)

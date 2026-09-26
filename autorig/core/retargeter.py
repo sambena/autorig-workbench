@@ -34,10 +34,31 @@ except ImportError:
 PROBE_TIMEOUT = 120
 
 
+_PROBED = {}
+
+
 def _probe(mode, path, tag):
     """Runs steps/retarget_probe.py under headless Blender with the path as an argument (never pasted into Python
     source) and returns the JSON it printed after `tag`. Raises when Blender fails or prints nothing, and ValueError
-    when Blender is not installed (never SystemExit, which would take a server thread down with it)."""
+    when Blender is not installed (never SystemExit, which would take a server thread down with it).
+
+    Remembered per file, its size and its time: plan, inspect and retarget each asked Blender about the same file
+    (a Blender start each), and a batch asked once per model."""
+    try:
+        st = os.stat(path)
+        key = (mode, os.path.realpath(path), st.st_size, st.st_mtime_ns)
+    except OSError:
+        key = None
+    if key in _PROBED:
+        return json.loads(_PROBED[key])
+    out = _probe_blender(mode, path, tag)
+    if key is not None:
+        if len(_PROBED) > 64: _PROBED.clear()
+        _PROBED[key] = json.dumps(out)                 # a copy: callers may change what they get
+    return out
+
+
+def _probe_blender(mode, path, tag):
     if not blender.find(required=False):
         raise ValueError("Blender not found: install Blender (tested on 5.2) or set AUTORIG_BLENDER")
     r = blender.run("retarget_probe.py", mode, path, timeout=PROBE_TIMEOUT)

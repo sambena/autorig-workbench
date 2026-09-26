@@ -190,6 +190,7 @@ class Runner:
                     job.add(":: SUBJOB_PREV %s %s" % (job.prev_result.get("model", ""), job.prev_result.get("status", "")))
                 job.add("== %s" % label)
                 job.add("   " + " ".join('"%s"' % a if " " in a else a for a in argv))
+                t_step = time.time()
                 try:
                     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
                     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
@@ -218,6 +219,7 @@ class Runner:
                     elif line.startswith("Traceback") or (TAG.match(line) and '"error"' in line):
                         failed = True
                 rc = p.wait()
+                secs = round(time.time() - t_step, 1)          # each step's time, for comparing runs
                 guard.stop()
                 job.proc = None
                 if job.cancelled: break
@@ -237,18 +239,19 @@ class Runner:
                     "label": label,
                     "index": idx,
                     "total": total_cmds,
+                    "seconds": secs,
                 }
                 job.add(":: SUBJOB_RESULT %s %s" % (cmd_model or label, status_str))
 
                 if is_err:
-                    job.add("!! %s failed (exit code %s)" % (label, rc))
+                    job.add("!! %s failed (exit code %s, %.1f s)" % (label, rc, secs))
                     if total_cmds > 1:
                         job.add(">> [Job %d of %d] %s FAILED" % (idx, total_cmds, cmd_model or label))
                     ok = False
                     if job.keep_going: continue
                     break
                 else:
-                    job.add("== %s done" % label)
+                    job.add("== %s done (%.1f s)" % (label, secs))
                     if total_cmds > 1:
                         job.add(">> [Job %d of %d] %s %s" % (idx, total_cmds, cmd_model or label, status_str))
 
@@ -296,6 +299,28 @@ def audit_file(name):
     return p if os.path.exists(p) else None
 
 
+_GRADES = {}
+
+
+def audit_grade(path, overrides):
+    """The model's grade from its audit JSON, re-read only when the file (or the spec's audit thresholds) changed:
+    the model table asks for every model's grade on each refresh, and an audit with its tear sites runs large."""
+    try:
+        st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size, json.dumps(overrides, sort_keys=True, default=str))
+    except (OSError, TypeError):
+        key = None
+    if key is not None and _GRADES.get(path, (None,))[0] == key:
+        return _GRADES[path][1]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            g = grades.grade_of(json.load(fh)["verdict"], overrides) or "?"
+    except Exception:
+        g = "?"
+    if key is not None: _GRADES[path] = (key, g)
+    return g
+
+
 def status(group, name):
     d = model_dir(group, name)
     out = {"name": name, "group": group}
@@ -324,10 +349,7 @@ def status(group, name):
     })
     a = audit_file(name)
     if a:
-        try:
-            out["audit"] = grades.grade_of(json.load(open(a))["verdict"], rig.get("audit")) or "?"
-        except Exception:
-            out["audit"] = "?"
+        out["audit"] = audit_grade(a, rig.get("audit"))
     out["preview"] = viewer_api.has_preview(layout, name)          # results viewer
     out["steps"] = availability(out, spec, d)
     return out
@@ -882,7 +904,7 @@ def make_handler(app):
                 self.send_response(code)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
+                if "Cache-Control" not in (extra or {}): self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 for k, v in (extra or {}).items(): self.send_header(k, v)
                 self.end_headers()
@@ -1017,7 +1039,7 @@ def make_handler(app):
                     if not j: return self._send(404, {"error": "no such job"})
                     return self._send(200, dict(j.info(), log=j.lines))
                 m = re.match(r"^/files/(models|work)/(.+)$", path)
-                if m: return self.file(m.group(1), unquote(m.group(2)))
+                if m: return self.file(m.group(1), unquote(m.group(2)), versioned=bool(q.get("v")))
                 m_sample = re.match(r"^/samples/(.+)$", path)
                 if m_sample:
                     samples_root = os.path.join(REPO, "samples")
@@ -1066,6 +1088,10 @@ def make_handler(app):
             self.end_headers()
             self.close_connection = True
             i = max(0, start)
+            try:                 # a browser reconnecting after a dropped stream says the last line it had
+                i = max(i, int(self.headers.get("Last-Event-ID", "")) + 1)
+            except ValueError:
+                pass
             try:
                 while True:
                     with job.cond:
@@ -1084,7 +1110,7 @@ def make_handler(app):
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
 
-        def file(self, base, rel):
+        def file(self, base, rel, versioned=False):
             root = layout.ROOT if base == "models" else layout.WORK
             rel = safe_rel(rel)
             if not rel: return self._send(400, {"error": "bad path"})
@@ -1096,6 +1122,8 @@ def make_handler(app):
             if ctype not in ("image/png", "image/jpeg", "application/json", "text/plain", "image/webp", "application/zip", "model/gltf-binary"):
                 ctype = "application/octet-stream"
             extra = {}
+            if versioned:        # a ?v=<mtime> URL names one version of the file: the browser may keep it
+                extra["Cache-Control"] = "private, max-age=31536000, immutable"
             if p.lower().endswith(".zip"):
                 ctype = "application/zip"
                 extra["Content-Disposition"] = f'attachment; filename="{os.path.basename(p)}"'

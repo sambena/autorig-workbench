@@ -64,7 +64,9 @@ def previews(layout, quiet):
                 "stale": False}
         if os.path.exists(glb):
             rel = os.path.relpath(glb, layout.ROOT).replace("\\", "/")
-            item["preview"] = "/files/models/" + rel
+            # ?v= the file's time: the browser may keep it until the file changes (served cacheable, server.py)
+            st = os.stat(glb)                   # nanoseconds and size: a rebuild within the same second still changes it
+            item["preview"] = "/files/models/%s?v=%d-%d" % (rel, st.st_mtime_ns, st.st_size)
             item["stale"] = _mtime(glb) + 1 < max(_mtime(blend), _mtime(fbx), _mtime(clips_blend))
             info = os.path.join(rd, "preview.json")
             if os.path.exists(info):

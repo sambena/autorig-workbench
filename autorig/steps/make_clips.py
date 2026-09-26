@@ -32,6 +32,7 @@
 # the exporter bakes exactly the keyed pose.
 import bpy, sys, os, json, math, shutil, re
 from mathutils import Vector, Quaternion
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
@@ -124,6 +125,62 @@ class Pose:
 
 
 _LAST_Q = {}
+_KEYS = None      # (bone, property) -> [(frame, values)] while build() makes a clip; None keys each frame directly
+
+
+def _fcurve_bag(action, obj):
+    """Where the action's F-curves live: Blender 4.4+ keeps them in a channelbag per slot (made here the way
+    keyframe_insert makes one), older ones on the action itself."""
+    ad = obj.animation_data
+    if hasattr(action, "slots") and hasattr(ad, "action_slot"):
+        from bpy_extras import anim_utils
+        slot = ad.action_slot
+        if slot is None:
+            slot = action.slots.new(id_type='OBJECT', name=obj.name)
+            ad.action_slot = slot
+        return anim_utils.action_ensure_channelbag_for_slot(action, slot), True
+    return action, False
+
+
+def flush_keys(action, obj, keys):
+    """Writes a clip's gathered bone keys: one F-curve per channel filled in a single foreach_set, handles worked
+    out once at the end, instead of three keyframe_insert calls per bone per frame (each one sorting the curve and
+    redoing its handles). Same curves: Bezier keys, auto-clamped handles, grouped by bone. Anything unexpected
+    (an F-curve that is already there, an API this Blender lacks) falls back to keyframe_insert, key by key."""
+    made = []
+    try:
+        bag, slotted = _fcurve_bag(action, obj)
+        groups = {}
+        for (bone, prop), rows in keys.items():
+            path = 'pose.bones["%s"].%s' % (bpy.utils.escape_identifier(bone), prop)
+            for i in range(len(rows[0][1])):
+                if bag.fcurves.find(path, index=i) is not None:
+                    raise RuntimeError("curve exists: %s[%d]" % (path, i))
+                if slotted:
+                    fc = bag.fcurves.new(path, index=i)
+                    if bone not in groups: groups[bone] = bag.groups.get(bone) or bag.groups.new(bone)
+                    fc.group = groups[bone]
+                else:
+                    fc = bag.fcurves.new(path, index=i, action_group=bone)
+                made.append(fc)
+                fc.keyframe_points.add(len(rows))
+                co = np.empty(len(rows) * 2, dtype=np.float32)
+                co[0::2] = [f for f, _ in rows]; co[1::2] = [v[i] for _, v in rows]
+                fc.keyframe_points.foreach_set("co", co)
+                fc.update()
+        return True
+    except Exception as e:
+        print("MAKE_CLIPS note: fast keying unavailable (%s): keying frame by frame" % e)
+        for fc in made:                       # half-made curves (keys added, not yet filled) would keep (0, 0) keys
+            try: bag.fcurves.remove(fc)
+            except Exception: pass
+        pbs = obj.pose.bones
+        for (bone, prop), rows in keys.items():
+            path = 'pose.bones["%s"].%s' % (bpy.utils.escape_identifier(bone), prop)
+            for f, v in rows:
+                setattr(pbs[bone], prop, v)
+                pbs[bone].keyframe_insert(prop, frame=f, group=bone)
+        return False
 
 
 def apply(rig, pose, frame):
@@ -151,10 +208,16 @@ def apply(rig, pose, frame):
         pb.rotation_quaternion = q
         pb.location = m.inverted() @ pose.moves[name] if name in pose.moves else Vector()
         pb.scale = pose.scales.get(name, Vector((1, 1, 1)))
-    for pb in rig.pose:
-        pb.keyframe_insert("location", frame=frame, group=pb.name)
-        pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
-        pb.keyframe_insert("scale", frame=frame, group=pb.name)
+    if _KEYS is not None:                        # build(): gathered here, written a curve at a time by flush_keys
+        for pb in rig.pose:
+            _KEYS.setdefault((pb.name, "location"), []).append((frame, tuple(pb.location)))
+            _KEYS.setdefault((pb.name, "rotation_quaternion"), []).append((frame, tuple(pb.rotation_quaternion)))
+            _KEYS.setdefault((pb.name, "scale"), []).append((frame, tuple(pb.scale)))
+    else:
+        for pb in rig.pose:
+            pb.keyframe_insert("location", frame=frame, group=pb.name)
+            pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
+            pb.keyframe_insert("scale", frame=frame, group=pb.name)
 
     # Key morph targets on mesh shape keys if present
     mesh = getattr(rig, "mesh", None)
@@ -2461,9 +2524,16 @@ def build(rig, clips):
                 if not c.mute and c.type in ("IK", "COPY_ROTATION", "DAMPED_TRACK", "LOCKED_TRACK", "TRACK_TO"):
                     c.influence = 1.0
                     c.keyframe_insert("influence", frame=0)
-        for f in range(0, last + 1):
-            KEY["f"] = f                                   # root motion reads the unwrapped key (root_t)
-            apply(rig, fn(f % frames if loops else f, frames), f)
+        global _KEYS
+        _KEYS = None if os.environ.get("AUTORIG_SLOW_KEYS") else {}     # AUTORIG_SLOW_KEYS=1: the old way, to compare
+        try:
+            for f in range(0, last + 1):
+                KEY["f"] = f                               # root motion reads the unwrapped key (root_t)
+                apply(rig, fn(f % frames if loops else f, frames), f)
+            if _KEYS:
+                flush_keys(action, arm, _KEYS)
+        finally:
+            _KEYS = None
         action.use_frame_range = True
         action.frame_start, action.frame_end = 0, last
         made.append((name, last, loops))
@@ -2497,7 +2567,13 @@ RESTING = ("death", "explode")   # clips whose last frame is how the body lies, 
 def lowest_point(mesh):
     dg = bpy.context.evaluated_depsgraph_get()
     ev = mesh.evaluated_get(dg); me = ev.to_mesh()
-    z = min((mesh.matrix_world @ v.co).z for v in me.vertices)
+    n = len(me.vertices)
+    if n:
+        co = np.empty(n * 3, dtype=np.float32); me.vertices.foreach_get("co", co)
+        m = np.array(mesh.matrix_world, dtype=np.float64)
+        z = float((co.reshape(-1, 3).astype(np.float64) @ m[2, :3] + m[2, 3]).min())
+    else:
+        z = min((mesh.matrix_world @ v.co).z for v in me.vertices)
     ev.to_mesh_clear()
     return z
 
