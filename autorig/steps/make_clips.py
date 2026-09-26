@@ -724,6 +724,17 @@ class CreatureRig:
         # foot, LF moved with LH and RF with RH (a bound, not a rotary gallop)
         for f in self.feet:
             f["is_front"] = f["name"] in self.front
+        # each foot's leg: the length of the IK chain that plants it (the gallop keeps its sweep inside it)
+        for f in self.feet:
+            pb = next((p for p in arm.pose.bones for c in p.constraints
+                       if c.type == 'IK' and c.subtarget == f["name"]), None)
+            if pb is None:
+                f["leg_length"] = None; continue
+            ik = next(c for c in pb.constraints if c.type == 'IK' and c.subtarget == f["name"])
+            chain = [pb]
+            while len(chain) < (ik.chain_count or 99) and chain[-1].parent is not None:
+                chain.append(chain[-1].parent)
+            f["leg_length"] = sum(self.bones[p.name].length for p in chain)
 
     def direction(self, bone):
         b = self.arm.data.bones[bone]
@@ -908,10 +919,16 @@ def creature_walker(rig, style, spec=None):
         tail_wave(p, t, 12.0)
         return p
 
+    # The gallop sweeps each foot 0.45 x the stride length in a quarter of the cycle; on the canine that was twice
+    # its legs' length, the IK could not follow, and the hind knees flipped over (a 180-degree pop, the clip audit).
+    # Its sweep stays within 1.1 x the shortest leg.
+    legs = [f["leg_length"] for f in rig.feet if f.get("leg_length")]
+    gallop_len = min(L, 1.1 * min(legs) / 0.45) if legs else L
+
     def gallop(f, n):
         p = Pose()
         phase = f / float(n)
-        st = gait.evaluate_quadruped_gallop(phase, L, L, feet_info=rig.feet)
+        st = gait.evaluate_quadruped_gallop(phase, gallop_len, L, feet_info=rig.feet)
         feet_st = st["feet"]
         body_st = st["body"]
         for foot in rig.feet:
@@ -1073,7 +1090,12 @@ def creature_walker(rig, style, spec=None):
         body_height = rig.rest[rig.body].to_translation().dot(UP) if rig.body else 0.2 * L
         if rig.root:
             p.turn(rig.root, FORWARD, 180.0 * roll)
-            p.move(rig.root, UP * (2.0 * body_height * roll + 0.02 * L * settle))
+            # Rolling over, a body pivots on its side edge: the root rises by its half-width x sin(the roll) on the
+            # way over. Lifting only with the roll (2 x body height x roll) swung the near side, legs and all,
+            # through the floor mid-roll (the clip audit: a leg 21 cm under the floor on the bundled beetle).
+            half_w = max([abs(f["rest"].x) for f in rig.feet] + [0.0])
+            lift = max(2.0 * body_height * roll, half_w * math.sin(math.pi * roll) + body_height * roll)
+            p.move(rig.root, UP * (lift + 0.02 * L * settle))
 
         # IK targets hang off the root, so in root space "curl" is toward the centre line and
         # up toward the belly -- which, once flipped, is into the air. Only part of the way:
