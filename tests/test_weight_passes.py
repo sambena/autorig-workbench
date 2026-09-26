@@ -68,6 +68,11 @@ class Names(unittest.TestCase):
                          {"role": "leg_b", "bones": ["leg_b.L"]}]
         self.assertEqual(PR.body_plan(tripo), "biped")
         self.assertIsNone(PR.body_plan(None))                  # no chains: the passes keep their legacy rules
+        # two legs under a level spine (the bundled wyvern): not a standing biped, so no upright-body rules
+        level = human + [{"role": "spine", "bones": ["hips", "chest"], "points": [(0, 0.3, 0.5), (0, -0.4, 0.6)]}]
+        self.assertEqual(PR.body_plan(level), "horizontal")
+        upright = human + [{"role": "spine", "bones": ["hips", "chest"], "points": [(0, 0, 0.5), (0, -0.05, 0.9)]}]
+        self.assertEqual(PR.body_plan(upright), "biped")
 
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed (use Blender's own Python)")

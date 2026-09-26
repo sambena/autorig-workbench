@@ -412,7 +412,8 @@ class EditorServer(unittest.TestCase):
         j = self.wait(first["job"])
         self.assertEqual(j["state"], "done", "\n".join(j["log"][-40:]))
         self.assertEqual([l for l in j["log"] if l.startswith("== ") and " done (" not in l],
-                         ["== rig (tripo)", "== trim to budget", "== audit", "== preview for the viewer"])
+                         ["== rig (tripo)", "== trim to budget", "== audit", "== make clips (walker)",
+                          "== preview for the viewer"])          # clips: the archetype inferred from the rig (R1)
         b = self.call("/api/spec?name=boned")
         self.assertIsNotNone(b["audit"])
         self.assertIsNone(b["before"])                    # the first rig had nothing to compare with
@@ -427,6 +428,9 @@ class EditorServer(unittest.TestCase):
     def test_4_suggest_api(self):
         # Suggestion using source from boned
         sug = self.call("/api/spec/suggest", {"model": "boned"})
+        if sug.get("pending"):                            # the mesh is measured first, as a Blender job (R1)
+            self.assertEqual(self.wait(sug["job"])["state"], "done")
+            sug = self.call("/api/spec/suggest", {"model": "boned", "measure": False})
         self.assertIn("spec", sug)
         self.assertIn("archetype", sug)
         self.assertEqual(sug["spec"]["schema"], "autorig-spec/1")
@@ -438,13 +442,14 @@ class EditorServer(unittest.TestCase):
             "source": {
                 "format": "autorig-source/1",
                 "survey": {
+                    # tips as fractions of the bounds, the frame suggest_step.py measures them in (facing -Y)
                     "probe_tips": [
-                        {"pos": [0.0, 0.4, 0.9], "name": "snout"},
-                        {"pos": [0.0, -0.5, 0.4], "name": "tail"},
-                        {"pos": [0.25, 0.2, 0.0], "name": "foot_FL"},
-                        {"pos": [-0.25, 0.2, 0.0], "name": "foot_FR"},
-                        {"pos": [0.25, -0.3, 0.0], "name": "foot_BL"},
-                        {"pos": [-0.25, -0.3, 0.0], "name": "foot_BR"}
+                        {"pos": [0.5, 0.1, 0.9], "name": "snout"},
+                        {"pos": [0.5, 0.9, 0.4], "name": "tail"},
+                        {"pos": [0.75, 0.3, 0.0], "name": "foot_FL"},
+                        {"pos": [0.25, 0.3, 0.0], "name": "foot_FR"},
+                        {"pos": [0.75, 0.75, 0.0], "name": "foot_BL"},
+                        {"pos": [0.25, 0.75, 0.0], "name": "foot_BR"}
                     ]
                 }
             }
@@ -529,7 +534,8 @@ class EditorServer(unittest.TestCase):
             "force": True
         })
         self.assertTrue(res.get("saved"))
-        self.assertIn("job", res)
+        # "flat" has no rig: the spec is saved and the bake refused with the reason (R1), else a bake job runs
+        self.assertTrue(res.get("job") or "no rig yet" in res.get("error", ""), res)
         if res.get("job"):
             self.assertIn("bake", res["job"]["step"].lower())
 

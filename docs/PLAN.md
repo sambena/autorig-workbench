@@ -295,7 +295,21 @@ one pull request each, code first; models are run through the tool only in R6.
   - Not done: one Blender process for rig + trim + audit, skipping the rig step's FBX when trim rewrites it, and one
     weight matrix handed from pass to pass (passes that write groups directly still sit between them). All three
     change how steps fit together, so they wait for R6's timings to show they are worth it.
-- **R6: measured on models**: timing and audits before and after, and each weight pass tried on and off.
+- **R6: measured on models** (started, on the five bundled samples only):
+  - Baseline: the original tool (c13898b) cannot rig the samples (no "placed" kind), so pre-R5 main is the "before".
+  - Each skin pass off in turn, rig + trim + audit: the barrier was the wyvern's whole FAIL (18 bend tears at the
+    chest, 0 without it) and the biped's one tear. The cause: the wyvern counted as a biped, and the biped rules cut
+    by height bands that assume an upright torso. Two legs under a level spine is now its own body plan,
+    "horizontal", which skips them: the wyvern passes (0 tears), nothing else changed. The healer earns its place
+    (off: the beetle goes CHECK to FAIL, 5/13 tears). Sibling isolation, centreline armour, hinge smoothing, rigid
+    islands: no change on any sample; twist relaxation: 1 tear either way. No pass is worse in every case, so none
+    is removed.
+  - Winged clips (the wyvern) failed without a published card, and without the rig/triangles/flySpeed fields the
+    editor never writes: they now default (the rig folder, the budget, no speed).
+  - Four Blender tests had gone stale unseen (their suite skips without Blender): fixed to what the tool now does.
+  - Still to do: real models (Sam's collection, with his go-ahead), clip-level checks (foot slide, the gallop's
+    order, per-clip morphs in preview.glb, T-pose to A-pose retargeting), and skeleton warnings promoted to grades
+    once there is enough data to set thresholds.
 
 ## Risks
 
