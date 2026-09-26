@@ -225,8 +225,25 @@ one pull request each, code first; models are run through the tool only in R6.
   - Twist bones on this tool's and Rigify's names, on the right half of the bone, driven by swing-twist.
   - The audit warns about joints outside the mesh, joints and rolls that do not mirror, rolls that flip in a chain,
     zero-length bones, clash-renamed bones and rest drift with IK on.
-- **R3: tears**: every weight pass fixed, gated to the bodies it is for, and switchable one at a time. Evidence to start
-  from: an earlier review (closed PR #43, branch `fix/review-cleanup`) re-rigged real models with the new passes (barrier,
+- **R3: tears** (done, untested in Blender): every weight pass fixed, gated to the bodies it is for, and switchable one
+  at a time; nothing removed.
+  - One body plan per rig (biped, quadruped, multi-legged, other) reaches every pass. The standing-body barrier
+    rules and the pelvic seam blend run on bipeds only. The flank barrier runs on quadrupeds and multi-legged bodies,
+    front and hind by where each limb leaves the body. The radial barrier runs on multi-legged bodies only: its
+    pattern matched a biped's own leg_1..3 and never a hexapod's.
+  - Sides are read from side tokens and roles from whole words ("ear" no longer matches ForeArm, "_l" no longer
+    _lower). The tail barrier follows the tail's direction, not height. The pelvic band is the hips' width, not the
+    arm span.
+  - Rigid pieces, the shell, hard splits and pelvic accessories are locked, so the healer no longer blurs them. The
+    healer's limit grows with edge length.
+  - A write-back creates a missing vertex group instead of dropping its weight.
+  - Hinge and twist relaxation are one pass, each joint once. The barrier runs once, after smoothing.
+  - Automatic rigid islands and armour pieces stop at accessory size, so garments bend.
+  - The humanoid step passes every skin option on.
+  - Auto-tune only turns joint_blend and limb_radius when the full envelope reads them, and no longer "enables" passes
+    that are on.
+  - Schema and SPEC.md list every switch.
+  Evidence to start from: an earlier review (closed PR #43, branch `fix/review-cleanup`) re-rigged real models with the new passes (barrier,
   sibling isolation, centreline/pelvic, hinge, twist, healer) on for every rig, and one went from 39/9 to 215/214
   tears; with them off, both real models audited as on 21 September.
 - **R4: rigging and animation**: gait continuity, root motion, gallop, morphs per clip, retarget quality, and export.

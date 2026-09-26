@@ -65,6 +65,11 @@ Before submitting changes, run all test suites:
 # 1. Full Python unit test suite
 python3 -m unittest discover -s tests -v
 
+# 1b. The weight-pass and skinning tests need numpy. With no numpy in your Python, run the suite with the Python
+#     that ships inside Blender (it has numpy; Blender itself does not start), e.g. on Windows:
+#     "C:\Program Files\Blender Foundation\Blender 5.2\5.2\python\bin\python.exe" -m unittest discover -s tests
+# AUTORIG_NO_BLENDER=1 makes either run behave as if Blender were not installed (its headless tests skip).
+
 # 2. Viewer & Gamepad Node logic tests
 node tests/viewer_logic_test.mjs
 

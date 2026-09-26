@@ -117,12 +117,17 @@
           }
         },
         "hard_split": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Bone names with abrupt rigid step falloff rather than smooth blending."
+          "type": "object",
+          "description": "A lid: everything above a height rides one bone, everything below another (rerig.skin).",
+          "properties": {
+            "bone": { "type": "string" },
+            "else": { "type": "string" },
+            "above": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["bone", "else", "above"]
         },
         "parts": {
-          "description": "Body-part bone ownership rules (placed kind).",
+          "description": "Two uses of one key: body-part bone ownership rules (placed kind: an object, or a list of {bones, allow, deny}), or, with rigid_parts, the machine parts that ride a bone whole (a list of {bone, at, verts}).",
           "oneOf": [
             {
               "type": "object",
@@ -151,6 +156,18 @@
                   "deny": { "type": "array", "items": { "type": "string" } }
                 },
                 "required": ["bones"]
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "bone": { "type": "string" },
+                  "at": { "$ref": "#/$defs/vec3" },
+                  "verts": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["bone", "at", "verts"]
               }
             }
           ]
@@ -206,23 +223,63 @@
           }
         },
         "rigid_islands": {
-          "type": "array",
-          "description": "Mesh disconnected components locked 100% to nearest bone (e.g. armour).",
-          "items": {
-            "type": "object",
-            "properties": {
-              "bone": { "type": "string" },
-              "box": {
-                "type": "array",
-                "items": { "type": "number" },
-                "minItems": 6,
-                "maxItems": 6
-              },
-              "max_verts": { "type": "integer" }
-            },
-            "required": ["bone"]
-          }
+          "description": "Loose pieces locked 100% to one bone (armour plates, buckles). \"auto\" or true: every small loose piece to its dominant or nearest bone (the humanoid kind's default; for the other kinds it is off unless set, or unless rigid_armor, armor or accessories is); false or \"off\": none; a list: the pieces named, by \"island\" index, \"at\" (0..1) or \"box\" (two corners, 0..1).",
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "enum": ["auto", "off"] },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "bone": { "type": "string" },
+                  "island": { "type": "integer", "minimum": 0 },
+                  "at": { "$ref": "#/$defs/vec3" },
+                  "box": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "minItems": 2, "maxItems": 2 },
+                  "max_verts": { "type": "integer" },
+                  "auto": { "type": "boolean" }
+                },
+                "required": ["bone"]
+              }
+            }
+          ]
         },
+        "envelope": {
+          "description": "After bone heat: \"root\" (the default: no limb weight behind where the limb starts), \"full\" (the torso to the spine, each limb to a capsule round it; joint_blend and limb_radius tune it), false (plain bone heat).",
+          "enum": ["root", "full", false]
+        },
+        "smooth": { "type": "integer", "minimum": 0, "description": "Weight smoothing passes (run before the barrier)." },
+        "barrier": { "type": "boolean", "description": "Air-gap barriers between limbs (default true); the standing-body rules in it run for bipeds only." },
+        "armpit_barrier": { "type": "boolean" },
+        "flank_barrier": { "type": "boolean", "description": "Front limbs off the rump, hind limbs off the chest (quadrupeds and multi-legged bodies)." },
+        "tail_barrier": { "type": "boolean" },
+        "radial_barrier": { "type": "boolean", "description": "Each leg of a multi-legged body kept to its own sector around the body." },
+        "crotch_barrier": { "type": "number", "minimum": 0, "description": "Width of the seam fade between the legs, in model units (default 3% of the model's size)." },
+        "sym_plane": { "type": "number", "description": "X of the symmetry plane (default 0)." },
+        "sibling_isolation": { "type": "boolean" },
+        "centerline_armor": { "type": "boolean", "description": "Small loose pieces across the pelvis ride the hips; on a biped, the crotch seam blends to the hips." },
+        "hinge_smoothing": { "type": "boolean" },
+        "hinge_passes": { "type": "integer", "minimum": 0 },
+        "hinge_max_gradient": { "type": "number", "minimum": 0 },
+        "hinge_radius_scale": { "type": "number", "minimum": 0 },
+        "hinges": { "type": "array", "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 } },
+        "twist_relaxation": { "type": "boolean" },
+        "twist_passes": { "type": "integer", "minimum": 0 },
+        "twist_max_gradient": { "type": "number", "minimum": 0 },
+        "twist_radius_scale": { "type": "number", "minimum": 0 },
+        "twist_pairs": { "type": "array", "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 } },
+        "auto_heal": { "type": "boolean", "description": "The closing smoothing of steep weight steps; never touches deliberate cuts." },
+        "heal_max_gradient": { "type": "number", "minimum": 0 },
+        "heal_passes": { "type": "integer", "minimum": 0 },
+        "heal_blend": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rigid_armor": { "type": "boolean" },
+        "rigid_island_max_share": { "type": "number", "minimum": 0, "maximum": 1, "description": "Largest automatic rigid piece, as a share of all vertices (default 0.1)." },
+        "rigid_island_max_extent": { "type": "number", "minimum": 0, "maximum": 1, "description": "Largest automatic rigid piece, as a share of the model's longest side (default 0.25): a garment longer than this still bends." },
+        "mesh_heal": { "type": "boolean" },
+        "keep_inside": { "type": "boolean" },
+        "twist_bones": { "type": "boolean" },
+        "morph_targets": { "type": "boolean" },
+        "digits": { "type": "boolean" },
         "audit": {
           "type": "object",
           "description": "Audit check allowances override for this model (requires notes['rig.audit']).",
