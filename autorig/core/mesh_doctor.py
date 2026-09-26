@@ -184,15 +184,15 @@ def inspect_source_model(model_path):
     elif HAVE_BLENDER:
         return diagnose_blender_file(model_path)
     else:
-        # Fallback summary for non-OBJ formats without Blender
+        # Without Blender a non-OBJ file cannot be read here: say so rather than call it healthy
         size = os.path.getsize(model_path)
         return {
             "file": os.path.basename(model_path),
             "size_bytes": size,
-            "grade": "HEALTHY",
-            "health_score": 100,
-            "note": "format requires Blender for deep inspection",
-            "pass": True,
+            "grade": "UNCHECKED",
+            "health_score": None,
+            "note": "%s files are checked under Blender only (steps/mesh_doctor.py through blender -b)" % ext,
+            "pass": None,
         }
 
 

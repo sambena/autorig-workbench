@@ -7,8 +7,9 @@ card an engine importer can read. Blender never opens a window.
 
 **Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
 3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
-grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. Expect
-rough edges; issues and pull requests are welcome.
+grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. A repair
+pass is under way (docs/PLAN.md, "R"): R1, the fixes to retarget, the watch folder, batch runs, Cancel and auto-tune,
+is in and not yet re-tested in Blender. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -21,13 +22,18 @@ folder). Nothing to install with pip.
 
 The server binds to 127.0.0.1 and opens the page on a link carrying a session token (it also prints it).
 
+Each step has a time limit (rig and audit 10 minutes, clips 10, trim and preview 5); a step past it is stopped with
+the processes it started. Raise one for big models with `AUTORIG_TIMEOUT_<STEP>` (e.g. `AUTORIG_TIMEOUT_RIG=1800`), or
+all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's memory where the platform reports it
+(Linux, macOS; 4096 by default, 0 for none).
+
 1. **Add a model**: drop an FBX with its `.fbm` folder, a GLB, glTF, OBJ, a zip, or a whole model folder on the page;
    or choose files or a folder; or paste paths on this computer (copied, never moved). It lands in
    `<models>/<group>/<name>/`.
 2. **Survey** shows what the source holds and renders four views to read its facing from.
 3. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
 4. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
-   time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process only).
+   time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process and the ones it started, nothing else).
 5. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
    spec and the card. **Open output folder** shows the files. The model list's badge is the audit's grade: **PASS**
    (green) within every limit, **CHECK** (amber) past a limit but inside its warn band, so look at it in the viewer,

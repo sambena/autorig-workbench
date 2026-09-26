@@ -354,7 +354,9 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             "twist_passes": h.get("twist_passes", rig_spec.get("twist_passes", 12)),
             "girdle_blend": h.get("girdle_blend", rig_spec.get("girdle_blend", 0.9)),
             "limb_radius": h.get("limb_radius", rig_spec.get("limb_radius", 1.0)),
-            "rip_welds": h.get("rip_welds", rig_spec.get("rip_welds", []))}
+            "rip_welds": h.get("rip_welds", rig_spec.get("rip_welds", [])),
+            "twist_bones": h.get("twist_bones", rig_spec.get("twist_bones", False)),
+            "morph_targets": h.get("morph_targets", rig_spec.get("morph_targets", False))}
     log = {"model": key, "kind": "humanoid"}
     src_path = rerig.find_fbx(key, spec)
     if not src_path or not os.path.exists(src_path):
@@ -386,12 +388,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     if spec.get("morph_targets", False):
         try:
             import morph_generator
-            head_b = arm.data.bones.get("Head") or arm.data.bones.get("head")
-            head_coord = tuple(head_b.head_local) if head_b else None
-            top_coord = tuple(head_b.tail_local) if head_b else None
-            created_morphs = morph_generator.generate_blender_shape_keys(
-                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
-            )
+            created_morphs = morph_generator.generate_blender_shape_keys(mesh, arm)   # finds the head bone itself
             if created_morphs:
                 log["morph_targets"] = created_morphs
         except Exception as e:

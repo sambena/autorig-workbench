@@ -8,8 +8,13 @@
 #   4. Evaluates whether the objective improved (reduced tears/gaps and improved audit verdict).
 #   5. Converges on the best spec and updates rig.json.
 #
+# rig.json only ever holds the best spec found so far. A candidate is written to <work>/tune/<model>.rig.json and
+# the steps read it through spec_store's override (AUTORIG_SPEC_OVERRIDE), so a run that is cancelled or killed part
+# way never leaves an unaccepted candidate in the model's rig.json. When the last candidate evaluated was rejected,
+# the rig is rebuilt from the best spec at the end, so the rig files on disk always match rig.json.
+#
 # Usage:
-#   python autorig/steps/auto_tune.py <model> [-max-iter 3] [-dry-run] [-out <work_dir>]
+#   python autorig/steps/auto_tune.py <model> [-max-iter 3] [-dry-run] [-allow-allowance] [-out <work_dir>]
 import argparse, copy, json, os, shutil, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,9 +24,11 @@ sys.path[:0] = [os.path.join(PKG, "core"), HERE]
 import auto_tune, blender, layout, spec_store
 
 
-def rig_script_for(model):
-    """Returns the rigging script appropriate for the model."""
-    spec = spec_store.SPECS.get(model) or spec_store.load_spec(model)
+def rig_script_for(model, spec=None):
+    """Returns the rigging script appropriate for the model (from `spec`, else its rig.json)."""
+    if spec is None:
+        spec_store.reload()
+        spec = spec_store.model(model)
     if not spec:
         return "rerig.py"
     rig = spec.get("rig", spec)
@@ -33,23 +40,35 @@ def rig_script_for(model):
     return "rerig.py"
 
 
-def run_pipeline_eval(model, work_dir=None, qa_dir=None, log_fn=None):
-    """Executes rig -> decimate -> audit (fast, -render 0) and returns the audit result dict."""
+def candidate_path(model):
+    return os.path.join(layout.work_dir("tune"), layout.leaf(model) + ".rig.json")
+
+
+def run_pipeline_eval(model, work_dir=None, qa_dir=None, log_fn=None, spec=None):
+    """Executes rig -> decimate -> audit (fast, -render 0) and returns the audit result dict. With `spec`, the steps
+    read that spec in place of the model's rig.json (written to candidate_path, passed by the override)."""
     w = work_dir or layout.work_dir("audit")
     qa = qa_dir or layout.work_dir("qa")
-    script = rig_script_for(model)
+    script = rig_script_for(model, spec)
+    kw = {}
+    if spec is not None:
+        cp = candidate_path(model)
+        os.makedirs(os.path.dirname(cp), exist_ok=True)
+        with open(cp, "w", encoding="utf-8") as fh:
+            json.dump(spec, fh, indent=2)
+        kw["env"] = dict(os.environ, **spec_store.override_env(model, cp))
 
     if log_fn:
-        log_fn(f"  [Eval] Running {script}...")
-    r_rig = blender.run(script, "-only", model, "-qa", qa)
-    if r_rig.returncode != 0 and "Traceback" in r_rig.stdout + r_rig.stderr:
+        log_fn(f"  [Eval] Running {os.path.basename(script)}...")
+    r_rig = blender.run(script, "-only", model, "-qa", qa, **kw)
+    if r_rig.returncode != 0 or "Traceback" in r_rig.stdout + r_rig.stderr:
         if log_fn:
             log_fn(f"  [Eval] Rig failed:\n{(r_rig.stdout + r_rig.stderr)[-500:]}")
         return None
 
     if log_fn:
         log_fn("  [Eval] Running decimate.py...")
-    r_dec = blender.run("decimate.py", "-only", model)
+    r_dec = blender.run("decimate.py", "-only", model, **kw)
     if r_dec.returncode != 0:
         if log_fn:
             log_fn(f"  [Eval] Decimate failed:\n{(r_dec.stdout + r_dec.stderr)[-500:]}")
@@ -57,13 +76,15 @@ def run_pipeline_eval(model, work_dir=None, qa_dir=None, log_fn=None):
 
     if log_fn:
         log_fn("  [Eval] Running audit.py (-render 0)...")
-    r_audit = blender.run("audit.py", "-model", model, "-out", w, "-render", "0")
+    audit_path = os.path.join(w, f"{model}.json")
+    if os.path.exists(audit_path):
+        os.remove(audit_path)                  # never read an older run's audit as this one's
+    r_audit = blender.run("audit.py", "-model", model, "-out", w, "-render", "0", **kw)
     if r_audit.returncode != 0:
         if log_fn:
             log_fn(f"  [Eval] Audit failed:\n{(r_audit.stdout + r_audit.stderr)[-500:]}")
         return None
 
-    audit_path = os.path.join(w, f"{model}.json")
     if not os.path.exists(audit_path):
         return None
 
@@ -90,8 +111,9 @@ def save_spec_to_disk(model, spec):
         json.dump(spec, fh, indent=2)
 
 
-def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_fn=print):
-    """Main closed-loop optimization driver for a model.
+def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_fn=print, allow_allowance=False):
+    """Main closed-loop optimization driver for a model. allow_allowance lets the last resort write an audit
+    allowance into rig.json (off by default: the tuner never loosens its own grade unless asked).
 
     Returns (success: bool, best_score: float, history: list, best_spec: dict).
     """
@@ -161,24 +183,24 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
     if not os.path.exists(bak_path):
         shutil.copy2(spec_path, bak_path)
 
-    # 2. Iterative optimization loop
+    # 2. Iterative optimization loop. Candidates are evaluated through the override (candidate_path); rig.json is
+    # written only when one is accepted. rig_is_best: the rig files on disk were built from best_spec.
+    rig_is_best = True
     try:
         for iteration in range(1, max_iterations + 1):
-            cand = auto_tune.propose_tuning_candidate(best_spec, best_audit, iteration=iteration, history=history)
+            cand = auto_tune.propose_tuning_candidate(best_spec, best_audit, iteration=iteration, history=history,
+                                                      allow_allowance=allow_allowance)
             if not cand:
                 log_fn(f"Iteration {iteration}: No further candidate proposals available.")
                 break
 
             log_fn(f"Iteration {iteration}/{max_iterations}: Proposed -> {cand['description']}")
 
-            # Apply candidate to disk
-            save_spec_to_disk(model, cand["spec"])
-
             # Re-evaluate
-            new_audit = run_pipeline_eval(model, work_dir=w, log_fn=log_fn)
+            new_audit = run_pipeline_eval(model, work_dir=w, log_fn=log_fn, spec=cand["spec"])
+            rig_is_best = False
             if new_audit is None:
                 log_fn(f"  Iteration {iteration}: Evaluation failed. Rejecting candidate.")
-                save_spec_to_disk(model, best_spec)
                 history.append({
                     "iteration": iteration,
                     "action": cand["description"],
@@ -220,19 +242,30 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
                 best_score = new_score
                 best_spec = copy.deepcopy(cand["spec"])
                 best_audit = new_audit
+                rig_is_best = True
+                if not dry_run:
+                    save_spec_to_disk(model, best_spec)
                 if best_score == 0.0 and new_diag["pass"]:
                     log_fn("  Target achieved: PASS with 0 tears! Converged early.")
                     break
             else:
                 log_fn(f"  REJECTED (Score {new_score:.1f} did not improve over {best_score:.1f}). Reverting.")
-                save_spec_to_disk(model, best_spec)
 
     finally:
-        if dry_run:
-            log_fn("[Dry Run] Reverting to original spec.")
-            save_spec_to_disk(model, orig_spec)
-        else:
-            save_spec_to_disk(model, best_spec)
+        keep = orig_spec if dry_run else best_spec
+        save_spec_to_disk(model, keep)
+        try:
+            os.remove(candidate_path(model))
+        except OSError:
+            pass
+        if dry_run and len(history) > 1:
+            rig_is_best = False                    # the rig files came from candidates, not the original
+        if not rig_is_best:
+            # the last rig built was a rejected (or dry-run) candidate: rebuild from the spec rig.json now holds,
+            # so the rig, the trimmed FBX and the audit on disk all match it
+            log_fn("Rebuilding the rig from the kept spec...")
+            if run_pipeline_eval(model, work_dir=w, log_fn=log_fn) is None:
+                log_fn("WARNING: could not rebuild the rig from the kept spec: run Rig again before using it.")
 
     # 3. Final summary
     report = auto_tune.format_tuning_report(history)
@@ -247,6 +280,8 @@ def main(argv=None):
     ap.add_argument("models", help="Comma-separated model name(s)")
     ap.add_argument("-max-iter", "--max-iterations", type=int, default=3, help="Max tuning iterations (default: 3)")
     ap.add_argument("-dry-run", "--dry-run", action="store_true", help="Evaluate candidates without saving to disk")
+    ap.add_argument("-allow-allowance", "--allow-allowance", action="store_true",
+                    help="As a last resort, write an audit allowance for residual micro-tears into rig.json")
     ap.add_argument("-out", help="Work output folder (default: <AUTORIG_WORK>/audit)")
     a = ap.parse_args(argv)
 
@@ -262,6 +297,7 @@ def main(argv=None):
             dry_run=a.dry_run,
             work_dir=a.out,
             log_fn=print,
+            allow_allowance=a.allow_allowance,
         )
         overall_ok &= ok
 

@@ -2390,7 +2390,11 @@ def mute_constraints(arm):
 def build(rig, clips):
     arm = rig.arm
     arm.animation_data_create()
-    for a in list(bpy.data.actions): bpy.data.actions.remove(a)
+    # Retargeted mocap (retarget_worker.py tags its actions) survives a rebake and ships with the clips, unless an
+    # authored clip of the same name replaces it; every other action is rebuilt from scratch.
+    kept = [a for a in bpy.data.actions if a.get("autorig_retarget") and a.name not in clips]
+    for a in list(bpy.data.actions):
+        if a not in kept: bpy.data.actions.remove(a)
     made = []
     for name, (frames, fn, loops) in clips.items():
         action = bpy.data.actions.new(name)
@@ -2402,6 +2406,9 @@ def build(rig, clips):
         action.use_frame_range = True
         action.frame_start, action.frame_end = 0, last
         made.append((name, last, loops))
+    for a in kept:
+        lo, hi = a.frame_range
+        made.append((a.name, int(round(hi - lo)), False))
     arm.animation_data.action = None
     # One NLA track per clip, so the exporter writes each as a take named exactly for the clip (with every action
     # it would name them "<armature>|<clip>").

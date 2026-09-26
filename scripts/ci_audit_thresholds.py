@@ -122,16 +122,23 @@ def run_ci():
             audit_data = json.load(fh)
 
         print("--> Verifying audit results against strict thresholds:", flush=True)
-        verdict = grades.grade_audit(audit_data)
-        print(f"    Grade: {verdict['grade']} (Pass: {verdict['pass']})", flush=True)
-        for chk, details in verdict.get("checks", {}).items():
+        # the verdict audit.py graded and stored (its checks carry each value, limit and grade); an audit with no
+        # checks is a failure, not a pass
+        verdict = audit_data.get("verdict") or {}
+        checks = verdict.get("checks") or {}
+        grade = grades.grade_of(verdict, spec["rig"].get("audit"))
+        print(f"    Grade: {grade} (Pass: {verdict.get('pass')})", flush=True)
+        for chk, details in checks.items():
             val = details.get("value")
             lim = details.get("limit")
             grd = details.get("grade")
             print(f"    - {chk}: {val} (limit: {lim}) -> {grd}", flush=True)
 
-        if verdict["grade"] != grades.PASS or not verdict["pass"]:
-            print(f"FAILED: Expected PASS, got {verdict['grade']}", file=sys.stderr)
+        if not checks:
+            print("FAILED: the audit has no checks to grade", file=sys.stderr)
+            return 1
+        if grade != grades.PASS or not verdict.get("pass"):
+            print(f"FAILED: Expected PASS, got {grade}", file=sys.stderr)
             return 1
 
         # 6. Run audit_all CLI with -strict

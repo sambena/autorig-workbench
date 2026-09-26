@@ -136,8 +136,6 @@ def rip_welds_pass(mesh, arm, chains, spec, size, log):
     me = mesh.data
     bm = bmesh.new()
     bm.from_mesh(me)
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
 
     max_dim = max(size)
     total_ripped = 0
@@ -159,56 +157,31 @@ def rip_welds_pass(mesh, arm, chains, spec, size, log):
         hA, tA = np.array(bA.head_local[:]), np.array(bA.tail_local[:])
         hB, tB = np.array(bB.head_local[:]), np.array(bB.tail_local[:])
 
-        # Find vertices that have adjacent faces on both sides
-        verts_to_rip = []
-        for v in bm.verts:
-            if not v.link_faces:
+        # Each face within reach of both bones goes to the nearer one; the seam is every edge with an A face on
+        # one side and a B face on the other. One split along those edges gives each side its own copy of the
+        # seam vertices (UVs and face data kept), instead of re-making faces vertex by vertex.
+        bm.faces.ensure_lookup_table()
+        bm.faces.index_update()
+        if not len(bm.faces):
+            continue
+        fc = np.array([f.calc_center_median()[:] for f in bm.faces])
+        dA, _ = _seg_dist(fc, hA, tA)
+        dB, _ = _seg_dist(fc, hB, tB)
+        near = (dA <= dist_limit) & (dB <= dist_limit)
+        side_b = dB < dA
+        seam = []
+        for e in bm.edges:
+            lf = e.link_faces
+            if len(lf) != 2:
                 continue
-            co = np.array(v.co[:])
-            dA, _ = _seg_dist(co[None, :], hA, tA)
-            dB, _ = _seg_dist(co[None, :], hB, tB)
-            if dA[0] > dist_limit or dB[0] > dist_limit:
-                continue
+            i, j = lf[0].index, lf[1].index
+            if near[i] and near[j] and side_b[i] != side_b[j]:
+                seam.append(e)
+        if seam:
+            bmesh.ops.split_edges(bm, edges=seam)
+            total_ripped += len(seam)
 
-            # Classify link faces by proximity to bone A vs bone B
-            facesA, facesB = [], []
-            for f in v.link_faces:
-                fc = np.array(f.calc_center_median()[:])
-                dfA, _ = _seg_dist(fc[None, :], hA, tA)
-                dfB, _ = _seg_dist(fc[None, :], hB, tB)
-                if dfA[0] <= dfB[0]:
-                    facesA.append(f)
-                else:
-                    facesB.append(f)
-
-            if facesA and facesB:
-                verts_to_rip.append((v, facesB))
-
-        # Separate side B faces onto a duplicate vertex
-        if verts_to_rip:
-            dlayer = bm.verts.layers.deform.verify()
-            for v, b_faces in verts_to_rip:
-                v_copy = bm.verts.new(v.co)
-                # Copy existing vertex weights if any
-                v_weights = v[dlayer]
-                for g_idx, weight in v_weights.items():
-                    v_copy[dlayer][g_idx] = weight
-
-                # Remake side B faces using v_copy
-                for f in b_faces:
-                    vert_seq = [v_copy if u == v else u for u in f.verts]
-                    try:
-                        new_f = bm.faces.new(vert_seq)
-                        new_f.material_index = f.material_index
-                        new_f.smooth = f.smooth
-                        bm.faces.remove(f)
-                    except ValueError:
-                        pass
-                total_ripped += 1
-
-            bm.verts.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-
+    # the skin passes run after this and weight every vertex, the new copies included
     if total_ripped > 0:
         bm.to_mesh(me)
         me.update()

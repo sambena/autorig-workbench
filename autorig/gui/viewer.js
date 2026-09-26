@@ -1431,19 +1431,21 @@ function hudPlay() { $("bPlay").textContent = playing ? "Pause" : "Play"; }
 // Running the preview step from here
 // ---------------------------------------------------------------------------------------------------------------
 
+async function waitForJob(id, onTick) {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const j = await api("/api/jobs/" + id);
+    if (onTick) onTick(j);
+    if (j.state !== "queued" && j.state !== "running") return j;
+  }
+}
+
 async function runPreview(name, btn) {
   btn.disabled = true;
   try {
     const job = await api("/api/run", { model: name, step: "preview" });
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 1000));
-      const j = await api("/api/jobs/" + job.id);
-      btn.textContent = `${j.state}… (${j.lines} log lines)`;
-      if (j.state !== "queued" && j.state !== "running") {
-        if (j.state !== "done") { message("Preview " + j.state, j.log.slice(-6).join("\n")); return; }
-        break;
-      }
-    }
+    const j = await waitForJob(job.id, (s) => { btn.textContent = `${s.state}… (${s.lines} log lines)`; });
+    if (j.state !== "done") { message("Preview " + j.state, j.log.slice(-6).join("\n")); return; }
     await refreshList(name);
     show(mi);
   } catch (e) {
@@ -1659,7 +1661,9 @@ function setupMocapActions(meta, originalFilename) {
 
   const select = $("mocapActionSelect");
   select.innerHTML = "";
-  const actions = meta.actions && meta.actions.length ? meta.actions : [(meta.active_action || "default")];
+  // the server lists actions as {name, frames, ...}; an older reply may give plain names
+  const actions = (meta.actions && meta.actions.length ? meta.actions : [meta.active_action || "default"])
+    .map((a) => (typeof a === "string" ? a : a.name));
   for (const act of actions) {
     const opt = document.createElement("option");
     opt.value = act;
@@ -1692,11 +1696,13 @@ if ($("bExecuteRetarget")) {
     btn.textContent = "Retargeting...";
 
     try {
+      // the name the server will give the clip (its clean_name), so the new clip can be selected by it
+      const cleanName = (s) => String(s || "").trim().replace(/[^A-Za-z0-9_\-]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase().slice(0, 64);
       const payload = {
         model: cur.name,
         file: mocapUploadedFile,
         source_action: $("mocapActionSelect").value,
-        clip_name: $("mocapClipName").value.trim() || undefined,
+        clip_name: cleanName($("mocapClipName").value) || cleanName($("mocapActionSelect").value) || "mocap_clip",
         root_motion: $("mocapRootMotion").checked,
         export_glb: true,
       };
@@ -1706,13 +1712,18 @@ if ($("bExecuteRetarget")) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Retargeting failed");
+      const job = await res.json();
+      if (!res.ok) throw new Error(job.error || "Retargeting failed");
+
+      // the retarget runs as a queued job (cancellable from the workbench); wait for it, then reload the preview
+      const name = cur.name;
+      const j = await waitForJob(job.id, (s) => { btn.textContent = `Retargeting… ${s.state} (${s.lines} log lines)`; });
+      if (j.state !== "done") throw new Error(`retarget ${j.state}:\n` + j.log.slice(-6).join("\n"));
 
       closeMocapModal();
       // Reload model and select the newly created clip
-      const targetClip = result.clip_name || $("mocapClipName").value.trim();
-      await refreshList(cur.name);
+      const targetClip = payload.clip_name;
+      await refreshList(name);
       await show(mi, targetClip);
     } catch (err) {
       alert("Retargeting error: " + err.message);

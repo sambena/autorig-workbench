@@ -440,9 +440,9 @@ details[open] summary {
     <span class="badge">Comprehensive Guide</span>
   </h1>
   <div class="nav-links">
-    <a href="/">&larr; Back to Workbench</a>
-    <a href="/spec_editor.html" target="_blank">Spec Editor ↗</a>
-    <a href="/viewer.html" target="_blank">3D Viewer ↗</a>
+    <a href="/?t=__AUTORIG_TOKEN__">&larr; Back to Workbench</a>
+    <a href="/spec_editor.html?t=__AUTORIG_TOKEN__" target="_blank">Spec Editor ↗</a>
+    <a href="/viewer.html?t=__AUTORIG_TOKEN__" target="_blank">3D Viewer ↗</a>
   </div>
 </header>
 
@@ -454,6 +454,7 @@ details[open] summary {
         <li class="group-title">Getting Started</li>
         <li><a href="#overview">Overview &amp; Architecture</a></li>
         <li><a href="#quickstart">Quick Start Flow</a></li>
+          <li><a href="#menus">The Menus</a></li>
         
         <li class="group-title">Buttons &amp; Actions</li>
         <li><a href="#buttons-all">Full Button Reference</a></li>
@@ -572,29 +573,49 @@ details[open] summary {
       <h2>Quick Start: Step-by-Step Flow</h2>
       <ol>
         <li>
-          <b>Add your model:</b> Drop an FBX (with its texture folder), GLB, OBJ, or zip into the drop area on the left panel, or paste filesystem paths.
+          <b>Add your model:</b> <b>File &rsaquo; Import / Add Model…</b> (or drop files on the page): an FBX with its texture folder, a GLB, glTF, OBJ, or a zip; or paste paths on disk.
         </li>
         <li>
-          <b>Survey:</b> Click <b>Survey</b>. Read the 4 facing views under the <i>Survey</i> tab to determine which axis is the front of the model (e.g., <code>[0, -1, 0]</code>).
+          <b>Survey:</b> <b>Pipeline &rsaquo; Survey Mesh</b>, then <b>Model &rsaquo; Survey Facing Views…</b> to see which axis is the front of the model (e.g., <code>[0, -1, 0]</code>).
         </li>
         <li>
-          <b>Edit spec:</b> Click <b>Edit spec</b> to open the 3D editor. Click <b>Suggest skeleton</b> for an automatic proposal, or click joints directly on the 3D model. Click <b>Save</b>.
+          <b>Spec:</b> the workbench page is the spec editor. <b>Rig &amp; Fix &rsaquo; Suggest Skeleton</b> for an automatic proposal, or place joints directly on the 3D model, then <b>Rig &amp; Fix &rsaquo; Save rig.json</b>.
         </li>
         <li>
-          <b>Run all:</b> Press <span class="chip pass">Run all</span>. The pipeline builds the armature, skins the geometry, enforces envelope capsules, decimates to budget, performs QA audits, authors animations, and creates the preview GLB.
+          <b>Run all:</b> <b>Pipeline &rsaquo; Run All Pipeline Steps</b> builds the armature, skins the geometry, decimates to budget, audits, authors clips and writes the preview GLB.
         </li>
         <li>
-          <b>Inspect:</b> Check the audit verdict (<span class="chip pass">PASS</span>, <span class="chip check">CHECK</span>, or <span class="chip fail">FAIL</span>) and press <b>View results</b> to scrub through clips and inspect weights in the 3D results viewer.
+          <b>Inspect:</b> the audit verdict (<span class="chip pass">PASS</span>, <span class="chip check">CHECK</span>, or <span class="chip fail">FAIL</span>) shows beside the model; <b>QA &amp; Test &rsaquo; View QA Audit Report…</b> for the details, and the 3D viewer to scrub clips and inspect weights.
         </li>
       </ol>
+    </section>
+
+    <!-- Section 2b: Menus -->
+    <section id="menus">
+      <h2>The Menus</h2>
+      <p>Every action is in the menu bar. An action that cannot run yet says why (e.g. <i>"no rig yet: run Rig"</i>).
+        Every job runs one at a time, streams its log to the console drawer, and can be cancelled.</p>
+      <table>
+        <tr><td><b>File</b></td><td>Import / Add Model, Sample Models Gallery, Open Output Folder, Refresh State.</td></tr>
+        <tr><td><b>Model</b></td><td>Model Details &amp; Notes, Mesh Doctor (geometry check of the source file), Survey Facing Views, Re-bake Clips.</td></tr>
+        <tr><td><b>Rig &amp; Fix</b></td><td>Suggest Skeleton, Auto-Tune Optimizer (re-rigs with small spec changes and keeps the best; <code>rig.json</code> only ever holds an accepted spec), the Rig Inspector, Undo, Revert to Disk, Save rig.json, Save &amp; Re-Rig.</td></tr>
+        <tr><td><b>Pipeline</b></td><td>The steps one at a time (Survey, Rig, Trim, Audit, Clips, Re-bake Clips, Publish, Preview), Run All, and the batch jobs over the whole collection (source views, rig all, audit all, audit failed only, re-bake all clips).</td></tr>
+        <tr><td><b>QA &amp; Test</b></td><td>Run QA Audit, View QA Audit Report, the Collection Audit Table, the live limb bend test and the extreme-pose tears overlay.</td></tr>
+        <tr><td><b>Export</b></td><td>A zip per engine (Unreal, Unity, Godot, Web / glTF) or all of them. The packages carry the rig, clips, textures and setup notes for that engine.</td></tr>
+        <tr><td><b>View</b></td><td>Rig &amp; Fix mode or Render &amp; Test mode, camera views, frame the model, the inspector and console drawers.</td></tr>
+        <tr><td><b>Help</b></td><td>This guide and the keyboard shortcuts.</td></tr>
+      </table>
+      <p>In the 3D viewer, <b>Retarget</b> brings a BVH or FBX mocap clip onto the rigged model: it runs as a job like
+        the steps above, and the new clip is kept with the model's clips (a re-bake does not remove it).</p>
     </section>
 
     <!-- Section 3: Button Reference -->
     <section id="buttons-all">
       <h2>Interactive Button &amp; Action Reference</h2>
       <p>
-        Every button on the workbench controls an isolated, reproducible script. When a button is disabled,
-        hovering over it reveals the exact prerequisite needed (e.g. <i>"no rig yet: run Rig"</i>).
+        What each step does. The steps are in the <b>Pipeline</b> menu (<a href="#menus">The Menus</a>); each runs an
+        isolated, reproducible script. When a step cannot run, it says exactly what it needs
+        (e.g. <i>"no rig yet: run Rig"</i>).
       </p>
 
       <div class="button-grid">
@@ -726,7 +747,9 @@ details[open] summary {
             <span class="script">Chained execution</span>
           </div>
           <div class="desc">
-            Executes the entire end-to-end pipeline in order: Survey &rarr; Rig &rarr; Trim &rarr; Audit &rarr; Clips &rarr; Publish &rarr; Preview.
+            Executes the pipeline in order: Rig &rarr; Trim &rarr; Audit &rarr; Publish &rarr; Clips &rarr; Publish &rarr; Preview
+            (Clips when the model has a clip archetype, set in <code>rig.json</code> or inferred from its skeleton).
+            Survey is separate: run it first from <b>Pipeline &rsaquo; Survey Mesh</b>.
             Streams live terminal logs to the interface and enables cancellation at any time.
           </div>
           <div class="meta-row">Prerequisite: Source model and <code>rig.json</code>.</div>
@@ -752,8 +775,9 @@ details[open] summary {
             <span class="script">Process Isolation</span>
           </div>
           <div class="desc">
-            Immediately halts the active background task. Kills only that specific Blender subprocess by its individual PID
-            without killing any other tasks, terminating the server, or corrupting other models.
+            Immediately halts the active background task: the step's own process and the processes it started
+            (auto-tune and retarget start Blender themselves), found from its PID. Nothing else is touched: no other
+            task, not the server, not other models.
           </div>
           <div class="meta-row">Active while any job is in progress.</div>
         </div>
@@ -1171,7 +1195,9 @@ details[open] summary {
     <!-- Section 9: Visual Gallery -->
     <section id="visual-gallery">
       <h2>Visual Reference: Audit &amp; QA Sheets</h2>
-      <p>Click any render below to inspect the full-resolution audit pass generated by the headless Blender engine:</p>
+      <p>Click any render below to inspect the full-resolution audit pass generated by the headless Blender engine.
+        These are made on your machine: run Rig and Audit on the bundled samples (biped, canine, wyvern, beetle) with
+        the default work folder, and they appear here.</p>
 
       <div class="gallery">
         <figure class="shot">
@@ -1237,6 +1263,15 @@ const zoomImg = document.getElementById("zoomImg");
 const zoomClose = document.getElementById("zoomClose");
 
 document.querySelectorAll("figure.shot img").forEach((img) => {
+  // a sheet not made on this machine yet: say how to make it instead of a broken image
+  img.addEventListener("error", () => {
+    const note = document.createElement("div");
+    note.className = "shot-missing";
+    note.textContent = "Not generated yet: run Rig and Audit on this sample to make it.";
+    note.style.cssText = "padding:24px;text-align:center;opacity:.7;border:1px dashed currentColor;border-radius:6px";
+    img.replaceWith(note);
+  });
+  if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) img.dispatchEvent(new Event("error"));
   img.addEventListener("click", () => {
     zoomImg.src = img.src;
     zoomDialog.showModal();

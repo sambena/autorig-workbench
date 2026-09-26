@@ -105,56 +105,68 @@ def add_twist_bones_to_armature(arm, mesh=None, spec=None):
     if not pairs:
         return []
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    eb = arm.data.edit_bones
+    # Edit mode works on the active object: the armature must be it (after skinning the mesh usually is), and the
+    # scene is always handed back in object mode with the previous active object, whatever happens in between.
+    vl = bpy.context.view_layer
+    prev_active = vl.objects.active
+    if bpy.context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    arm.hide_set(False)
+    vl.objects.active = arm
+    arm.select_set(True)
 
     created = []
-    for p in pairs:
-        b_base = p["base"]
-        t_name = p["twist"]
-        if b_base not in eb or t_name in eb:
-            continue
+    try:
+        bpy.ops.object.mode_set(mode='EDIT')
+        eb = arm.data.edit_bones
+        for p in pairs:
+            b_base = p["base"]
+            t_name = p["twist"]
+            if b_base not in eb or t_name in eb:
+                continue
 
-        base_b = eb[b_base]
-        twist_b = eb.new(t_name)
+            base_b = eb[b_base]
+            twist_b = eb.new(t_name)
 
-        # Position twist bone at the distal half of the bone
-        head_pos = base_b.head.lerp(base_b.tail, 0.5)
-        tail_pos = base_b.tail.copy()
+            # Position twist bone at the distal half of the bone
+            head_pos = base_b.head.lerp(base_b.tail, 0.5)
+            tail_pos = base_b.tail.copy()
 
-        twist_b.head = head_pos
-        twist_b.tail = tail_pos
-        twist_b.roll = base_b.roll
-        twist_b.parent = base_b
-        twist_b.use_connect = False
-        twist_b.use_deform = True
+            twist_b.head = head_pos
+            twist_b.tail = tail_pos
+            twist_b.roll = base_b.roll
+            twist_b.parent = base_b
+            twist_b.use_connect = False
+            twist_b.use_deform = True
 
-        created.append(p)
+            created.append(p)
 
-    bpy.ops.object.mode_set(mode='POSE')
-    for p in created:
-        t_name = p["twist"]
-        driver_name = p["driver"]
-        if t_name not in arm.pose.bones or driver_name not in arm.pose.bones:
-            continue
+        bpy.ops.object.mode_set(mode='POSE')
+        for p in created:
+            t_name = p["twist"]
+            driver_name = p["driver"]
+            if t_name not in arm.pose.bones or driver_name not in arm.pose.bones:
+                continue
 
-        t_pb = arm.pose.bones[t_name]
-        # Remove any existing constraints
-        for c in list(t_pb.constraints):
-            t_pb.constraints.remove(c)
+            t_pb = arm.pose.bones[t_name]
+            # Remove any existing constraints
+            for c in list(t_pb.constraints):
+                t_pb.constraints.remove(c)
 
-        cr = t_pb.constraints.new('COPY_ROTATION')
-        cr.name = "Twist_Axial_Roll"
-        cr.target = arm
-        cr.subtarget = driver_name
-        cr.target_space = 'LOCAL'
-        cr.owner_space = 'LOCAL'
-        cr.use_x = False
-        cr.use_y = True   # Blender edit bones longitudinal roll axis is Y
-        cr.use_z = False
-        cr.influence = 0.50
-
-    bpy.ops.object.mode_set(mode='OBJECT')
+            cr = t_pb.constraints.new('COPY_ROTATION')
+            cr.name = "Twist_Axial_Roll"
+            cr.target = arm
+            cr.subtarget = driver_name
+            cr.target_space = 'LOCAL'
+            cr.owner_space = 'LOCAL'
+            cr.use_x = False
+            cr.use_y = True   # Blender edit bones longitudinal roll axis is Y
+            cr.use_z = False
+            cr.influence = 0.50
+    finally:
+        if bpy.context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        vl.objects.active = prev_active
 
     # If mesh is provided, distribute the skin weights
     if mesh is not None and created:

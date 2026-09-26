@@ -76,6 +76,11 @@ def main(argv=None):
                     res = mesh_doctor.heal_mesh_object(main_obj)
                     print(f"HEALED {name} score: {res['before']['health_score']} -> {res['after']['health_score']}")
                     print(f"  ACTIONS: {res['actions']}")
+                    # the healed copy goes to the output folder; the model's own source file is never overwritten
+                    healed = os.path.join(out_d, f"{name}_healed.glb")
+                    bpy.ops.export_scene.gltf(filepath=healed, export_format='GLB', export_materials='EXPORT',
+                                              export_animations=False)
+                    print(f"  SAVED: {healed}")
             else:
                 print(f"NOTICE: deep healing requires running under Blender (blender -b --python ...)")
 

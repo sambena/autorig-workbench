@@ -2,7 +2,7 @@
 # Autorig Workbench: finding and running Blender, for the drivers that run under ordinary Python (cli/, gui/).
 #
 # Order: the AUTORIG_BLENDER or BLENDER environment variable, `blender` on PATH, then the usual install folders
-# (newest version first).
+# (newest version first). AUTORIG_NO_BLENDER=1 hides it (the test suite then skips its Blender tests).
 import glob, os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +85,10 @@ def warn_if_untested(path=None, file=sys.stderr):
 
 
 def find(required=True):
+    if os.environ.get("AUTORIG_NO_BLENDER"):  # tests: behave as if Blender is not installed
+        if required:
+            sys.exit("Blender disabled by AUTORIG_NO_BLENDER.")
+        return None
     for var in ("AUTORIG_BLENDER", "BLENDER"):
         if os.environ.get(var):
             return os.environ[var]
@@ -104,17 +108,20 @@ def find(required=True):
 def command(script, *args):
     """blender -b --python <steps/script> -- args. A script given as a path (a model's own builder) runs through
     run_builder.py, which puts the tool's steps and core on its import path first."""
+    # --python-exit-code: a step whose script raises exits 1 (Blender's own default is 0 even after a traceback)
+    head = [find(), "-b", "--python-exit-code", "1", "--python"]
     if os.path.isabs(script) or os.sep in script or "/" in script:
-        return [find(), "-b", "--python", os.path.join(STEPS, "run_builder.py"), "--", script] + list(args)
-    return [find(), "-b", "--python", os.path.join(STEPS, script), "--"] + list(args)
+        return head + [os.path.join(STEPS, "run_builder.py"), "--", script] + list(args)
+    return head + [os.path.join(STEPS, script), "--"] + list(args)
 
 
 def run(script, *args, timeout=None, memory_limit_mb=None, **kw):
     """Runs a step to the end with watchdog timeout and memory protection, output captured as text."""
     try:
-        import watchdog
+        import autorig_watchdog as watchdog
     except ImportError:
-        from autorig.core import watchdog
-    step_timeout = watchdog.get_timeout_for_script(script, timeout)
-    return watchdog.run_with_watchdog(command(script, *args), timeout=step_timeout,
+        from autorig.core import autorig_watchdog as watchdog
+    argv = command(script, *args)
+    step_timeout = watchdog.get_timeout_for_script(argv, timeout)      # a builder path counts as the rig step
+    return watchdog.run_with_watchdog(argv, timeout=step_timeout,
                                       memory_limit_mb=memory_limit_mb, capture_output=True, **kw)

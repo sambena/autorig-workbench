@@ -1521,12 +1521,7 @@ def rerig(key, spec, qa_dir, export):
     if spec.get("morph_targets", False):
         try:
             import morph_generator
-            head_b = arm.data.bones.get("head") or arm.data.bones.get("Head")
-            head_coord = tuple(head_b.head_local) if head_b else None
-            top_coord = tuple(head_b.tail_local) if head_b else None
-            created_morphs = morph_generator.generate_blender_shape_keys(
-                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
-            )
+            created_morphs = morph_generator.generate_blender_shape_keys(mesh, arm)   # finds the head bone itself
             if created_morphs:
                 log["morph_targets"] = created_morphs
         except Exception as e:

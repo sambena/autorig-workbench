@@ -14,6 +14,22 @@ PKG = os.path.dirname(HERE)
 sys.path[:0] = [os.path.join(PKG, "core"), HERE]
 
 
+def action_fcurves(action):
+    """Every F-curve of an action: the action's own list, or (slotted actions, Blender 4.4+) its layers'
+    channelbags (as preview_glb.py reads them)."""
+    try:
+        if len(action.fcurves):
+            return list(action.fcurves)
+    except AttributeError:
+        pass
+    out = []
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for bag in getattr(strip, "channelbags", []):
+                out += list(bag.fcurves)
+    return out
+
+
 def topological_sort_bones(arm, bone_names):
     """Sorts bone names so parents appear before children."""
     dbones = arm.data.bones
@@ -69,6 +85,10 @@ def main(argv=None):
         raise ValueError(f"No target armature found in '{target_blend}'")
 
     print(f"RETARGET_WORKER: Importing source motion '{source_file}'")
+    # everything the import brings in (the source armature, any skinned mesh a "with skin" FBX carries, empties,
+    # its actions) is removed again before the rig's file is saved
+    before_objs = set(bpy.data.objects)
+    before_actions = set(bpy.data.actions)
     ext = os.path.splitext(source_file)[1].lower()
     if ext == ".bvh":
         bpy.ops.import_anim.bvh(filepath=source_file, use_fps_scale=False,
@@ -168,8 +188,15 @@ def main(argv=None):
     # Create target action
     if not tgt_arm.animation_data:
         tgt_arm.animation_data_create()
+    old = bpy.data.actions.get(clip_name)
+    if old is not None and old not in before_actions:
+        old = None
+    if old is not None:                      # re-retargeting a clip replaces it
+        bpy.data.actions.remove(old)
     new_action = bpy.data.actions.new(name=clip_name)
     new_action.use_fake_user = True
+    new_action["autorig_retarget"] = True    # make_clips.py keeps and exports tagged actions on a rebake
+    new_action["autorig_retarget_source"] = os.path.basename(source_file)
     tgt_arm.animation_data.action = new_action
 
     scene = bpy.context.scene
@@ -234,29 +261,42 @@ def main(argv=None):
 
         bpy.context.view_layer.update()
 
-    # Clean up imported source armature
-    bpy.data.objects.remove(src_arm, do_unlink=True)
+    # Clean up everything the import brought in: the rig's file keeps only its own objects and the new clip
+    for o in [o for o in bpy.data.objects if o not in before_objs]:
+        bpy.data.objects.remove(o, do_unlink=True)
+    for a in [a for a in bpy.data.actions if a not in before_actions and a != new_action]:
+        bpy.data.actions.remove(a)
+    new_action.name = clip_name              # it came out "<clip>.001" if an imported take had the same name
+    # keyed at the source's own frames while baking (so every bone evaluated at a frame sees that frame's keys);
+    # the finished clip starts at frame 0 like every authored clip
+    if frame_start:
+        for fc in action_fcurves(new_action):
+            for kp in fc.keyframe_points:
+                kp.co.x -= frame_start
+                kp.handle_left.x -= frame_start
+                kp.handle_right.x -= frame_start
+            fc.update()
+    new_action.use_frame_range = True
+    new_action.frame_start, new_action.frame_end = 0, frame_end - frame_start
+    tgt_arm.animation_data.action = None     # the rest pose stays the bind pose; the clip is kept by its fake user
 
-    # Reset frame to start
-    scene.frame_set(frame_start)
+    scene.frame_set(0)
     bpy.context.view_layer.update()
 
     # Save target blend
     print(f"RETARGET_WORKER: Saving updated blend '{target_blend}'")
     bpy.ops.wm.save_mainfile(filepath=target_blend)
 
+    # preview.glb is rewritten by the preview step (preview_glb.py), which the retargeter runs after this when asked:
+    # it picks the new action up from this file with the viewer's own export settings.
     glb_file = None
-    if export_glb or preview:
+    if export_glb:
         glb_file = os.path.splitext(target_blend)[0] + f"_{clip_name}.glb"
-        print(f"RETARGET_WORKER: Exporting GLB preview '{glb_file}'")
-        bpy.ops.export_scene.gltf(filepath=glb_file, export_format="GLB", export_animations=True)
-        if preview:
-            prev_glb = os.path.join(os.path.dirname(target_blend), "preview.glb")
-            try:
-                shutil.copyfile(glb_file, prev_glb)
-                print(f"RETARGET_WORKER: Updated '{prev_glb}' for viewer preview.")
-            except Exception as e:
-                print(f"RETARGET_WORKER: Note: could not update preview.glb: {e}")
+        print(f"RETARGET_WORKER: Exporting clip GLB '{glb_file}'")
+        tgt_arm.animation_data.action = new_action
+        bpy.ops.export_scene.gltf(filepath=glb_file, export_format="GLB", export_animations=True,
+                                  export_animation_mode="ACTIVE_ACTIONS")
+        tgt_arm.animation_data.action = None
 
     result = {
         "status": "OK",

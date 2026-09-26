@@ -14,7 +14,7 @@ The CI workflow:
 
 ## Enabling in GitHub Actions
 
-The workflow definition is located in [`ci/ci.yml`](file:///var/home/cosmo/Work/autorig-workbench/ci/ci.yml). To activate it in GitHub Actions:
+The workflow definition is located in [`ci/ci.yml`](../ci/ci.yml). To activate it in GitHub Actions:
 ```bash
 mkdir -p .github/workflows
 cp ci/ci.yml .github/workflows/ci.yml

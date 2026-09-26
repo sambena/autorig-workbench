@@ -230,8 +230,18 @@ function updateModelBadge() {
   }
 }
 
-async function selectModel(name) {
-  if (!name) return;
+async function selectModel(name, opts = {}) {
+  if (!name) return false;
+  const se = window.specEditor;
+  if (name !== currentModel && se && typeof se.hasUnsavedEdits === "function" && se.hasUnsavedEdits()) {
+    // unsaved spec edits are never dropped by something the user did not ask for (a job's log naming another
+    // model); a switch they did ask for asks first
+    const sel = $("#modelSelect");
+    if (opts.auto || !confirm(`Discard your unsaved spec edits to ${currentModel}?`)) {
+      if (sel) sel.value = currentModel;
+      return false;
+    }
+  }
   currentModel = name;
   const sel = $("#modelSelect");
   if (sel && sel.value !== name) sel.value = name;
@@ -268,6 +278,7 @@ async function selectModel(name) {
   } catch (e) {
     console.warn("Could not load model details:", e);
   }
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -415,7 +426,10 @@ async function handleAction(action) {
       break;
     case "refresh":
       await refreshState();
-      if (currentModel) await selectModel(currentModel);
+      // re-read the current model in place (keeps unsaved edits; switchModel would start it over)
+      if (currentModel && window.specEditor && window.specEditor.refreshCurrentModel) {
+        await window.specEditor.refreshCurrentModel();
+      }
       break;
 
     // Model
@@ -820,7 +834,9 @@ function appendConsoleLine(line) {
   }
 }
 
-function detectAndSwitchJobModel(line) {
+// A live log line naming the model a job is working on follows it in the viewer. Replayed logs (an old job picked
+// in the dropdown, a reconnect, the final re-read) only update the counters: they never change the model.
+function detectAndSwitchJobModel(line, live = false) {
   if (!line || typeof line !== "string") return;
   const p = parseJobProgressLine(line);
   if (p) {
@@ -844,9 +860,9 @@ function detectAndSwitchJobModel(line) {
         (currentJobSubCount && currentJobSubCount.total > 1) ||
         (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
       );
-      if (!isBulkJob && state && state.models && state.models.some((m) => m.name === p.model)) {
+      if (live && !isBulkJob && state && state.models && state.models.some((m) => m.name === p.model)) {
         if (currentModel !== p.model) {
-          selectModel(p.model);
+          selectModel(p.model, { auto: true });
         }
       }
     }
@@ -875,8 +891,8 @@ function detectAndSwitchJobModel(line) {
         (currentJobSubCount && currentJobSubCount.total > 1) ||
         (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
       );
-      if (!isBulkJob && currentModel !== detected) {
-        selectModel(detected);
+      if (live && !isBulkJob && currentModel !== detected) {
+        selectModel(detected, { auto: true });
       }
     }
   }
@@ -1016,7 +1032,7 @@ async function followJob(j) {
     } catch (_) {
       line = ev.data;
     }
-    detectAndSwitchJobModel(line);
+    detectAndSwitchJobModel(line, true);
     appendConsoleLine(line);
   };
 
@@ -1248,8 +1264,8 @@ async function openSamplesGallery() {
           await api("/api/samples/load", { name: b.dataset.loadRigSample });
           await refreshState();
           $("#samplesModal").close();
-          await selectModel(b.dataset.loadRigSample);
-          runStep("all");
+          // only on the sample itself: kept edits to another model (the discard prompt cancelled) stop it here
+          if (await selectModel(b.dataset.loadRigSample)) runStep("all");
         } catch (e) {
           alert(e.message);
           b.disabled = false; b.textContent = "Load & Rig All";
@@ -1447,6 +1463,11 @@ async function openMeshDoctor() {
 
   try {
     const diag = await api("/api/doctor?model=" + encodeURIComponent(currentModel));
+    if (diag.grade === "UNCHECKED") {               // a format the server cannot read without Blender
+      body.innerHTML = `<div class="row" style="margin-bottom:12px"><span class="chip" style="font-size:14px;padding:3px 10px">UNCHECKED</span>` +
+        `<span class="meta">${esc(diag.file || "")}</span></div><div class="why">${esc(diag.note || "")}</div>`;
+      return;
+    }
     const gClass = diag.grade === "HEALTHY" ? "pass" : (diag.grade === "WARN" ? "check" : "fail");
     body.innerHTML = `
       <div class="row" style="margin-bottom:12px"><span class="chip ${gClass}" style="font-size:14px;padding:3px 10px">${esc(diag.grade)}</span>` +

@@ -606,6 +606,11 @@ test("parseJobProgressLine parses directives, banners, and fallbacks", () => {
   const p7 = L.parseJobProgressLine("!! 2/12: archer rig failed");
   assert.deepEqual(p7, { current: 2, total: 12, lastResult: { model: "archer", status: "FAILED" } });
 
+  // a single step's own lines start with its label, not a model: "rig" must never be taken for one
+  assert.equal(L.parseJobProgressLine("== rig (placed) done"), null);
+  assert.equal(L.parseJobProgressLine("!! rig (placed) failed (exit code 1)"), null);
+  assert.equal(L.parseJobProgressLine("== trim to budget done"), null);
+
   const p8 = L.parseJobProgressLine("AUDIT_FAIL swamp_monster (score=0.45)");
   assert.deepEqual(p8, { lastResult: { model: "swamp_monster", status: "FAILED" } });
 
@@ -674,6 +679,13 @@ test("formatJobHeader displays count 'job x of y' and previous job result", () =
   assert.ok(bulkDone.text.includes("[10 of 10]"));
   assert.ok(bulkDone.text.includes("Last: dragon_boss PASSED"));
   assert.ok(bulkDone.text.includes("(9 passed, 1 failed)"));
+
+  // 6. names go into HTML escaped
+  const odd = L.formatJobHeader({ id: 3, step: "rig <b>", model: "a<img src=x onerror=alert(1)>", state: "running" },
+                                null, { model: "<i>x</i>", status: "FAILED" }, "");
+  assert.ok(!odd.html.includes("<img"), "a model name must not become markup");
+  assert.ok(odd.html.includes("&lt;img"));
+  assert.ok(odd.html.includes("rig &lt;b&gt;"));
 });
 
 test("clip option formatting and index search", () => {

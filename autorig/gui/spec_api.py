@@ -778,9 +778,16 @@ def post(h, app, srv, path, body):
             from autorig.core import gait
         preset_name = body.get("preset", "natural")
         overrides = body.get("overrides", {})
-        num_frames = int(body.get("frames", 24))
+        if not isinstance(overrides, dict):
+            h._send(400, {"error": "overrides must be an object"}); return True
+        try:
+            num_frames = max(1, min(240, int(body.get("frames", 24))))     # a preview, not a bake: bounded
+        except (TypeError, ValueError):
+            h._send(400, {"error": "frames must be a number"}); return True
         is_biped = body.get("type", "biped") == "biped"
         params = gait.merge_gait_params(preset_name, overrides)
+        if not (isinstance(params.get("cadence", 1.0), (int, float)) and params.get("cadence", 1.0) > 0):
+            params["cadence"] = 1.0
         frames_out = []
         for i in range(num_frames):
             phase = i / float(num_frames)
@@ -835,52 +842,62 @@ def post(h, app, srv, path, body):
             if errs:
                 h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
                               "errors": errs, "warnings": warns}); return True
+            # rig.json is saved from here on: the reply is always 200 with the new base, so the page stays in step
+            # with the file, and a job that cannot start says why in "error" instead of failing the request
             out = {"saved": True, "text": text, "base": text_hash(text), "warnings": warns}
-            if what == "rerig":
-                ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
-                cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
-                if cur:              # the audit this edit is measured against
-                    with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
-                        json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
-                spec = srv.spec_store.model(name)
-                st = srv.status(g, name)
-                if st["steps"].get("rig"):
-                    h._send(409, {"error": st["steps"]["rig"]}); return True
-                c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
-                steps = ["rig", "trim", "audit"] + (["clips"] if c_arch else []) + ["preview"]
-                cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
-                out["job"] = _job(app, srv, name, "save and re-rig", cmds)
-            elif what == "rebake_clips":
-                spec = srv.spec_store.model(name)
-                infer_fn = getattr(srv.spec_store, "infer_clip_archetype", lambda s: None)
-                c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype") or infer_fn(spec)
-                if not c_arch:
-                    c_arch = "walker"
-                steps = ["clips", "preview"]
-                cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
-                out["job"] = _job(app, srv, name, "re-bake clips", cmds)
+            try:
+                if what == "rerig":
+                    ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
+                    cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
+                    if cur:              # the audit this edit is measured against
+                        with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
+                            json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
+                    spec = srv.spec_store.model(name)
+                    st = srv.status(g, name)
+                    if st["steps"].get("rig"):
+                        raise ValueError(st["steps"]["rig"])
+                    # the same archetype the Clips button uses: rig.json's, else the one inferred from the skeleton
+                    c_arch = srv.spec_store.infer_clip_archetype(spec)
+                    steps = ["rig", "trim", "audit"] + (["clips"] if c_arch else []) + ["preview"]
+                    cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
+                    out["job"] = _job(app, srv, name, "save and re-rig", cmds)
+                elif what == "rebake_clips":
+                    spec = srv.spec_store.model(name)
+                    st = srv.status(g, name)
+                    if st["steps"].get("clips"):           # no archetype, or no rig yet: say why, as the button does
+                        raise ValueError(st["steps"]["clips"])
+                    steps = ["clips", "preview"]
+                    cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
+                    out["job"] = _job(app, srv, name, "re-bake clips", cmds)
+            except ValueError as e:
+                out["error"] = "saved, but nothing ran: " + str(e)
             h._send(200, out)
         elif what == "auto-tune":
+            out = {}
             if body.get("spec"):
-                force = bool(body.get("force", True))
+                force = bool(body.get("force", False))    # a rig.json changed on disk is a conflict, as on Save
                 text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
                 if errs:
                     h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
                                   "errors": errs, "warnings": warns}); return True
-            ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
-            cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
-            if cur:
-                with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
-                    json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
-            st = srv.status(g, name)
-            if st["steps"].get("rig"):
-                h._send(409, {"error": st["steps"]["rig"]}); return True
-            auto_tune_script = os.path.join(os.path.dirname(HERE), "steps", "auto_tune.py")
-            max_iter = str(body.get("max_iterations", 3))
-            cmd = (f"auto-tune ({max_iter} iter)", [sys.executable, "-u", auto_tune_script, name, "-max-iter", max_iter], None)
-            preview_cmd = ("preview", srv.blender_cmd("preview_glb.py", "-only", name), None)
-            job = _job(app, srv, name, "auto-tune", [cmd, preview_cmd])
-            h._send(200, {"job": job})
+                out = {"saved": True, "text": text, "base": text_hash(text), "warnings": warns}
+            try:                                          # saved (or unchanged) from here: always 200, as above
+                ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
+                cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
+                if cur:
+                    with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
+                        json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
+                st = srv.status(g, name)
+                if st["steps"].get("rig"):
+                    raise ValueError(st["steps"]["rig"])
+                auto_tune_script = os.path.join(os.path.dirname(HERE), "steps", "auto_tune.py")
+                max_iter = str(body.get("max_iterations", 3))
+                preview_cmd = ("preview", srv.blender_cmd("preview_glb.py", "-only", name), None)
+                cmd = (f"auto-tune ({max_iter} iter)", [sys.executable, "-u", auto_tune_script, name, "-max-iter", max_iter], None)
+                out["job"] = _job(app, srv, name, "auto-tune", [cmd, preview_cmd])
+            except ValueError as e:
+                out["error"] = ("saved, but nothing ran: " if out.get("saved") else "") + str(e)
+            h._send(200, out)
         elif what == "source":
             if not srv._quiet(layout.source_model, name):
                 h._send(409, {"error": "no source export in the model folder"}); return True
