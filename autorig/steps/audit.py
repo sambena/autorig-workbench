@@ -98,6 +98,7 @@ else:
 
 # ---------------------------------------------------------------- mesh + weights (all skinned meshes, stacked)
 P, W, E, F_area, island_of, groups_unmatched = [], [], [], [], [], set()
+POLYS = []                                   # every skinned face, indexing the stacked P (the inside-mesh check)
 off = 0; isl_off = 0; per_mesh = []
 for o in meshes:
     me = o.data
@@ -106,6 +107,7 @@ for o in meshes:
     mw = np.array(o.matrix_world)
     co = co @ mw[:3, :3].T + mw[:3, 3]
     P.append(co)
+    POLYS.extend(tuple(int(v) + off for v in p.vertices) for p in me.polygons)
     w = np.zeros((n, nb))
     gmap = {}
     for g in o.vertex_groups:
@@ -176,7 +178,9 @@ def side_of(n):
     return m.group(1)[-1].upper() if m else ""
 def base_of(n):
     n = n.split(":")[-1]
+    n = re.sub(r"\.\d{3}$", "", n)              # Blender's own clash suffix (.001)
     n = SIDE_RE.sub("", n)
+    n = re.sub(r"_v\d+$", "", n)                # the builder's clash suffix (leg_1_v2), before the link number
     n = n.replace("Left", "").replace("Right", "")
     return re.sub(r"_?\d+$", "", n)
 ROLE_WORDS = [("finger", "finger"), ("thumb", "finger"), ("index", "finger"), ("middle", "finger"), ("ring", "finger"),
@@ -646,6 +650,67 @@ for ch in chains:
     if s: sides.setdefault(base_of(BN[ch[0]]), {}).setdefault(s, []).append(len(ch))
 for b, d in sides.items():
     if "L" in d and "R" in d and sorted(d["L"]) != sorted(d["R"]): warn.append("%s: L %s vs R %s bones" % (b, d["L"], d["R"]))
+
+# ---------------------------------------------------------------- skeleton checks (warnings for now: grades later)
+# joints outside the mesh, mirrored joints and rolls that do not mirror, rolls that flip inside a chain, zero-length
+# bones and clash-suffixed names, and how far the rig moved its own mesh at rest with IK on (the rig step's log)
+import rig_geom
+skel = {}
+if nb:
+    Mw = arm.matrix_world
+    deform_names = [BN[i] for i in deform]
+    if POLYS and NV:
+        from mathutils import Vector as _V
+        from mathutils.bvhtree import BVHTree as _BVH
+        tree = _BVH.FromPolygons([_V(p) for p in P.tolist()], POLYS)
+
+        def _inside(p):
+            votes = 0
+            for d in (_V((1, 0, 0)), _V((0, 0.7071, 0.7071)), _V((-0.5774, -0.5774, 0.5774))):
+                n_, o_ = 0, p.copy()
+                for _ in range(64):
+                    loc, _, _, _ = tree.ray_cast(o_, d)
+                    if loc is None: break
+                    n_ += 1; o_ = loc + d * (S * 1e-5)
+                votes += n_ % 2
+            return votes >= 2
+        outside = []
+        for i in deform:
+            if not children[i]: continue          # a chain's last bone ends at a tip on the surface; its head counts
+            h = _V(tuple(heads[i]))
+            loc, _, _, dist = tree.find_nearest(h)
+            if loc is not None and dist > 0.01 * S and not _inside(h):
+                outside.append(BN[i])
+        skel["joints_outside"] = outside
+        if outside: warn.append("joints outside the mesh: " + ", ".join(outside[:6]) + (" ..." if len(outside) > 6 else ""))
+    cxw = float((lo[0] + hi[0]) * 0.5) if NV else 0.0
+    sym = rig_geom.symmetry_issues({BN[i]: tuple(heads[i]) for i in deform}, cxw, S)
+    skel["asymmetric_joints"] = sym
+    if sym: warn.append("joints that do not mirror: " + ", ".join("%s/%s %.1f%%" % (a, b, 100 * o) for a, b, o in sym[:4]))
+    bone_info = {}
+    for i in deform:
+        b = bones[i]
+        z = (Mw.to_3x3() @ b.matrix_local.to_3x3()).col[2]
+        par = b.parent.name if b.parent else None
+        bone_info[BN[i]] = {"parent": par, "z": tuple(z), "chain": (base_of(BN[i]), side_of(BN[i]))}
+    flips, mirror = rig_geom.roll_issues(bone_info)
+    skel["roll_flips"], skel["roll_not_mirrored"] = flips, mirror
+    if flips: warn.append("rolls flip against their parent: " + ", ".join(flips[:6]))
+    if mirror: warn.append("rolls that do not mirror: " + ", ".join("%s/%s" % p for p in mirror[:4]))
+    short, clash = rig_geom.naming_issues({BN[i]: float(np.linalg.norm(tails[i] - heads[i])) for i in range(nb)}, S)
+    skel["zero_length"], skel["clash_names"] = short, clash
+    if short: warn.append("zero-length bones: " + ", ".join(short[:6]))
+    if clash: warn.append("bones renamed to avoid a clash: " + ", ".join(clash[:6]))
+if MODEL:
+    try:
+        qa_log = json.load(open(os.path.join(__import__("layout").work_dir("qa"), SLUG + ".json"), encoding="utf-8"))
+        rs = qa_log.get("rest_shift")
+        if rs is not None:
+            skel["rest_shift"] = rs
+            if rs > 0.002: warn.append("the rig moves its own mesh at rest by %.2f%% (IK on)" % (100 * rs))
+    except Exception:
+        pass
+result["skeleton"] = skel
 result["verdict"] = dict(graded, warnings=warn)
 print("AUDIT_%s %s %s" % (graded["grade"], SLUG, json.dumps(values)))
 result["seconds"] = round(time.time() - t0, 1)

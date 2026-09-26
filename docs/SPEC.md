@@ -72,6 +72,9 @@ Common to all kinds:
 | `rig_folder` | where the rig is written and read (default `rigged`) |
 | `audit` | allowances: `{"combined_tears": 8, "bend_tears": 4}` loosens (or tightens) audit.py's pass limits for this model, and moves its CHECK band with them (PIPELINE.md, "Grades"). Always say why in `notes["rig.audit"]`. A model with no `rig` section of its own (lifted from another pack, rigged there and only cut to budget here) puts `audit` at the top level of its rig.json, with the reason in `notes["audit"]`. |
 | `neck` | `k`: the last `k` links of the body chain before the head are the neck, named `neck_1..k` (SKELETONS.md, quadruped), so the card lists all of them as the neck. Without it only the top link is `neck`, and the rest count as spine. |
+| `keep_inside` | default `true`: a joint that ends up more than 1% of the model's size outside the mesh (a chain's last point, a tip, excepted) is moved into the middle of the part it is beside, and listed in the rig log as `joints_moved_inside`. `false` keeps joints exactly where they were placed. |
+| `twist_bones` | `true`: twist bones on the upper arms, forearms and thighs (Mixamo, Rigify and this tool's own names), driven by the twist alone (swing-twist), each on the half of its bone its weights cover |
+| `morph_targets` | `true`: facial shape keys (blinks, jaw open, smile, `viseme_aa`) on a model with a head bone |
 
 `kind: "tripo"`:
 
@@ -137,7 +140,11 @@ For `kind: "placed"`, hand-placed chains (like `build`) are augmented with body-
 
 For `kind: "humanoid"`: `forward`, then joint heights `z` (`hip`, `knee`, `ankle`, `spine`, `spine1`, `spine2`,
 `neck`, `head`, `top`, `arm`) and spans `x` (`shoulder`, `elbow`, `wrist`, `knuckle`, `tip`) as 0..1 of the turned
-model's bounds, read off `measure.py`'s front view. Everything else about a joint is measured from the mesh.
+model's bounds, read off `measure.py`'s front view. Everything else about a joint is measured from the mesh: the
+body's middle across the legs (a held prop does not move the spine), each arm followed out from the shoulder (an
+A-pose's sloping arm is tracked), the fingertips from the body's own pieces. `digits: true` gives each hand five
+three-bone fingers (`LeftHandThumb1..3` ... `LeftHandPinky1..3`) in place of the single index chain; `twist_bones`,
+`morph_targets` and `keep_inside` apply as for the other kinds.
 
 ### `budget`
 
@@ -165,7 +172,7 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 The tool can propose a full `rig` spec and archetype automatically:
 - **From an existing bone hierarchy**: Tripo skeletons (`bone_0`...) or Mixamo humanoids are recognized and mapped into `tripo` or `humanoid` specs.
 - **From mesh heuristics**: For boneless models, survey's `probe_tips` (geodesic tips from the mesh extremities) are grouped across the symmetry plane $X=0.5$ into centerline features (snout, jaw, tail) and paired limbs. Proportions and tip positions propose an archetype (`quadruped`, `hexapod`, `octopod`, `serpent`, `winged`, `floater`, `rigid`, `humanoid`) and placed chains with tip/base coordinates, jaw rules, and wing membranes.
-- **Access**: Via CLI (`blender -b --python autorig/steps/suggest.py -- <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton** button in the spec editor.
+- **Access**: Via CLI (`blender -b --python autorig/steps/suggest_step.py -- <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton** button in the spec editor.
 
 ### `card`
 

@@ -184,7 +184,7 @@ def place_incoming(src_path, target_group=None, model_name=None):
 
 
 def suggest_spec(name, log=print, spec_file=None):
-    """Surveys the model and writes the suggested rig.json (steps/survey.py, steps/suggest.py under headless
+    """Surveys the model and writes the suggested rig.json (steps/survey.py, steps/suggest_step.py under headless
     Blender) to spec_file (default: the model's own). Returns the archetype suggested, or None when no spec could
     be made."""
     if not blender.find(required=False):
@@ -197,7 +197,7 @@ def suggest_spec(name, log=print, spec_file=None):
     out = os.path.join(out_dir, name + "_suggest.json")
     if os.path.exists(out):
         os.remove(out)
-    r = blender.run("suggest.py", name, "-out", out_dir)
+    r = blender.run("suggest_step.py", name, "-out", out_dir)
     if r.returncode != 0 or not os.path.isfile(out):
         log(f"WATCH_SUGGEST {name}: suggest failed (exit {r.returncode})")
         return None

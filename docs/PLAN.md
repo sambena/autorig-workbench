@@ -158,7 +158,7 @@ Done when a model with no spec goes from drop-in to a PASS audit using only clic
 
 - **Suggest a skeleton** (done): from survey (Tripo-style or Mixamo bones, if any), `probe_tips` (geodesic tips),
   the model's symmetry plane, and its proportions, propose an archetype and chains with tips. Pure-Python heuristics
-  in `autorig/core/suggest.py`, standalone step `autorig/steps/suggest.py`, `POST /api/spec/suggest` endpoint, and
+  in `autorig/core/suggest.py`, standalone step `autorig/steps/suggest_step.py`, `POST /api/spec/suggest` endpoint, and
   **Suggest skeleton** button in the spec editor (`gui/spec_editor.html` / `gui/spec_editor.js`).
 - **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
   a flier and a prop.
@@ -200,7 +200,31 @@ one pull request each, code first; models are run through the tool only in R6.
     - Unsaved spec edits are never dropped by a job's log, and switching models asks first.
     - Re-bake and auto-tune keep the rig.json conflict check.
     - The help page's links work and it describes the menus as they are.
-- **R2: broken skeletons**: rolls, IK setup, joint placement, naming, detection, and new audit checks.
+- **R2: broken skeletons** (done, untested in Blender).
+  - Rolls: one roll reference per chain, the limb's bend plane (`core/rig_geom.py`); humanoid rolls by bone, never a
+    slope threshold. Neighbours no longer flip 180 degrees, and mirrored chains mirror.
+  - IK: one foot rule for building and constraining (a girdle is never in the IK chain; the old code started the chain
+    a bone late with a foot). The pole angle is solved for the whole chain's rest. Pre-bend only for limbs, front or
+    hind by position, perpendicular to the limb (a sprawling insect knee rises).
+  - Joints: stations centred across the limb's own local direction on a percentile, with a capped shift; limbs of
+    three bones or fewer are no longer smoothed straight. A joint outside the mesh is moved inside (`keep_inside`).
+    Pinches read a real cross-section.
+  - Naming: mirrored pairs keep their sides (a T-posed biped's legs); a separate head chain makes the only head; name
+    clashes rename the auto-named bone and are logged; the audit reads `_v2` names.
+  - Detection: a convention needs its left/right limb names (a creature's hips/spine/head no longer read as Unity);
+    the survey records its bounds. Suggest:
+    - Tripo legs are found from parents, and the hips are where the hind legs branch; up to eight legs.
+    - An upright body gets a Z spine, and a T-posed biped is a humanoid.
+    - Limb bases are measured at rig time, not guessed.
+    - The facing the tips were measured in is kept.
+    - The GUI measures the mesh first.
+    - A template says low confidence.
+    - No second head.
+  - Humanoid: centred on the body (not the bounds), A-pose arms tracked, fingertips from the body only; optional
+    five-finger hands (`digits`).
+  - Twist bones on this tool's and Rigify's names, on the right half of the bone, driven by swing-twist.
+  - The audit warns about joints outside the mesh, joints and rolls that do not mirror, rolls that flip in a chain,
+    zero-length bones, clash-renamed bones and rest drift with IK on.
 - **R3: tears**: every weight pass fixed, gated to the bodies it is for, and switchable one at a time. Evidence to start
   from: an earlier review (closed PR #43, branch `fix/review-cleanup`) re-rigged real models with the new passes (barrier,
   sibling isolation, centreline/pelvic, hinge, twist, healer) on for every rig, and one went from 39/9 to 215/214

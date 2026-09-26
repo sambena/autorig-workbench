@@ -2803,7 +2803,21 @@ async function revertSpec() {
 async function suggestSkeleton() {
   try {
     flashTop("Analyzing model and suggesting skeleton…");
-    const res = await api("/api/spec/suggest", { model: MODEL });
+    let res = await api("/api/spec/suggest", { model: MODEL });
+    if (res && res.pending && res.job) {
+      // the server measures the mesh first (a Blender job); follow it, then take the measured suggestion
+      follow(res.job);
+      tab = "run"; renderTabs(); renderPane();
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const j = await api("/api/jobs/" + res.job.id);
+        if (j.state !== "queued" && j.state !== "running") {
+          if (j.state !== "done") { flashTop("Measuring the mesh " + j.state + ": see the Run tab."); return; }
+          break;
+        }
+      }
+      res = await api("/api/spec/suggest", { model: MODEL, measure: false });
+    }
     if (!res || !res.rig) {
       flashTop("Could not determine suggested skeleton.");
       return;

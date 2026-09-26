@@ -52,6 +52,12 @@ class TestSemanticBoneDictionary(unittest.TestCase):
         self.assertEqual(conv, "mixamo")
         self.assertEqual(conf, 1.0)
 
+        # A creature's generic names (any rig has hips, spine, neck, head) are not a convention: under the 0.25 that
+        # survey and suggest route on, so it is not sent down the humanoid known-skeleton path
+        creature = ["root", "hips", "spine", "neck", "head", "tail_1", "tail_2", "leg_front_1.L", "wing_1.L", "jaw"]
+        conv, conf = skeletons.detect_convention(creature)
+        self.assertLess(conf, 0.25)
+
         # Tripo
         tripo_bones = ["bone_0", "bone_1", "bone_2", "bone_3"]
         conv, conf = skeletons.detect_convention(tripo_bones)

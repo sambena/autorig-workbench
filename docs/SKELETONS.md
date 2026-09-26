@@ -83,6 +83,12 @@ root
 
 - A long neck is `neck_1..k` (spec `neck: k`): every link from the withers to the skull, so a game lowering "the neck"
   lowers all of it.
+- A spec with its own head chain (role `head`, as suggested specs have) keeps one head: the body chain then ends in
+  `chest` (or its `neck_1..k`), and the head chain is `neck`/`neck_1..` then `head`. Bone names are never doubled: a
+  clash renames the automatically named bone (`_v2`, logged as `renamed_bones`), never a name the spec gave.
+- Rolls: each chain has one roll reference, so every hinge in a limb bends about the same local axis (a leg's Z points
+  the way its knee bends, the plane its IK pole is in; other chains take Z up, or forward when they run up and down),
+  and mirrored chains mirror. The audit warns when rolls flip inside a chain or do not mirror.
 - `hips` is the pelvis and the body's root bone; the spine runs **forward** from it to the neck. The front legs hang
   from the spine bone at the shoulders, the hind legs from `hips`, the tail runs **backward** from `hips`.
 - Legs: link 0 is the girdle (scapula / pelvis side), from the spine out to where the leg leaves the body; then upper

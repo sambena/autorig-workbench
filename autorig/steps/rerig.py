@@ -79,6 +79,11 @@ def normalise(mesh, joints, spec):
         d = Vector(suggest.detect_mesh_forward(coords, joints=joints))
     elif spec.get("kind") == "tripo" and not spec.get("forward"):
         d = joints[spec["head"]]["pos"] - joints[spec["hips"]]["pos"]
+        if math.hypot(d.x, d.y) < 0.3 * d.length:
+            # hips to head runs nearly straight up (an upright biped): its level part is noise, so the facing comes
+            # from the mesh (toes, face, knees: suggest.detect_mesh_forward), with the joints as hints
+            import suggest
+            d = Vector(suggest.detect_mesh_forward([v.co[:] for v in mesh.data.vertices], joints=joints))
     else:
         d = Vector(spec.get("forward", (0, -1, 0)))
     turn = math.atan2(-1.0, 0.0) - math.atan2(d.y, d.x)
@@ -274,10 +279,31 @@ def tripo_chains(joints, spec, bvh, size, mesh):
             chains.append({"role": "tail", "joints": [], "points": tp, "parent": (0, 0), "ik": False})
     return chains
 
-def apply_pre_bend(pts, c, size):
-    """Introduces subtle anatomical joint pre-bends to collinear limb chains to prevent IK flipping/popping.
-    - Front legs / arms: elbow hinges backward (+Y in Blender creature space, where creature faces -Y).
-    - Hind legs: knee/stifle hinges forward (-Y), and for 3-bone digitigrade legs, hock hinges backward (+Y)."""
+def is_limb(c):
+    """An IK chain, or one whose role is a leg or an arm: the chains with a hinge to pre-bend and roll to."""
+    role = (c.get("role") or c.get("name") or "").lower()     # a spec chain may give only its name
+    return bool(c.get("ik")) or "leg" in role or "arm" in role
+
+
+def limb_front(c, root, body):
+    """(front, is_arm) for a limb chain whose root is `root`, beside the body chain's points `body`: rig_geom's rule,
+    with the role or, for a spec chain that gives none, its name (arm.L is an arm)."""
+    import rig_geom
+    role = (c.get("role") or c.get("name") or "").lower()
+    if not body:
+        return "arm" in role, "arm" in role
+    bt = [tuple(p) for p in body]
+    mid_y = (min(p[1] for p in bt) + max(p[1] for p in bt)) * 0.5
+    return rig_geom.is_front_limb(tuple(root), mid_y, role, upright=rig_geom.spine_is_upright(bt)), "arm" in role
+
+
+def apply_pre_bend(pts, c, size, body=None):
+    """A straight limb's middle joints nudged the way they bend (rig_geom.pre_bend), so IK never solves them
+    backwards: an elbow back, a knee forward, a digitigrade hock back, a sprawling insect knee up. Only limbs (IK
+    chains, legs, arms) are bent; front or hind is where the limb's root is against the body's middle (the body chain's
+    points `body`; on an upright body arms are front and legs hind), not a word in its name. A spec's own pre_bend
+    offsets are applied as given."""
+    import rig_geom
     start_idx = 1 if c.get("girdle") else 0
     limb_pts = list(pts[start_idx:])
     if len(limb_pts) < 3:
@@ -301,37 +327,54 @@ def apply_pre_bend(pts, c, size):
                     limb_pts[k + 1] = limb_pts[k + 1] + Vector(off)
             return pts[:start_idx] + limb_pts
 
-    cname = c.get("name", "").lower()
-    role = c.get("role", "").lower()
-    is_front = any(k in cname for k in ("front", "fore", "arm", "shoulder")) or "arm" in role
-    is_hind = any(k in cname for k in ("hind", "back", "rear")) or (not is_front and (any(k in cname for k in ("leg", "thigh")) or "leg" in role))
+    if not is_limb(c):
+        return pts                                  # a spine, tail or ear has no hinge to protect
+    front, arm = limb_front(c, H, body)
+    bent = rig_geom.pre_bend([tuple(p) for p in limb_pts], front, arm=arm)
+    return pts[:start_idx] + [Vector(p) for p in bent]
 
-    dir_HT = (T - H).normalized()
-    max_dev = 0.0
-    for k in range(1, n):
-        proj = H + dir_HT * (limb_pts[k] - H).dot(dir_HT)
-        dev = (limb_pts[k] - proj).length
-        if dev > max_dev:
-            max_dev = dev
+def _inside(bvh, p, size):
+    """Ray parity: a point is inside a closed mesh when a ray from it crosses the surface an odd number of times.
+    Three rays vote, so a ray grazing an edge or slipping through a small hole does not decide alone."""
+    eps = max(size) * 1e-5
+    votes = 0
+    for d in (Vector((1, 0, 0)), Vector((0, 0.7071, 0.7071)), Vector((-0.5774, -0.5774, 0.5774))):
+        n, origin = 0, p.copy()
+        for _ in range(64):
+            loc, nrm, _, dist = bvh.ray_cast(origin, d)
+            if loc is None: break
+            n += 1
+            origin = loc + d * eps
+        votes += n % 2
+    return votes >= 2
 
-    if max_dev >= 0.015 * L:
-        return pts
 
-    bend_amount = 0.025 * L
-    if is_front:
-        if n == 2:
-            limb_pts[1] = limb_pts[1] + Vector((0.0, bend_amount, 0.0))
-        elif n == 3:
-            limb_pts[1] = limb_pts[1] + Vector((0.0, bend_amount * 0.5, 0.0))
-            limb_pts[2] = limb_pts[2] + Vector((0.0, bend_amount, 0.0))
-    elif is_hind or "leg" in cname or "leg" in role:
-        if n == 2:
-            limb_pts[1] = limb_pts[1] + Vector((0.0, -bend_amount, 0.0))
-        elif n == 3:
-            limb_pts[1] = limb_pts[1] + Vector((0.0, -bend_amount * 1.2, 0.0))
-            limb_pts[2] = limb_pts[2] + Vector((0.0, bend_amount * 0.8, 0.0))
+def keep_joints_inside(chains, bvh, size, log, tol=0.01):
+    """No joint left outside the mesh: every joint but a chain's last (a tip sits on the surface on purpose) that is
+    more than tol x the model's size outside is moved into the middle of the part it is beside: from the nearest
+    surface point, half way to the wall across. Returns how many moved; the log lists them."""
+    moved = []
+    for ci, c in enumerate(chains):
+        pts = c["points"]
+        for k in range(len(pts) - 1):
+            p = pts[k]
+            loc, nrm, _, dist = bvh.find_nearest(p)
+            if loc is None or dist is None or dist < tol * max(size):
+                continue
+            # outside only when both tests say so: ray parity (a clothing shell over the body, or overlapping loose
+            # pieces, give an even count from inside) and the nearest face's side (the test build_chains uses)
+            if (p - loc).dot(nrm) <= 0 or _inside(bvh, p, size):
+                continue
+            inward = (loc - p).normalized()          # from the joint to the surface: right however the normals face
+            hit, _, _, across = bvh.ray_cast(loc + inward * max(size) * 1e-4, inward)
+            depth = across if hit is not None else max(size) * 0.02
+            new = loc + inward * (depth * 0.5)
+            moved.append({"chain": ci, "joint": k, "by": round((new - p).length / max(size), 4)})
+            pts[k] = new
+    if moved:
+        log["joints_moved_inside"] = moved
+    return len(moved)
 
-    return pts[:start_idx] + limb_pts
 
 def build_chains(mesh, spec, size):
     import geo
@@ -443,7 +486,7 @@ def build_chains(mesh, spec, size):
             # A shoulder or pelvis bone (index 0 of the chain) from the spine out to where the limb leaves the body:
             # the scapula a quadruped's front leg swings from, a humanoid's clavicle.
             pts = [on_polyline(chains[pi]["points"], pts[0])] + list(pts)
-        pts = apply_pre_bend(pts, c, size)
+        pts = apply_pre_bend(pts, c, size, chains[0]["points"] if chains else None)
         pidx = c["parent"][1] if c.get("parent") else 0
         if pi is not None and pidx < 0: pidx += len(chains[pi]["points"]) - 1
         if pi is not None and c.get("parent_nearest"):
@@ -457,7 +500,7 @@ def build_chains(mesh, spec, size):
         ch = {"role": c.get("role", c["name"]), "joints": [], "points": pts, "ik": bool(c.get("ik")),
               "parent": None if pi is None else (pi, pidx), "girdle": bool(c.get("girdle")) and pi is not None,
               "centre": c.get("centre")}
-        if c.get("names"): ch["bones"] = list(c["names"]); ch["base"] = c["name"]
+        if c.get("names"): ch["bones"] = list(c["names"]); ch["base"] = c["name"]; ch["named"] = True
         by_name.setdefault(c["name"], len(chains))
         chains.append(ch)
     chains[0]["role"] = "spine"
@@ -465,11 +508,23 @@ def build_chains(mesh, spec, size):
 
 # ---------------------------------------------------------------- naming
 
-def name_chains(chains, size, girdles=(), neck=None):
+def name_chains(chains, size, girdles=(), neck=None, head_line=False):
+    """Names every chain's bones (SKELETONS.md). Returns the renames made to keep names unique, [(old, new), ...]:
+    only auto-named bones are ever renamed; a clash between two names the spec gave is an error. head_line: the
+    spec runs the spine up into the head (head_line), so the spine's last bone is the head whatever else there is."""
+    import rig_geom
     eps = size.x * 0.03
-    for c in chains:
+    mean_x = [sum(p.x for p in (c["points"][1:] or c["points"][:1])) / max(1, len(c["points"][1:] or c["points"][:1]))
+              for c in chains]
+    paired = rig_geom.mirror_partners(mean_x, [c["role"] for c in chains], min_abs=0.02 * size.x)
+    for c, mx, pair in zip(chains, mean_x, paired):
         x = c["points"][-2].x if len(c["points"]) > 1 else c["points"][0].x
         c["side"] = ".L" if x > eps else ".R" if x < -eps else ""
+        if pair and not c.get("centre"):
+            # one of a mirrored pair (a biped's legs, near the middle when size.x is a T-pose's arm span) keeps its
+            # side: which side its mean lies, not a threshold on the model's width
+            c["side"] = ".L" if mx > 0 else ".R"
+            continue
         # Rule D: a chain that stays near the centre plane is centred, whatever side a slightly crooked sculpt
         # leans it to (a tail named `tail_N.R`, a middle tendril `tentacle1_*.L`). A spec can say so.
         xs = [p.x for p in c["points"][1:]] or [c["points"][0].x]
@@ -498,12 +553,32 @@ def name_chains(chains, size, girdles=(), neck=None):
     for c in chains:
         # a source leg whose first bone is really the scapula (spec girdle=("leg_front",)): link 0, blended as a girdle
         if c.get("base") in girdles and len(c["points"]) - 1 >= 3: c["girdle"] = True
+    # one separate head chain (suggested specs have one) is the head: the spine then ends in the chest (or its neck)
+    # and that chain's last bone is "head", with its neck before it, so there is never a second head
+    heads = [c for c in chains[1:] if c["role"] == "head" and not c.get("bones")]
+    has_head = len(heads) == 1 and not head_line
     for c in chains:
         n = len(c["points"]) - 1
         if c.get("bones"): continue
+        if has_head and c is heads[0]:
+            # its neck links carry on the spine's neck_1..k (spec neck) rather than start again at neck_1
+            k0 = neck if (neck and neck >= 1 and len(chains[0]["points"]) - 1 - neck >= 1) else 0
+            if n == 1:
+                c["bones"] = ["head"]
+            elif n == 2 and not k0:
+                c["bones"] = ["neck", "head"]
+            else:
+                c["bones"] = ["neck_%d" % (k0 + i + 1) for i in range(n - 1)] + ["head"]
+            continue
         if c["role"] == "spine":
             root_name = "body" if c.get("single") else "hips"
-            if n == 1: c["bones"] = [root_name]
+            if has_head and n > 1:
+                if neck and neck >= 1 and n - neck >= 1:
+                    c["bones"] = [root_name] + ["spine_%d" % (i + 1) for i in range(n - 1 - neck)] + \
+                                 ["neck_%d" % (i + 1) for i in range(neck)]
+                else:
+                    c["bones"] = [root_name] + ["spine_%d" % (i + 1) for i in range(n - 2)] + ["chest"]
+            elif n == 1: c["bones"] = [root_name]
             elif n == 2: c["bones"] = [root_name, "head"]
             elif n == 3: c["bones"] = [root_name, "spine_1", "head"]
             elif neck and neck > 1 and n - 1 - neck >= 1:
@@ -515,13 +590,8 @@ def name_chains(chains, size, girdles=(), neck=None):
             c["bones"] = ["%s_%d%s" % (c["base"], i, c["side"]) for i in range(n)]
         else:
             c["bones"] = [c["base"] + c["side"]] if n == 1 else ["%s_%d%s" % (c["base"], i + 1, c["side"]) for i in range(n)]
-    used = {"root"}  # the armature's own root: a spine bone named root came out as root.001
-    for c in chains:  # never two bones of one name
-        for i, b in enumerate(c["bones"]):
-            nb, k = b, 1
-            while nb in used:
-                k += 1; stem, suf = (b[:-2], b[-2:]) if b[-2:] in (".L", ".R") else (b, ""); nb = "%s_v%d%s" % (stem, k, suf)
-            c["bones"][i] = nb; used.add(nb)
+    # never two bones of one name ("root" is the armature's own); a spec's own names win, auto names give way
+    return rig_geom.dedupe_names(chains)
 
 # ---------------------------------------------------------------- armature
 
@@ -533,14 +603,16 @@ def build_armature(key, chains, size):
     bpy.ops.object.mode_set(mode='EDIT')
     eb = ad.edit_bones
     root = eb.new("root"); root.head = (0, 0, 0); root.tail = (0, -size.z * 0.3, 0); root.use_deform = False
+    import rig_geom
     for c in chains:
         prev = None
+        # one roll reference per chain (rig_geom.roll_refs): a limb's hinges all turn about the same local axis
+        refs = rig_geom.roll_refs([tuple(p) for p in c["points"]], limb=is_limb(c), hinge=2 if c.get("girdle") else 1)
         for i, bn in enumerate(c["bones"]):
             b = eb.new(bn)
             b.head, b.tail = c["points"][i], c["points"][i + 1]
             if (b.tail - b.head).length < 1e-4: b.tail = b.head + Vector((0, 0, size.z * 0.02))
-            d = (b.tail - b.head).normalized()
-            b.align_roll(Vector((0, -1, 0)) if abs(d.z) > 0.7 else Vector((0, 0, 1)))
+            b.align_roll(Vector(refs[i]) if i < len(refs) else Vector((0, 0, 1)))
             if prev is not None: b.parent = prev; b.use_connect = True
             elif c["parent"] is None: b.parent = root
             else:
@@ -551,7 +623,8 @@ def build_armature(key, chains, size):
     for c in chains:
         if not c.get("ik") or len(c["bones"]) < 2: continue
         n = len(c["bones"])
-        foot = eb[c["bones"][n - 1]] if n - (1 if c.get("girdle") else 0) >= 3 else None
+        has_foot, start_idx, _ = rig_geom.ik_layout(n, c.get("girdle"))     # the same rule add_ik uses
+        foot = eb[c["bones"][n - 1]] if has_foot else None
         ctl = eb.new("ik_" + c["base"] + c["side"])
         if foot is not None:
             ctl.head, ctl.tail, ctl.roll = foot.head, foot.tail, foot.roll
@@ -565,7 +638,6 @@ def build_armature(key, chains, size):
         pole.parent = root
         pole.use_deform = False
 
-        start_idx = 1 if c.get("girdle") else 0
         root_b = eb[c["bones"][start_idx]]
         end_idx = n - 2 if foot is not None else n - 1
         end_b = eb[c["bones"][end_idx]]
@@ -578,10 +650,9 @@ def build_armature(key, chains, size):
         bend_vec = hinge_pos - proj
         if bend_vec.length > 1e-4:
             pole_dir = bend_vec.normalized()
-        else:
-            cname = c["base"].lower()
-            is_front = any(k in cname for k in ("front", "fore", "arm", "shoulder"))
-            pole_dir = Vector((0.0, 1.0, 0.0)) if is_front else Vector((0.0, -1.0, 0.0))
+        else:                                    # a limb with no bend at all: the pre-bend's direction, by position
+            front, _ = limb_front(c, root_b.head, chains[0]["points"])
+            pole_dir = Vector((0.0, 1.0, 0.0)) if front else Vector((0.0, -1.0, 0.0))
 
         pole_dist = max(chord_len * 0.45, size.z * 0.15)
         pole.head = hinge_pos + pole_dir * pole_dist
@@ -596,41 +667,46 @@ def build_armature(key, chains, size):
     return arm, iks
 
 def add_ik(arm, iks):
+    import rig_geom
     for entry in iks:
         c, ctl = entry[0], entry[1]
         pole_name = entry[2] if len(entry) > 2 else None
         n = len(c["bones"])
-        if n >= 3:
-            pb = arm.pose.bones[c["bones"][n - 2]]; count = n - 1 - (1 if c.get("girdle") else 0)
+        # one rule with build_armature (rig_geom.ik_layout): the girdle is never in the IK chain, and a foot only
+        # when there are three limb bones after it
+        has_foot, start_idx, count = rig_geom.ik_layout(n, c.get("girdle"))
+        if has_foot:
+            pb = arm.pose.bones[c["bones"][n - 2]]
             foot = arm.pose.bones[c["bones"][n - 1]]
             cr = foot.constraints.new('COPY_ROTATION'); cr.target = arm; cr.subtarget = ctl
         else:
-            pb = arm.pose.bones[c["bones"][n - 1]]; count = n
+            pb = arm.pose.bones[c["bones"][n - 1]]
         k = pb.constraints.new('IK'); k.target = arm; k.subtarget = ctl; k.chain_count = count; k.use_stretch = False
 
         if pole_name and pole_name in arm.pose.bones:
             k.pole_target = arm
             k.pole_subtarget = pole_name
-            start_idx = n - count
-            root_bone_name = c["bones"][start_idx]
-            root_pb = arm.pose.bones[root_bone_name]
-            root_rest_mat = arm.data.bones[root_bone_name].matrix_local
+            # the pole angle that leaves the whole IK chain as it rests, not only its first bone
+            chain = [(arm.pose.bones[b], arm.data.bones[b].matrix_local.to_3x3())
+                     for b in c["bones"][start_idx:start_idx + count]]
+
+            def rest_error():
+                bpy.context.view_layer.update()
+                return sum(abs(x) for pbone, rest in chain for row in (pbone.matrix.to_3x3() - rest) for x in row)
 
             best_ang = 0.0
             min_err = float("inf")
             for step in range(24):
                 ang = -math.pi + step * (math.pi / 12.0)
                 k.pole_angle = ang
-                bpy.context.view_layer.update()
-                err = sum(abs(x) for row in (root_pb.matrix.to_3x3() - root_rest_mat.to_3x3()) for x in row)
+                err = rest_error()
                 if err < min_err:
                     min_err = err
                     best_ang = ang
             for step in range(-15, 16):
                 ang = best_ang + math.radians(step)
                 k.pole_angle = ang
-                bpy.context.view_layer.update()
-                err = sum(abs(x) for row in (root_pb.matrix.to_3x3() - root_rest_mat.to_3x3()) for x in row)
+                err = rest_error()
                 if err < min_err:
                     min_err = err
                     best_ang = ang
@@ -1501,7 +1577,10 @@ def rerig(key, spec, qa_dir, export):
     else:
         log["error"] = "unknown kind: " + spec["kind"]; return log
     head_line(chains, mesh, spec)
-    name_chains(chains, size, spec.get("girdle", ()), spec.get("neck"))
+    if spec.get("keep_inside", True):
+        keep_joints_inside(chains, bvh, size, log)
+    renamed = name_chains(chains, size, spec.get("girdle", ()), spec.get("neck"), bool(spec.get("head_line")))
+    if renamed: log["renamed_bones"] = renamed
     log["head_extended"] = head_to_snout(chains, mesh, size, spec) if not spec.get("head_line") else "head_line"
     add_jaw(chains, mesh, size, spec)
     jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])}

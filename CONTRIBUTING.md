@@ -79,7 +79,7 @@ All 48+ Python tests, 10 Node tests, and the headless Blender pipeline check mus
 ## Project Structure
 
 - [`autorig/core/`](autorig/core/): Pure-Python utilities (`layout`, `spec_store`, `blender`, `grades`, `suggest`, `placed_rules`). Kept free of `bpy` and `numpy` imports where possible so GUI server and tests remain fast.
-- [`autorig/steps/`](autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest.py`).
+- [`autorig/steps/`](autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest_step.py`).
 - [`autorig/gui/`](autorig/gui/): Local HTTP server (`server.py`), 3D results viewer (`viewer.html`, `viewer.js`), and spec editor (`spec_editor.html`, `spec_editor.js`, `spec_api.py`).
 - [`autorig/cli/`](autorig/cli/): Command-line drivers (`run.py`, `pipeline.py`, `audit_all.py`).
 - [`docs/`](docs/): Architecture guides ([`PLAN.md`](docs/PLAN.md), [`PIPELINE.md`](docs/PIPELINE.md)), specs ([`SPEC.md`](docs/SPEC.md), [`FORMATS.md`](docs/FORMATS.md)), CI ([`CI.md`](docs/CI.md)), and formal schema ([`rig.schema.json`](docs/rig.schema.json)).

@@ -39,11 +39,12 @@ def generate_humanoid_digits(wrist, knuckle, tip, side="Left", hand_width=None, 
     # Palm width estimate
     w_span = hand_width if (hand_width and hand_width > 1e-4) else (flen * 0.42)
 
-    # Lateral direction across palm
-    # In T-pose: arm along X, palm facing down (-Z) or forward (-Y)
-    # If arm is along X, palm lateral is in Y
+    # Lateral direction across the palm, from the thumb side (negative offsets) to the little finger. In a T-pose
+    # (arm along X, palms down) the thumbs of both hands point forward (-Y), so the lateral is +Y on both sides: it
+    # does not flip with the side (flipping it put the right thumb behind the hand). Only when the arm runs along Y or
+    # Z does the lateral run across X, and there it mirrors.
     if abs(fx) > 0.7:  # arm along X
-        lx, ly, lz = 0.0, (1.0 if side == "Left" else -1.0), 0.0
+        lx, ly, lz = 0.0, 1.0, 0.0
     else:  # arm along Y or Z
         lx, ly, lz = (1.0 if side == "Left" else -1.0), 0.0, 0.0
 
@@ -88,9 +89,11 @@ def generate_humanoid_digits(wrist, knuckle, tip, side="Left", hand_width=None, 
         l2 = total_len * 0.32
         l3 = total_len * 0.26
 
-        # Finger direction with subtle spread angle
-        cos_a = math.cos(ang)
-        sin_a = math.sin(ang)
+        # Finger direction with a subtle spread, away from the middle finger: toward the finger's own side of the
+        # palm (the thumb out one way, the little finger the other), never across the hand
+        spread = abs(ang) * (1.0 if lat_off > 0 else -1.0 if lat_off < 0 else 0.0)
+        cos_a = math.cos(spread)
+        sin_a = math.sin(spread)
         fdx = fx * cos_a + lx * sin_a
         fdy = fy * cos_a + ly * sin_a
         fdz = fz * cos_a + lz * sin_a
@@ -113,8 +116,9 @@ def generate_humanoid_digits(wrist, knuckle, tip, side="Left", hand_width=None, 
     return chains
 
 
-def generate_paw_digits(ankle, foot, toe, side="Left", paw_width=None, num_claws=4):
-    """Synthesizes claw/digit chains for quadrupeds/creatures."""
+def generate_paw_digits(ankle, foot, toe, side="Left", paw_width=None, num_claws=4, parent_bone=None):
+    """Synthesizes claw/digit chains for quadrupeds/creatures. parent_bone: the foot bone they hang from (the rig's
+    own name for it, e.g. leg_hind_3.L); by default foot.L / foot.R."""
     ax, ay, az = ankle
     fx, fy, fz = foot
     tx, ty, tz = toe
@@ -159,7 +163,7 @@ def generate_paw_digits(ankle, foot, toe, side="Left", paw_width=None, num_claws
             "side": side,
             "bones": bnames,
             "points": [p0, p1, p2],
-            "parent_bone": f"foot.{side[0]}"
+            "parent_bone": parent_bone or f"foot.{side[0]}"
         })
 
     return chains

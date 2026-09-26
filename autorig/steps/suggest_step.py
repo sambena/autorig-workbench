@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Autorig Workbench: CLI step to suggest an archetype and placed skeleton for a model.
 #
-#   blender -b --python autorig/steps/suggest.py -- <model> [-out <dir>]
+#   blender -b --python autorig/steps/suggest_step.py -- <model> [-out <dir>]
 #
 import bpy, sys, os, json
 
@@ -44,7 +44,8 @@ def run_suggest(key):
         },
         survey_data=surv,
         tips=norm_tips,
-        proportions=[float(v) for v in s.size]
+        proportions=[float(v) for v in s.size],
+        forward="auto",                 # the tips are in the frame normalise's auto facing turned the mesh to
     )
     res["model"] = key
     res["tips_count"] = len(norm_tips)
@@ -54,7 +55,7 @@ def run_suggest(key):
 def main():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not a:
-        sys.exit("usage: blender -b --python suggest.py -- <model>")
+        sys.exit("usage: blender -b --python suggest_step.py -- <model>")
     key = a[0]
     out_dir = a[a.index("-out") + 1] if "-out" in a else None
 
