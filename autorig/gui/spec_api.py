@@ -135,6 +135,13 @@ RIG_FIELDS = [
       min=0, max=10, group="Tuning"),
     F("envelope_skip", "Envelope skips", "texts", "Bones the envelope leaves alone.", group="Tuning"),
     F("rig_folder", "Rig folder", "text", "Where the rig is written (default rigged).", group="Tuning"),
+    F("keep_inside", "Keep joints inside", "bool", "On (the default): a joint that ends up outside the mesh is moved "
+      "into the middle of the part it is beside (the rig log lists them). Off: joints stay exactly as placed.",
+      default=True, group="Tuning"),
+    F("twist_bones", "Twist bones", "bool", "Twist bones on the upper arms, forearms and thighs, driven by the twist "
+      "alone, so a turning wrist or hip does not pinch.", group="Tuning"),
+    F("morph_targets", "Facial shape keys", "bool", "Blink, jaw open, smile and viseme shape keys on the head.",
+      group="Tuning"),
     F("audit", "Audit allowances", "allowances", "Loosen (or tighten) the audit for this model only. Every allowance "
       "needs a reason, written in the note below it.", group="Audit"),
 ]
@@ -170,6 +177,11 @@ OTHER_FIELDS = [
 KNOWN_RIG = {f.get("store", f["key"]) for f in RIG_FIELDS} | {"builder", "centre"}
 KNOWN_TOP = {"schema", "rig", "humanoid", "budget", "clips", "card", "notes"}
 HUMANOID_Z_KEYS = ("ankle", "knee", "hip", "spine", "spine1", "spine2", "arm", "neck", "head", "top")
+# humanoid settings beyond forward/z/x that rerig_humanoid.py reads (its own, and skin options it passes on)
+HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "joint_blend", "smooth", "rigid_pieces",
+                  "envelope", "barrier", "sibling_isolation", "centerline_armor", "auto_heal", "rigid_islands",
+                  "rigid_armor", "armor", "accessories", "hinge_smoothing", "hinge_max_gradient", "hinge_passes",
+                  "twist_relaxation", "twist_max_gradient", "twist_passes", "girdle_blend", "limb_radius", "rip_welds"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [
@@ -552,8 +564,11 @@ def _check_humanoid(spec, E, W):
         E("humanoid", "humanoid must be an object")
         return
     for k in h:
-        if k not in ("forward", "z", "x"):
+        if k not in ("forward", "z", "x") and k not in HUMANOID_EXTRA:
             W("humanoid." + k, "not a humanoid setting the editor knows; kept as it is")
+    for k in ("digits", "twist_bones", "morph_targets", "keep_inside"):
+        if k in h and not isinstance(h[k], bool):
+            E("humanoid." + k, "true or false")
     if "forward" in h and h["forward"] != "auto" and not (_vec(h["forward"]) and any(h["forward"])):
         E("humanoid.forward", "a direction [x, y, z] or 'auto', e.g. [0, -1, 0]")
     if "z" not in h or not isinstance(h["z"], dict):
@@ -918,6 +933,24 @@ def post(h, app, srv, path, body):
                 import suggest
             except ImportError:
                 from autorig.core import suggest
+            # A suggestion measured on the mesh itself (steps/suggest_step.py under Blender: the limbs' tips, found along
+            # the surface) is used when there is one newer than the source file; otherwise, unless the caller gave
+            # its own measurements, that step is queued and the page asks again when it is done. Only with neither
+            # Blender nor measurements does the answer fall back to a template (marked low confidence).
+            given = "source" in body or "survey" in body
+            out_dir = os.path.join(layout.WORK, "suggest")
+            measured_file = os.path.join(out_dir, name + "_suggest.json")
+            src_model = srv._quiet(layout.source_model, name)
+            fresh = (os.path.exists(measured_file) and src_model and
+                     os.path.getmtime(measured_file) >= os.path.getmtime(src_model))
+            measured = _load(measured_file) if fresh and not given else None
+            if measured and measured.get("spec"):
+                h._send(200, dict(measured, measured=True)); return True
+            if not given and body.get("measure", True) and src_model and srv.blender.find(required=False):
+                job = _job(app, srv, name, "suggest",
+                           [("suggest a skeleton (measuring the mesh)",
+                             srv.blender_cmd("suggest_step.py", name, "-out", out_dir), None)])
+                h._send(200, {"pending": True, "job": job}); return True
             src = body.get("source") or _load(os.path.join(layout.WORK, "source", name + ".json"))
             surv = body.get("survey") or _load(os.path.join(layout.WORK, "survey", name + ".json"))
             proposal = suggest.suggest_skeleton(name, source_data=src, survey_data=surv)

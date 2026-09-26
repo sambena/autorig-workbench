@@ -137,13 +137,16 @@ def propose_archetype(proportions, classified_limbs, centerline_info, skeleton_t
     legs = classified_limbs.get("legs", [])
     wings = classified_limbs.get("wings", [])
     arms = classified_limbs.get("arms", [])
+    # Standing upright: taller than it is deep front to back. A T-posed humanoid's arm span makes it as wide as it is
+    # tall, so "taller than it is wide" alone called it a winged creature; its shallow depth still gives it away.
+    upright = sz > 1.2 * max(sx, sy) or sz > 1.6 * sy
 
     # If 2 leg pairs were detected but one pair is elevated or the model is tall/upright,
     # the upper pair represents arms on an upright biped/humanoid, not forelegs.
     if len(legs) == 2 and not arms:
         z0 = legs[0].get("z", 0.0) if isinstance(legs[0], dict) else 0.0
         z1 = legs[1].get("z", 0.0) if isinstance(legs[1], dict) else 0.0
-        if abs(z0 - z1) > 0.18 or sz > 1.2 * max(sx, sy):
+        if abs(z0 - z1) > 0.18 or upright:
             upper_idx = 0 if z0 > z1 else 1
             lower_idx = 1 - upper_idx
             arms.append(legs[upper_idx])
@@ -160,12 +163,12 @@ def propose_archetype(proportions, classified_limbs, centerline_info, skeleton_t
 
     # Upright humanoid / biped check
     if num_leg_pairs == 1:
-        if sz > 1.2 * max(sx, sy):
-            # Tall vertical proportion with 1 leg pair: wide upper limbs are arms, not wings
+        if upright:
+            # Upright with 1 leg pair: wide upper limbs are arms held out (T-pose, A-pose), not wings
             if wings and not arms:
                 arms.extend(wings)
                 wings.clear()
-            return "humanoid", "high", reasons + ["1 leg pair with tall vertical proportion indicates humanoid"]
+            return "humanoid", "high", reasons + ["1 leg pair on an upright body indicates humanoid"]
         if num_arm_pairs >= 1:
             return "humanoid", "high", reasons + ["1 leg pair with arms indicates humanoid / biped"]
         if has_wings:
@@ -216,17 +219,25 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         slice_end = round(min(0.92, max(slice_end, legs[-1]["y"] + 0.06)), 2)
 
     num_body_bones = 6 if archetype == "serpent" else 4 if archetype in ("quadruped", "winged") else 3
-    body_chain = {
-        "name": "body" if archetype in ("hexapod", "octopod") else "spine",
-        "role": "spine",
-        "slice": [slice_start, slice_end],
-        "bones": num_body_bones
-    }
+    upright = archetype in ("humanoid", "floater")
+    if upright:
+        # an upright body's spine runs up it (Z), from the hips to the base of the neck: a slice spine runs along Y,
+        # which for a standing figure is front to back through its belly
+        z0, z1 = (0.47, 0.84) if archetype == "humanoid" else (0.1, 0.9)
+        body_chain = {"name": "spine", "role": "spine", "points": [[0.5, 0.5, z0], [0.5, 0.5, z1]],
+                      "bones": num_body_bones}
+    else:
+        body_chain = {
+            "name": "body" if archetype in ("hexapod", "octopod") else "spine",
+            "role": "spine",
+            "slice": [slice_start, slice_end],
+            "bones": num_body_bones
+        }
     if archetype == "serpent":
         body_chain["medial"] = True
 
     # Propose anatomical stations along the spine at shoulder, mid-torso, and hip hinges
-    if len(legs) >= 2:
+    if len(legs) >= 2 and not upright:
         yf = round(legs[0]["y"], 2)
         yh = round(legs[-1]["y"], 2)
         if yh > yf + 0.12:
@@ -252,17 +263,16 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         else:
             base_name = f"leg_{idx + 1}"
 
-        # Anatomical hip/shoulder base height: should align with body volume, not knee level
-        body_z_est = 0.55 if archetype in ("quadruped", "winged", "hexapod", "octopod") else 0.70
+        # No base: where a limb leaves the body is measured on the mesh at rig time (rerig's junction(): the
+        # limb's radius jumps where it meets the body). A fixed-formula base put hips at chest height and shoulders
+        # outside T-posed arms.
 
         # Left leg
         l_tip = [round(c, 3) for c in p["left"]]
-        l_base = [round(0.5 + (l_tip[0] - 0.5) * 0.45, 3), l_tip[1], round(min(0.85, max(body_z_est, l_tip[2] + 0.38)), 3)]
         l_chain = {
             "name": f"{base_name}.L",
             "role": "leg",
             "tip": l_tip,
-            "base": l_base,
             "bones": 3,
             "ik": True,
             "parent_nearest": True,
@@ -270,132 +280,81 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         }
         # Right leg
         r_tip = [round(c, 3) for c in p["right"]]
-        r_base = [round(0.5 + (r_tip[0] - 0.5) * 0.45, 3), r_tip[1], round(min(0.85, max(body_z_est, r_tip[2] + 0.38)), 3)]
         r_chain = {
             "name": f"{base_name}.R",
             "role": "leg",
             "tip": r_tip,
-            "base": r_base,
             "bones": 3,
             "ik": True,
             "parent_nearest": True,
             "parent": [body_chain["name"], 0 if idx == 0 else -1]
         }
 
-        # Anatomical pinch refinement (knee / hock crease) if vertices available
-        if vertices:
-            try:
-                p_left = geo.find_pinches(vertices, l_base, l_tip, slices=25, min_t=0.35, max_t=0.65)
-                if p_left:
-                    knee_l = [round(c, 3) for c in p_left[0]["pos"]]
-                    l_chain["points"] = [l_base, knee_l, l_tip]
-                    l_chain["bones"] = 2
-                p_right = geo.find_pinches(vertices, r_base, r_tip, slices=25, min_t=0.35, max_t=0.65)
-                if p_right:
-                    knee_r = [round(c, 3) for c in p_right[0]["pos"]]
-                    r_chain["points"] = [r_base, knee_r, r_tip]
-                    r_chain["bones"] = 2
-            except Exception:
-                pass
-
+        # (A knee found by a pinch search used to be written as points [base, knee, tip]: that made the seed base the
+        # root joint, and a two-bone leg with no foot. The limb is traced from its tip at rig time instead.)
         chains.append(l_chain)
         chains.append(r_chain)
 
-    # 3. Wings
+    # 3. Wings (no base: measured at rig time, where the wing leaves the body)
     for idx, p in enumerate(wings):
         w_suffix = f"_{idx + 1}" if len(wings) > 1 else ""
-        l_tip = [round(c, 3) for c in p["left"]]
-        l_base = [0.55, l_tip[1], round(l_tip[2] * 0.9, 3)]
-        chains.append({
-            "name": f"wing{w_suffix}.L",
-            "role": "wing",
-            "tip": l_tip,
-            "base": l_base,
-            "bones": 3,
-            "parent_nearest": True,
-            "parent": [body_chain["name"], 1]
-        })
-        r_tip = [round(c, 3) for c in p["right"]]
-        r_base = [0.45, r_tip[1], round(r_tip[2] * 0.9, 3)]
-        chains.append({
-            "name": f"wing{w_suffix}.R",
-            "role": "wing",
-            "tip": r_tip,
-            "base": r_base,
-            "bones": 3,
-            "parent_nearest": True,
-            "parent": [body_chain["name"], 1]
-        })
+        for side, pt in ((".L", p["left"]), (".R", p["right"])):
+            chains.append({
+                "name": f"wing{w_suffix}{side}",
+                "role": "wing",
+                "tip": [round(c, 3) for c in pt],
+                "bones": 3,
+                "parent_nearest": True,
+                "parent": [body_chain["name"], 1]
+            })
 
-    # 4. Arms (for humanoids / bipedal creatures)
+    # 4. Arms (for humanoids / bipedal creatures); the base, the shoulder, is measured at rig time
     for idx, p in enumerate(arms):
         l_tip = [round(c, 3) for c in p["left"]]
-        l_base = [0.58, l_tip[1], round(l_tip[2] + 0.1, 3)]
         l_arm = {
             "name": "arm.L",
             "role": "arm",
             "tip": l_tip,
-            "base": l_base,
             "bones": 3,
             "parent_nearest": True,
-            "parent": [body_chain["name"], 1]
+            "parent": [body_chain["name"], -1 if upright else 1]
         }
         r_tip = [round(c, 3) for c in p["right"]]
-        r_base = [0.42, r_tip[1], round(r_tip[2] + 0.1, 3)]
         r_arm = {
             "name": "arm.R",
             "role": "arm",
             "tip": r_tip,
-            "base": r_base,
             "bones": 3,
             "parent_nearest": True,
-            "parent": [body_chain["name"], 1]
+            "parent": [body_chain["name"], -1 if upright else 1]
         }
-
-        # Anatomical pinch refinement (elbow crease) if vertices available
-        if vertices:
-            try:
-                p_left = geo.find_pinches(vertices, l_base, l_tip, slices=25, min_t=0.35, max_t=0.65)
-                if p_left:
-                    elbow_l = [round(c, 3) for c in p_left[0]["pos"]]
-                    l_arm["points"] = [l_base, elbow_l, l_tip]
-                    l_arm["bones"] = 2
-                p_right = geo.find_pinches(vertices, r_base, r_tip, slices=25, min_t=0.35, max_t=0.65)
-                if p_right:
-                    elbow_r = [round(c, 3) for c in p_right[0]["pos"]]
-                    r_arm["points"] = [r_base, elbow_r, r_tip]
-                    r_arm["bones"] = 2
-            except Exception:
-                pass
 
         chains.append(l_arm)
         chains.append(r_arm)
 
-    # 5. Tail
+    # 5. Tail (from where it leaves the rump, measured at rig time, to its tip)
     if tail_pt and tail_pt[1] > slice_end and archetype != "humanoid":
         chains.append({
             "name": "tail",
             "role": "tail",
             "tip": [round(c, 3) for c in tail_pt],
-            "base": [0.5, slice_end, tail_pt[2]],
             "bones": 4,
             "medial": True,
             "parent_nearest": True,
             "parent": [body_chain["name"], -1]
         })
 
-    # 6. Head (for humanoid or models with head tip)
+    # 6. Head (for humanoid or models with head tip): the head chain is the head (the spine then ends in the chest,
+    # rerig.name_chains), hanging from the front of the body, or the top of an upright one
     if archetype == "humanoid" or head_pt:
-        h_tip = [0.5, 0.45, 0.95] if head_pt is None else [round(c, 3) for c in head_pt]
-        h_base = [0.5, 0.45, 0.78] if head_pt is None else [0.5, h_tip[1], round(max(0.60, h_tip[2] - 0.16), 3)]
+        h_tip = [0.5, 0.5, 0.97] if head_pt is None else [round(c, 3) for c in head_pt]
         chains.append({
             "name": "head",
             "role": "head",
             "tip": h_tip,
-            "base": h_base,
             "bones": 2,
             "parent_nearest": True,
-            "parent": [body_chain["name"], 0]
+            "parent": [body_chain["name"], -1 if upright else 0]
         })
 
     return chains
@@ -407,43 +366,75 @@ def suggest_from_tripo(source_joints, lo, hi):
         return None
     joints_by_name = {j["name"]: j for j in source_joints}
 
-    # Head and hips: find extremities along Y/Z
     def pos(j): return j.get("head", [0, 0, 0])
     names = list(joints_by_name)
     if len(names) < 2:
         return None
 
-    # Prefer centerline spine bones for head and hips
-    center_bones = [n for n in names if abs(pos(joints_by_name[n])[0]) <= 0.2]
-    pool = center_bones if len(center_bones) >= 2 else names
-    sorted_y = sorted(pool, key=lambda n: pos(joints_by_name[n])[1])
-    head_candidate = sorted_y[0]
-    hips_candidate = sorted_y[-1]
-
-    # Find limb branches: joints that have multiple children
-    limb_chains = {}
-    legs = []
+    # the hierarchy, from each joint's parent (the joint lists carry parents, not children)
+    kids = {n: [] for n in names}
     for j in source_joints:
-        children = j.get("children", [])
-        if len(children) >= 2:
-            for child in children:
-                if child not in (head_candidate, hips_candidate):
-                    limb_chains.setdefault("leg", []).append(child)
-                    if child not in legs:
-                        legs.append(child)
+        p = j.get("parent")
+        if p in kids:
+            kids[p].append(j["name"])
+        for c in j.get("children", []) or []:           # a list that does carry children is used too
+            if c in kids and c not in kids[j["name"]]:
+                kids[j["name"]].append(c)
+
+    # the centre plane and the model's width, from the bounds when given (else from the joints)
+    xs = [pos(joints_by_name[n])[0] for n in names]
+    lo_x = lo[0] if lo else min(xs)
+    hi_x = hi[0] if hi else max(xs)
+    cx, width = (lo_x + hi_x) * 0.5, max(1e-6, hi_x - lo_x)
+    off = lambda n: abs(pos(joints_by_name[n])[0] - cx) > 0.08 * width
+
+    centre = [n for n in names if not off(n)]
+    pool = centre if len(centre) >= 2 else names
+    sorted_y = sorted(pool, key=lambda n: pos(joints_by_name[n])[1])
+    head_candidate = sorted_y[0]                            # front-most centre joint (creatures face -Y)
+
+    # legs: off-centre branches leaving a centre joint that reach down to the ground (the lowest quarter of the
+    # model); ears, horns, wings and whiskers are off-centre branches too, but end high
+    zs = [pos(joints_by_name[n])[2] for n in names]
+    lo_z = lo[2] if lo and len(lo) > 2 else min(zs)
+    hi_z = hi[2] if hi and len(hi) > 2 else max(zs)
+    ground = lo_z + 0.25 * max(1e-6, hi_z - lo_z)
+
+    def lowest(n, seen=None):
+        seen = seen if seen is not None else set()
+        if n in seen:
+            return float("inf")
+        seen.add(n)
+        return min([pos(joints_by_name[n])[2]] + [lowest(c, seen) for c in kids[n]])
+
+    branch_roots = {n: [c for c in kids[n] if off(c) and lowest(c) <= ground] for n in centre}
+    legs = [c for n in centre for c in branch_roots[n]]
+    legs.sort(key=lambda c: (pos(joints_by_name[c])[1], pos(joints_by_name[c])[0]))
+
+    # hips: the centre joint the hind legs leave from, the rear-most one with a pair of leg branches; not the
+    # rear-most centre joint, which is usually the tail's tip
+    with_pairs = [n for n in centre if len(branch_roots[n]) >= 2]
+    if with_pairs:
+        hips_candidate = max(with_pairs, key=lambda n: pos(joints_by_name[n])[1])
+    elif legs:
+        hips_candidate = max((n for n in centre if branch_roots[n]), key=lambda n: pos(joints_by_name[n])[1])
+    else:
+        hips_candidate = sorted_y[-1]
 
     return {
         "kind": "tripo",
         "head": head_candidate,
         "hips": hips_candidate,
         "forward": [0, -1, 0],
-        "chains": limb_chains,
-        "legs": legs[:4]
+        "chains": {"leg": list(legs)} if legs else {},
+        "legs": legs
     }
 
 
-def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None):
-    """Main heuristic suggestion entry point.
+def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None,
+                     forward=None):
+    """Main heuristic suggestion entry point. forward: the facing the tips were measured in ("auto" when the caller
+    turned the mesh with rerig.normalise's auto facing), written into the spec so the rig is built in that frame.
     Returns: dict with 'rig' spec, 'archetype', 'confidence', 'reasons'."""
     reasons = []
 
@@ -452,15 +443,20 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     joints = (source_data or {}).get("joints") or []
     import skeletons
 
-    if not skel_kind or skel_kind in ("none", "other"):
-        if joints:
-            conv, conf = skeletons.detect_convention([j["name"] for j in joints])
-            if conf >= 0.25:
-                skel_kind = conv
-        elif any(j["name"].startswith("mixamorig") for j in joints):
-            skel_kind = "mixamo"
-        elif all(j["name"].startswith("bone_") for j in joints) and joints:
-            skel_kind = "tripo"
+    if (not skel_kind or skel_kind in ("none", "other")) and joints:
+        conv, conf = skeletons.detect_convention([j["name"] for j in joints])
+        if conf >= 0.25:
+            skel_kind = conv
+
+    # tips the source view or survey already measured (probe_tips), when the caller passed none
+    if not tips:
+        for d in (source_data or {}, (source_data or {}).get("survey") or {}, survey_data or {}):
+            got = d.get("tips") or d.get("probe_tips")
+            if got:
+                tips = [t.get("at") or t.get("pos") if isinstance(t, dict) else t for t in got]
+                tips = [t for t in tips if t and len(t) >= 3]
+                if tips:
+                    break
 
     def _get_bounds_data():
         bounds = (source_data or {}).get("bounds") or (survey_data or {}).get("bounds") or {}
@@ -511,12 +507,11 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
 
     # Strategy 2: Existing Tripo skeleton -> Tripo spec
     if skel_kind == "tripo" and joints:
-        lo = (source_data or {}).get("lo", [0, 0, 0])
-        hi = (source_data or {}).get("hi", [1, 1, 1])
+        lo, hi, _ = _get_bounds_data()          # source_preview keeps them under "bounds", survey at the top level
         tripo_rig = suggest_from_tripo(joints, lo, hi)
         if tripo_rig:
             num_legs = len(tripo_rig.get("legs", []))
-            arch = "quadruped" if num_legs == 4 else "hexapod" if num_legs == 6 else "creature"
+            arch = {4: "quadruped", 6: "hexapod", 8: "octopod"}.get(num_legs, "creature")
             tripo_rig["skeleton"] = arch
             return {
                 "archetype": arch,
@@ -532,6 +527,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
 
     # Strategy 3: Boneless model -> classify from geodesic tips, symmetry, and proportions
     coords = tips or []
+    templated = not coords
     if not coords:
         # Fallback default tips when no mesh analysis has run
         coords = [
@@ -554,29 +550,22 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
 
     archetype, confidence, arch_reasons = propose_archetype(prop, classified_limbs, centerline_info, skel_kind)
     reasons.extend(arch_reasons)
+    if templated:
+        confidence = "low"                      # a template is a starting point, not a reading of this model
 
     verts = vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices")
     chains = build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=verts)
 
-    fwd = detect_mesh_forward(verts, joints=joints)
+    # the frame the tips were measured in: the caller's ("auto" when it turned the mesh with the auto facing, so the
+    # rig step turns it the same way), else detected from the vertices
+    fwd = forward if forward else detect_mesh_forward(verts, joints=joints)
     rig_spec = {
         "kind": "placed",
         "skeleton": archetype,
         "forward": fwd,
         "chains": chains
     }
-
-    # Add head_line and head_to_snout if head/snout is detected ahead of body
-    head_pt = centerline_info.get("head")
-    body_chain = next((c for c in chains if c["role"] == "spine"), None)
-    slice_start = (body_chain.get("slice") or [0.2])[0] if body_chain else 0.2
-    if head_pt and head_pt[1] < slice_start:
-        rig_spec["head_line"] = [
-            [0.5, round(slice_start, 3), round(head_pt[2], 3)],
-            [0.5, round(head_pt[1], 3), round(head_pt[2], 3)]
-        ]
-        rig_spec["head_to_snout"] = True
-        reasons.append("added head_line with snout extension (Rule A)")
+    # (No head_line: the head chain built above is the head. A head_line as well made a second head on the spine.)
 
     # Add jaw if detected
     if centerline_info.get("jaw") and centerline_info.get("head"):

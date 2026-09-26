@@ -33,6 +33,24 @@ class TestDigits(unittest.TestCase):
                 dist = math.dist(p0, p1)
                 self.assertGreater(dist, 1e-4)
 
+    def test_both_thumbs_point_forward_and_fingers_splay(self):
+        # T-pose, palms down, facing -Y: each thumb is on the forward side (-Y) of its hand, left and right alike
+        for side, sx in (("Left", 1.0), ("Right", -1.0)):
+            wrist, knuckle, tip = (0.35 * sx, 0.0, 0.8), (0.42 * sx, 0.0, 0.8), (0.48 * sx, 0.0, 0.8)
+            ch = {c["finger"]: c for c in digits.generate_humanoid_digits(wrist, knuckle, tip, side=side)}
+            self.assertLess(ch["Thumb"]["points"][0][1], ch["Pinky"]["points"][0][1], side)
+            self.assertLess(ch["Thumb"]["points"][0][1], 0.0, side)
+            # the fingers fan out: the thumb's tip is farther forward of its root than the root is, the pinky's
+            # farther back
+            th, pk = ch["Thumb"]["points"], ch["Pinky"]["points"]
+            self.assertLess(th[-1][1], th[0][1], side)
+            self.assertGreater(pk[-1][1], pk[0][1], side)
+
+    def test_paw_parent_is_the_rigs_foot(self):
+        paws = digits.generate_paw_digits((0.1, 0.4, 0.2), (0.1, 0.5, 0.05), (0.1, 0.65, 0.0), side="Left",
+                                          parent_bone="leg_hind_3.L")
+        self.assertTrue(all(p["parent_bone"] == "leg_hind_3.L" for p in paws))
+
     def test_stylized_3_and_4_fingers(self):
         wrist = (0.35, 0.0, 0.8)
         knuckle = (0.42, 0.0, 0.8)

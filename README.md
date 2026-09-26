@@ -8,8 +8,9 @@ card an engine importer can read. Blender never opens a window.
 **Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
 3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
 grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. A repair
-pass is under way (docs/PLAN.md, "R"): R1, the fixes to retarget, the watch folder, batch runs, Cancel and auto-tune,
-is in and not yet re-tested in Blender. Expect rough edges; issues and pull requests are welcome.
+pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch runs, Cancel, auto-tune) and R2
+(skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit) are in and not yet re-tested
+in Blender. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -95,7 +96,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
     python autorig/cli/run.py preview wolf              rigged/preview.glb for the 3D viewer (pipeline.py -preview too)
     blender -b --python autorig/steps/source_preview.py -- -only wolf    the spec editor's view of the source
-    blender -b --python autorig/steps/suggest.py -- -only wolf           suggest archetype and skeleton
+    blender -b --python autorig/steps/suggest_step.py -- -only wolf           suggest archetype and skeleton
     python autorig/cli/run.py help                      every step by name, for a launcher in the collection
 
 - `AUTORIG_MODELS`: the models root (default `samples/`). A model is a folder with a source export, at the root or

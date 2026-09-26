@@ -6,10 +6,12 @@
 #
 # Industry standard parallel subordinate hierarchy:
 # 1. Main skeletal hierarchy remains unchanged (preserves IK chains & game retargeting).
-# 2. Subordinate twist bones (e.g. LeftForeArm_Twist) absorb 50% of the child joint's axial roll.
+# 2. Subordinate twist bones: a forearm's (e.g. LeftForeArm_Twist, by the wrist) takes half the hand's twist; an
+#    upper arm's or thigh's (by the shoulder or hip) holds back half of its own bone's twist. Drivers read the twist
+#    alone (swing-twist about Y), never the swing of a bending wrist.
 # 3. Smooth longitudinal weight distribution along the limb segment preserves cross-sectional volume.
 
-import math
+import math, re
 
 def smoothstep(edge0, edge1, x):
     t = max(0.0, min(1.0, (x - edge0) / max(1e-6, edge1 - edge0)))
@@ -69,7 +71,51 @@ def identify_twist_pairs(bone_names):
             twist_name = b_base + "_Twist"
             pairs.append({"base": b_base, "driver": b_driver, "type": "thigh", "twist": twist_name})
 
-    return pairs
+    # Rigify: upper_arm.L -> forearm.L -> hand.L, thigh.L -> shin.L (thigh/shin are above)
+    for s in (".L", ".R"):
+        if "upper_arm" + s in names_set and "forearm" + s in names_set:
+            pairs.append({"base": "upper_arm" + s, "driver": "forearm" + s, "type": "arm", "twist": "upper_arm_twist" + s})
+
+    # This tool's own chains (rerig.name_chains): arm_1.L upper arm, arm_2.L forearm, arm_3.L hand (arm_0.L the
+    # girdle); leg_1.L / leg_front_1.L / leg_hind_1.L / leg2_1.L the thigh, _2 the shin
+    for n in bone_names:
+        m = OWN_RE.match(n)
+        if not m:
+            continue
+        base, link, side = m.group(1), int(m.group(2)), m.group(3)
+        nxt = "%s_%d%s" % (base, link + 1, side)
+        if nxt not in names_set or link not in (1, 2):
+            continue
+        is_arm = base.startswith("arm")
+        if link == 1:
+            pairs.append({"base": n, "driver": nxt, "type": "arm" if is_arm else "thigh",
+                          "twist": "%s_%d_twist%s" % (base, link, side)})
+        elif is_arm:                                    # forearm, driven by the hand
+            pairs.append({"base": n, "driver": nxt, "type": "forearm", "twist": "%s_%d_twist%s" % (base, link, side)})
+
+    seen, out = set(), []
+    for p in pairs:
+        if p["base"] not in seen:
+            seen.add(p["base"])
+            out.append(p)
+    return out
+
+
+OWN_RE = re.compile(r"^(arm|leg|leg_front|leg_hind|leg\d+)_(\d+)(\.[LR])$")
+
+
+def twist_segment(limb_type):
+    """(start, end) of the twist bone along its base bone, 0 at the base's head: the half its weights cover. A
+    forearm's twist bone is the half by the wrist (it takes the hand's twist); an upper arm's or thigh's is the half
+    by the shoulder or hip (it holds back the bone's own twist there)."""
+    return (0.5, 1.0) if limb_type == "forearm" else (0.0, 0.5)
+
+
+def twist_driver(limb_type):
+    """(which bone drives it: "driver" or "base", factor) for the twist bone's local Y twist. The forearm's twist
+    bone takes half the hand's twist; an upper arm's or thigh's takes back half of its own base's twist, so the
+    shoulder or hip end turns half as far as the elbow or knee end."""
+    return ("driver", 0.5) if limb_type == "forearm" else ("base", -0.5)
 
 
 def calculate_weight_split(along_ratio, limb_type="forearm"):
@@ -128,12 +174,10 @@ def add_twist_bones_to_armature(arm, mesh=None, spec=None):
             base_b = eb[b_base]
             twist_b = eb.new(t_name)
 
-            # Position twist bone at the distal half of the bone
-            head_pos = base_b.head.lerp(base_b.tail, 0.5)
-            tail_pos = base_b.tail.copy()
-
-            twist_b.head = head_pos
-            twist_b.tail = tail_pos
+            # on the half of the bone its weights cover (twist_segment)
+            a, b = twist_segment(p["type"])
+            twist_b.head = base_b.head.lerp(base_b.tail, a)
+            twist_b.tail = base_b.head.lerp(base_b.tail, b)
             twist_b.roll = base_b.roll
             twist_b.parent = base_b
             twist_b.use_connect = False
@@ -149,20 +193,30 @@ def add_twist_bones_to_armature(arm, mesh=None, spec=None):
                 continue
 
             t_pb = arm.pose.bones[t_name]
-            # Remove any existing constraints
             for c in list(t_pb.constraints):
                 t_pb.constraints.remove(c)
-
-            cr = t_pb.constraints.new('COPY_ROTATION')
-            cr.name = "Twist_Axial_Roll"
-            cr.target = arm
-            cr.subtarget = driver_name
-            cr.target_space = 'LOCAL'
-            cr.owner_space = 'LOCAL'
-            cr.use_x = False
-            cr.use_y = True   # Blender edit bones longitudinal roll axis is Y
-            cr.use_z = False
-            cr.influence = 0.50
+            # The twist alone, never the swing: a driver reading the source bone's local rotation as swing-twist
+            # about Y (a Copy Rotation of local Y also picked up the swing of a bending wrist)
+            which, factor = twist_driver(p["type"])
+            source = driver_name if which == "driver" else p["base"]
+            t_pb.rotation_mode = 'YXZ'
+            try:
+                t_pb.driver_remove("rotation_euler", 1)
+            except Exception:
+                pass
+            fc = t_pb.driver_add("rotation_euler", 1)
+            drv = fc.driver
+            drv.type = 'SCRIPTED'
+            drv.expression = "twist * %g" % factor          # a simple expression: runs without Python scripts
+            var = drv.variables.new()
+            var.name = "twist"
+            var.type = 'TRANSFORMS'
+            tgt = var.targets[0]
+            tgt.id = arm
+            tgt.bone_target = source
+            tgt.transform_type = 'ROT_Y'
+            tgt.rotation_mode = 'SWING_TWIST_Y'
+            tgt.transform_space = 'LOCAL_SPACE'
     finally:
         if bpy.context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')

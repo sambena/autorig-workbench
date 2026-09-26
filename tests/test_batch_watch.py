@@ -249,7 +249,7 @@ class BatchWatchTest(unittest.TestCase):
 
         def fake_run(script, *args, **kw):
             runs.append(script)
-            if script == "suggest.py":                    # what steps/suggest.py writes with -out
+            if script == "suggest_step.py":                    # what steps/suggest_step.py writes with -out
                 out = args[args.index("-out") + 1]
                 os.makedirs(out, exist_ok=True)
                 with open(os.path.join(out, args[0] + "_suggest.json"), "w") as fh:
@@ -261,7 +261,7 @@ class BatchWatchTest(unittest.TestCase):
              patch.object(watch_daemon.blender, "run", fake_run), \
              patch("watch_daemon.run_model_pipeline", return_value={"status": "OK", "steps": ["rig"]}) as pipe:
             res = watch_daemon.process_incoming_file(asset, auto_rig=True, log=lambda *_: None)
-        self.assertEqual(runs, ["survey.py", "suggest.py"])
+        self.assertEqual(runs, ["survey.py", "suggest_step.py"])
         self.assertEqual(res["suggested"], "quadruped")
         spec_store.reload()
         self.assertEqual(spec_store.model("blob")["rig"]["kind"], "placed")

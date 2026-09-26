@@ -89,6 +89,8 @@ def describe(chains, archetype):
 
 # Prefix patterns to strip when analyzing bone names across DCCs and game engines
 PREFIX_RE = re.compile(r'^(mixamorig:|cc_base_|valvebiped\.|bip\d*[\s_]|def[-_]|org[-_]|mch[-_])+', re.IGNORECASE)
+# a bone name that says which side it is on (left..., l_..., "l ...", ..._l, ....l)
+SIDED_RE = re.compile(r'^(left|right|[lr][\s_])|[._][lr]$', re.IGNORECASE)
 
 # Signatures for major armature conventions
 CONVENTIONS = {
@@ -183,19 +185,28 @@ def detect_convention(bone_names):
     scores = {}
     total = len(bone_names)
     for conv, key_set in CONVENTIONS.items():
-        matches = 0
+        matches = sided = 0
         for n in bone_names:
             clean = PREFIX_RE.sub("", n.strip()).lower()
             if clean in key_set or n.lower() in key_set:
                 matches += 1
+                if SIDED_RE.search(clean):
+                    sided += 1
         if matches > 0:
-            scores[conv] = matches
+            scores[conv] = (matches, sided)
 
     if not scores:
         return "other", 0.0
-    best_conv, best_count = max(scores.items(), key=lambda kv: kv[1])
+    # most matches first; a tie goes to the convention with more left/right limb names, then the smaller set (the
+    # more specific one), never to whichever the table lists first
+    best_conv, (best_count, best_sided) = max(scores.items(),
+                                              key=lambda kv: (kv[1][0], kv[1][1], -len(CONVENTIONS[kv[0]])))
     ratio = best_count / min(len(CONVENTIONS[best_conv]), max(1, total))
     confidence = min(1.0, round(ratio, 2))
+    # Generic names alone (hips, spine, neck, head: any creature's) say nothing about the convention: without at
+    # least two of its left/right limb names it stays under the 0.25 that survey and suggest route on
+    if best_sided < 2:
+        confidence = min(confidence, 0.2)
     return best_conv, confidence
 
 

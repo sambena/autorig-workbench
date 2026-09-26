@@ -4,6 +4,10 @@
 # the line down the middle of a limb, a tail or a whole serpent.
 import heapq, math
 try:
+    import rig_geom
+except ImportError:
+    from autorig.core import rig_geom
+try:
     from mathutils import Vector, kdtree
 except ImportError:
     class Vector(tuple):
@@ -181,60 +185,34 @@ class Surface:
         length = da[b]
         if length == float("inf"): return [Vector(start), Vector(end)]
         on = [i for i in range(len(self.co)) if da[i] + db[i] <= length * (1.0 + slack)]
-        pts = []
+        rings, c0s = [], []
         for k in range(bones + 1):
             t = length * k / bones
             half = length / bones * 0.5
             ring = [self.co[i] for i in on if abs(da[i] - t) <= half]
             if not ring or len(ring) < 4:
-                pts.append(self.co[a].lerp(self.co[b], k / bones))
+                rings.append(None); c0s.append(self.co[a].lerp(self.co[b], k / bones))
                 continue
             lo = Vector((min(p.x for p in ring), min(p.y for p in ring), min(p.z for p in ring)))
             hi = Vector((max(p.x for p in ring), max(p.y for p in ring), max(p.z for p in ring)))
             mean = sum(ring, Vector()) / len(ring)
-            c0 = (lo + hi) * 0.25 + mean * 0.5
+            rings.append([tuple(p) for p in ring]); c0s.append((lo + hi) * 0.25 + mean * 0.5)
 
-            # Local path tangent direction
-            tangent = (self.co[b] - self.co[a]).normalized()
-            ref = Vector((0, 0, 1)) if abs(tangent.z) < 0.85 else Vector((1, 0, 0))
-            u_axis = tangent.cross(ref).normalized()
-            v_axis = tangent.cross(u_axis).normalized()
-
-            c_refined = c0
-            for _ in range(2):
-                num_sectors = 8
-                sector_radii = [[] for _ in range(num_sectors)]
-                for p in ring:
-                    diff = p - c_refined
-                    pu = diff.dot(u_axis); pv = diff.dot(v_axis)
-                    angle = math.atan2(pv, pu)
-                    sec = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
-                    sector_radii[sec].append(math.sqrt(pu * pu + pv * pv))
-
-                shift_u, shift_v = 0.0, 0.0
-                half_sec = num_sectors // 2
-                for sec in range(half_sec):
-                    opp = sec + half_sec
-                    r1 = min(sector_radii[sec]) if sector_radii[sec] else None
-                    r2 = min(sector_radii[opp]) if sector_radii[opp] else None
-                    if r1 is not None and r2 is not None:
-                        mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
-                        delta = (r1 - r2) * 0.5
-                        shift_u += delta * math.cos(mid_angle)
-                        shift_v += delta * math.sin(mid_angle)
-
-                c_refined = c_refined + u_axis * (shift_u / 2.0) + v_axis * (shift_v / 2.0)
-            pts.append(c_refined)
+        # each station is centred across the limb's own local direction (from its neighbours), not the straight line
+        # from end to end, which tilts every cross-section of a bent limb or a curled tail
+        chord = tuple(self.co[b] - self.co[a])
+        first_pass = [tuple(p) for p in c0s]
+        pts = []
+        for k, (ring, c0) in enumerate(zip(rings, c0s)):
+            if ring is None:
+                pts.append(c0); continue
+            tangent = rig_geom.station_tangent(first_pass, k, chord)
+            pts.append(Vector(rig_geom.centre_ring(ring, tuple(c0), tangent)))
 
         pts[-1] = pts[-1].lerp(self.co[b], 0.7)
         if first is not None: pts[0] = Vector(first)
-        # Laplacian smoothing of interior joints
-        for _ in range(2):
-            pts = [pts[0]] + [
-                (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
-                for i in range(1, len(pts) - 1)
-            ] + [pts[-1]]
-        return pts
+        # eased across the chain only, and not at all for three bones or fewer: a knee or an elbow is kept
+        return [Vector(p) for p in rig_geom.smooth_stations(pts)]
 
     def find_pinches(self, start, end, slices=40, span_radius=None, min_t=0.2, max_t=0.8):
         """Finds anatomical hinge creases / local cross-section minima between start and end on this surface."""
@@ -261,8 +239,15 @@ def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max
     if length < 1e-6:
         return []
     d = ab.normalized()
+    # coords and start/end must be in the same units (world, or both 0..1). Pass span_radius near a torso, so the
+    # body beside a limb does not join its slices
+    t3 = tuple(d)
+    ref = (0.0, 0.0, 1.0) if abs(t3[2]) < 0.85 else (1.0, 0.0, 0.0)
+    u = rig_geom._norm(rig_geom._cross(t3, ref))
+    v = rig_geom._norm(rig_geom._cross(t3, u))
+    SECTORS = 12
 
-    # Bin vertices into slices
+    # Bin vertices into slices, and within a slice by direction around the axis
     bins = [[] for _ in range(slices)]
     for pt in coords:
         p = Vector(pt) if not isinstance(pt, Vector) else pt
@@ -277,9 +262,12 @@ def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max
             continue
         idx = int((t - min_t) / max(1e-9, (max_t - min_t)) * (slices - 1))
         idx = max(0, min(slices - 1, idx))
-        bins[idx].append((p, r, t))
+        ang = math.atan2(rig_geom._dot(tuple(perp), v), rig_geom._dot(tuple(perp), u))
+        bins[idx].append((p, r, t, int((ang + math.pi) / (2 * math.pi) * SECTORS) % SECTORS))
 
-    # Compute slice metrics
+    # Slice metrics: the cross-section's radius is the mean distance to its wall over the directions it has (the
+    # farthest point each way), so it does not depend on how densely the mesh is cut; the joint is the middle of the
+    # wall points, not the centroid of every vertex (a one-sided slice no longer puts the joint on the surface)
     slice_data = []
     for k in range(slices):
         pts = bins[k]
@@ -287,9 +275,18 @@ def find_pinches(coords, start, end, slices=40, span_radius=None, min_t=0.2, max
             slice_data.append(None)
             continue
         avg_t = sum(item[2] for item in pts) / len(pts)
-        centroid = sum((item[0] for item in pts), Vector((0, 0, 0))) / len(pts)
-        rms_r = math.sqrt(sum(item[1] ** 2 for item in pts) / len(pts))
-        slice_data.append({"t": avg_t, "pos": centroid, "radius": rms_r})
+        wall = {}
+        for p, r, t, sec in pts:
+            if sec not in wall or r > wall[sec][1]:
+                wall[sec] = (p, r)
+        radius = sum(r for _, r in wall.values()) / len(wall)
+        axis_pt = s + d * (avg_t * length)
+        if len(wall) >= SECTORS // 2:
+            centre = sum((p for p, _ in wall.values()), Vector((0, 0, 0))) / len(wall)
+            centre = centre - d * (centre - axis_pt).dot(d)          # on the slice's own plane
+        else:
+            centre = axis_pt                                         # too one-sided to say: the axis itself
+        slice_data.append({"t": avg_t, "pos": centre, "radius": radius})
 
     # Fill gaps by linear interpolation
     known = [i for i, data in enumerate(slice_data) if data is not None]
@@ -349,9 +346,6 @@ def trace_medial_axis(coords, start, end, bones=4, slack=0.3):
 
     pts = []
     d = ab.normalized()
-    ref = Vector((0, 0, 1)) if abs(d.z) < 0.85 else Vector((1, 0, 0))
-    u = d.cross(ref).normalized()
-    v = d.cross(u).normalized()
 
     for k in range(bones + 1):
         frac = k / bones
@@ -368,39 +362,11 @@ def trace_medial_axis(coords, start, end, bones=4, slack=0.3):
             pts.append(nominal)
             continue
 
-        c_refined = sum(slice_pts, Vector((0, 0, 0))) / len(slice_pts)
-        for _ in range(2):
-            num_sectors = 8
-            sector_radii = [[] for _ in range(num_sectors)]
-            for p in slice_pts:
-                diff = p - c_refined
-                pu = diff.dot(u); pv = diff.dot(v)
-                angle = math.atan2(pv, pu)
-                sector_idx = int((angle + math.pi) / (2 * math.pi) * num_sectors) % num_sectors
-                r = math.sqrt(pu * pu + pv * pv)
-                sector_radii[sector_idx].append(r)
-
-            shift_u, shift_v = 0.0, 0.0
-            half_sec = num_sectors // 2
-            for sec in range(half_sec):
-                opp = sec + half_sec
-                r1 = min(sector_radii[sec]) if sector_radii[sec] else None
-                r2 = min(sector_radii[opp]) if sector_radii[opp] else None
-                if r1 is not None and r2 is not None:
-                    mid_angle = -math.pi + (sec + 0.5) * (2 * math.pi / num_sectors)
-                    delta = (r1 - r2) * 0.5
-                    shift_u += delta * math.cos(mid_angle)
-                    shift_v += delta * math.sin(mid_angle)
-
-            c_refined = c_refined + u * (shift_u / 2.0) + v * (shift_v / 2.0)
-        pts.append(c_refined)
+        # the slices are planes across the straight line, so the balance is taken in that plane (rig_geom)
+        c0 = sum(slice_pts, Vector((0, 0, 0))) / len(slice_pts)
+        pts.append(Vector(rig_geom.centre_ring([tuple(p) for p in slice_pts], tuple(c0), tuple(d))))
 
     pts[0] = s
     pts[-1] = e
-    for _ in range(2):
-        pts = [pts[0]] + [
-            (pts[i - 1] + pts[i] * 2.0 + pts[i + 1]) * 0.25
-            for i in range(1, len(pts) - 1)
-        ] + [pts[-1]]
-    return pts
+    return [Vector(p) for p in rig_geom.smooth_stations(pts)]
 

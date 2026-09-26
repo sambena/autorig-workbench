@@ -149,6 +149,65 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertEqual(res["rig"]["hips"], "bone_1")
 
 
+    def test_suggest_tripo_from_parents(self):
+        # joint lists carry parents only (steps/suggest_step.py): legs are found, and the hips are where the hind legs
+        # branch off, not the tail's tip at the back
+        J = lambda n, h, p=None: {"name": n, "head": h, "parent": p}
+        joints = [J("bone_0", [0, -0.6, 0.5]),                          # chest / front
+                  J("bone_1", [0, 0.0, 0.5], "bone_0"),                 # mid
+                  J("bone_2", [0, 0.4, 0.5], "bone_1"),                 # pelvis
+                  J("bone_3", [0, 0.7, 0.45], "bone_2"), J("bone_4", [0, 0.95, 0.4], "bone_3"),   # tail
+                  J("bone_5", [0.3, -0.6, 0.1], "bone_0"), J("bone_6", [-0.3, -0.6, 0.1], "bone_0"),
+                  J("bone_7", [0.3, 0.0, 0.1], "bone_1"), J("bone_8", [-0.3, 0.0, 0.1], "bone_1"),
+                  J("bone_9", [0.3, 0.4, 0.1], "bone_2"), J("bone_10", [-0.3, 0.4, 0.1], "bone_2")]
+        res = suggest.suggest_skeleton("bug", source_data={"lo": [-0.5, -1, 0], "hi": [0.5, 1, 1], "joints": joints},
+                                       survey_data={"skeleton": "tripo"})
+        self.assertEqual(res["rig"]["hips"], "bone_2")
+        self.assertEqual(res["rig"]["head"], "bone_0")
+        self.assertEqual(len(res["rig"]["legs"]), 6)
+        self.assertEqual(res["archetype"], "hexapod")
+
+        # ears on the head are off-centre branches too, but they end high: never legs
+        ears = [J("bone_11", [0.2, -0.7, 0.9], "bone_0"), J("bone_12", [-0.2, -0.7, 0.9], "bone_0")]
+        res = suggest.suggest_skeleton("bug", source_data={"bounds": {"lo": [-0.5, -1, 0], "hi": [0.5, 1, 1]},
+                                                           "joints": joints + ears},
+                                       survey_data={"skeleton": "tripo"})
+        self.assertEqual(len(res["rig"]["legs"]), 6)
+        self.assertNotIn("bone_11", res["rig"]["legs"])
+
+    def test_t_pose_is_humanoid_not_winged(self):
+        # arms straight out: as wide as it is tall, but only as deep as a person
+        tips = [[0.5, 0.5, 0.98], [0.6, 0.5, 0.02], [0.4, 0.5, 0.02], [0.99, 0.5, 0.8], [0.01, 0.5, 0.8]]
+        res = suggest.suggest_skeleton("t_pose", tips=tips, proportions=[1.8, 0.35, 1.8])
+        self.assertEqual(res["archetype"], "humanoid")
+        spine = next(c for c in res["rig"]["chains"] if c["role"] == "spine")
+        self.assertIn("points", spine)                                  # an upright spine runs up the body (Z)
+        self.assertGreater(spine["points"][-1][2], spine["points"][0][2])
+        self.assertNotIn("slice", spine)
+
+    def test_suggestions_leave_bases_to_the_rig(self):
+        tips = [[0.5, 0.1, 0.55], [0.75, 0.3, 0.15], [0.25, 0.3, 0.15], [0.78, 0.75, 0.15], [0.22, 0.75, 0.15],
+                [0.5, 0.95, 0.45]]
+        res = suggest.suggest_skeleton("dog", tips=tips, proportions=[0.6, 1.5, 1.0])
+        for c in res["rig"]["chains"]:
+            if c["role"] in ("leg", "arm", "wing", "tail", "head"):
+                self.assertNotIn("base", c, c["name"])                 # measured at rig time (junction)
+        self.assertNotIn("head_line", res["rig"])                       # the head chain is the head: no second one
+
+    def test_template_is_low_confidence_and_forward_is_kept(self):
+        res = suggest.suggest_skeleton("unknown")                       # nothing measured: a template
+        self.assertEqual(res["confidence"], "low")
+        res = suggest.suggest_skeleton("dog", tips=[[0.5, 0.1, 0.55], [0.75, 0.3, 0.15], [0.25, 0.3, 0.15]],
+                                       forward="auto")
+        self.assertEqual(res["rig"]["forward"], "auto")
+
+    def test_tips_from_source_data(self):
+        src = {"survey": {"probe_tips": [{"at": [0.5, 0.45, 0.95]}, {"at": [0.65, 0.5, 0.05]}, {"at": [0.35, 0.5, 0.05]},
+                                         {"at": [0.8, 0.5, 0.5]}, {"at": [0.2, 0.5, 0.5]}]}}
+        res = suggest.suggest_skeleton("guard", source_data=src, proportions=[0.9, 0.4, 1.9])
+        self.assertEqual(res["archetype"], "humanoid")
+        self.assertNotEqual(res["confidence"], "low")
+
     def test_suggest_pinch_refinement(self):
         tips = [
             [0.5, 0.15, 0.6],    # head/snout
@@ -169,8 +228,11 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertEqual(res["archetype"], "quadruped")
         chains = {c["name"]: c for c in res["rig"]["chains"]}
         self.assertIn("leg_front.L", chains)
-        self.assertIn("points", chains["leg_front.L"])
-        self.assertEqual(len(chains["leg_front.L"]["points"]), 3)
+        # a leg is its tip and three bones (a foot for the IK); where it leaves the body and where it bends are
+        # traced on the mesh at rig time, never a guessed base written in as its root joint
+        self.assertNotIn("points", chains["leg_front.L"])
+        self.assertNotIn("base", chains["leg_front.L"])
+        self.assertEqual(chains["leg_front.L"]["bones"], 3)
         self.assertIn("tail", chains)
         self.assertTrue(chains["tail"].get("medial"))
 

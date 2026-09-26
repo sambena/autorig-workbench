@@ -7,6 +7,7 @@
 #
 # Mixamo's bone names without the "mixamorig:" namespace: Hips, Spine, Spine1, Spine2, Neck, Head, Left/Right
 # Shoulder, Arm, ForeArm, Hand, HandIndex1-3, UpLeg, Leg, Foot, ToeBase, under a non-deforming `root` at the origin.
+# With "digits": true, five fingers per hand (HandThumb1-3 ... HandPinky1-3, core/digits.py) replace the index chain.
 # Unity's Humanoid avatar maps these by name, Unreal's IK Retargeter has a Mixamo preset for them, Godot's
 # SkeletonProfileHumanoid auto-maps them, and Blender retargeting add-ons know them. The namespace is left off
 # because Godot turns ':' into '_' on import and some tools read it as a path separator; every reader of these
@@ -76,6 +77,13 @@ def measure(co, lo, size, h, main=None):
     P = lambda u, v, w: Vector((lo[0] + size[0] * u, lo[1] + size[1] * v, lo[2] + size[2] * w))
     out = {}
 
+    # The body's own middle, not the middle of the bounds: a staff or sword held out to one side widens the bounds
+    # and would put the spine off the body. Measured across the legs at knee height, where no hand reaches.
+    knees = M[np.abs(M[:, 2] - z["knee"]) < 0.03]
+    cx = float((np.percentile(knees[:, 0], 2) + np.percentile(knees[:, 0], 98)) * 0.5) if len(knees) > 10 else 0.5
+    if abs(cx - 0.5) > 0.2:
+        cx = 0.5                                   # something odd at knee height: keep the old assumption
+
     def slab_z(level, xlo, xhi, half=0.012, pts=M):
         m = (np.abs(pts[:, 2] - level) < half) & (pts[:, 0] >= xlo) & (pts[:, 0] <= xhi)
         res = pts[m]
@@ -97,7 +105,7 @@ def measure(co, lo, size, h, main=None):
     zs = np.linspace(z["hip"], z["neck"], 14)
     fr = []
     for lv in zs:
-        s = slab_z(lv, 0.42, 0.58)
+        s = slab_z(lv, cx - 0.08, cx + 0.08)
         fr.append(np.percentile(s[:, 1], 3) if len(s) > 5 else np.nan)
     fr = np.array(fr); ok = ~np.isnan(fr)
     if ok.sum() >= 3:
@@ -109,20 +117,20 @@ def measure(co, lo, size, h, main=None):
         med_m1 = float(np.median(M[:, 1])) if len(M) else 0.5
         fit = np.array([0.0, 0.0, med_m1])
 
-    waist = slab_z(z["spine"], 0.42, 0.58)
+    waist = slab_z(z["spine"], cx - 0.08, cx + 0.08)
     depth = (np.percentile(waist[:, 1], 97) - np.percentile(waist[:, 1], 3)) if len(waist) > 5 else 0.15
     spine_y = lambda lv: float(np.polyval(fit, lv) + 0.5 * depth)
     for k in ("hip", "spine", "spine1", "spine2", "neck"):
-        out[k] = P(0.5, spine_y(z[k]), z[k])
-    head = slab_z(z["head"], 0.35, 0.65, pts=N)
+        out[k] = P(cx, spine_y(z[k]), z[k])
+    head = slab_z(z["head"], cx - 0.15, cx + 0.15, pts=N)
     head_y = float(np.median(head[:, 1])) if len(head) else float(spine_y(z["head"]))
-    out["head"] = P(0.5, head_y, z["head"])
-    out["top"] = P(0.5, head_y, z["top"])
+    out["head"] = P(cx, head_y, z["head"])
+    out["top"] = P(cx, head_y, z["top"])
 
     raw = {}
     for side, sgn in (("Left", 1), ("Right", -1)):
         X = (lambda f: 1.0 - f) if sgn > 0 else (lambda f: f)   # 0..1 x on this side (x 0 = its right)
-        xs = (0.52, 0.95) if sgn > 0 else (0.05, 0.48)
+        xs = (cx + 0.02, 0.95) if sgn > 0 else (0.05, cx - 0.02)
         # Anatomical crease refinement for knee via cross-section pinch analysis
         knee_z = z["knee"]
         leg_m = M[(M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1]) & (M[:, 2] >= z["ankle"]) & (M[:, 2] <= z["hip"])]
@@ -195,15 +203,25 @@ def measure(co, lo, size, h, main=None):
 
         torso_y = (spine_y(z["spine2"]) + spine_y(z["neck"])) * 0.5
         arm = {}
+        # Followed out from the shoulder, station by station: each slice is looked for around the height the arm
+        # has been heading to, so an A-pose arm sloping down is tracked instead of lost to the torso and hips at the
+        # shoulder's height (for a T-pose the slope stays flat and this is the old fixed band)
+        prev_x, prev_z, slope = X(shoulder_x), z["arm"], 0.0
         for j, f in (("upper", (shoulder_x + elbow_x) / 2), ("elbow", elbow_x), ("wrist", x["wrist"]),
                      ("knuckle", x["knuckle"])):
             xf = X(f)
-            s = slab_x(xf, z["arm"] - 0.09, z["arm"] + 0.09)
+            zc = prev_z + slope * (xf - prev_x)
+            s = slab_x(xf, zc - 0.09, zc + 0.09)
             if len(s) == 0:
-                s = slab_x(xf, z["arm"] - 0.18, z["arm"] + 0.18, half=0.036)
+                s = slab_x(xf, zc - 0.18, zc + 0.18, half=0.036)
             if len(s) > 0:
+                near = s[np.abs(s[:, 2] - zc) <= 0.06]          # the arm's own slice, not a hip or thigh below it
+                if len(near) > 3: s = near
                 sy = float(np.median(s[:, 1]))
                 sz = float(np.median(s[:, 2]))
+                if abs(xf - prev_x) > 1e-3:
+                    slope = max(-3.0, min(3.0, (sz - prev_z) / (xf - prev_x)))
+                prev_x, prev_z = xf, sz
             elif len(arm_m) > 0:
                 sy = float(np.median(arm_m[:, 1]))
                 sz = float(np.median(arm_m[:, 2]))
@@ -218,9 +236,13 @@ def measure(co, lo, size, h, main=None):
         else:
             raw[side + "shoulder"] = (X(shoulder_x), torso_y, float(arm["upper"][2]))
         for j in ("elbow", "wrist", "knuckle"): raw[side + j] = tuple(arm[j])
-        tip = N[(N[:, 0] >= 0.985) if sgn > 0 else (N[:, 0] <= 0.015)]
+        # the fingertip from the body's own pieces: a held weapon or prop (a loose piece) is not the hand
+        tip = M[(M[:, 0] >= 0.985) if sgn > 0 else (M[:, 0] <= 0.015)]
         if len(tip) == 0:
-            tip = N[(N[:, 0] >= 0.95) if sgn > 0 else (N[:, 0] <= 0.05)]
+            tip = M[(M[:, 0] >= 0.95) if sgn > 0 else (M[:, 0] <= 0.05)]
+        if len(tip) == 0:                          # the body stops short of the bounds (a prop reaches past it)
+            reach = M[:, 0].max() if sgn > 0 else M[:, 0].min()
+            tip = M[np.abs(M[:, 0] - reach) <= 0.02]
         if len(tip) > 0:
             tip_y = float(np.median(tip[:, 1]))
             tip_z = float(np.median(tip[:, 2]))
@@ -230,13 +252,14 @@ def measure(co, lo, size, h, main=None):
         raw[side + "tip"] = (X(x["tip"]), tip_y, tip_z)
     # the hip joints mirror each other: a stride moves the knees and feet, never the pelvis
     hx = (raw["Lefthip"][0] - raw["Righthip"][0]) / 2; hy = (raw["Lefthip"][1] + raw["Righthip"][1]) / 2
-    raw["Lefthip"] = (0.5 + hx, hy, z["hip"]); raw["Righthip"] = (0.5 - hx, hy, z["hip"])
+    raw["Lefthip"] = (cx + hx, hy, z["hip"]); raw["Righthip"] = (cx - hx, hy, z["hip"])
     for k, v in raw.items(): out[k] = P(*v)
     return out
 
 
-def chains_for(J):
-    """The standard humanoid chains, in the form rerig.build_chains returns."""
+def chains_for(J, digits=False):
+    """The standard humanoid chains, in the form rerig.build_chains returns. digits: five fingers per hand
+    (core/digits.py, three bones each, Mixamo names) in place of the single index-finger chain."""
     ch = [{"role": "spine", "joints": [], "points": [J["hip"], J["spine"], J["spine1"], J["spine2"], J["neck"]],
            "parent": None, "ik": False, "bones": list(SPINE), "base": "spine", "side": ""},
           {"role": "head", "joints": [], "points": [J["neck"], J["head"], J["top"]], "parent": (0, 3), "ik": False,
@@ -246,10 +269,22 @@ def chains_for(J):
         sh = J[side + "shoulder"]
         clav = Vector((sh.x * 0.3, (J["spine2"].y + J["neck"].y) * 0.5, J["spine2"].z + (J["neck"].z - J["spine2"].z) * 0.7))
         k1 = J[side + "knuckle"]; tip = J[side + "tip"]
-        ch.append({"role": "arm", "joints": [], "girdle": True, "parent": (0, 3), "ik": False, "side": "",
-                   "points": [clav, sh, J[side + "elbow"], J[side + "wrist"], k1, k1.lerp(tip, 0.45), k1.lerp(tip, 0.75), tip],
-                   "bones": [side + n for n in ("Shoulder", "Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3")],
-                   "base": side + "Arm", "fade": 0.15})
+        if digits:
+            import digits as digits_mod
+            ch.append({"role": "arm", "joints": [], "girdle": True, "parent": (0, 3), "ik": False, "side": "",
+                       "points": [clav, sh, J[side + "elbow"], J[side + "wrist"], k1],
+                       "bones": [side + n for n in ("Shoulder", "Arm", "ForeArm", "Hand")],
+                       "base": side + "Arm", "fade": 0.15})
+            hand = (len(ch) - 1, 3)                 # the Hand bone of the chain just added
+            for f in digits_mod.generate_humanoid_digits(tuple(J[side + "wrist"]), tuple(k1), tuple(tip), side=side):
+                ch.append({"role": "finger", "joints": [], "parent": hand, "ik": False, "side": "",
+                           "points": [Vector(p) for p in f["points"]], "bones": list(f["bones"]),
+                           "base": f["name"], "fade": 0.1})
+        else:
+            ch.append({"role": "arm", "joints": [], "girdle": True, "parent": (0, 3), "ik": False, "side": "",
+                       "points": [clav, sh, J[side + "elbow"], J[side + "wrist"], k1, k1.lerp(tip, 0.45), k1.lerp(tip, 0.75), tip],
+                       "bones": [side + n for n in ("Shoulder", "Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3")],
+                       "base": side + "Arm", "fade": 0.15})
         ch.append({"role": "leg", "joints": [], "parent": (0, 0), "ik": False, "side": "",
                    "points": [J[side + "hip"], J[side + "knee"], J[side + "ankle"], J[side + "ball"], J[side + "toe"]],
                    "bones": [side + n for n in ("UpLeg", "Leg", "Foot", "ToeBase")], "base": side + "Leg", "fade": 0.12})
@@ -315,11 +350,12 @@ def straighten(arm, size):
     arm.data.transform(Matrix.Translation(off))
     rerig.select_only(arm); bpy.ops.object.mode_set(mode='EDIT')
     # rolls: Mixamo's convention is irrelevant to Unity and the retargeters, but consistent rolls make a hand-keyed
-    # clip read the same on both sides: arms and fingers roll with Z up, legs and spine with Z forward (-Y)
+    # clip read the same on both sides: arms, fingers and feet roll with Z up, legs and spine with Z forward (-Y),
+    # by bone (rig_geom.humanoid_roll_ref), never by a slope threshold that a 45-degree arm sits on
+    import rig_geom
     for eb in arm.data.edit_bones:
         if eb.name == "root": continue
-        d = (eb.tail - eb.head).normalized()
-        eb.align_roll(Vector((0, 0, 1)) if abs(d.z) < 0.7 else Vector((0, -1, 0)))
+        eb.align_roll(Vector(rig_geom.humanoid_roll_ref(eb.name)))
     bpy.ops.object.mode_set(mode='OBJECT')
     return [round(x, 4) for x in off]
 
@@ -356,6 +392,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             "limb_radius": h.get("limb_radius", rig_spec.get("limb_radius", 1.0)),
             "rip_welds": h.get("rip_welds", rig_spec.get("rip_welds", [])),
             "twist_bones": h.get("twist_bones", rig_spec.get("twist_bones", False)),
+            "digits": h.get("digits", rig_spec.get("digits", False)),
             "morph_targets": h.get("morph_targets", rig_spec.get("morph_targets", False))}
     log = {"model": key, "kind": "humanoid"}
     src_path = rerig.find_fbx(key, spec)
@@ -373,7 +410,11 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         if len(idx) >= 0.1 * len(isl[0]): main[idx] = True
     J = measure(co, np.array(lo[:]), np.array(size[:]), h, main)
     log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items()}
-    chains = chains_for(J)
+    chains = chains_for(J, bool(spec.get("digits")))
+    if spec.get("keep_inside", True):              # a measured shoulder or knuckle outside the skin comes back in
+        me = mesh.data
+        bvh = rerig.BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+        rerig.keep_joints_inside(chains, bvh, size, log)
     arm, _ = rerig.build_armature(key, chains, size)
     if not rerig.skin(mesh, arm, chains, spec, size, log): return log
     log["rest_offset"] = straighten(arm, size)

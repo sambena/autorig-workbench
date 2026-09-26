@@ -73,6 +73,9 @@ def survey(key):
         "verts": verts,
         "tris": tris,
         "size": size,
+        # the bounds themselves (as imported, before any turn): a known skeleton's joints map into 0..1 of these,
+        # not of the joints' own extent, which is smaller than the mesh
+        "lo": [round(v, 5) for v in lo], "hi": [round(v, 5) for v in hi],
         "tallest_axis": "xyz"[size.index(max(size))],
         "skinned_pct": round(100.0 * weighted / verts, 1) if (arms and verts) else 0.0,
         "file": os.path.relpath(path, ROOT),
