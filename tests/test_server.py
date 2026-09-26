@@ -313,9 +313,10 @@ class ServerTest(unittest.TestCase):
         mock_spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "clips": {"archetype": "walker"}}}
         if HAVE_BLENDER:
             cmds = server.commands(".", "test_creature", "rebake-clips", mock_spec)
-            self.assertEqual(len(cmds), 2)
+            self.assertEqual(len(cmds), 3)
             self.assertTrue(cmds[0][0].startswith("make clips"))
-            self.assertEqual(cmds[1][0], "preview for the viewer")
+            self.assertEqual(cmds[1][0], "clip audit")                 # every clip played and graded
+            self.assertEqual(cmds[2][0], "preview for the viewer")
         else:                                          # a clean reason, not a dropped connection
             with self.assertRaises(ValueError):
                 server.commands(".", "test_creature", "rebake-clips", mock_spec)

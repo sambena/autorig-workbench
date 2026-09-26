@@ -192,7 +192,8 @@ function renderModelSelector() {
   for (const group of Object.keys(byGroup).sort()) {
     html += `<optgroup label="${esc(group)} (${byGroup[group].length})">`;
     for (const m of byGroup[group]) {
-      const badge = m.audit ? ` [${m.audit}]` : (m.rigged ? " [Rigged]" : (m.spec ? " [Spec]" : ""));
+      const badge = (m.audit ? ` [${m.audit}]` : (m.rigged ? " [Rigged]" : (m.spec ? " [Spec]" : ""))) +
+        (m.clip_audit ? ` [clips ${m.clip_audit}]` : "");
       html += `<option value="${esc(m.name)}" ${m.name === prev ? "selected" : ""}>${esc(m.name)}${badge}</option>`;
     }
     html += `</optgroup>`;
@@ -226,6 +227,7 @@ function updateModelBadge() {
     infoEl.innerHTML = `<div class="model-name">${esc(m.name)}</div>` +
       `<div class="meta">${esc(m.group || "Root")} · ${esc(m.kind || "No spec")}${m.budget ? " · " + esc(m.budget) + " tris" : ""}` +
       (m.audit ? ` · <span class="chip ${gradeClass(m.audit)}">${esc(m.audit)}</span>` : "") +
+      (m.clip_audit ? ` · clips <span class="chip ${gradeClass(m.clip_audit)}">${esc(m.clip_audit)}</span>` : "") +
       `</div>`;
   }
 }
@@ -1325,6 +1327,8 @@ async function openAuditModal() {
       html += `<div class="warns" style="margin-top:12px"><b>Warnings:</b> ${a.warnings.map(esc).join("; ")}</div>`;
     }
 
+    html += clipAuditHtml(d.clip_audit);
+
     if (a.skin || a.bend) {
       html += `<h3 style="margin:16px 0 6px">QA Diagnostic Sheets</h3><div class="pics">` +
         (a.skin ? `<figure><img src="${esc(fileUrl(a.skin))}" alt="Skin weights map"><figcaption>Skin assignment</figcaption></figure>` : "") +
@@ -1336,6 +1340,28 @@ async function openAuditModal() {
   } catch (e) {
     body.innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
   }
+}
+
+// The clip audit (steps/clip_audit.py): every baked clip played and graded. One row per clip, its failing checks
+// spelled out; "extra" clips (jumps, dodge, block...) are listed but do not decide the grade.
+const CLIP_CHECKS = {
+  slide: (c) => `feet slide at ${Math.round(c.value * 100)}% of walk speed`,
+  floor: (c) => `feet ${c.value}% of height under the floor` + (c.hover_pct ? `, hovering ${c.hover_pct}%` : ""),
+  pops: (c) => `${c.value} pop${c.value === 1 ? "" : "s"} (worst ${c.worst_step_deg}°` + (c.at ? ` on ${c.at.bone}, frame ${c.at.frame}` : "") + ")",
+  seam: (c) => `loop seam ${c.value}°, a ${c.jump_deg}° hitch`,
+  symmetry: (c) => `left and right reach differ by ${Math.round(c.value * 100)}%`,
+};
+function clipAuditHtml(ca) {
+  if (!ca) return `<h3 style="margin:16px 0 6px">Clip audit</h3><div class="meta">No clip audit yet: run Clips (it plays and grades every clip).</div>`;
+  const rows = (ca.clips || []).map((c) => {
+    const bad = Object.entries(c.checks || {}).filter(([, v]) => v.grade !== "PASS")
+      .map(([k, v]) => (CLIP_CHECKS[k] ? CLIP_CHECKS[k](v) : k) + (v.note ? ` (${v.note})` : ""));
+    return `<tr><td>${esc(c.name)}</td><td>${esc(c.slot || "")}</td>` +
+      `<td><span class="chip ${gradeClass(c.grade)}">${esc(c.grade)}</span></td><td>${esc(bad.join("; ") || c.note || "")}</td></tr>`;
+  }).join("");
+  return `<h3 style="margin:16px 0 6px">Clip audit <span class="chip ${gradeClass(ca.grade)}">${esc(ca.grade)}</span></h3>` +
+    `<div class="meta" style="margin-bottom:8px">Each clip played frame by frame: planted feet sliding, feet through the floor, pops, loop seams, left/right reach. Extra clips are listed but do not set the grade.</div>` +
+    `<div class="scroll"><table><tr><th>Clip</th><th>Slot</th><th>Grade</th><th>What to look at</th></tr>${rows}</table></div>`;
 }
 
 // ---- Collection Table Modal

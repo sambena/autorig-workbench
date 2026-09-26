@@ -66,6 +66,8 @@ def main(argv):
             for m in targets:
                 blender_step("preview_glb.py", "-only", m)
         return rc
+    if cmd in ("clipaudit", "clip-audit") and rest:          # every clip played and graded
+        return max(blender_step("clip_audit.py", "-model", m, *rest[1:]) for m in rest[0].split(","))
     if cmd == "measure" and rest:
         return max(blender_step("measure.py", m, *rest[1:]) for m in rest[0].split(","))
     if cmd == "preview" and rest:                             # results viewer

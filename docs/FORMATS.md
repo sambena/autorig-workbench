@@ -119,6 +119,35 @@ the model at a size other than `metres` scales every speed by its size / `metres
 manifest measures at 1 m walks twice as fast in metres a second. The top-level `windUpEnd` (a fraction of the plain
 `attack`) and `walkSpeed` stay for engines that already read them.
 
+## Clip audit: `autorig-clip-audit/1` (clip_audit.py)
+
+`<AUTORIG_WORK>/clip_audit/<model>.json`, written after Clips (the GUI and the batch run it straight after
+make_clips; `python autorig/cli/run.py clipaudit <model>` on its own). Every clip in the manifest is played frame
+by frame on the deformed mesh:
+
+```jsonc
+{
+  "format": "autorig-clip-audit/1", "model": "canine", "manifest": "canine/clips/canine_clips.json",
+  "feet": ["leg_front.L_2.L", ...], "body": "root", "grounded": true,
+  "grade": "FAIL",                               // the worst clip's, "extra" clips not counted
+  "clips": [ {"name": "walk", "slot": "locomotion", "frames": 17, "grade": "FAIL",
+              "checks": {"slide": {"value": 0.257, "grade": "FAIL", "planted_share": 0.53, "root_motion": false},
+                         "floor": {"value": 1.2, "grade": "CHECK", "hover_pct": 0.0},
+                         "pops": {"value": 0, "grade": "PASS", "worst_step_deg": 9.1, "at": {...}},
+                         "seam": {"value": 0.0, "grade": "PASS", "jump_deg": 0.0},
+                         "symmetry": {"value": 0.03, "grade": "PASS"}}}, ... ],
+  "limits": {...}, "seconds": 0.2
+}
+```
+
+A foot is the skin its last leg bone owns (weight at least a half): its middle across the ground and its lowest
+point. `slide` is the median speed of planted feet over the ground as a share of the walk's `speed` (a clip played
+in place is moved at that speed, one carrying its own travel is taken as it is); `floor` is the deepest a foot goes
+under where it stands at rest, and on a walker's walk and idle how high the lowest foot hovers, in % of the height;
+`pops` counts frames where a bone turns far more than it usually does in a frame (hits and deaths get more room);
+`seam` is a loop's last-to-first pose, and how much more its motion changes there than anywhere else in the clip;
+`symmetry` compares left and right feet's reach. Limits: core/clip_grades.py.
+
 ## Work files (`AUTORIG_WORK`)
 
 | Folder | Holds |

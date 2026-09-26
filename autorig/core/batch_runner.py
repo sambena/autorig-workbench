@@ -88,6 +88,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
     steps_to_run = list(steps or DEFAULT_STEPS)
     executed = []
     audit_grade = None
+    clip_grade = None
     export_result = None
     status = "OK"
     error_msg = None
@@ -176,6 +177,16 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
                     if r.returncode != 0 or blender.step_error(r.stdout):
                         raise RuntimeError(f"clips step failed for '{model}': {_tail(r)}")
                     executed.append("clips")
+                    # the clips played and graded; a clip audit that cannot run is reported, not fatal
+                    ca_dir = layout.work_dir("clip_audit")
+                    ca = blender.run("clip_audit.py", "-model", model, "-out", ca_dir)
+                    ca_file = os.path.join(ca_dir, f"{model}.json")
+                    if ca.returncode == 0 and os.path.isfile(ca_file):
+                        try:
+                            with open(ca_file, encoding="utf-8") as fh:
+                                clip_grade = json.load(fh).get("grade")
+                        except (OSError, ValueError):
+                            pass
 
             elif st == "publish":
                 if deferred_publish is not None:
@@ -218,6 +229,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
         "group": group or "(root)",
         "steps": executed,
         "grade": audit_grade or "-",
+        "clip_grade": clip_grade,
         "status": status,
         "duration": elapsed,
         "export": export_result.get("zip_rel") if export_result and "zip_rel" in export_result else None,

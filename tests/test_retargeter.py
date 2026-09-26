@@ -106,6 +106,11 @@ Frame Time: 0.0333333
 """
 
 
+# the plans read the rigged sample's .blend, an output (git-ignored): only there once biped has been rigged
+RIGGED = os.path.isfile(os.path.join(REPO, "samples", "biped", "rigged", "biped.blend"))
+needs_rig = unittest.skipUnless(RIGGED, "samples/biped has not been rigged here (rig it once: its .blend is git-ignored)")
+
+
 class RetargeterTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -186,6 +191,7 @@ class RetargeterTest(unittest.TestCase):
         self.assertEqual(res["mapping"]["Spine"], "chest")
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
+    @needs_rig
     def test_plan_and_format_summary(self):
         plan = retargeter.plan_retarget("biped", self.bvh_file, clip_name="walk_cycle")
         self.assertEqual(plan["clip_name"], "walk_cycle")
@@ -201,6 +207,7 @@ class RetargeterTest(unittest.TestCase):
         self.assertIn("arm_1.L", summary)
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
+    @needs_rig
     def test_retarget_clip_headless_blender(self):
         res = retargeter.retarget_clip(
             model_name="biped",
@@ -314,6 +321,7 @@ print("__ACTIONS__" + str(action_names))
             with self.assertRaises(ValueError):
                 retargeter._probe("fbx", tricky, "__FBX_META__")
 
+    @needs_rig
     def test_retarget_cli(self):
         r = subprocess.run(
             [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"), "--help"],
@@ -354,6 +362,7 @@ print("__ACTIONS__" + str(action_names))
         self.assertEqual(retargeter.clean_action_name(""), "clip")
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
+    @needs_rig
     def test_plan_with_source_action(self):
         plan = retargeter.plan_retarget("biped", self.bvh_file, source_action="sample_walk")
         self.assertEqual(plan["source_action"], "sample_walk")

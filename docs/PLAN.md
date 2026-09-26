@@ -320,8 +320,13 @@ one pull request each, code first; models are run through the tool only in R6.
   - The batch runner and pipeline.py count a rig step that failed inside Blender (it logs the error and exits 0)
     as a failure; they counted it as a pass and went on to trim, audit and animate the stale rig.
   - tail_wave in a creature's walk spec is kept (merge_gait_params dropped every key no preset carries).
-  - C, next: a clip audit that plays each baked clip and grades foot slide, floor contact, pops, loop seams and
-    left/right symmetry.
+  - C, the clip audit (steps/clip_audit.py, grades in core/clip_grades.py): every baked clip played on the
+    deformed mesh and graded for foot slide, floor contact, pops, loop seams and left/right reach; run after every
+    Clips (GUI and batch), shown beside the skin audit. On the samples it found: the bundled specs had no IK on their
+    legs, so every walk was the legless heave (fixed: the samples' legs have "ik": true, and make_clips warns when a
+    walker's legs have none); with IK, planted feet still slide at about a quarter of the walk speed (canine,
+    biped), the beetle's walk is far off and its feet sink 12-19% of its height in attack, block and the jumps, and
+    the canine's trot and gallop pop. Those are the next fixes.
 
 ## Risks
 
