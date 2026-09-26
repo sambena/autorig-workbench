@@ -124,7 +124,7 @@ Skinning options (both kinds):
 | tuning | `joint_blend`, `girdle_blend`, `limb_radius` (these three: the full envelope only), `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
 
 The skin passes after bone heat, in the order they run. Each has its own switch, so they can be tried on and off one
-at a time; all are on unless said. They know the model's body plan (biped, quadruped, multi-legged, other, from its
+at a time; all are on unless said. They know the model's body plan (biped, horizontal: two legs under a level spine, quadruped, multi-legged, other, from its
 legs per side; `rig_humanoid` is a biped), and a rule meant for one plan runs only on it. Whatever a pass cuts or binds
 rigidly on purpose (a hard split, the shell, a rigid piece or island, a pelvic accessory) is locked: the passes after it,
 and the healer at the end, leave those vertices alone.

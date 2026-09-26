@@ -185,7 +185,8 @@ def limb_groups(chains):
 
 
 def body_plan(chains):
-    """"biped", "quadruped", "multi" (three or more legs a side) or "other", from the leg chains per side (the side
+    """"biped", "horizontal" (two legs, a level spine), "quadruped", "multi" (three or more legs a side) or "other",
+    from the leg chains per side (the side
     of a chain's first bone). Passes that assume a standing two-legged body run for bipeds only. None (no chains
     given) keeps every pass's legacy behaviour."""
     if chains is None:
@@ -200,7 +201,27 @@ def body_plan(chains):
         if s in per:
             per[s] += 1
     legs = max(per.values())
+    if legs == 1 and not _spine_upright(chains):
+        # two legs under a level body (a wyvern, a bird, a raptor): not a standing biped. The biped rules cut by
+        # height bands (arms above the hips, the chest above the legs), and on a level body the chest is at hip
+        # height: on the bundled wyvern they stripped the chest at its bend, 18 bend tears (0 without them)
+        return "horizontal"
     return "biped" if legs == 1 else "quadruped" if legs == 2 else "multi" if legs >= 3 else "other"
+
+
+def _spine_upright(chains):
+    """True when the spine chain rises more than it runs (hips to its top), or when there is no spine to measure."""
+    for c in chains:
+        if (c.get("role") or "").lower() != "spine":
+            continue
+        pts = c.get("points") or []
+        if len(pts) < 2:
+            return True
+        a, b = pts[0], pts[-1]
+        dz = abs(float(b[2]) - float(a[2]))
+        run = math.hypot(float(b[0]) - float(a[0]), float(b[1]) - float(a[1]))
+        return dz >= run
+    return True
 
 
 # ---------------------------------------------------------------------------------------------------------------

@@ -2735,7 +2735,23 @@ def main():
     if spec["archetype"] in CREATURE:
         return author(key, spec, argv)
     pack = layout.pack_dir(key)
-    card = json.load(open(os.path.join(pack, "model.json"), encoding="utf-8"))
+    cp = os.path.join(pack, "model.json")
+    if os.path.exists(cp):
+        card = json.load(open(cp, encoding="utf-8"))
+    else:
+        # no card yet (Publish has not run): as the creature path does, the rig's QA log gives its bone roles. This
+        # path used to need the card, and fields the spec editor never writes, and failed without them
+        card = {"rig": {}}
+        q = os.path.join(layout.work_dir("qa"), key + ".json")
+        if os.path.exists(q):
+            card["rig"]["skeleton"] = json.load(open(q, encoding="utf-8")).get("skeleton")
+    spec = dict(spec)
+    spec.setdefault("rig", os.path.basename(layout.rigged_dir(key)))    # the rig folder, as the other steps find it
+    spec.setdefault("display", key)
+    spec.setdefault("category", "Creatures")
+    if spec.get("triangles") is None:
+        b = layout.budget(key)
+        spec["triangles"] = b if b else 10 ** 9                        # no budget: full resolution
     rig_dir = os.path.join(pack, spec["rig"])
     blend = os.path.join(rig_dir, key + ".blend")
     bpy.ops.wm.open_mainfile(filepath=blend)
@@ -2802,7 +2818,7 @@ def main():
         "frameRate": FPS,
         "clips": [{"name": n, "take": n, "length": round(last / float(FPS) if loops else (last + 1) / float(FPS), 4),
                    "frames": last if loops else last + 1, "loop": loops,
-                   **({"speed": spec["flySpeed"]} if n == "fly" else {}),
+                   **({"speed": spec["flySpeed"]} if n == "fly" and spec.get("flySpeed") is not None else {}),
                    "events": ev.get(n, [])} for n, last, loops in made],
         "windUpEnd": round(arche.windup_end(), 4),
         "notes": arche.notes(),

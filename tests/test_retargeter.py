@@ -198,7 +198,7 @@ class RetargeterTest(unittest.TestCase):
         self.assertIn("RETARGET PLAN", summary)
         self.assertIn("walk_cycle", summary)
         self.assertIn("LeftArm", summary)
-        self.assertIn("arm.L_1.L", summary)
+        self.assertIn("arm_1.L", summary)
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_retarget_clip_headless_blender(self):
