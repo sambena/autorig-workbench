@@ -647,7 +647,7 @@ else:
         def test_auto_isolate_disconnected_islands_blender(self):
             bpy.ops.wm.read_factory_settings(use_empty=True)
             # Create a main body cylinder
-            bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=2.0, radius=0.3, location=(0, 0, 1.0))
+            bpy.ops.mesh.primitive_cylinder_add(vertices=64, depth=2.0, radius=0.3, location=(0, 0, 1.0))
             body = bpy.context.active_object
             # Create a separate floating pauldron armor box near X=0.8, Z=1.5
             bpy.ops.mesh.primitive_cube_add(size=0.2, location=(0.8, 0, 1.5))
@@ -744,7 +744,7 @@ else:
         def test_centerline_armor_pass_blender(self):
             bpy.ops.wm.read_factory_settings(use_empty=True)
             # Create a body cylinder centered at origin, height 2.0 (Z from 0 to 2)
-            bpy.ops.mesh.primitive_cylinder_add(vertices=16, depth=2.0, radius=0.4, location=(0, 0, 1.0))
+            bpy.ops.mesh.primitive_cylinder_add(vertices=64, depth=2.0, radius=0.4, location=(0, 0, 1.0))
             body = bpy.context.active_object
             # Create a centerline armor skirt/fauld box centered at X=0, spanning X in [-0.15, 0.15], Z=0.9
             bpy.ops.mesh.primitive_cube_add(size=0.3, location=(0, -0.6, 0.9))

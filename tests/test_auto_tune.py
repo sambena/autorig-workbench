@@ -74,7 +74,7 @@ class TestAutoTuneCore(unittest.TestCase):
         self.assertEqual(c, [1.5, 3.0, 4.0])
 
     def test_propose_candidate_joint_blend(self):
-        spec = {"rig": {"kind": "placed", "joint_blend": 0.4}}
+        spec = {"rig": {"kind": "placed", "envelope": "full", "joint_blend": 0.4}}
         audit = {
             "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
             "tears": {"combined": 6, "bend_max": 3, "worst_gap_pct": 2.0, "worst_bone": "spine_1"},
@@ -83,6 +83,27 @@ class TestAutoTuneCore(unittest.TestCase):
         self.assertIsNotNone(cand)
         self.assertEqual(cand["delta_type"], "joint_blend")
         self.assertAlmostEqual(cand["spec"]["rig"]["joint_blend"], 0.55)
+
+    def test_envelope_knobs_only_with_the_full_envelope(self):
+        # joint_blend and limb_radius are read by the full envelope only: with the default one they change nothing
+        spec = {"rig": {"kind": "placed", "joint_blend": 0.4, "limb_radius": 1.0}}
+        audit = {"verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+                 "tears": {"combined": 6, "bend_max": 3, "worst_gap_pct": 2.0, "worst_bone": "arm_2.L"}}
+        seen, history = [], []
+        for it in range(1, 25):
+            cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=it, history=history)
+            if not cand: break
+            seen.append(cand["delta_type"]); history.append({"param": cand["param"]})
+        self.assertNotIn("joint_blend", seen)
+        self.assertNotIn("limb_radius", seen)
+        self.assertIn("smooth", seen)
+
+    def test_humanoid_passes_already_on_are_not_candidates(self):
+        spec = {"humanoid": {"forward": [0, -1, 0]}, "rig": {"kind": "humanoid"}}
+        audit = {"verdict": {"grade": "FAIL", "pass": False, "checks": {}},
+                 "tears": {"combined": 2, "bend_max": 1, "worst_gap_pct": 1.0, "worst_bone": "LeftForeArm"}}
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=1, history=[])
+        self.assertNotIn(cand["param"] if cand else None, ("humanoid_twist_relax", "humanoid_hinge_smooth"))
 
     def test_propose_candidate_smoothing(self):
         spec = {"rig": {"kind": "placed", "joint_blend": 0.55, "smooth": 0}}
@@ -97,7 +118,7 @@ class TestAutoTuneCore(unittest.TestCase):
         self.assertEqual(cand["spec"]["rig"]["smooth"], 1)
 
     def test_propose_candidate_limb_radius(self):
-        spec = {"rig": {"kind": "placed", "joint_blend": 0.55, "smooth": 1, "limb_radius": 1.0}}
+        spec = {"rig": {"kind": "placed", "envelope": "full", "joint_blend": 0.55, "smooth": 1, "limb_radius": 1.0}}
         audit = {
             "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
             "tears": {"combined": 3, "bend_max": 2, "worst_gap_pct": 1.5, "worst_bone": "arm_2.L"},
@@ -362,7 +383,7 @@ class TestAutoTuneStepRunner(unittest.TestCase):
         from autorig.steps import auto_tune as auto_tune_step
 
         model_name = "test_creature"
-        spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "joint_blend": 0.4}}
+        spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "envelope": "full", "joint_blend": 0.4}}
         spec_file = os.path.join(self.models_dir, model_name, "rig.json")
         import json
         with open(spec_file, "w") as fh: json.dump(spec, fh)
@@ -387,7 +408,7 @@ class TestAutoTuneStepRunner(unittest.TestCase):
         from autorig.steps import auto_tune as auto_tune_step
 
         model_name = "test_creature"
-        spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "joint_blend": 0.4}}
+        spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "envelope": "full", "joint_blend": 0.4}}
         spec_file = os.path.join(self.models_dir, model_name, "rig.json")
         import json
         with open(spec_file, "w") as fh: json.dump(spec, fh)

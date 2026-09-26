@@ -142,6 +142,20 @@ RIG_FIELDS = [
       "alone, so a turning wrist or hip does not pinch.", group="Tuning"),
     F("morph_targets", "Facial shape keys", "bool", "Blink, jaw open, smile and viseme shape keys on the head.",
       group="Tuning"),
+    # the skin passes after bone heat, each switchable on its own (docs/SPEC.md, "Skinning options")
+    F("barrier", "Air-gap barriers", "bool", "On (default): no limb takes skin across the gap to another (left leg "
+      "on the right, arms on the hips...). The standing-body rules run for two-legged bodies only.", default=True,
+      group="Skin passes"),
+    F("sibling_isolation", "Keep parallel limbs apart", "bool", "On (default): legs of one side, tentacles, wing "
+      "fingers stay off each other's far ends.", default=True, group="Skin passes"),
+    F("centerline_armor", "Pelvic pieces to the hips", "bool", "On (default): small loose pieces across the pelvis "
+      "ride the hips; on a biped the crotch seam blends to the hips.", default=True, group="Skin passes"),
+    F("hinge_smoothing", "Ease joint steps", "bool", "On (default): steep weight steps across tails, wings and "
+      "fingers' joints are eased.", default=True, group="Skin passes"),
+    F("twist_relaxation", "Ease twisting shafts", "bool", "On (default): steep weight steps along the spine, neck, "
+      "arms and legs are eased.", default=True, group="Skin passes"),
+    F("auto_heal", "Heal steep steps", "bool", "On (default): a last pass eases any weight step too steep for its "
+      "edge, never on pieces made rigid on purpose.", default=True, group="Skin passes"),
     F("audit", "Audit allowances", "allowances", "Loosen (or tighten) the audit for this model only. Every allowance "
       "needs a reason, written in the note below it.", group="Audit"),
 ]
@@ -181,7 +195,13 @@ HUMANOID_Z_KEYS = ("ankle", "knee", "hip", "spine", "spine1", "spine2", "arm", "
 HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "joint_blend", "smooth", "rigid_pieces",
                   "envelope", "barrier", "sibling_isolation", "centerline_armor", "auto_heal", "rigid_islands",
                   "rigid_armor", "armor", "accessories", "hinge_smoothing", "hinge_max_gradient", "hinge_passes",
-                  "twist_relaxation", "twist_max_gradient", "twist_passes", "girdle_blend", "limb_radius", "rip_welds"}
+                  "twist_relaxation", "twist_max_gradient", "twist_passes", "girdle_blend", "limb_radius", "rip_welds",
+                  # every other skin option it now passes on to the skin passes (docs/SPEC.md, "Skinning options")
+                  "armpit_barrier", "flank_barrier", "tail_barrier", "radial_barrier", "crotch_barrier", "sym_plane",
+                  "hinges", "hinge_radius_scale", "twist_pairs", "twist_radius_scale", "heal_max_gradient",
+                  "heal_passes", "heal_blend", "rigid_island_max_share", "rigid_island_max_extent", "mesh_heal",
+                  "jaw", "parts", "blends", "membranes", "rigid_to", "hard_split", "soft", "spike_reach",
+                  "envelope_skip", "girdle_reach"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [

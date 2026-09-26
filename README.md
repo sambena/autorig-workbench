@@ -8,9 +8,9 @@ card an engine importer can read. Blender never opens a window.
 **Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
 3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
 grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. A repair
-pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch runs, Cancel, auto-tune) and R2
-(skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit) are in and not yet re-tested
-in Blender. Expect rough edges; issues and pull requests are welcome.
+pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch runs, Cancel, auto-tune), R2
+(skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit) and R3 (the skin passes:
+fixed, gated to the body plans they are for, each switchable) are in and not yet re-tested in Blender. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start

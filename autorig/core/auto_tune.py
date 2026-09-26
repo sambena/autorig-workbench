@@ -272,8 +272,9 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
                                 "delta_type": "landmark_nudge",
                             }
 
+        # both passes are on unless a spec turned them off: only then is switching one on a candidate
         h_dict = cand_spec.get("humanoid") if isinstance(cand_spec.get("humanoid"), dict) else rig
-        if "humanoid_twist_relax" not in tried_params and not h_dict.get("twist_relaxation", False):
+        if "humanoid_twist_relax" not in tried_params and h_dict.get("twist_relaxation", True) is False:
             h_dict["twist_relaxation"] = True
             return {
                 "description": "Enable humanoid twist shaft relaxation",
@@ -281,7 +282,7 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
                 "spec": cand_spec,
                 "delta_type": "twist_relaxation",
             }
-        if "humanoid_hinge_smooth" not in tried_params and not h_dict.get("hinge_smoothing", False):
+        if "humanoid_hinge_smooth" not in tried_params and h_dict.get("hinge_smoothing", True) is False:
             h_dict["hinge_smoothing"] = True
             return {
                 "description": "Enable humanoid hinge angle smoothing",
@@ -290,10 +291,17 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
                 "delta_type": "hinge_smoothing",
             }
 
+    # joint_blend and limb_radius are read by the full envelope only (rerig.envelope, spec envelope "full"); with the
+    # default "root" envelope changing them changes nothing, and each try cost a whole re-rig
+    hum = cand_spec.get("humanoid") if isinstance(cand_spec.get("humanoid"), dict) else {}
+    envelope_full = (hum.get("envelope") or rig.get("envelope")) == "full"   # the humanoid section's wins, as in rigging
+    cur_jb = float(rig.get("joint_blend", 0.4))
+    cur_lr = float(rig.get("limb_radius", 1.0))
+    cur_smooth = int(rig.get("smooth", 0))
+
     if not is_humanoid:
         # 1. Strategy: Joint Blend tuning (widens transition zone to stop tearing at spine/limbs)
-        cur_jb = float(rig.get("joint_blend", 0.4))
-        if "joint_blend_inc_1" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.8:
+        if envelope_full and "joint_blend_inc_1" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.8:
             new_jb = round(min(0.8, cur_jb + 0.15), 2)
             rig["joint_blend"] = new_jb
             return {
@@ -304,7 +312,6 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
             }
 
         # 2. Strategy: Weight Smoothing (diffuses discrete triangular face weights)
-        cur_smooth = int(rig.get("smooth", 0))
         if "smooth_1" not in tried_params and cur_smooth < 2 and (comb_tears > 0 or bend_tears > 0):
             new_smooth = cur_smooth + 1
             rig["smooth"] = new_smooth
@@ -316,11 +323,10 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
             }
 
         # 3. Strategy: Limb Capsule Radius (expands envelope capsule if limb drops periphery vertices)
-        cur_lr = float(rig.get("limb_radius", 1.0))
         is_limb_bone = worst_bone and any(
             k in worst_bone.lower() for k in ("arm", "leg", "wing", "finger", "tentacle", "claw", "fin")
         )
-        if is_limb_bone and "limb_radius_inc" not in tried_params and cur_lr < 2.0:
+        if envelope_full and is_limb_bone and "limb_radius_inc" not in tried_params and cur_lr < 2.0:
             new_lr = round(cur_lr * 1.25, 2)
             rig["limb_radius"] = new_lr
             return {
@@ -447,7 +453,7 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
         }
 
     # 7. Strategy: Bleed Reduction (if bleed_pct is the sole failing factor)
-    if bleed_pct > 2.0 and "bleed_tighten" not in tried_params:
+    if envelope_full and bleed_pct > 2.0 and "bleed_tighten" not in tried_params:
         if cur_lr > 0.8:
             new_lr = round(max(0.7, cur_lr * 0.85), 2)
             rig["limb_radius"] = new_lr
@@ -468,7 +474,7 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allo
             }
 
     # 8. Strategy: Second Joint Blend bump if still tearing
-    if "joint_blend_inc_2" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.85:
+    if envelope_full and "joint_blend_inc_2" not in tried_params and (comb_tears > 0 or bend_tears > 0) and cur_jb < 0.85:
         new_jb = round(min(0.85, cur_jb + 0.15), 2)
         rig["joint_blend"] = new_jb
         return {

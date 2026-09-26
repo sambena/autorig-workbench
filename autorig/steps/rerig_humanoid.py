@@ -393,7 +393,18 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             "rip_welds": h.get("rip_welds", rig_spec.get("rip_welds", [])),
             "twist_bones": h.get("twist_bones", rig_spec.get("twist_bones", False)),
             "digits": h.get("digits", rig_spec.get("digits", False)),
-            "morph_targets": h.get("morph_targets", rig_spec.get("morph_targets", False))}
+            "morph_targets": h.get("morph_targets", rig_spec.get("morph_targets", False)),
+            "skeleton": "humanoid"}           # the skin passes run the biped rules for it (placed_rules.body_plan)
+    # every other skin option in rig.json reaches the skin passes too (the humanoid section's over the rig
+    # section's): the list above only sets humanoid defaults, and it used to drop everything it did not name
+    # (jaw, parts, blends, shell, rigid_to, hard_split, heal_*, the barrier's sub-switches, hinges, twist_pairs...)
+    # (not the keys that shape a whole build: a humanoid's facing and origin come from its own measurement, and the
+    # tripo/build keys, or rigid_parts / rigid_single that would make a person one rigid piece, do not apply)
+    NOT_FORWARDED = {"kind", "chains", "z", "x", "notes", "straighten", "origin", "body", "legs", "head", "hips",
+                     "delete", "mirror", "reparent", "move", "builder", "rigid_parts", "rigid_single", "shell"}
+    for k, v in {**rig_spec, **h}.items():
+        if k not in spec and k not in NOT_FORWARDED:
+            spec[k] = v
     log = {"model": key, "kind": "humanoid"}
     src_path = rerig.find_fbx(key, spec)
     if not src_path or not os.path.exists(src_path):

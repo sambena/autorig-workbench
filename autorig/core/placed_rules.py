@@ -30,6 +30,121 @@ def _seg_dist(P, a, b):
     return np.linalg.norm(P - proj, axis=1), t
 
 
+_SIDE_SUFFIX = re.compile(r"[._]([LlRr])$")
+_SIDE_INNER = re.compile(r"[._]([LlRr])[._]")
+
+
+def bone_side(name):
+    """"L", "R" or "" for a bone name, read from its side token only: a Left/Right prefix (LeftArm, mixamorig:Left..),
+    a .L/_L/.l/_l suffix, or a lone l/r token inside (leg_l_2). A substring test ("_l" in name) called _lower,
+    _rear and _leg bones left or right."""
+    n = name.split(":")[-1]
+    if n.startswith("Left"): return "L"
+    if n.startswith("Right"): return "R"
+    m = _SIDE_SUFFIX.search(n) or _SIDE_INNER.search(n)
+    return m.group(1).upper() if m else ""
+
+
+def name_tokens(name):
+    """The words of a bone name, lower case: "LeftForeArm" -> [left, fore, arm], "ear_1.L" -> [ear, 1, l]. Role
+    words are matched against these, so "ear" never matches ForeArm, nor "leg" a word that merely contains it."""
+    return [t.lower() for t in re.findall(r"[A-Z]?[a-z]+|[0-9]+|[A-Z]+(?![a-z])", name.split(":")[-1])]
+
+
+def has_token(name, *words):
+    """True when a word of the bone's name starts with one of `words` (ear, ears; antenna, antennae)."""
+    toks = name_tokens(name)
+    return any(t.startswith(w) for t in toks for w in words)
+
+
+def read_weights(mesh, bone_names):
+    """(n, len(bone_names)) weight matrix of the deform bones' vertex groups."""
+    vg = mesh.vertex_groups
+    verts = mesh.data.vertices
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    W = np.zeros((len(verts), len(bone_names)), dtype=float)
+    gi = {g.index: col.get(g.name) for g in vg}
+    for v in verts:
+        for g in v.groups:
+            k = gi.get(g.group)
+            if k is not None:
+                W[v.index, k] += g.weight
+    return W
+
+
+def write_weights(mesh, bone_names, W_old, W_new, eps=1e-3, locked=None):
+    """Writes back the rows of W_new that changed from W_old (by more than eps). A bone that gains weight but has no
+    vertex group yet gets one (its weight used to be dropped, leaving the row short); a row in `locked` (vertices a
+    deliberate cut owns, spec["_locked"]) is never changed. Returns how many rows were written."""
+    vg = mesh.vertex_groups
+    diff = np.abs(W_new - W_old).sum(axis=1)
+    rows = np.where(diff > eps)[0]
+    if locked:
+        rows = np.array([r for r in rows if int(r) not in locked], dtype=int)
+    if len(rows) == 0:
+        return 0
+    groups = {}
+    for bi, name in enumerate(bone_names):
+        g = vg.get(name)
+        if g is None and float(W_new[rows, bi].max()) > 1e-4:
+            g = vg.new(name=name)
+        if g is not None:
+            groups[bi] = g
+    for vi in rows:
+        for bi, g in groups.items():
+            w = float(W_new[vi, bi])
+            if w > 1e-4:
+                g.add([int(vi)], w, 'REPLACE')
+            else:
+                try:
+                    g.remove([int(vi)])
+                except RuntimeError:
+                    pass
+    return int(len(rows))
+
+
+def limb_groups(chains):
+    """(front_bones, hind_bones): the bones of each leg or arm chain, sorted by where the limb leaves the body (its
+    first point against the middle of the body chain; arms are front, and on an upright body legs are hind)."""
+    try:
+        import rig_geom
+    except ImportError:
+        from autorig.core import rig_geom
+    if not chains or not chains[0].get("points"):
+        return [], []
+    body = [tuple(p) for p in chains[0]["points"]]
+    mid_y = (min(p[1] for p in body) + max(p[1] for p in body)) * 0.5
+    upright = rig_geom.spine_is_upright(body)
+    front, hind = [], []
+    for c in chains[1:]:
+        role = (c.get("role") or "").lower()
+        if not ("leg" in role or "arm" in role) or role.endswith(("_toe", "_b")) or not c.get("bones") \
+                or not c.get("points"):
+            continue
+        root = tuple(c["points"][1] if c.get("girdle") and len(c["points"]) > 1 else c["points"][0])
+        (front if rig_geom.is_front_limb(root, mid_y, role, upright) else hind).extend(c["bones"])
+    return front, hind
+
+
+def body_plan(chains):
+    """"biped", "quadruped", "multi" (three or more legs a side) or "other", from the leg chains per side (the side
+    of a chain's first bone). Passes that assume a standing two-legged body run for bipeds only. None (no chains
+    given) keeps every pass's legacy behaviour."""
+    if chains is None:
+        return None                               # no chains to go by: the passes keep their old, plan-free rules
+    per = {"L": 0, "R": 0}
+    for c in chains:
+        role = (c.get("role") or "").lower()
+        # a Tripo leg's toe or side branch (roles leg_toe, leg_b) is part of that leg, not another one
+        if "leg" not in role or role.endswith(("_toe", "_b")) or not c.get("bones"):
+            continue
+        s = bone_side(c["bones"][0]) or ("L" if c.get("side") == ".L" else "R" if c.get("side") == ".R" else "")
+        if s in per:
+            per[s] += 1
+    legs = max(per.values())
+    return "biped" if legs == 1 else "quadruped" if legs == 2 else "multi" if legs >= 3 else "other"
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Pure mathematical helpers (testable without Blender)
 # ---------------------------------------------------------------------------------------------------------------
@@ -563,7 +678,7 @@ def joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log):
 
 def compute_twist_shaft_relaxation(weights, coords, edges, shaft_pairs, bone_names,
                                    bone_heads=None, bone_tails=None,
-                                   max_twist_gradient=0.25, passes=12):
+                                   max_twist_gradient=0.25, passes=12, radius_scale=0.55):
     """Relaxes weight gradients along kinematic bone shafts (spine, neck, shoulders, arms)
     to eliminate axial twist shearing and candy-wrapper tearing artifacts.
     Preserves total joint partition of unity (W_P + W_C) while smoothing the relative blend t."""
@@ -597,7 +712,7 @@ def compute_twist_shaft_relaxation(weights, coords, edges, shaft_pairs, bone_nam
         else:
             L = 0.15 * max(1e-3, float(np.linalg.norm(P.max(0) - P.min(0))))
 
-        R = max(0.06 * L, 0.55 * max(1e-3, L))
+        R = radius_scale * max(1e-3, L)          # (was max(0.06 L, 0.55 L), which is always 0.55 L)
         dists = np.linalg.norm(P - j_pos, axis=1)
         in_zone = dists <= R
 
@@ -721,6 +836,85 @@ def twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log):
     log["twist_shaft_relaxed_verts"] = corrected_count
 
 
+SHAFT_CHILD_WORDS = ("spine", "neck", "head", "shoulder", "clavicle", "arm", "forearm", "upleg", "thigh", "leg")
+SHAFT_PARENT_WORDS = ("spine", "hips", "neck", "shoulder", "clavicle", "arm", "upleg", "thigh")
+
+
+def split_joint_pairs(pairs):
+    """(shaft_pairs, hinge_pairs): each parent-child joint once. Along a spine, neck, arm or leg (a shaft that twists)
+    it is relaxed with the twist settings; anywhere else (tails, wings, tentacles, fingers) with the hinge settings.
+    The two passes used to go over the same joints one after the other."""
+    shafts, hinges = [], []
+    for p, c in pairs:
+        if has_token(c, *SHAFT_CHILD_WORDS) or has_token(p, *SHAFT_PARENT_WORDS):
+            shafts.append((p, c))
+        else:
+            hinges.append((p, c))
+    return shafts, hinges
+
+
+def joint_relaxation_pass(mesh, arm, chains, spec, size, log):
+    """Blender mesh pass: eases steep weight gradients across every articulating joint, once each (split_joint_pairs):
+    hinge_smoothing (on by default) for the hinges, twist_relaxation (on by default) for the shafts. `hinges` or
+    `twist_pairs` in the spec name the pairs outright."""
+    do_hinge = spec.get("hinge_smoothing", True)
+    do_twist = spec.get("twist_relaxation", True)
+    if not do_hinge and not do_twist:
+        return
+    verts = mesh.data.vertices
+    n = len(verts)
+    if n == 0 or len(mesh.data.edges) == 0:
+        return
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    if not bone_names:
+        return
+
+    def given(key):
+        out = []
+        for item in spec.get(key) or []:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                out.append((item[0], item[1]))
+            elif isinstance(item, dict) and "parent" in item and "child" in item:
+                out.append((item["parent"], item["child"]))
+        return out
+
+    all_pairs = [(b.parent.name, b.name) for b in arm.data.bones
+                 if b.use_deform and b.parent and b.parent.use_deform]
+    shafts, hinges = split_joint_pairs(all_pairs)
+    if "twist_pairs" in spec:
+        shafts = given("twist_pairs")
+    if "hinges" in spec:
+        # joints the spec lists as hinges are hinges, whatever the names say: they leave the shafts
+        hinges = given("hinges")
+        shafts = [p for p in shafts if p not in set(hinges)]
+
+    W = read_weights(mesh, bone_names)
+    P = np.empty(n * 3, dtype=float)
+    verts.foreach_get("co", P)
+    P = P.reshape(n, 3)
+    ed = np.empty(len(mesh.data.edges) * 2, dtype=int)
+    mesh.data.edges.foreach_get("vertices", ed)
+    edges = ed.reshape(-1, 2)
+    heads = {b.name: tuple(b.head_local) for b in arm.data.bones}
+    tails = {b.name: tuple(b.tail_local) for b in arm.data.bones}
+    span = [float(size[k]) for k in range(3)]
+
+    W2 = W
+    if do_twist and shafts:
+        W2 = compute_twist_shaft_relaxation(W2, P, edges, shafts, bone_names, bone_heads=heads, bone_tails=tails,
+                                            max_twist_gradient=float(spec.get("twist_max_gradient", 0.25)),
+                                            passes=int(spec.get("twist_passes", 12)),
+                                            radius_scale=float(spec.get("twist_radius_scale", 0.55)))
+    if do_hinge and hinges:
+        W2 = compute_hinge_laplacian_smoothing(W2, P, edges, hinges, bone_names, bone_heads=heads, bone_tails=tails,
+                                               passes=int(spec.get("hinge_passes", 8)),
+                                               max_gradient=float(spec.get("hinge_max_gradient", 0.28)),
+                                               radius_scale=float(spec.get("hinge_radius_scale", 0.45)),
+                                               model_size=span)
+    log["joint_relaxed_verts"] = write_weights(mesh, bone_names, W, W2, locked=spec.get("_locked"))
+    log["joint_relaxed_pairs"] = {"shafts": len(shafts) if do_twist else 0, "hinges": len(hinges) if do_hinge else 0}
+
+
 def find_nearest_bone_segment(point, bone_segments):
     """Finds the nearest bone segment to a 3D point.
     bone_segments: list of (name, head_xyz, tail_xyz)
@@ -777,6 +971,14 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
 
     assigned_set = set(already_assigned or [])
     auto_count = 0
+    # What counts as a rigid accessory: a small piece (a plate, a buckle, a holster), not a garment. A separately
+    # modelled pair of trousers or a jacket is a loose piece too, but it spans joints and must bend with them.
+    all_co = np.array([v.co[:] for v in verts]) if total_verts else np.zeros((0, 3))
+    model_extent = float(np.max(all_co.max(0) - all_co.min(0))) if total_verts else 1.0
+    max_share = float(spec.get("rigid_island_max_share", 0.10))       # of all vertices
+    max_extent = float(spec.get("rigid_island_max_extent", 0.25))     # of the model's longest side
+    skipped_large = 0
+    locked = spec.setdefault("_locked", set()) if isinstance(spec, dict) else set()
 
     for k, idxs in enumerate(isl):
         if k in body_islands:
@@ -787,6 +989,10 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
 
         # Island vertex coords
         coords = np.array([verts[i].co[:] for i in idxs])
+        if len(idxs) > max_share * total_verts or \
+                float(np.max(coords.max(0) - coords.min(0))) > max_extent * model_extent:
+            skipped_large += 1
+            continue
         center = coords.mean(axis=0)
 
         # Convert center to armature space if matrices differ
@@ -826,9 +1032,12 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
             target_group.add([i], 1.0, "REPLACE")
 
         assigned_set.update(idxs)
+        locked.update(int(i) for i in idxs)        # rigid on purpose: the healer leaves it
         auto_count += 1
 
     log["auto_rigid_islands"] = auto_count
+    if skipped_large:
+        log["auto_rigid_islands_skipped_large"] = skipped_large
     return auto_count
 
 
@@ -904,6 +1113,7 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
                         vg[g.group].remove([i])
                     target_group.add([i], 1.0, 'REPLACE')
                 assigned_indices.update(matched_indices)
+                spec.setdefault("_locked", set()).update(int(i) for i in matched_indices)
                 rigid_count += 1
 
     do_auto = (rigid_val in (True, "auto") or rigid_armor or armor_rules is True or
@@ -915,16 +1125,23 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
     log["rigid_islands_assigned"] = rigid_count
 
 
-def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=None, y_mid=None, blend_width=0.08):
+def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=None, y_mid=None, blend_width=0.08,
+                                     front_bones=None, hind_bones=None, min_sep=0.05):
     """Enforces longitudinal separation between front limbs and hindquarters on quadrupeds/creatures.
     Prevents distal front leg/shoulder bones from stealing weights from the rear flank/pelvis,
-    and hind leg bones from stealing weights from the chest/ribcage."""
+    and hind leg bones from stealing weights from the chest/ribcage.
+
+    front_bones / hind_bones: the limbs' bones sorted by where each limb leaves the body (limb_groups() works this
+    out from the chains). Without them, names decide, which misreads segment numbers (leg1_2.L) and a biped's feet.
+    min_sep: how far apart the two groups must be for the barrier to apply, in the model's units (scaled by the
+    caller)."""
     W = np.array(weights, copy=True, dtype=float)
     N, num_bones = W.shape
     if N == 0 or num_bones == 0 or not bone_heads:
         return W
 
     col = {name: i for i, name in enumerate(bone_names)}
+    given = front_bones is not None and hind_bones is not None
 
     def is_front_leg(name):
         lower = name.lower()
@@ -940,8 +1157,12 @@ def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=Non
         lower = name.lower()
         return any(k in lower for k in ("spine", "hips", "chest", "root", "body", "pelvis"))
 
-    front_cols = [col[b] for b in bone_names if is_front_leg(b) and b in bone_heads]
-    hind_cols = [col[b] for b in bone_names if is_hind_leg(b) and b in bone_heads]
+    if given:
+        front_cols = [col[b] for b in front_bones if b in col and b in bone_heads]
+        hind_cols = [col[b] for b in hind_bones if b in col and b in bone_heads]
+    else:
+        front_cols = [col[b] for b in bone_names if is_front_leg(b) and b in bone_heads]
+        hind_cols = [col[b] for b in bone_names if is_hind_leg(b) and b in bone_heads]
 
     if not front_cols or not hind_cols:
         return W
@@ -955,7 +1176,7 @@ def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=Non
     y_front_mean = float(np.mean(y_front_vals))
     y_hind_mean = float(np.mean(y_hind_vals))
 
-    if abs(y_hind_mean - y_front_mean) < 0.05:
+    if abs(y_hind_mean - y_front_mean) < min_sep:
         return W
 
     front_is_negative_y = y_front_mean < y_hind_mean
@@ -1037,8 +1258,7 @@ def apply_tail_isolation_barrier(weights, coords, bone_names, bone_heads=None):
         return W
 
     def is_hind_leg(name):
-        lower = name.lower()
-        return any(k in lower for k in ("leg_hind", "leg_back", "hind_leg", "thigh", "shin", "foot", "upleg", "leg")) and "tail" not in lower
+        return has_token(name, "leg", "thigh", "shin", "foot", "upleg") and not has_token(name, "tail")
 
     hind_cols = [col[b] for b in bone_names if is_hind_leg(b)]
     hips_targets = [col[b] for b in bone_names if any(k in b.lower() for k in ("hips", "pelvis", "root", "spine"))]
@@ -1058,14 +1278,28 @@ def apply_tail_isolation_barrier(weights, coords, bone_names, bone_heads=None):
                     W[idx, hips_target] += w_tail
 
     if bone_heads:
+        # Along the tail's own direction, not by height: the vertices behind the tail's root (on the body's side of
+        # it) keep no distal tail weight. "Below the tail base" made a tail that hangs or drags on the ground ride
+        # the pelvis.
         base_tail = [b for b in bone_names if "tail" in b.lower() and b in bone_heads]
-        if base_tail:
-            z_tail_base = bone_heads[base_tail[0]][2]
-            Z = coords[:, 2]
-            well_below_tail = Z < (z_tail_base - 0.08 * (float(Z.max() - Z.min()) if len(Z) else 1.0))
-            if np.any(well_below_tail):
-                below_indices = np.where(well_below_tail)[0]
-                for idx in below_indices:
+        if len(base_tail) >= 2:
+            base = np.array(bone_heads[base_tail[0]], dtype=float)
+            nxt = np.array(bone_heads[base_tail[1]], dtype=float)
+            d = nxt - base
+            L = float(np.linalg.norm(d))
+            if L > 1e-9:
+                d /= L
+                t = (coords - base) @ d
+                span = float(np.linalg.norm(coords.max(0) - coords.min(0))) if len(coords) else 1.0
+                # and not on the tail itself: a tail that curls forward over the body (a scorpion's, a squirrel's)
+                # has its far end ahead of its root, and keeps it
+                pts = [np.array(bone_heads[b], dtype=float) for b in base_tail]
+                near_tail = np.full(len(coords), np.inf)
+                for a, b in zip(pts[:-1], pts[1:]):
+                    dseg, _ = _seg_dist(coords, a, b)
+                    near_tail = np.minimum(near_tail, dseg)
+                behind = (t < -0.04 * span) & (near_tail > 0.08 * span)
+                for idx in np.where(behind)[0]:
                     w_tail = float(W[idx, distal_tail_cols].sum())
                     if w_tail > 1e-4:
                         W[idx, distal_tail_cols] = 0.0
@@ -1087,7 +1321,10 @@ def apply_radial_limb_sector_isolation(weights, coords, bone_names, bone_heads=N
 
     col = {name: i for i, name in enumerate(bone_names)}
 
-    leg_pat = re.compile(r"^leg_?(\d+)[._]([LR])$", re.IGNORECASE)
+    # One key per leg, not per bone: a hexapod's legs are leg1_1.L, leg1_2.L ... (rerig.name_chains), or leg1.L for a
+    # single-bone leg. The old pattern (leg_?N.L) matched a biped's own leg_1.L, leg_2.L, leg_3.L as three "legs"
+    # and never matched a hexapod's.
+    leg_pat = re.compile(r"^leg(\d+)(?:_\d+)?[._]([LR])$", re.IGNORECASE)
     chain_bones = {}
     for b in bone_names:
         m = leg_pat.match(b)
@@ -1157,12 +1394,8 @@ def compute_sibling_appendage_isolation(weights, coords, bone_names, bone_heads=
             bones = [b for b in c.get("bones", []) if b in col]
             if len(bones) < 2:
                 continue
-            if any(".l" in b.lower() or "left" in b.lower() for b in bones):
-                side = ".L"
-            elif any(".r" in b.lower() or "right" in b.lower() for b in bones):
-                side = ".R"
-            else:
-                side = ""
+            sides = {bone_side(b) for b in bones} - {""}
+            side = ".L" if sides == {"L"} else ".R" if sides == {"R"} else ""
             category = None
             if any(k in role.lower() for k in ("tentacle", "tendril", "streamer")):
                 category = f"tentacles{side}"
@@ -1179,7 +1412,7 @@ def compute_sibling_appendage_isolation(weights, coords, bone_names, bone_heads=
             m = prefix_pat.match(b)
             if m:
                 kind, num, rest = m.groups()
-                side = ".L" if (".l" in b.lower() or "left" in b.lower()) else (".R" if (".r" in b.lower() or "right" in b.lower()) else "")
+                side = {"L": ".L", "R": ".R"}.get(bone_side(b), "")
                 cat = f"{kind.lower()}{side}"
                 chain_key = f"{cat}_{num}"
                 pat_groups.setdefault(cat, {}).setdefault(chain_key, []).append(b)
@@ -1240,7 +1473,8 @@ def compute_sibling_appendage_isolation(weights, coords, bone_names, bone_heads=
     return W
 
 
-def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0.20, passes=3, blend_factor=0.5):
+def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0.20, passes=3, blend_factor=0.5,
+                                          locked=None, edge_scale=True):
     """Closed-loop Laplacian tear healer:
     Identifies connected mesh edges across which weight gradients exceed max_gradient (which
     causes tears/holes in QA bend tests), and applies localized topological Laplacian relaxation
@@ -1252,6 +1486,11 @@ def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0
     max_gradient: maximum allowable weight difference on any bone across a connected edge (default 0.20).
     passes: number of relaxation iterations (default 3).
     blend_factor: blend weight towards neighbor average per pass (default 0.5).
+    locked: vertex indices never changed (a hard split, a shell, a rigid piece: cuts made on purpose, which the
+      healer used to blur because it ran last).
+    edge_scale: the limit on an edge grows with its length (against the median edge, x1 .. x4): a weight step
+      spread over a long edge is not the tear a step over a short one is, and a fixed limit blurred every joint of a
+      low-poly mesh.
 
     Returns: (healed_weights, modified_vert_count)
     """
@@ -1274,6 +1513,18 @@ def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0
     if len(u_idx) == 0:
         return weights, 0
 
+    limit = np.full(len(u_idx), float(max_gradient))
+    P = np.asarray(coords, dtype=float)
+    if edge_scale and len(P) == N:
+        lens = np.linalg.norm(P[u_idx] - P[v_idx], axis=1)
+        med = float(np.median(lens)) if len(lens) else 0.0
+        if med > 1e-12:
+            limit = max_gradient * np.clip(lens / med, 1.0, 4.0)     # never stricter than max_gradient
+    lock_mask = np.zeros(N, dtype=bool)
+    if locked:
+        li = np.array([i for i in locked if 0 <= int(i) < N], dtype=int)
+        lock_mask[li] = True
+
     # Build adjacency list: adj[u] = list of neighbor vertex indices
     adj = [[] for _ in range(N)]
     for u, v in zip(u_idx, v_idx):
@@ -1282,13 +1533,16 @@ def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0
 
     for p in range(passes):
         edge_diffs = np.max(np.abs(W[u_idx] - W[v_idx]), axis=1)
-        violating = edge_diffs > max_gradient
+        violating = edge_diffs > limit
         if not np.any(violating):
             break
 
         violating_u = u_idx[violating]
         violating_v = v_idx[violating]
         violating_verts = np.unique(np.concatenate([violating_u, violating_v]))
+        violating_verts = violating_verts[~lock_mask[violating_verts]]
+        if len(violating_verts) == 0:
+            break
 
         new_W_vals = np.zeros((len(violating_verts), M), dtype=float)
         for i, u in enumerate(violating_verts):
@@ -1321,7 +1575,8 @@ def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0
 
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None,
-                                flank_barrier=True, tail_barrier=True, radial_barrier=True):
+                                flank_barrier=True, tail_barrier=True, radial_barrier=True,
+                                plan=None, front_bones=None, hind_bones=None):
     """Enforces geodesic, vertical, and air-gap anatomical barriers on skin weights:
     1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
     2. Arm & Shoulder vertical isolation: strictly prevents arms, hands, shoulders, and clavicles
@@ -1343,19 +1598,26 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
     crotch_threshold: distance from sym_plane beyond which opposite-leg weights are completely zeroed.
     armpit_barrier: whether to clean distal arm weights off chest/torso vertices.
     height_span: optional total model height.
+    plan: the body plan (body_plan()): the rules that assume a standing two-legged body (3, 4, 5, 7, 8, 11, 11b: by
+      height above the floor, arms beside the hips, the head on top) run only for "biped" (or None, as before
+      plans were known). On a quadruped they tore its lower ribcage off the chest, its withers off its girdles and a
+      grazing head onto a foot.
+    front_bones, hind_bones: the front and hind limbs' bones, by where each limb leaves the body (for the flank
+      barrier); without them the flank barrier falls back to names.
     Returns: (N, num_bones) cleaned and normalized weights."""
     W = np.array(weights, copy=True)
     N, num_bones = W.shape
     if N == 0 or num_bones == 0:
         return W
+    biped = plan in (None, "biped")
 
     col = {name: i for i, name in enumerate(bone_names)}
 
     def is_left(name):
-        return name.endswith(".L") or name.startswith("Left") or "_l" in name.lower() or ".l" in name.lower()
+        return bone_side(name) == "L"
 
     def is_right(name):
-        return name.endswith(".R") or name.startswith("Right") or "_r" in name.lower() or ".r" in name.lower()
+        return bone_side(name) == "R"
 
     def is_leg(name):
         lower = name.lower()
@@ -1393,8 +1655,8 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
         return "neck" in name.lower()
 
     def is_appendage(name):
-        lower = name.lower()
-        return any(k in lower for k in ("ear", "antenna", "fluke", "flipper", "wisp", "filament"))
+        # by word, not substring: "ear" is in ForeArm, and a forearm is not an ear
+        return has_token(name, "ear", "antenna", "fluke", "flipper", "wisp", "filament")
 
     X = coords[:, 0]
     Z = coords[:, 2]
@@ -1516,7 +1778,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 3. Arm & Shoulder vertical isolation (strictly prevent arm/shoulder bleed onto pelvis, hips, and legs)
     all_arm_cols = [col[b] for b in bone_names if is_shoulder(b) or is_arm(b)]
-    if all_arm_cols and (hips_target is not None or left_leg_cols or right_leg_cols):
+    if biped and all_arm_cols and (hips_target is not None or left_leg_cols or right_leg_cols):
         z_arm_cutoff = z_hips + 0.03 * h
         below_pelvis = Z < z_arm_cutoff
         if np.any(below_pelvis):
@@ -1558,7 +1820,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 4. Shoulder Clavicle Containment: Shoulders cannot own neck or mid/lower spine
     shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
-    if shoulder_cols:
+    if biped and shoulder_cols:
         if z_shoulder is not None:
             z_sh_low = z_shoulder - 0.12 * h
             too_low_sh = Z < z_sh_low
@@ -1588,7 +1850,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 5. Upper Torso (Spine1, Spine2, Chest) to Leg Barrier
     upper_torso_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine1", "spine2", "spine_2", "spine_3", "chest"))]
-    if upper_torso_cols and hips_target is not None:
+    if biped and upper_torso_cols and hips_target is not None:
         z_leg_zone = z_hips + 0.04 * h
         in_leg_zone = (Z < z_leg_zone) & (np.abs(X - sym_plane) > crotch_threshold)
         if np.any(in_leg_zone):
@@ -1617,7 +1879,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 7. Leg-to-Upper-Body isolation: Leg bones cannot own chest/ribs/shoulders
     all_leg_cols = [col[b] for b in bone_names if is_leg(b)]
-    if all_leg_cols and hips_target is not None:
+    if biped and all_leg_cols and hips_target is not None:
         z_torso_top = z_hips + 0.15 * h
         above_pelvis = Z > z_torso_top
         if np.any(above_pelvis):
@@ -1630,7 +1892,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 8. Arm-to-Head/Neck isolation: Arm bones cannot own central Head and Neck vertices
     arm_cols = [col[b] for b in bone_names if is_arm(b)]
-    if arm_cols and (neck_target is not None or head_target is not None):
+    if biped and arm_cols and (neck_target is not None or head_target is not None):
         neck_zone = (Z >= z_neck - 0.01 * h) & (np.abs(X - sym_plane) < 0.06 * h)
         if np.any(neck_zone):
             nz_indices = np.where(neck_zone)[0]
@@ -1677,7 +1939,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                                 W[idx, hips_target] += w_app
 
     # 11. Head / Neck boundary refinement: Vertices above z_head belong predominantly to Head
-    if head_target is not None and neck_cols and z_head is not None:
+    if biped and head_target is not None and neck_cols and z_head is not None:
         above_neck = (Z >= (z_head + 0.005 * h)) & (np.abs(X - sym_plane) < 0.20 * h)
         if np.any(above_neck):
             an_indices = np.where(above_neck)[0]
@@ -1690,7 +1952,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
 
     # 11b. Snout / Head vs. Paws / Hooves vertical & distance isolation:
     # Paw/hoof bones cannot own head/jaw/snout vertices, and head/jaw bones cannot own paws.
-    if head_target is not None and distal_leg_cols and bone_heads:
+    if biped and head_target is not None and distal_leg_cols and bone_heads:
         z_head_min = (z_head - 0.05 * h) if z_head is not None else (z_neck + 0.02 * h)
         on_head = Z >= z_head_min
         if np.any(on_head):
@@ -1714,16 +1976,19 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                         best_foot = distal_leg_cols[0]
                         W[idx, best_foot] += w_hn
 
-    # 12. Longitudinal Flank barrier for quadrupeds/creatures
-    if flank_barrier and bone_heads:
-        W = apply_longitudinal_flank_barrier(W, coords, bone_names, bone_heads=bone_heads)
+    # 12. Longitudinal Flank barrier for quadrupeds/creatures (never a biped: its "front" arms and "hind" feet are
+    # not a front and a back end of the body)
+    if flank_barrier and bone_heads and plan in (None, "quadruped", "multi"):
+        W = apply_longitudinal_flank_barrier(W, coords, bone_names, bone_heads=bone_heads,
+                                             front_bones=front_bones, hind_bones=hind_bones,
+                                             min_sep=0.05 * max(h, 1e-6))
 
     # 13. Tail-to-Hindquarters / Buttocks isolation
     if tail_barrier:
         W = apply_tail_isolation_barrier(W, coords, bone_names, bone_heads=bone_heads)
 
     # 14. Radial limb sector isolation for multi-legged creatures (hexapods/octopods)
-    if radial_barrier and bone_heads:
+    if radial_barrier and bone_heads and plan in (None, "multi"):
         W = apply_radial_limb_sector_isolation(W, coords, bone_names, bone_heads=bone_heads)
 
     # Renormalize rows
@@ -1748,16 +2013,8 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
     if not bone_names:
         return
 
-    col = {nm: i for i, nm in enumerate(bone_names)}
-    W = np.zeros((n, len(bone_names)), dtype=np.float32)
-    gi = {g.index: col.get(g.name) for g in vg}
-    for v in verts:
-        for g in v.groups:
-            k = gi.get(g.group)
-            if k is not None:
-                W[v.index, k] += g.weight
-
-    P = np.empty(n * 3, dtype=np.float32)
+    W = read_weights(mesh, bone_names)
+    P = np.empty(n * 3, dtype=float)
     verts.foreach_get("co", P)
     P = P.reshape(n, 3)
 
@@ -1765,6 +2022,7 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
     sym_plane = float(spec.get("sym_plane", 0.0))
     bone_heads = {b.name: list(b.head_local) for b in arm.data.bones}
     h_span = float(size[2]) if hasattr(size, '__getitem__') else float(size.z)
+    front, hind = limb_groups(chains)
 
     cleaned_W = apply_geodesic_skin_barrier(
         W, P, bone_names,
@@ -1775,23 +2033,11 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
         height_span=h_span,
         flank_barrier=spec.get("flank_barrier", True),
         tail_barrier=spec.get("tail_barrier", True),
-        radial_barrier=spec.get("radial_barrier", True)
+        radial_barrier=spec.get("radial_barrier", True),
+        plan=spec.get("_plan") or body_plan(chains),
+        front_bones=front or None, hind_bones=hind or None,
     )
-
-    diff = np.abs(cleaned_W - W).sum(axis=1)
-    corrected_count = int((diff > 1e-3).sum())
-
-    if corrected_count > 0:
-        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
-        for vi in np.where(diff > 1e-3)[0]:
-            for bi, g_obj in group_objs.items():
-                w = float(cleaned_W[vi, bi])
-                if w > 1e-4:
-                    g_obj.add([int(vi)], w, 'REPLACE')
-                else:
-                    g_obj.remove([int(vi)])
-
-    log["geodesic_barrier_fixed_verts"] = corrected_count
+    log["geodesic_barrier_fixed_verts"] = write_weights(mesh, bone_names, W, cleaned_W, locked=spec.get("_locked"))
 
 
 def find_central_pelvis_bone(arm, chains=None):
@@ -1878,14 +2124,15 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     height = span_z
 
     sym_plane = float(spec.get("sym_plane", 0.0))
+    plan = spec.get("_plan") or body_plan(chains)
+
+    LEG_WORDS = ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf")
 
     def is_left_leg_name(nm):
-        l = nm.lower()
-        return ("left" in l or l.endswith(".l") or "_l" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
+        return bone_side(nm) == "L" and has_token(nm, *LEG_WORDS)
 
     def is_right_leg_name(nm):
-        l = nm.lower()
-        return ("right" in l or l.endswith(".r") or "_r" in l) and any(k in l for k in ("leg", "thigh", "upleg", "foot", "toe", "shin", "calf"))
+        return bone_side(nm) == "R" and has_token(nm, *LEG_WORDS)
 
     # Estimate pelvic and lower garment height range from armature hips/legs/ankles
     hips_bone = arm.data.bones.get(hips_name)
@@ -1917,9 +2164,11 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
     bound_islands = 0
 
     max_island_len = max(len(i) for i in isl) if isl else 0
+    locked = spec.setdefault("_locked", set()) if isinstance(spec, dict) else set()
     for idxs in isl:
-        if len(idxs) == max_island_len or len(idxs) >= 0.35 * n:
-            continue  # Main body or major component, not a loose accessory
+        if len(idxs) == max_island_len or len(idxs) >= 0.35 * n or \
+                len(idxs) > float(spec.get("rigid_island_max_share", 0.10)) * n:
+            continue  # the body, a major component, or a whole garment: only small pieces (a buckle, a fauld)
         island_P = P[idxs]
         ix_min, ix_max = float(island_P[:, 0].min()), float(island_P[:, 0].max())
         iz_min, iz_max = float(island_P[:, 2].min()), float(island_P[:, 2].max())
@@ -1938,15 +2187,22 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
                     for g in list(verts[i].groups):
                         vg[g.group].remove([i])
                     hips_vg.add([i], 1.0, 'REPLACE')
+                locked.update(int(i) for i in idxs)         # a deliberate rigid bind: the healer leaves it
                 bound_islands += 1
 
     log["centerline_islands_bound"] = bound_islands
 
     # --- Part 2: Sagittal Centerline Pelvic / Crotch Anti-Tear Protection ---
+    # A standing biped's crotch only. On a quadruped the same height band is its whole torso, and front-leg
+    # weight under the chest went to the rear pelvis.
+    if plan not in (None, "biped"):              # None: no chains to go by, the legacy behaviour
+        log["centerline_verts_anchored"] = 0
+        return bound_islands
     left_hip = [b for b in arm.data.bones if is_left_leg_name(b.name) and any(k in b.name.lower() for k in ("up", "thigh", "1"))]
-    x_hip_spacing = float(abs(left_hip[0].head_local[0] - sym_plane)) if left_hip else 0.08 * span_x
-    x_core = max(x_hip_spacing * 0.4, 0.03 * span_x)
-    x_span = max(x_hip_spacing * 1.8, 0.18 * span_x)
+    x_hip_spacing = float(abs(left_hip[0].head_local[0] - sym_plane)) if left_hip else 0.05 * height
+    # the band is the hips' own spread: the model's width in a T-pose is its arm span, and 18% of that reached
+    # halfway down both thighs
+    x_span = max(x_hip_spacing * 1.8, 0.03 * height)
 
     X = P[:, 0]
     Z = P[:, 2]
@@ -1974,6 +2230,8 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
 
     adjusted_verts = 0
     for idx in pelvis_indices:
+        if int(idx) in locked:
+            continue
         v = verts[int(idx)]
         w_left = sum(g.weight for g in v.groups if is_left_leg_name(vg_names.get(g.group, "")))
         w_right = sum(g.weight for g in v.groups if is_right_leg_name(vg_names.get(g.group, "")))
@@ -2020,16 +2278,8 @@ def sibling_appendage_pass(mesh, arm, chains=None, spec=None, size=None, log=Non
     if not bone_names:
         return 0
 
-    col = {nm: i for i, nm in enumerate(bone_names)}
-    W = np.zeros((n, len(bone_names)), dtype=np.float32)
-    gi = {g.index: col.get(g.name) for g in vg}
-    for v in verts:
-        for g in v.groups:
-            k = gi.get(g.group)
-            if k is not None:
-                W[v.index, k] += g.weight
-
-    P = np.empty(n * 3, dtype=np.float32)
+    W = read_weights(mesh, bone_names)
+    P = np.empty(n * 3, dtype=float)
     verts.foreach_get("co", P)
     P = P.reshape(n, 3)
 
@@ -2037,20 +2287,7 @@ def sibling_appendage_pass(mesh, arm, chains=None, spec=None, size=None, log=Non
     cleaned_W = compute_sibling_appendage_isolation(
         W, P, bone_names, bone_heads=bone_heads, chains=chains
     )
-
-    diff = np.abs(cleaned_W - W).sum(axis=1)
-    corrected_count = int((diff > 1e-3).sum())
-
-    if corrected_count > 0:
-        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
-        for vi in np.where(diff > 1e-3)[0]:
-            for bi, g_obj in group_objs.items():
-                w = float(cleaned_W[vi, bi])
-                if w > 1e-4:
-                    g_obj.add([int(vi)], w, 'REPLACE')
-                else:
-                    g_obj.remove([int(vi)])
-
+    corrected_count = write_weights(mesh, bone_names, W, cleaned_W, locked=spec.get("_locked"))
     log["sibling_appendage_fixed_verts"] = corrected_count
     return corrected_count
 
@@ -2076,41 +2313,23 @@ def closed_loop_healing_pass(mesh, arm, spec=None, size=None, log=None):
     if not bone_names:
         return 0
 
-    col = {nm: i for i, nm in enumerate(bone_names)}
-    W = np.zeros((n, len(bone_names)), dtype=np.float32)
-    gi = {g.index: col.get(g.name) for g in vg}
-    for v in verts:
-        for g in v.groups:
-            k = gi.get(g.group)
-            if k is not None:
-                W[v.index, k] += g.weight
-
-    edges = [(e.vertices[0], e.vertices[1]) for e in mesh.data.edges]
+    W = read_weights(mesh, bone_names)
+    ed = np.empty(len(mesh.data.edges) * 2, dtype=int)
+    mesh.data.edges.foreach_get("vertices", ed)
+    edges = ed.reshape(-1, 2)
     max_gradient = float(spec.get("heal_max_gradient", 0.20))
     passes = int(spec.get("heal_passes", 4))
     blend_factor = float(spec.get("heal_blend", 0.5))
 
-    P = np.empty(n * 3, dtype=np.float32)
+    P = np.empty(n * 3, dtype=float)
     verts.foreach_get("co", P)
     P = P.reshape(n, 3)
 
+    locked = spec.get("_locked") or set()
     healed_W, modified_count = compute_closed_loop_laplacian_healing(
-        W, P, edges, max_gradient=max_gradient, passes=passes, blend_factor=blend_factor
+        W, P, edges, max_gradient=max_gradient, passes=passes, blend_factor=blend_factor, locked=locked
     )
-
-    diff = np.abs(healed_W - W).sum(axis=1)
-    corrected_count = int((diff > 1e-3).sum())
-
-    if corrected_count > 0:
-        group_objs = {col[name]: vg.get(name) for name in bone_names if vg.get(name)}
-        for vi in np.where(diff > 1e-3)[0]:
-            for bi, g_obj in group_objs.items():
-                w = float(healed_W[vi, bi])
-                if w > 1e-4:
-                    g_obj.add([int(vi)], w, 'REPLACE')
-                else:
-                    g_obj.remove([int(vi)])
-
+    corrected_count = write_weights(mesh, bone_names, W, healed_W, locked=locked)
     log["closed_loop_healed_verts"] = corrected_count
     return corrected_count
 

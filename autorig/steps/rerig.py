@@ -1237,6 +1237,13 @@ def skin(mesh, arm, chains, spec, size, log):
             for g in good[gi].groups:
                 if g.weight > 1e-4: mesh.vertex_groups[g.group].add([vi], g.weight, 'REPLACE')
 
+    # Every pass below sees the same body plan (biped, quadruped, multi-legged, other: the passes that assume a
+    # standing two-legged body run for bipeds only) and adds the vertices it deliberately cuts or binds rigidly to
+    # spec["_locked"], which the passes after it (the healer above all) leave alone. Each pass has its own switch in
+    # rig.json (docs/SPEC.md, "Skinning options") so they can be tried on and off one at a time.
+    spec["_plan"] = "biped" if spec.get("skeleton") == "humanoid" else placed_rules.body_plan(chains)
+    spec["_locked"] = set()
+    log["body_plan"] = spec["_plan"]
     envelope(mesh, arm, chains, spec, size, log)
     root_mask(mesh, arm, chains, spec, log)
     girdle_pass(mesh, arm, chains, spec, log)
@@ -1247,24 +1254,21 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
+    if spec.get("smooth"):
+        # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out. Before the
+        # barrier, so its cuts stay cuts (the barrier used to run before and again after smoothing).
+        smooth_weights(mesh, int(spec["smooth"]))
     if spec.get("barrier", True):
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
     if spec.get("sibling_isolation", True):
         placed_rules.sibling_appendage_pass(mesh, arm, chains, spec, size, log)
     if spec.get("centerline_armor", True):
         placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("smooth"):
-        # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
-        # Run before rigid-piece pass so loose pieces still end up rigid.
-        smooth_weights(mesh, int(spec["smooth"]))
-        if spec.get("barrier", True):
-            placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("hinge_smoothing", True):
-        placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("twist_relaxation", True):
-        placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
+    # hinges and twisting shafts, each joint once (the two passes used to go over the same joints)
+    placed_rules.joint_relaxation_pass(mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
+    locked = spec["_locked"]
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
     to_body = set()
@@ -1318,6 +1322,7 @@ def skin(mesh, arm, chains, spec, size, log):
         for i in to_body:
             for g in list(verts[i].groups): mesh.vertex_groups[g.group].remove([i])
             sg.add([i], 1.0, 'REPLACE')
+        locked.update(to_body)
     log["body_verts"] = len(to_body)
 
     # A small loose piece (a buckle, a mushroom, a lamp) moves as one: every vertex takes the piece's mean weights.
@@ -1326,7 +1331,10 @@ def skin(mesh, arm, chains, spec, size, log):
     biggest = max(len(i) for i in isl)
     limit = spec.get("rigid_pieces", 0.12)
     if spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories") or spec.get("rigid_islands"):
-        limit = max(limit, 0.45)
+        # armour on: loose pieces up to an accessory's size ride one bone, and no bigger: a garment (trousers, a
+        # jacket: longer than this) still bends. The limit used to be raised to 0.45, and a humanoid's 0.35 default
+        # kept, which took whole garments rigid.
+        limit = float(spec.get("rigid_island_max_extent", 0.25))
     soft = {b for c in chains if c.get("base") in spec.get("soft", []) or c["role"] in spec.get("soft", []) for b in c["bones"]}
     gname = {g.index: g.name for g in mesh.vertex_groups}
     # rigid_to=[(bone, (x0, y0, z0), (x1, y1, z1)), ...]: a loose piece whose middle lies in the box (0..1 of the
@@ -1347,6 +1355,7 @@ def skin(mesh, arm, chains, spec, size, log):
             for i in idx:
                 for g in list(verts[i].groups): mesh.vertex_groups[g.group].remove([i])
             mesh.vertex_groups[boxed].add(idx, 1.0, 'REPLACE')
+            locked.update(idx)
             rigid += 1
             continue
         acc = {}
@@ -1364,6 +1373,7 @@ def skin(mesh, arm, chains, spec, size, log):
         for i in idx:
             for g in list(verts[i].groups): mesh.vertex_groups[g.group].remove([i])
         for gi, w in top: mesh.vertex_groups[gi].add(idx, w / tot, 'REPLACE')
+        locked.update(idx)
         rigid += 1
     log["rigid_pieces"] = rigid
 
@@ -1403,6 +1413,7 @@ def skin(mesh, arm, chains, spec, size, log):
             for i in idx:
                 for ge in list(verts[i].groups): mesh.vertex_groups[ge.group].remove([i])
             g.add(idx, 1.0, 'REPLACE')
+            locked.update(idx)
         log["rigid_parts"] = len(isl)
         if listed: log["parts"] = {b: sum(1 for v in listed.values() if v == b) for b in set(listed.values())}
 
@@ -1415,6 +1426,7 @@ def skin(mesh, arm, chains, spec, size, log):
         for v in verts:
             for g in list(v.groups): mesh.vertex_groups[g.group].remove([v.index])
             (up if v.co.z > cut else down).add([v.index], 1.0, 'REPLACE')
+        locked.update(range(len(verts)))           # a lid's cut is the point: the healer must not blur it
     if spec.get("auto_heal", True):
         placed_rules.closed_loop_healing_pass(mesh, arm, spec, size, log)
     select_only(mesh)

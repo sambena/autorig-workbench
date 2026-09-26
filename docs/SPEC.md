@@ -113,15 +113,30 @@ Skinning options (both kinds):
 
 | Field | Meaning |
 |---|---|
-| `envelope` | after bone heat: `"full"` (the torso belongs to the spine, each limb to a capsule round itself, rule B), `"root"` (bone heat kept, but no limb weight behind the plane where it starts; people), `false` (plain bone heat). Default: full for creatures. |
-| `rigid_pieces` | loose pieces up to this fraction of the largest ride one bone whole (default 0.12) |
+| `envelope` | after bone heat: `"full"` (the torso belongs to the spine, each limb to a capsule round itself, rule B; `joint_blend` and `limb_radius` tune it), `"root"` (bone heat kept, but no limb weight behind the plane where it starts), `false` (plain bone heat). Default: `"root"` for every kind. |
+| `rigid_pieces` | loose pieces up to this fraction of the largest ride one bone whole (default 0.12; with armour on, `rigid_island_max_extent`, 0.25, so a garment still bends) |
 | `rigid_single`, `soft` | every loose piece on one bone; chains exempt from rigid pieces |
 | `rigid_to` | `[[bone, [x0,y0,z0], [x1,y1,z1]], ...]`: a loose piece whose middle is in the box rides that bone |
 | `rigid_parts` | a machine of parts: the main piece rides the body, every other piece its nearest bone. `"listed"`: only the pieces in `parts` ride their bones, everything else the body |
 | `parts` | `[{"bone", "at": [x, y, z], "verts": n}, ...]`: the loose piece of `n` vertices (within 2%) whose bounds centre is nearest `at` rides `bone` whole. For a moving part inside another (a fan's rotor in its duct), where nearest-bone cannot tell them apart. Give each part its own chain, head at its hub and length along its axle, so turning the bone about its own Y spins the part in place |
 | `hard_split` | `{"bone", "else", "above"}`: everything above a height on one bone, the rest on another (a lid) |
-| `smooth` | weight smoothing passes (a thick body's patchy bone heat) |
-| tuning | `joint_blend`, `girdle_blend`, `limb_radius`, `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
+| `smooth` | weight smoothing passes (a thick body's patchy bone heat); run before the barrier, so its cuts stay cuts |
+| tuning | `joint_blend`, `girdle_blend`, `limb_radius` (these three: the full envelope only), `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
+
+The skin passes after bone heat, in the order they run. Each has its own switch, so they can be tried on and off one
+at a time; all are on unless said. They know the model's body plan (biped, quadruped, multi-legged, other, from its
+legs per side; `rig_humanoid` is a biped), and a rule meant for one plan runs only on it. Whatever a pass cuts or binds
+rigidly on purpose (a hard split, the shell, a rigid piece or island, a pelvic accessory) is locked: the passes after it,
+and the healer at the end, leave those vertices alone.
+
+| Field | Pass |
+|---|---|
+| `barrier` | air gaps: no left leg on the right side (and so on), a seam fade between the legs to the hips (`crotch_barrier`, width), arms off the head and neck, appendages (ears, antennae, fins: whole words, so never a *fore*arm) kept near their root. The standing-body rules (arms off the hips and legs by height, legs off the chest, the head's top, feet off the head) run for bipeds only. Sub-switches: `armpit_barrier`, `flank_barrier` (front limbs off the rump and hind limbs off the chest: quadrupeds and multi-legged, front and hind by where each limb leaves the body), `tail_barrier` (the tail off the thighs, and off the body in front of its root, along the tail's own direction), `radial_barrier` (each leg of a multi-legged body in its own sector) |
+| `sibling_isolation` | parallel appendages (legs of one side, tentacles, wing fingers) off each other's far ends |
+| `centerline_armor` | small loose pieces across the pelvis (a fauld, a buckle: under 10% of the mesh) ride the hips; on a biped the crotch seam blends to the hips across the hips' own width |
+| `hinge_smoothing`, `twist_relaxation` | steep weight steps eased across each joint, once per joint: shafts that twist (spine, neck, arms, legs) with the twist settings (`twist_passes`, `twist_max_gradient`, `twist_radius_scale`), other joints (tails, wings, fingers) with the hinge ones (`hinge_passes`, `hinge_max_gradient`, `hinge_radius_scale`); `hinges` / `twist_pairs` name the pairs outright (a joint listed in `hinges` takes the hinge settings) |
+| `rigid_islands` | `"auto"` (the humanoid default; off for the other kinds unless set, or `rigid_armor` / `armor` / `accessories` is): small loose pieces ride one bone (at most `rigid_island_max_share` of the vertices, 0.1, and `rigid_island_max_extent` of the model's longest side, 0.25, so garments still bend); a list names them; `false` / `"off"` for none. `rigid_armor`, `armor`, `accessories` turn it on too |
+| `auto_heal` | the last pass: a weight step steeper than `heal_max_gradient` (0.2, more on a long edge, less on a short one) across an edge is eased (`heal_passes`, `heal_blend`), except on locked vertices |
 
 ### `placed` body-part rules
 
