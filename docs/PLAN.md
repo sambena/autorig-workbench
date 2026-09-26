@@ -163,11 +163,51 @@ Done when a model with no spec goes from drop-in to a PASS audit using only clic
 - **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
   a flier and a prop.
 - **Docs** (done): architecture guides, CONTRIBUTING.md, and formal JSON schema for `rig.json` (`docs/rig.schema.json`).
-- **CI** (done): GitHub Actions workflow on Linux (`ci/ci.yml`, documented in `docs/CI.md`) with cached Blender 5.2.2 LTS, running full unit test suites, Node tests, and headless Blender audit pipeline verifying audit thresholds via `scripts/ci_audit_thresholds.py` and `autorig/cli/audit_all.py`.
+- **CI** (written, not switched on): a GitHub Actions workflow on Linux (`ci/ci.yml`, documented in `docs/CI.md`) with cached Blender 5.2.2 LTS, running full unit test suites, Node tests, and headless Blender audit pipeline verifying audit thresholds via `scripts/ci_audit_thresholds.py` and `autorig/cli/audit_all.py`. It sits outside `.github/workflows`, so it does not run until it is moved there.
 - **Blender version check** (done): at start-up in `autorig/gui/server.py` and `autorig/cli/run.py`, warns outside tested range (5.2 LTS); inspection functions, state reporting, and tested-range checks in `autorig/core/blender.py` with tests in `tests/test_blender_version.py`.
 
 Done when a fresh clone on a machine with only Python and Blender rigs every sample to PASS through the GUI, and CI
 is green.
+
+## R: repair pass (September 2026)
+
+A review of everything added after the public-alpha commits found features that did not work end to end, skinning
+passes that misfire on the tool's own bone names, pops in the clips and slow paths. The repair runs in six phases,
+one pull request each, code first; models are run through the tool only in R6.
+
+- **R1: bugs that stop features working** (done, untested in Blender).
+  - Retarget: Blender reads mocap paths as arguments (a Windows path or a quote in it no longer breaks it, or runs
+    anything). The GUI only reads mocap under the models root or the work folder. A retarget runs as a queued,
+    cancellable job, and the viewer's dialog sends the action's name. Retargeted clips survive a re-bake and ship
+    with the clips. Nothing the mocap file brought in is saved into the rig's file.
+  - Watch folder: a drop with no rig.json is surveyed and gets the suggested one. An OBJ's material and textures, a
+    glTF's buffers and an FBX's `.fbm` come with it, and whole folders work. A failing item never stops the loop or
+    loops forever. A custom Python builder from a drop is never run.
+  - Batch: custom builders are read from `rig.builder`. A bad rig.json fails its own model only. A failed audit never
+    reports the last run's grade. Clips use the archetype the GUI would. Publishes run one at a time after a parallel
+    batch.
+  - Processes: Cancel and the timeouts kill the step with every process it started (`taskkill /T` on Windows). The
+    reaper only retries processes the tool itself failed to stop. Time limits are per step, picked from the command
+    line and far longer (rig and audit 10 minutes). A Blender step whose script raises now exits 1.
+  - Auto-tune: rig.json only ever holds an accepted spec (candidates are read through `AUTORIG_SPEC_OVERRIDE`), and the
+    rig is rebuilt from it when the last candidate lost. It no longer rips welds or grants itself allowances to pass.
+  - Blender glue:
+    - Morph targets and twist bones are built instead of failing silently.
+    - Weld ripping splits once along the seam.
+    - Mesh Doctor `--heal` saves the healed copy.
+    - A file Mesh Doctor cannot read without Blender says so.
+  - GUI:
+    - Unsaved spec edits are never dropped by a job's log, and switching models asks first.
+    - Re-bake and auto-tune keep the rig.json conflict check.
+    - The help page's links work and it describes the menus as they are.
+- **R2: broken skeletons**: rolls, IK setup, joint placement, naming, detection, and new audit checks.
+- **R3: tears**: every weight pass fixed, gated to the bodies it is for, and switchable one at a time. Evidence to start
+  from: an earlier review (closed PR #43, branch `fix/review-cleanup`) re-rigged real models with the new passes (barrier,
+  sibling isolation, centreline/pelvic, hinge, twist, healer) on for every rig, and one went from 39/9 to 215/214
+  tears; with them off, both real models audited as on 21 September.
+- **R4: rigging and animation**: gait continuity, root motion, gallop, morphs per clip, retarget quality, and export.
+- **R5: speed**: one weight matrix per rig, vectorised passes, fewer Blender launches, and a lighter GUI.
+- **R6: measured on models**: timing and audits before and after, and each weight pass tried on and off.
 
 ## Risks
 

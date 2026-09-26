@@ -31,6 +31,38 @@ except ImportError:
     from autorig.core import spec_store
 
 
+PROBE_TIMEOUT = 120
+
+
+def _probe(mode, path, tag):
+    """Runs steps/retarget_probe.py under headless Blender with the path as an argument (never pasted into Python
+    source) and returns the JSON it printed after `tag`. Raises when Blender fails or prints nothing, and ValueError
+    when Blender is not installed (never SystemExit, which would take a server thread down with it)."""
+    if not blender.find(required=False):
+        raise ValueError("Blender not found: install Blender (tested on 5.2) or set AUTORIG_BLENDER")
+    r = blender.run("retarget_probe.py", mode, path, timeout=PROBE_TIMEOUT)
+    for line in (r.stdout or "").splitlines():
+        if line.startswith(tag):
+            return json.loads(line[len(tag):])
+    tail = "\n".join(((r.stderr or "") + (r.stdout or "")).strip().splitlines()[-8:])
+    raise RuntimeError(f"Blender could not read '{os.path.basename(path)}' (exit code {r.returncode}):\n{tail}")
+
+
+def inside(path, roots):
+    """True when path (after resolving links) lies under one of the roots."""
+    p = os.path.normcase(os.path.realpath(path))
+    for root in roots:
+        if not root:
+            continue
+        r = os.path.normcase(os.path.realpath(root))
+        try:
+            if os.path.commonpath([p, r]) == r:
+                return True
+        except ValueError:                      # different drives on Windows
+            continue
+    return False
+
+
 def parse_bvh_header(filepath_or_content):
     """Pure-Python parser for BVH hierarchy and motion header.
     Returns: dict with root, joints, hierarchy, offsets, channels, frames, frame_time, fps."""
@@ -146,43 +178,9 @@ def inspect_mocap_file(filepath):
         return meta
 
     elif ext == ".fbx":
-        cmd = [
-            blender.find(),
-            "-b",
-            "--python-expr",
-            f"""
-import bpy, json
-bpy.ops.import_scene.fbx(filepath="{os.path.abspath(filepath)}", use_anim=True)
-arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
-bones = [b.name for b in arm.data.bones] if arm else []
-fps = bpy.context.scene.render.fps
-actions = []
-for a in bpy.data.actions:
-    f_start = int(a.frame_range[0])
-    f_end = int(a.frame_range[1])
-    f_count = max(1, f_end - f_start + 1)
-    actions.append({{"name": a.name, "frames": f_count, "frame_start": f_start, "frame_end": f_end, "fps": fps}})
-
-act = None
-if arm and arm.animation_data and arm.animation_data.action:
-    act = arm.animation_data.action
-elif bpy.data.actions:
-    act = bpy.data.actions[0]
-
-frames = int(act.frame_range[1] - act.frame_range[0] + 1) if act else 0
-active_name = act.name if act else None
-print("__FBX_META__" + json.dumps({{"format": "FBX", "joints": bones, "frames": frames, "fps": fps, "actions": actions, "active_action": active_name}}))
-"""
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
-        meta = {"format": "FBX", "joints": [], "frames": 0, "fps": 30.0, "actions": [], "active_action": None}
-        for line in r.stdout.splitlines():
-            if line.startswith("__FBX_META__"):
-                try:
-                    meta = json.loads(line[len("__FBX_META__"):])
-                except Exception:
-                    pass
-                break
+        meta = _probe("fbx", os.path.abspath(filepath), "__FBX_META__")
+        if not meta.get("joints"):
+            raise ValueError(f"No armature found in '{os.path.basename(filepath)}'")
 
         conv, conf = skeletons.detect_convention(meta.get("joints", []))
         meta["convention"] = conv
@@ -298,24 +296,8 @@ def find_blend_file(model_identifier):
             if os.path.isfile(bp):
                 return bp, m
 
-    # Check relative to cwd and subdirectories (e.g. Heartroot, Smeltdown, etc.)
-    cwd = os.getcwd()
-    direct_cand = os.path.join(cwd, model_identifier, "rigged", f"{name}.blend")
-    if os.path.isfile(direct_cand):
-        return os.path.abspath(direct_cand), name
-
-    search_dirs = [cwd]
-    try:
-        search_dirs += [os.path.join(cwd, d) for d in os.listdir(cwd)
-                        if os.path.isdir(os.path.join(cwd, d)) and not d.startswith((".", "_"))]
-    except OSError:
-        pass
-
-    for sdir in search_dirs:
-        cand = os.path.join(sdir, name, "rigged", f"{name}.blend")
-        if os.path.isfile(cand):
-            return os.path.abspath(cand), name
-
+    # Only the models root is searched: a model is never looked up relative to the current folder, where a
+    # same-named model in some other project would be written into.
     raise FileNotFoundError(f"Rigged blend file not found for model '{model_identifier}': {blend_path}")
 
 
@@ -356,35 +338,9 @@ def plan_retarget(model_name, mocap_file, clip_name=None, source_action=None, ro
         mocap_meta["selected_action"] = None
 
     # Inspect target bones and rest bone vectors from blend
-    cmd = [
-        blender.find(),
-        "-b",
-        blend_path,
-        "--python-expr",
-        """
-import bpy, json
-arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
-bones = [b.name for b in arm.data.bones] if arm else []
-dirs = {}
-if arm:
-    for b in arm.data.bones:
-        v = (arm.matrix_world.to_3x3() @ (b.tail_local - b.head_local)).normalized()
-        dirs[b.name] = [round(v.x, 3), round(v.y, 3), round(v.z, 3)]
-print("__TGT_BONES__" + json.dumps({"bones": bones, "dirs": dirs}))
-"""
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
-    tgt_bones = []
-    tgt_dirs = {}
-    for line in r.stdout.splitlines():
-        if line.startswith("__TGT_BONES__"):
-            try:
-                data = json.loads(line[len("__TGT_BONES__"):])
-                tgt_bones = data.get("bones", [])
-                tgt_dirs = data.get("dirs", {})
-            except Exception:
-                pass
-            break
+    data = _probe("blend", blend_path, "__TGT_BONES__")
+    tgt_bones = data.get("bones", [])
+    tgt_dirs = data.get("dirs", {})
 
     if not tgt_bones:
         raise ValueError(f"No armature bones found in '{blend_path}'")
@@ -482,6 +438,13 @@ def retarget_clip(model_name, mocap_file, clip_name=None, source_action=None, ro
     with open(out_json, "r", encoding="utf-8") as fh:
         result = json.load(fh)
     result["plan"] = plan
+
+    if preview:
+        # the viewer's copy, rebuilt by the preview step itself so it matches every other preview.glb
+        rp = blender.run("preview_glb.py", "-only", plan["model"])
+        if rp.returncode != 0:
+            raise RuntimeError(f"Preview step failed after the retarget (code {rp.returncode}):\n{rp.stderr or rp.stdout}")
+        result["preview"] = True
     return result
 
 

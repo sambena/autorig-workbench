@@ -77,6 +77,8 @@ def main(argv):
     if cmd in ("export", "package") and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "export.py")] + rest)
     if cmd == "doctor" and rest:
+        if "--heal" in rest:                                  # healing needs Blender's mesh tools
+            return blender_step("mesh_doctor.py", *rest)
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "mesh_doctor.py")] + rest)
     if cmd == "batch":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "batch.py")] + rest)

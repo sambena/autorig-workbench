@@ -141,35 +141,28 @@ class TestAutoTuneCore(unittest.TestCase):
         # Point should have nudged towards [0.55, 0.55, 0.55]
         self.assertGreater(pts[0][0], 0.5)
 
-    def test_propose_candidate_rip_welds(self):
-        spec = {
-            "rig": {
-                "kind": "placed",
-                "joint_blend": 0.7,
-                "smooth": 2,
-                "rip_welds": [],
-            }
-        }
+    def test_never_hides_tears_from_the_grader(self):
+        # competing owners at a tear used to earn a rip_weld (which removes the torn edges from the audit's count),
+        # and the last resort wrote an audit allowance; neither is proposed unless allowances are asked for
+        spec = {"rig": {"kind": "placed", "joint_blend": 0.7, "smooth": 2, "rip_welds": []}}
         audit = {
             "verdict": {"grade": "FAIL", "pass": False, "checks": {}},
             "tears": {"combined": 3, "bend_max": 2, "worst_gap_pct": 1.5, "worst_bone": "wing_1.L"},
-            "tear_sites": [
-                {
-                    "bone": "wing_1.L",
-                    "clusters": [{"owners": ["wing_1.L", "tail_2"]}],
-                }
-            ],
+            "tear_sites": [{"bone": "wing_1.L", "clusters": [{"owners": ["wing_1.L", "tail_2"]}]}],
         }
-        history = [
-            {"param": "joint_blend_inc_1"},
-            {"param": "smooth_1"},
-            {"param": "limb_radius_inc"},
-            {"param": "joint_nudge"},
-        ]
-        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=5, history=history)
+        history = [{"param": p} for p in ("joint_blend_inc_1", "smooth_1", "limb_radius_inc", "joint_nudge")]
+        seen = []
+        for it in range(5, 30):
+            cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=it, history=history)
+            if not cand:
+                break
+            seen.append(cand["delta_type"])
+            history.append({"param": cand["param"]})
+        self.assertNotIn("rip_welds", seen)
+        self.assertNotIn("allowance", seen)
+        cand = auto_tune.propose_tuning_candidate(spec, audit, iteration=30, history=history, allow_allowance=True)
         self.assertIsNotNone(cand)
-        self.assertEqual(cand["delta_type"], "rip_welds")
-        self.assertIn(["tail_2", "wing_1.L"], cand["spec"]["rig"]["rip_welds"])
+        self.assertEqual(cand["delta_type"], "allowance")
 
     def test_propose_candidate_humanoid_landmark_nudge(self):
         spec = {

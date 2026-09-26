@@ -7,7 +7,8 @@
 # required and files outside the served folders are refused; a model is uploaded (an OBJ written here, with its
 # rig.json) and every step runs through the API; a running step is cancelled and its Blender process is gone.
 # The Blender parts are skipped when Blender cannot be found.
-import json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
+import json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse
+import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -261,6 +262,7 @@ class ServerTest(unittest.TestCase):
         self.assertIn("faces", diag)
         self.assertIn(diag["grade"], ("HEALTHY", "WARN", "CRITICAL"))
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8_rig_all_api(self):
         job = self.call("/api/rig-all", {})
         self.assertEqual(job["step"], "rig-all")
@@ -286,6 +288,7 @@ class ServerTest(unittest.TestCase):
         st = self.call("/api/state")
         self.assertIn("models", st)
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8b_source_all_api(self):
         job = self.call("/api/source-all", {"missing_only": False})
         self.assertEqual(job["step"], "source-all")
@@ -293,6 +296,7 @@ class ServerTest(unittest.TestCase):
         self.call("/api/cancel", {"job": job["id"]})
         self.wait(job)
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8c_clips_all_api(self):
         job = self.call("/api/clips-all", {})
         self.assertEqual(job["step"], "rebake-all-clips")
@@ -307,10 +311,14 @@ class ServerTest(unittest.TestCase):
         server.layout = layout
         server.blender = blender
         mock_spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "clips": {"archetype": "walker"}}}
-        cmds = server.commands(".", "test_creature", "rebake-clips", mock_spec)
-        self.assertEqual(len(cmds), 2)
-        self.assertTrue(cmds[0][0].startswith("make clips"))
-        self.assertEqual(cmds[1][0], "preview for the viewer")
+        if HAVE_BLENDER:
+            cmds = server.commands(".", "test_creature", "rebake-clips", mock_spec)
+            self.assertEqual(len(cmds), 2)
+            self.assertTrue(cmds[0][0].startswith("make clips"))
+            self.assertEqual(cmds[1][0], "preview for the viewer")
+        else:                                          # a clean reason, not a dropped connection
+            with self.assertRaises(ValueError):
+                server.commands(".", "test_creature", "rebake-clips", mock_spec)
 
         # ensure pedestal has no clips section: /api/run with rebake-clips must fail with 409
         pedestal_rig = os.path.join(self.models, "pedestal", "rig.json")
@@ -358,6 +366,22 @@ Frame Time: 0.0333333
         insp = self.call("/api/retarget/inspect", body={"file": up_res["file"]})
         self.assertEqual(insp.get("format"), "BVH")
         self.assertEqual(insp.get("frames"), 2)
+
+        # 3. a mocap path outside the models root and the work folder is refused, as /files/ refuses it
+        outside = os.path.join(tempfile.mkdtemp(prefix="autorig-outside-"), "elsewhere.bvh")
+        with open(outside, "wb") as fh:
+            fh.write(bvh_data)
+        self.assertEqual(self.status("/api/retarget/inspect", body={"file": outside}), 400)
+        self.assertEqual(self.status("/api/retarget", body={"model": "pedestal", "file": outside}), 400)
+        self.assertEqual(self.status("/api/retarget/plan?model=pedestal&file=" + urllib.parse.quote(outside)), 400)
+
+        # 4. an upload named to climb out of the mocap folder, or not a mocap file, is refused
+        for bad in ("..", "notes.txt", ".bvh"):
+            req = urllib.request.Request(self.base + "/api/retarget/upload?filename=%s&t=%s" % (urllib.parse.quote(bad), TOKEN),
+                                         data=bvh_data, method="POST", headers={"Content-Type": "application/octet-stream"})
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req)
+            self.assertEqual(cm.exception.code, 400)
 
 
 

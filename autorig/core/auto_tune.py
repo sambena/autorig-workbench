@@ -156,8 +156,12 @@ def calculate_tear_centroid(tear_sites, bone_name=None, use_bbox=False):
     return [round(cx, 4), round(cy, 4), round(cz, 4)]
 
 
-def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
+def propose_tuning_candidate(spec, audit_result, iteration=0, history=None, allow_allowance=False):
     """Proposes an atomic spec modification candidate to heal audit issues.
+
+    Never proposes anything that only hides a tear from the grader: no rip_welds (splitting the mesh at a joint
+    removes the torn edges from the audit's count without fixing the bend), and an audit allowance only when
+    allow_allowance is set.
 
     Returns a dict:
         {
@@ -376,26 +380,8 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
                     "delta_type": "joint_nudge",
                 }
 
-    # 5. Strategy: Rip Welds for Competing Bone Pairs
-    cur_rip = list(rig.get("rip_welds", []))
-    existing_rip_pairs = set()
-    for rw in cur_rip:
-        if isinstance(rw, list) and len(rw) == 2:
-            existing_rip_pairs.add(tuple(sorted([rw[0], rw[1]])))
-        elif isinstance(rw, dict) and "bones" in rw and len(rw["bones"]) == 2:
-            existing_rip_pairs.add(tuple(sorted([rw["bones"][0], rw["bones"][1]])))
-
-    for pair in diag["competing_pairs"]:
-        param_key = f"rip_weld_{pair[0]}_{pair[1]}"
-        if pair not in existing_rip_pairs and param_key not in tried_params:
-            cur_rip.append(list(pair))
-            rig["rip_welds"] = cur_rip
-            return {
-                "description": f"Add rip_weld seam between competing bones {pair[0]} and {pair[1]}",
-                "param": param_key,
-                "spec": cand_spec,
-                "delta_type": "rip_welds",
-            }
+    # 5. (rip_welds used to be proposed here for competing bone pairs: removed, see the docstring. A seam that should
+    # be split is a modelling decision the spec's author makes, not a tuning move.)
 
     # 5b. Strategy: Localized Anti-Tear Joint Hinge Conditioning
     if "hinge_anti_tear" not in tried_params and (comb_tears > 0 or bend_tears > 0):
@@ -504,7 +490,7 @@ def propose_tuning_candidate(spec, audit_result, iteration=0, history=None):
         }
 
     # 10. Fallback Strategy: Documented Audit Allowance Note for minor residual gap
-    if "allowance_fallback" not in tried_params and (comb_tears <= 4 and bend_tears <= 2):
+    if allow_allowance and "allowance_fallback" not in tried_params and (comb_tears <= 4 and bend_tears <= 2):
         audit_allow = dict(rig.get("audit") or {})
         notes = dict(cand_spec.get("notes") or {})
         if comb_tears > 0:

@@ -2868,7 +2868,8 @@ async function save(rerig, force = false) {
     redraw();
     renderTabs(); renderPane();
     await runCheck();
-    flashTop(rerig ? "Saved. Re-rigging…" : "Saved rig.json (the old one is rig.json.bak).");
+    if (r.error) { flashTop(r.error); alert(r.error); }        // saved, but the re-rig could not start
+    else flashTop(rerig ? "Saved. Re-rigging…" : "Saved rig.json (the old one is rig.json.bak).");
   } catch (e) {
     if (e.status === 409 && (e.data?.conflict || (e.message && e.message.includes("changed on disk")))) {
       if (!userEdited) {
@@ -2916,6 +2917,8 @@ async function autoTune() {
   endPick(false);
   try {
     const r = await api("/api/spec/auto-tune", { model: MODEL, spec: draft, base, max_iterations: 3 });
+    if (r.saved) { base = r.base; B.text = r.text; userEdited = false; }   // the draft went to rig.json first
+    if (r.error) alert(r.error);
     if (r.job) {
       follow(r.job);
       tab = "run";
@@ -3089,6 +3092,9 @@ let switchModelSeq = 0;
 
 async function switchModel(name) {
   if (!name) return;
+  // the model already open stays as it is (its draft and undo too): the page's first load and the workbench's
+  // first selectModel name the same model, and a second load would throw the first one away
+  if (name === MODEL && draft) return;
   const seq = ++switchModelSeq;
   modelLoadSeq++;
   riggedLoadSeq++;
@@ -3353,16 +3359,12 @@ function applyWalkParamsToSpec() {
 }
 
 async function rebakeClipsFromSpec() {
-  applyWalkParamsToSpec();
-  if (!draft.clips || !draft.clips.archetype) {
-    const skel = (draft.rig && draft.rig.skeleton) || "";
-    let defaultArch = "walker";
-    if (skel === "winged") defaultArch = "winged";
-    else if (skel === "serpent") defaultArch = "swimmer";
-    else if (skel === "floater") defaultArch = "flyer";
-    else if (skel === "rigid") defaultArch = "turret";
-    setPath(["clips", "archetype"], defaultArch);
-  }
+  // Re-bake saves the draft first (the clips are baked from rig.json). Say so when there are edits the user has
+  // not saved, rather than writing them silently; the archetype is the server's to infer, never guessed here.
+  if (userEdited && typeof confirm === "function" &&
+      !confirm("Re-bake saves your unsaved spec edits to rig.json first. Continue?")) return;
+  const hud = $("walkTuneHUD");
+  if (hud && hud.style.display !== "none") applyWalkParamsToSpec();   // the walk tuner's values, when it is open
   const btn = $("bBakeWalkClips");
   if (btn) btn.disabled = true;
   const btnRebake = $("bRebakeClips");
@@ -3372,12 +3374,12 @@ async function rebakeClipsFromSpec() {
       model: MODEL,
       spec: draft,
       base: base,
-      force: true
     });
     base = r.base; B.text = r.text;
     userEdited = false;
     if (r.job) { follow(r.job); tab = "run"; renderTabs(); renderPane(); }
-    flashTop("Started re-baking animation clips in Blender...");
+    if (r.error) { flashTop(r.error); if (typeof alert === "function") alert(r.error); }
+    else flashTop("Started re-baking animation clips in Blender...");
   } catch (e) {
     flashTop("Re-bake failed: " + e.message);
     if (typeof alert === "function") alert("Re-bake failed: " + e.message);
@@ -3472,6 +3474,7 @@ function wireUIEvents() {
 // Global specEditor interface exported immediately
 window.specEditor = {
   getModel: () => MODEL,
+  hasUnsavedEdits: () => Boolean(draft && userEdited),
   draft: () => clone(draft),
   viewMode: () => viewMode,
   setViewMode,

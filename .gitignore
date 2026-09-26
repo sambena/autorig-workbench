@@ -1,3 +1,12 @@
+# samples/ is the default models root: only the bundled samples are committed, never models added to it.
+samples/*
+!samples/README.md
+!samples/beetle/
+!samples/biped/
+!samples/canine/
+!samples/pedestal/
+!samples/wyvern/
+
 # Outputs. The tool writes next to the models it is pointed at (AUTORIG_MODELS) and into AUTORIG_WORK.
 samples/_autorig/
 samples/*/_autorig/

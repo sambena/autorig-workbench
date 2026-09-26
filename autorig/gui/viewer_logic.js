@@ -966,20 +966,21 @@ export function parseJobProgressLine(line) {
     if (mStep[3]) res.model = mStep[3];
   }
 
-  // !! 2/12: orc rig failed (exit code 1)
-  const mFail = line.match(/^!!\s*(?:source view |audit |make clips |preview )?(?:(\d+)\/(\d+):\s*)?([A-Za-z0-9_\-]+).*failed/i);
+  // !! 2/12: orc rig failed (exit code 1). Only a numbered line names a model: a single step's "!! rig (placed)
+  // failed" starts with the step's label, and the server's ":: SUBJOB_RESULT" line already carries its result.
+  const mFail = line.match(/^!!\s*(?:source view |audit |make clips |preview )?(\d+)\/(\d+):\s*([A-Za-z0-9_\-]+).*failed/i);
   if (mFail && !res.lastResult) {
-    if (mFail[1] && mFail[2] && !res.current) {
+    if (!res.current) {
       res.current = parseInt(mFail[1], 10);
       res.total = parseInt(mFail[2], 10);
     }
     res.lastResult = { model: mFail[3], status: "FAILED" };
   }
 
-  // == 2/12: hero rig done
-  const mDone = line.match(/^==\s*(?:source view |audit |make clips |preview )?(?:(\d+)\/(\d+):\s*)?([A-Za-z0-9_\-]+).*done/i);
+  // == 2/12: hero rig done (numbered lines only, as above: "== rig (placed) done" is a step label, not a model)
+  const mDone = line.match(/^==\s*(?:source view |audit |make clips |preview )?(\d+)\/(\d+):\s*([A-Za-z0-9_\-]+).*done/i);
   if (mDone && !res.lastResult) {
-    if (mDone[1] && mDone[2] && !res.current) {
+    if (!res.current) {
       res.current = parseInt(mDone[1], 10);
       res.total = parseInt(mDone[2], 10);
     }
@@ -1005,6 +1006,8 @@ export function parseJobProgressLine(line) {
  *   formatJobHeader(job, subCount, { prevResult, lastResult }, displayModel)
  *   formatJobHeader(job, subCount, lastResult, displayModel)
  */
+const _esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optDisplay) {
   if (!job) return { html: "Idle", text: "Idle" };
 
@@ -1059,7 +1062,7 @@ export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optD
       const isPass = shownResult.status === "PASSED" || shownResult.status === "PASS" || shownResult.status === "OK";
       const badgeCls = isFail ? "result-failed" : (isPass ? "result-passed" : "result-check");
       const prefix = (!isRunning) ? "Last" : "Prev";
-      prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${shownResult.model}</b> ${shownResult.status}</span>`;
+      prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${_esc(shownResult.model)}</b> ${_esc(shownResult.status)}</span>`;
       prevText = ` · ${prefix}: ${shownResult.model} ${shownResult.status}`;
     }
   }
@@ -1069,12 +1072,13 @@ export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optD
     countsSummary = ` (${job.passed} passed, ${job.failed} failed)`;
   }
 
-  const modelHtml = model ? ` · Working on: <span class="job-active-model">${model}</span>` : (job.model && !job.model.startsWith("(") ? ` · ${job.model}` : "");
+  // the HTML form escapes every name that came from the server (folder names, step labels)
+  const modelHtml = model ? ` · Working on: <span class="job-active-model">${_esc(model)}</span>` : (job.model && !job.model.startsWith("(") ? ` · ${_esc(job.model)}` : "");
   const modelText = model ? ` · ${model}` : "";
 
-  const pidHtml = job.pid ? ` · PID ${job.pid}` : "";
+  const pidHtml = job.pid ? ` · PID ${_esc(job.pid)}` : "";
 
-  const html = `Job ${job.id}: <b>${step}</b>${countHtml}${modelHtml}${prevHtml} · <span class="state ${st}">${st}</span>${countsSummary}${pidHtml}`;
+  const html = `Job ${_esc(job.id)}: <b>${_esc(step)}</b>${countHtml}${modelHtml}${prevHtml} · <span class="state ${_esc(st)}">${_esc(st)}</span>${countsSummary}${pidHtml}`;
   const text = `Job ${job.id}: ${step}${countText}${modelText}${prevText} · ${st}${countsSummary}`;
 
   return { html, text };

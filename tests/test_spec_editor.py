@@ -423,6 +423,7 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(set(b["before"]["checks"]), set(b["audit"]["checks"]))
         self.assertGreater(b["audit_time"], b["before"]["time"])
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
     def test_4_suggest_api(self):
         # Suggestion using source from boned
         sug = self.call("/api/spec/suggest", {"model": "boned"})
@@ -452,6 +453,7 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(res["archetype"], "quadruped")
         self.assertEqual(res["spec"]["rig"]["kind"], "placed")
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
     def test_5_auto_tune_api(self):
         res = self.call("/api/spec/auto-tune", {"model": "boned", "max_iterations": 1})
         self.assertIn("job", res)
@@ -516,6 +518,7 @@ class EditorServer(unittest.TestCase):
         })
         self.assertEqual(len(eval_death["frames"]), 18)
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
     def test_7_rebake_clips_endpoint(self):
         bundle = self.call("/api/spec?name=flat")
         spec = bundle["spec"]

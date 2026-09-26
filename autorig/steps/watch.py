@@ -17,12 +17,20 @@ import watch_daemon
 
 def on_model_processed(res):
     print(f"WATCH_INGEST file={res['file']} -> model={res['model']}")
+    if res.get("suggested"):
+        print(f"  SUGGESTED: rig.json written ({res['suggested']})")
+    if res.get("spec_error"):
+        print(f"  SPEC: {res['spec_error']}")
+    if not res.get("archived"):
+        print("  NOTE: could not move it into _processed; it will not be taken again until it changes")
     if res.get("doctor"):
         d = res["doctor"]
         print(f"  DOCTOR: {d.get('grade')} ({d.get('health_score')}/100) verts={d.get('verts')}")
     if res.get("pipeline"):
         p = res["pipeline"]
         print(f"  PIPELINE: {p.get('status')} grade={p.get('grade')} steps={','.join(p.get('steps', []))} in {p.get('duration')}s")
+        if p.get("error"):
+            print(f"  ERROR: {p['error']}")
         if p.get("export"):
             print(f"  EXPORT: {p.get('export')}")
 

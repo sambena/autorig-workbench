@@ -8,8 +8,8 @@
 #
 # Safety: bound to localhost only, with a random session token on every API call and file URL (the browser is
 # opened on a URL carrying it), a Host check against DNS rebinding, steps from a fixed list, and files served only
-# from under the models root and the work folder. Cancel kills the running step's own process by its PID, never
-# anything by image name.
+# from under the models root and the work folder. Cancel kills the running step's own process by its PID, with the
+# processes it started (found from that PID), never anything by image name.
 import argparse, contextlib, io, json, mimetypes, os, queue, re, secrets, shutil, subprocess, sys, threading, time
 import webbrowser, zipfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -134,8 +134,14 @@ class Runner:
         job.cancelled = True
         p = job.proc
         if p is not None and p.poll() is None:
-            job.add("== cancelled: killing PID %d" % p.pid)
-            p.kill()                     # this process only: TerminateProcess / SIGKILL on its own PID
+            job.add("== cancelled: killing PID %d and the processes it started" % p.pid)
+            try:
+                import autorig_watchdog as _wd
+            except ImportError:
+                from autorig.core import autorig_watchdog as _wd
+            # the step's own process and its children (auto-tune and retarget are Python wrappers that start
+            # Blender themselves), found from that PID: never anything by name
+            _wd.kill_process_tree(p)
         elif job.state == "queued":
             job.finish("cancelled")
 
@@ -195,10 +201,10 @@ class Runner:
                 failed = False
                 audit_verdict = None
                 try:
-                    import watchdog as _wd
+                    import autorig_watchdog as _wd
                 except ImportError:
-                    from autorig.core import watchdog as _wd
-                guard = _wd.JobWatchdog(job, p, label)
+                    from autorig.core import autorig_watchdog as _wd
+                guard = _wd.JobWatchdog(job, p, label, argv=argv)
                 guard.start()
                 for line in p.stdout:
                     job.add(line)
@@ -359,7 +365,10 @@ def availability(st, spec, d):
 
 
 def blender_cmd(script, *args):
-    """The step's command line, with Python's output line-buffered so the log streams as it happens."""
+    """The step's command line, with Python's output line-buffered so the log streams as it happens. Raises
+    ValueError (a 400 with the reason) when Blender is not installed, instead of exiting the request's thread."""
+    if not blender.find(required=False):
+        raise ValueError("Blender not found: install Blender (tested on 5.2) or set AUTORIG_BLENDER")
     argv = blender.command(script, *args)
     return argv[:2] + ["--python-expr", "import sys; sys.stdout.reconfigure(line_buffering=True)"] + argv[2:]
 
@@ -417,10 +426,31 @@ def commands(group, name, step, spec):
     if step == "all":
         # the card goes before the clips (they read its size) and again after (it lists them)
         out = rig_step() + trim() + audit() + publish()
-        c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
-        if c_arch: out += clips() + publish()
+        if spec_store.infer_clip_archetype(spec):                 # as the Clips button: rig.json's or inferred
+            out += clips() + publish()
         return out + preview()                                    # the viewer's copy, last: it carries the clips
     raise ValueError(step)
+
+
+def mocap_ok(p):
+    """A mocap file the GUI may read: an existing .bvh/.fbx under the models root or the work folder (uploads land
+    in <work>/mocap). Anything else on disk is refused, as /files/ refuses it."""
+    try:
+        import retargeter as _ret
+    except ImportError:
+        from autorig.core import retargeter as _ret
+    return (bool(p) and os.path.isfile(p) and os.path.splitext(p)[1].lower() in (".bvh", ".fbx")
+            and _ret.inside(p, [layout.ROOT, layout.WORK]))
+
+
+def retarget_job(group, name, mocap_file, clip_name=None, source_action=None, root_motion=True):
+    """Retarget as a queued job like any other step: one at a time, streamed, cancellable. steps/retarget.py runs
+    under Python and starts Blender itself; --preview refreshes preview.glb so the viewer can play the new clip."""
+    argv = [sys.executable, "-u", os.path.join(STEPS, "retarget.py"), name, os.path.realpath(mocap_file), "--preview"]
+    if clip_name: argv += ["--clip-name", clean_name(clip_name) or "mocap_clip"]
+    if source_action: argv += ["--action", str(source_action)]
+    if not root_motion: argv.append("--no-root-motion")
+    return Job(name, group, "retarget", [("retarget %s" % os.path.basename(mocap_file), argv, None, name)])
 
 
 def default_thresholds():
@@ -892,7 +922,7 @@ def make_handler(app):
             if path == "/spec_editor.js":                         # the spec editor (gui/spec_api.py)
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 f = spec_api.static_file(path)
-                return self._send(200, f[0], f[1])
+                return self._send(200, f[0], f[1]) if f else self._send(404, {"error": "not found"})
             if path == "/spec_editor.html":
                 if not self._guard(q): return
                 return self._send(200, spec_api.page(app.token), "text/html; charset=utf-8",
@@ -928,7 +958,7 @@ def make_handler(app):
                     name = (q.get("model") or q.get("name") or [""])[0]
                     g = find_group(name)
                     if g is None: return self._send(404, {"error": "no model " + name})
-                    src = layout.source_model(name)
+                    src = _quiet(layout.source_model, name)
                     if not src: return self._send(404, {"error": "no source 3D model found"})
                     try:
                         import mesh_doctor as _doc
@@ -940,8 +970,8 @@ def make_handler(app):
                     mocap_file = (q.get("file") or [""])[0].strip()
                     g = find_group(name)
                     if g is None: return self._send(404, {"error": "no model " + name})
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found"})
+                    if not mocap_ok(mocap_file):
+                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
                     try:
                         import retargeter as _ret
                     except ImportError:
@@ -949,9 +979,9 @@ def make_handler(app):
                     return self._send(200, _ret.plan_retarget(name, mocap_file, clip_name=(q.get("clip_name") or [None])[0]))
                 if path == "/api/watchdog/status":
                     try:
-                        import watchdog as _wd
+                        import autorig_watchdog as _wd
                     except ImportError:
-                        from autorig.core import watchdog as _wd
+                        from autorig.core import autorig_watchdog as _wd
                     cur_pid = app.runner.current.pid if app.runner.current else None
                     cur_mem = _wd.get_process_rss_mb(cur_pid) if cur_pid else 0.0
                     return self._send(200, {
@@ -1003,6 +1033,11 @@ def make_handler(app):
                 self._send(404, {"error": "not found"})
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
+            except ValueError as e:                              # a reason for the user (e.g. no Blender), as POST
+                try:
+                    self._send(400, {"error": str(e)})
+                except Exception:
+                    pass
             except Exception as e:
                 try:
                     self._send(500, {"error": repr(e)})
@@ -1079,7 +1114,9 @@ def make_handler(app):
                 if path == "/api/retarget/upload":
                     n = int(self.headers.get("Content-Length") or 0)
                     filename = (q.get("filename") or ["mocap.fbx"])[0]
-                    clean_fn = re.sub(r"[^A-Za-z0-9_\-\.]+", "_", os.path.basename(filename))
+                    clean_fn = re.sub(r"[^A-Za-z0-9_\-\.]+", "_", os.path.basename(filename)).lstrip(".")
+                    if os.path.splitext(clean_fn)[1].lower() not in (".bvh", ".fbx") or not os.path.splitext(clean_fn)[0]:
+                        return self._send(400, {"error": "mocap must be a .bvh or .fbx file"})
                     mocap_dir = os.path.join(layout.WORK, "mocap")
                     os.makedirs(mocap_dir, exist_ok=True)
                     dest = os.path.join(mocap_dir, clean_fn)
@@ -1157,8 +1194,8 @@ def make_handler(app):
                     return self._send(200, res)
                 if path == "/api/retarget/inspect":
                     mocap_file = body.get("file", "").strip()
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
+                    if not mocap_ok(mocap_file):
+                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
                     try:
                         import retargeter as _ret
                     except ImportError:
@@ -1170,26 +1207,19 @@ def make_handler(app):
                     g = find_group(name)
                     if g is None: return self._send(404, {"error": "no such model"})
                     mocap_file = body.get("file", "").strip()
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
-                    try:
-                        import retargeter as _ret
-                    except ImportError:
-                        from autorig.core import retargeter as _ret
-                    res = _ret.retarget_clip(
-                        model_name=name,
-                        mocap_file=mocap_file,
-                        clip_name=body.get("clip_name"),
-                        source_action=body.get("source_action"),
-                        root_motion=body.get("root_motion", True),
-                        export_glb=body.get("export_glb", True),
-                    )
-                    return self._send(200, res)
+                    if not mocap_ok(mocap_file):
+                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
+                    if not blender.find(required=False):
+                        return self._send(503, {"error": "Blender not found: install it or set AUTORIG_BLENDER"})
+                    job = app.runner.submit(retarget_job(g, name, mocap_file, clip_name=body.get("clip_name"),
+                                                         source_action=body.get("source_action"),
+                                                         root_motion=body.get("root_motion", True)))
+                    return self._send(200, job.info())
                 if path == "/api/watchdog/reap":
                     try:
-                        import watchdog as _wd
+                        import autorig_watchdog as _wd
                     except ImportError:
-                        from autorig.core import watchdog as _wd
+                        from autorig.core import autorig_watchdog as _wd
                     reaped = _wd.reap_orphaned_blender_processes()
                     return self._send(200, {"reaped_pids": reaped, "count": len(reaped)})
                 self._send(404, {"error": "not found"})

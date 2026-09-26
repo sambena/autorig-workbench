@@ -13,10 +13,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(REPO, "autorig", "core"), os.path.join(REPO, "autorig", "steps")]
 
+import blender
 import retargeter
 import skeletons
 import layout
 import spec_store
+
+HAVE_BLENDER = blender.find(required=False) is not None
 
 SAMPLE_BVH = """HIERARCHY
 ROOT Hips
@@ -122,8 +125,8 @@ class RetargeterTest(unittest.TestCase):
         with open(cls.bvh_file, "w", encoding="utf-8") as fh:
             fh.write(SAMPLE_BVH)
 
-        # Locate sample FBX if present
-        cls.sample_fbx = "/var/home/cosmo/Work/Smeltdown/Library/PackageCache/com.unity.timeline@9cd41035b3ab/Samples~/GameplaySequenceDemo/Animation/Victory-anim1.fbx"
+        # An FBX with an animated armature, for the FBX tests: AUTORIG_TEST_MOCAP_FBX names one (skipped when unset)
+        cls.sample_fbx = os.environ.get("AUTORIG_TEST_MOCAP_FBX", "")
 
     @classmethod
     def tearDownClass(cls):
@@ -182,6 +185,7 @@ class RetargeterTest(unittest.TestCase):
         res = retargeter.build_retarget_mapping(source_bones, target_bones, overrides={"Spine": "chest"})
         self.assertEqual(res["mapping"]["Spine"], "chest")
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_plan_and_format_summary(self):
         plan = retargeter.plan_retarget("biped", self.bvh_file, clip_name="walk_cycle")
         self.assertEqual(plan["clip_name"], "walk_cycle")
@@ -196,6 +200,7 @@ class RetargeterTest(unittest.TestCase):
         self.assertIn("LeftArm", summary)
         self.assertIn("arm.L_1.L", summary)
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_retarget_clip_headless_blender(self):
         res = retargeter.retarget_clip(
             model_name="biped",
@@ -214,7 +219,7 @@ class RetargeterTest(unittest.TestCase):
 
         # Verify action exists in target .blend via Blender inspect
         verify_cmd = [
-            "blender", "-b", res["target_blend"],
+            blender.find(), "-b", res["target_blend"],
             "--python-expr",
             """
 import bpy
@@ -257,6 +262,58 @@ print("__ACTIONS__" + str(action_names))
         self.assertEqual(len(batch_res), 1)
         self.assertEqual(batch_res[0]["status"], "OK")
 
+    def test_models_are_only_found_under_the_models_root(self):
+        # a same-named model in some other project under the current folder is never written into
+        other = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(os.path.join(other, "ghost", "rigged"))
+        open(os.path.join(other, "ghost", "rigged", "ghost.blend"), "wb").close()
+        cwd = os.getcwd()
+        os.chdir(other)
+        try:
+            with self.assertRaises(FileNotFoundError):
+                retargeter.find_blend_file("ghost")
+        finally:
+            os.chdir(cwd)
+
+    def test_inside(self):
+        root = os.path.join(self.tmp, "root")
+        os.makedirs(root, exist_ok=True)
+        self.assertTrue(retargeter.inside(os.path.join(root, "a", "b.bvh"), [root]))
+        self.assertFalse(retargeter.inside(os.path.join(root, "..", "b.bvh"), [root]))
+        self.assertFalse(retargeter.inside(os.path.join(self.tmp, "rootless.bvh"), [root]))
+        self.assertFalse(retargeter.inside(os.path.join(root, "x.bvh"), [None, ""]))
+
+    def test_probe_passes_paths_as_arguments(self):
+        # the path goes to Blender as an argument (a Windows path's backslashes, quotes: never Python source)
+        from unittest.mock import patch
+        seen = {}
+
+        class R:
+            returncode = 0
+            stderr = ""
+            stdout = '__FBX_META__{"format": "FBX", "joints": ["Hips"], "frames": 1, "fps": 30, "actions": [], "active_action": null}\n'
+
+        def fake_run(script, *args, **kw):
+            seen["script"], seen["args"] = script, args
+            return R()
+
+        tricky = 'C:\\Users\\x\\" + __import__("os").system("calc") + "\\walk.fbx'
+        with patch.object(retargeter.blender, "find", return_value="blender"), patch.object(retargeter.blender, "run", fake_run):
+            meta = retargeter._probe("fbx", tricky, "__FBX_META__")
+        self.assertEqual(seen["script"], "retarget_probe.py")
+        self.assertEqual(seen["args"], ("fbx", tricky))
+        self.assertEqual(meta["joints"], ["Hips"])
+
+        class Bad(R):
+            returncode = 1
+            stdout = "Traceback ..."
+        with patch.object(retargeter.blender, "find", return_value="blender"), patch.object(retargeter.blender, "run", lambda *a, **k: Bad()):
+            with self.assertRaises(RuntimeError):
+                retargeter._probe("fbx", tricky, "__FBX_META__")
+        with patch.object(retargeter.blender, "find", return_value=None):      # no Blender: a reason, not an exit
+            with self.assertRaises(ValueError):
+                retargeter._probe("fbx", tricky, "__FBX_META__")
+
     def test_retarget_cli(self):
         r = subprocess.run(
             [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"), "--help"],
@@ -268,15 +325,16 @@ print("__ACTIONS__" + str(action_names))
         self.assertIn("--no-solve-offsets", r.stdout)
         self.assertIn("--dry-run", r.stdout)
 
-        # Dry run CLI execution
-        r_dry = subprocess.run(
-            [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"),
-             "biped", self.bvh_file, "--dry-run"],
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(r_dry.returncode, 0)
-        self.assertIn("RETARGET_DRY_RUN", r_dry.stdout)
+        # Dry run CLI execution (the plan reads the rigged model: Blender)
+        if HAVE_BLENDER:
+            r_dry = subprocess.run(
+                [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"),
+                 "biped", self.bvh_file, "--dry-run"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r_dry.returncode, 0)
+            self.assertIn("RETARGET_DRY_RUN", r_dry.stdout)
 
         # List actions CLI execution
         r_list = subprocess.run(
@@ -295,6 +353,7 @@ print("__ACTIONS__" + str(action_names))
         self.assertEqual(retargeter.clean_action_name("Sword_Attack-01"), "sword_attack_01")
         self.assertEqual(retargeter.clean_action_name(""), "clip")
 
+    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_plan_with_source_action(self):
         plan = retargeter.plan_retarget("biped", self.bvh_file, source_action="sample_walk")
         self.assertEqual(plan["source_action"], "sample_walk")

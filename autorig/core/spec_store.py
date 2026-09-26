@@ -91,9 +91,19 @@ def load_file(path):
     return data
 
 
+def override_env(key, path):
+    """Environment for a step that should read `path` in place of <key>'s rig.json (auto-tune's candidates): the
+    model's own rig.json is never written with a spec that has not been accepted."""
+    return {"AUTORIG_SPEC_OVERRIDE": os.path.abspath(path), "AUTORIG_SPEC_OVERRIDE_MODEL": layout.leaf(key)}
+
+
 def model(key):
-    """Everything in a model's rig.json ({} when it has none)."""
+    """Everything in a model's rig.json ({} when it has none), or the override file for this one model when
+    AUTORIG_SPEC_OVERRIDE names one (see override_env)."""
     k = layout.leaf(key)
+    ov = os.environ.get("AUTORIG_SPEC_OVERRIDE")
+    if ov and os.environ.get("AUTORIG_SPEC_OVERRIDE_MODEL") == k:
+        return load_file(ov)
     if k not in _cache:
         p = spec_path(k)
         _cache[k] = load_file(p) if os.path.exists(p) else {}
