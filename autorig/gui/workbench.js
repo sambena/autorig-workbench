@@ -1402,10 +1402,10 @@ function openExportModal(targetPreset = "all") {
   if (!body) return;
 
   const presets = [
-    { id: "unreal", name: "Unreal Engine 4 / 5", ext: "FBX (Z-up)", desc: "Skeletal mesh FBX mapped to standard UE Mannequin hierarchy, root motion origin guide, and Unreal import profile." },
-    { id: "unity", name: "Unity (Mecanim)", ext: "FBX (Y-up)", desc: "FBX with Unity HumanDescription Mecanim avatar descriptor JSON, animation clip loop settings, and import walkthrough." },
-    { id: "godot", name: "Godot 4.x", ext: "GLB (Scene)", desc: "Self-contained GLB scene with embedded animation library, Godot 4 .import presets, and sample GDScript character loader." },
-    { id: "web", name: "Web / glTF", ext: "GLB (HTML5)", desc: "Optimized standalone GLB with web manifest, clip list, and self-contained interactive HTML 3D previewer." },
+    { id: "unreal", name: "Unreal Engine 4 / 5", ext: "FBX", desc: "Budgeted skeletal mesh and clips FBX (Convert Scene turns it Z-up on import), UE Mannequin bone mapping, import settings notes and guide." },
+    { id: "unity", name: "Unity (Mecanim)", ext: "FBX (Y-up)", desc: "Budgeted mesh and clips FBX, Humanoid bone-slot notes, and import walkthrough." },
+    { id: "godot", name: "Godot 4.x", ext: "FBX (4.3+)", desc: "Budgeted mesh and clips FBX, Godot .import settings, and sample GDScript character controller." },
+    { id: "web", name: "Web / glTF", ext: "GLB (HTML5)", desc: "The viewer's GLB (full resolution, every clip), web manifest, and interactive HTML 3D previewer." },
   ];
 
   let html = `<div class="sample-grid">`;

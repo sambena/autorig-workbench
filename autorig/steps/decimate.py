@@ -70,7 +70,13 @@ def reduce(mesh, target, planar=True):
 
     Not on a rigged model: the dissolve turns a flat plate into a few long triangles, and a long edge across a joint
     tears when the joint bends (the Dirt Creator's thorax plate reached 8x at a 40-degree head bend). A bending mesh
-    needs its vertices where it bends, so a skinned model gets the collapse alone."""
+    needs its vertices where it bends, so a skinned model gets the collapse alone.
+
+    A mesh with shape keys (morph_targets) is left as it is: Blender cannot apply a modifier to it, and the step used
+    to fail there. Returns False when it did not reduce for that reason."""
+    if getattr(mesh.data, "shape_keys", None):
+        print("DECIMATE note: %s has shape keys (morph targets): kept at full resolution" % mesh.name)
+        return False
     bpy.context.view_layer.objects.active = mesh
     for o in bpy.context.selected_objects: o.select_set(False)
     mesh.select_set(True)
@@ -152,12 +158,14 @@ def run(key):
 
     mesh = meshes[0]
     before = tri_count(mesh)
+    note = None
 
     if target is not None and before > target:
         # A rig of rigid parts (a machine: every vertex on one bone) bends nowhere, so the flat-panel dissolve is as
         # safe on it as on a static prop, and it is what keeps a machine's plates from turning to spikes.
         rigid = bool(arms) and all(sum(1 for g in v.groups if g.weight > 1e-4) <= 1 for v in mesh.data.vertices)
-        reduce(mesh, target, planar=not arms or rigid)
+        if reduce(mesh, target, planar=not arms or rigid) is False:
+            note = "shape keys (morph targets): kept at full resolution"
 
     after = tri_count(mesh)
     influences = limit_influences(mesh)
@@ -197,7 +205,7 @@ def run(key):
             "static": not rigged,
             "bones": len(arms[0].data.bones) if arms else 0,
             "bones_left_empty": lost, "max_influences": influences,
-            "fbx": os.path.relpath(out, ROOT)}
+            "fbx": os.path.relpath(out, ROOT), **({"note": note} if note else {})}
 
 
 def main():

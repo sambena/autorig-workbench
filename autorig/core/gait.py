@@ -235,6 +235,11 @@ def _hermite(p0, m0, p1, m1, t):
 # Biped Locomotion Synthesis
 # ---------------------------------------------------------------------------------------------------------------
 
+TOE_OFF_KNEE = 16.0         # the stance's last knee bend (4 + 12) and foot pitch (-22 - 13): where the swing starts
+TOE_OFF_FOOT = -35.0
+HEEL_STRIKE_FOOT = 16.0     # the stance's first foot pitch: where the swing ends
+
+
 def evaluate_biped_walk(phase, hip_height, leg_length, params=None, is_shooter=False):
     """Synthesizes a complete biomechanical humanoid walk state at normalized cycle phase [0, 1).
     Phase 0.0 corresponds to Left Heel Strike; Phase 0.5 corresponds to Right Heel Strike.
@@ -268,8 +273,8 @@ def evaluate_biped_walk(phase, hip_height, leg_length, params=None, is_shooter=F
 
     # 2. Pelvis 6-DoF Kinematics
     # Vertical bounce (double frequency: bobs twice per walk cycle, lowest at double support)
-    # Mid-stance is around phase 0.25 (Left) and 0.75 (Right) -> peak height
-    pelvis_z = 0.022 * H * p["bob"] * math.cos(2.0 * w)
+    # Mid-stance is around phase 0.25 (Left) and 0.75 (Right) -> peak height; heel strikes (0, 0.5) lowest
+    pelvis_z = -0.022 * H * p["bob"] * math.cos(2.0 * w)
 
     # Lateral sway (single frequency: shifts over Left stance during 0..0.5, Right during 0.5..1.0)
     # Peak lateral shift occurs near mid-stance
@@ -349,15 +354,20 @@ def evaluate_biped_walk(phase, hip_height, leg_length, params=None, is_shooter=F
             along = stride_distance * (-0.5 + s)
             up = lift_height * math.sin(math.pi * s)
 
+            # The swing starts exactly where the stance ended (toe-off: thigh back at +A, knee bent 16, foot pointed
+            # -35) and ends where the next stance starts (heel strike: thigh forward at -A, knee 0, foot +16): it
+            # used to start from the heel-strike pose, a 2A (44 degree) thigh pop and a knee and foot snap, twice a cycle
             # Swing knee folds up to clear ground, then extends forward for heel strike
-            knee_pitch = p["knee_fold"] * math.sin(math.pi * s)
+            knee_pitch = TOE_OFF_KNEE * (1.0 - _smooth_step(0.0, 1.0, s)) + p["knee_fold"] * math.sin(math.pi * s)
             # Thigh swings from back to front
-            thigh_pitch = -base_thigh_amplitude + (2.0 * base_thigh_amplitude) * _smooth_step(0.0, 1.0, s)
+            thigh_pitch = base_thigh_amplitude - (2.0 * base_thigh_amplitude) * _smooth_step(0.0, 1.0, s)
 
-            # Foot prepares for heel strike: neutral -> dorsiflexion near landing
-            if s > 0.70:
+            # Foot: from the push-off point, back to neutral, then dorsiflexion ready for the heel strike
+            if s < 0.30:
+                foot_pitch = TOE_OFF_FOOT + (5.0 * 0.70 - TOE_OFF_FOOT) * _smooth_step(0.0, 1.0, s / 0.30)
+            elif s > 0.70:
                 prep = (s - 0.70) / 0.30
-                foot_pitch = 16.0 * _smooth_step(0.0, 1.0, prep)
+                foot_pitch = 5.0 * 0.30 + (HEEL_STRIKE_FOOT - 5.0 * 0.30) * _smooth_step(0.0, 1.0, prep)
             else:
                 foot_pitch = 5.0 * (1.0 - s)
 
@@ -764,7 +774,8 @@ def evaluate_biped_walk_to_idle(t_norm, hip_height, leg_length, params=None, is_
         thigh_L = -18.0 * (1.0 - sub)
         thigh_R = 18.0 * (1.0 - 2.0 * sub) if sub < 0.5 else 0.0
         knee_L = 8.0 * math.sin(math.pi * sub)
-        knee_R = 30.0 * math.sin(math.pi * sub) if sub < 0.5 else 0.0
+        # the trailing knee folds and unfolds over the whole step (it used to be cut off at its peak: a 30-degree pop)
+        knee_R = 30.0 * math.sin(math.pi * sub)
         arm_pitch_L = 14.0 * (1.0 - sub)
         arm_pitch_R = -14.0 * (1.0 - sub)
         elbow_L = 14.0 + 6.0 * (1.0 - sub)
@@ -782,10 +793,14 @@ def evaluate_biped_walk_to_idle(t_norm, hip_height, leg_length, params=None, is_
         knee_R = 0.0
         arm_pitch_L = 0.0
         arm_pitch_R = 0.0
-        elbow_L = 12.0 if not is_shooter else 28.0
-        elbow_R = 12.0 if not is_shooter else 28.0
+        # the elbows ease from where the step left them to the rest bend, and the settle starts from level, not 1.2%
+        # of the hip height below it: the halves used to meet with an elbow snap and a pelvis drop
+        rest_elbow = 12.0 if not is_shooter else 28.0
+        ease = _smooth_step(0.0, 1.0, sub)
+        elbow_L = 14.0 + (rest_elbow - 14.0) * ease
+        elbow_R = 14.0 + (rest_elbow - 14.0) * ease
         pelvis_pitch = p["lean"] * 0.5 * (1.0 - sub)
-        pelvis_z = -0.012 * H * decay * math.cos(6.0 * math.pi * sub)
+        pelvis_z = -0.012 * H * decay * math.sin(6.0 * math.pi * sub)
         pelvis_x = 0.0
 
     return {
@@ -1239,7 +1254,10 @@ def evaluate_biped_roll(t_norm, hip_height, leg_length, params=None, is_shooter=
     tuck = math.sin(math.pi * t)
 
     pelvis_z = -0.55 * H * tuck
-    pelvis_y = 1.4 * H * t  # continuous forward translation
+    # In place: the travel is root motion's (compute_root_motion_displacement, 1.6 H), as for every other clip. The
+    # pose used to move the hips 1.4 H forward as well, so with root motion on the body went 3 H, and without it
+    # the clip ended displaced and snapped back.
+    pelvis_y = 0.0
 
     thigh_p = -70.0 * tuck
     knee_p = 110.0 * tuck
@@ -1300,13 +1318,19 @@ def evaluate_biped_block(phase, hip_height, leg_length, params=None, is_shooter=
     }
 
 
-def compute_root_motion_displacement(clip_name, t_norm, stride_distance, height=1.0):
+def compute_root_motion_displacement(clip_name, t_norm, stride_distance, height=1.0, duty=None):
     """Computes accumulated root bone forward translation (x, y, z) for root-motion playback.
     Returns: Vector tuple (x, y, z) in armature coordinates.
+
+    With `duty` (the gait's duty factor) a walk or run travels stride / duty per cycle: a planted foot goes back one
+    stride in `duty` of the cycle, so that is the speed at which it does not slide (stride_distance is then the
+    clip's own stride, the run's for a run). Without it, the old fixed 2 and 3 strides a cycle.
     """
     t = max(0.0, min(1.0, float(t_norm)))
     name = clip_name.lower()
 
+    if duty and ("walk" in name or "run" in name or "gallop" in name):
+        return (0.0, float(stride_distance) / float(duty) * t, 0.0)
     if "walk" in name:
         # 1 cycle = 2 strides
         dist = 2.0 * float(stride_distance) * t

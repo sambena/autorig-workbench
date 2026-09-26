@@ -347,7 +347,8 @@ class TestGaitEngine(unittest.TestCase):
         self.assertAlmostEqual(r0["pelvis"]["rot"][0], 0.0, places=4)
         self.assertAlmostEqual(r_mid["pelvis"]["rot"][0], 180.0, places=4)
         self.assertAlmostEqual(r_end["pelvis"]["rot"][0], 360.0, places=4)
-        self.assertGreater(r_end["pelvis"]["pos"][1], 1.2) # forward roll distance
+        for t in (0.0, 0.3, 0.5, 1.0):  # in place: the travel is root motion's, not the pose's
+            self.assertEqual(gait.evaluate_biped_roll(t, hip_height=1.0, leg_length=0.9)["pelvis"]["pos"][1], 0.0)
 
         # 5. Block: solid guard with raised forearms
         blk = gait.evaluate_biped_block(0.0, hip_height=1.0, leg_length=0.9)
@@ -360,6 +361,119 @@ class TestGaitEngine(unittest.TestCase):
         run_rm = gait.compute_root_motion_displacement("run", 1.0, stride_distance=0.8)
         self.assertAlmostEqual(run_rm[1], 2.4, places=4)
         roll_rm = gait.compute_root_motion_displacement("roll", 1.0, stride_distance=0.8, height=1.8)
+    # --- Phase 4: continuity at the phase boundaries, root motion, gallop feet -------------------------------------
+
+    @staticmethod
+    def _leg_channels(state, side):
+        leg = state["legs"][side]
+        return (leg["thigh_pitch"], leg["knee_pitch"], leg["foot_pitch"])
+
+    def test_walk_legs_continuous_at_toe_off_and_heel_strike(self):
+        # Either side of each leg's stance/swing boundary the pose must agree: the swing used to start from the
+        # heel-strike pose, a 44-degree thigh pop at toe-off.
+        duty = gait.merge_gait_params("natural")["duty_factor"]
+        eps = 1e-6
+        for side, offset in (("L", 0.0), ("R", 0.5)):
+            for boundary in (duty, 1.0):                         # toe-off, heel strike
+                u = (offset + boundary) % 1.0
+                a = self._leg_channels(gait.evaluate_biped_walk(u - eps, 1.0, 0.9), side)
+                b = self._leg_channels(gait.evaluate_biped_walk(u + eps, 1.0, 0.9), side)
+                for x, y in zip(a, b):
+                    self.assertAlmostEqual(x, y, delta=0.01, msg=f"{side} at u={u:.3f}")
+
+    def test_walk_has_no_pops_anywhere(self):
+        # Dense sweep: no channel moves more than a few degrees between 1/200 cycle samples.
+        n = 200
+        prev = None
+        for i in range(n + 1):
+            s = gait.evaluate_biped_walk(i / n, 1.0, 0.9)
+            cur = self._leg_channels(s, "L") + self._leg_channels(s, "R")
+            if prev:
+                for x, y in zip(prev, cur):
+                    self.assertLess(abs(x - y), 4.0, msg=f"jump at sample {i}")
+            prev = cur
+
+    def test_walk_pelvis_lowest_at_heel_strike(self):
+        z = lambda u: gait.evaluate_biped_walk(u, 1.0, 0.9)["pelvis"]["pos"][2]
+        self.assertLess(z(0.0), z(0.25))
+        self.assertLess(z(0.5), z(0.75))
+
+    def test_walk_to_idle_continuous(self):
+        eps = 1e-6
+        def flat(s):
+            return (s["legs"]["L"]["thigh_pitch"], s["legs"]["L"]["knee_pitch"],
+                    s["legs"]["R"]["thigh_pitch"], s["legs"]["R"]["knee_pitch"],
+                    s["arms"]["L"]["forearm_pitch"], s["arms"]["R"]["forearm_pitch"],
+                    s["pelvis"]["pos"][2] * 100.0)
+        for shooter in (False, True):
+            a = flat(gait.evaluate_biped_walk_to_idle(0.5 - eps, 1.0, 0.9, is_shooter=shooter))
+            b = flat(gait.evaluate_biped_walk_to_idle(0.5 + eps, 1.0, 0.9, is_shooter=shooter))
+            for x, y in zip(a, b):
+                self.assertAlmostEqual(x, y, delta=0.01)
+            n, prev = 100, None
+            for i in range(n + 1):
+                cur = flat(gait.evaluate_biped_walk_to_idle(i / n, 1.0, 0.9, is_shooter=shooter))
+                if prev:
+                    for x, y in zip(prev, cur):
+                        self.assertLess(abs(x - y), 3.0, msg=f"jump at {i}/{n}")
+                prev = cur
+
+    def test_root_motion_loop_ends_at_full_displacement(self):
+        # A looping clip's last key carries the whole cycle's travel; phase 0 would mean a snap back each loop.
+        for clip, cycles in (("walk", 2.0), ("run", 3.0)):
+            start = gait.compute_root_motion_displacement(clip, 0.0, stride_distance=0.8)
+            end = gait.compute_root_motion_displacement(clip, 1.0, stride_distance=0.8)
+            self.assertEqual(start[1], 0.0)
+            self.assertAlmostEqual(end[1], cycles * 0.8, places=6)
+            half = gait.compute_root_motion_displacement(clip, 0.5, stride_distance=0.8)
+            self.assertAlmostEqual(half[1], end[1] / 2.0, places=6)   # constant speed: no lurch at the seam
+
+    def test_root_motion_matches_planted_foot(self):
+        # With the gait's duty factor, the body moves at the speed a planted foot goes back: no foot slide.
+        for evaluate, preset, u in ((gait.evaluate_biped_walk, "natural", 0.2), (gait.evaluate_biped_run, "run", 0.1)):
+            p = gait.merge_gait_params(preset)
+            du = 1e-4
+            foot = lambda x: evaluate(x, 1.0, 0.9)["legs"]["L"]["along"]
+            foot_speed = -(foot(u + du) - foot(u - du)) / (2 * du)          # per cycle, while planted
+            stride = foot_speed * p["duty_factor"]
+            rm = lambda x: gait.compute_root_motion_displacement(preset if preset == "run" else "walk", x, stride,
+                                                                duty=p["duty_factor"])[1]
+            self.assertAlmostEqual((rm(u + du) - rm(u - du)) / (2 * du), foot_speed, places=4)
+
+    def test_gallop_front_feet_lead_by_half_cycle(self):
+        # Feet shaped like CreatureRig's (name, side, along) after it sets is_front: the front pair lands about half a
+        # cycle after the hind pair. Without is_front every foot was a hind foot and LF moved with LH (a bound).
+        feet = [
+            {"name": "leg_1_3.L", "side": 1.0, "along": 0.6, "is_front": True},
+            {"name": "leg_2_3.L", "side": 1.0, "along": -0.5, "is_front": False},
+            {"name": "leg_1_3.R", "side": -1.0, "along": 0.6, "is_front": True},
+            {"name": "leg_2_3.R", "side": -1.0, "along": -0.5, "is_front": False},
+        ]
+        def touchdown(name):
+            n = 400
+            for i in range(n):
+                was = gait.evaluate_quadruped_gallop((i - 1) / n, 1.4, 1.0, feet_info=feet)["feet"][name]["grounded"]
+                now = gait.evaluate_quadruped_gallop(i / n, 1.4, 1.0, feet_info=feet)["feet"][name]["grounded"]
+                if now and not was:
+                    return i / n
+            return 0.0
+        lh, lf = touchdown("leg_2_3.L"), touchdown("leg_1_3.L")
+        self.assertAlmostEqual((lf - lh) % 1.0, 0.52, delta=0.01)
+        rh, rf = touchdown("leg_2_3.R"), touchdown("leg_1_3.R")
+        self.assertAlmostEqual((rf - rh) % 1.0, 0.52, delta=0.01)
+
+        same = [dict(f, is_front=False) for f in feet]             # what the rig used to hand over
+        a = gait.evaluate_quadruped_gallop(0.3, 1.4, 1.0, feet_info=same)["feet"]
+        self.assertEqual(a["leg_1_3.L"], a["leg_2_3.L"])
+
+    def test_gallop_loops(self):
+        feet = [{"name": n, "side": s, "is_front": fr} for n, s, fr in
+                (("a", 1.0, True), ("b", 1.0, False), ("c", -1.0, True), ("d", -1.0, False))]
+        s0 = gait.evaluate_quadruped_gallop(0.0, 1.4, 1.0, feet_info=feet)
+        s1 = gait.evaluate_quadruped_gallop(1.0, 1.4, 1.0, feet_info=feet)
+        self.assertEqual(s0["feet"], s1["feet"])
+        self.assertAlmostEqual(s0["tail_wave"], s1["tail_wave"], places=6)
+
     def test_walker_clips_under_blender(self):
         blender_bin = blender.find(required=False)
         if not blender_bin:

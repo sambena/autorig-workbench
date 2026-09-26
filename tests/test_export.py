@@ -81,7 +81,7 @@ class ExportPresetsTest(unittest.TestCase):
             names = zf.namelist()
             self.assertIn("biped.fbx", names)
             self.assertIn("unreal_bone_mapping.json", names)
-            self.assertIn("unreal_import_preset.json", names)
+            self.assertIn("unreal_import_notes.json", names)
             self.assertIn("Unreal_Import_Guide.md", names)
 
             mapping_content = json.loads(zf.read("unreal_bone_mapping.json").decode("utf-8"))
@@ -97,10 +97,10 @@ class ExportPresetsTest(unittest.TestCase):
         with zipfile.ZipFile(res["zip_path"], "r") as zf:
             names = zf.namelist()
             self.assertIn("biped.fbx", names)
-            self.assertIn("unity_avatar_definition.json", names)
+            self.assertIn("unity_avatar_notes.json", names)
             self.assertIn("Unity_Import_Guide.md", names)
 
-            avatar = json.loads(zf.read("unity_avatar_definition.json").decode("utf-8"))
+            avatar = json.loads(zf.read("unity_avatar_notes.json").decode("utf-8"))
             self.assertIn("avatar", avatar)
             self.assertIn("humanDescription", avatar["avatar"])
 
@@ -113,7 +113,9 @@ class ExportPresetsTest(unittest.TestCase):
         with zipfile.ZipFile(res["zip_path"], "r") as zf:
             names = zf.namelist()
             self.assertTrue(any(n.endswith(".glb") or n.endswith(".fbx") for n in names))
-            self.assertIn("biped.glb.import", names)
+            self.assertTrue(any(n.endswith(".import") for n in names))
+            cfg = next(n for n in names if n.endswith(".import"))
+            self.assertNotIn("uid=", zf.read(cfg).decode("utf-8"))     # Godot assigns its own
             self.assertIn("character_controller.gd", names)
             self.assertIn("Godot_Import_Guide.md", names)
 

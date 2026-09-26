@@ -415,7 +415,8 @@ def retarget_clip(model_name, mocap_file, clip_name=None, source_action=None, ro
         "source_file": os.path.abspath(mocap_file),
         "source_action": plan.get("source_action"),
         "clip_name": plan["clip_name"],
-        "fps": int(fps or plan["mocap"]["fps"]),
+        "fps": float(fps) if fps else None,                     # resample to this (--fps); None keeps the source's
+        "source_fps": float(plan["mocap"]["fps"] or 30.0),       # the mocap's own rate (29.97 stays 29.97)
         "root_motion": plan["root_motion"],
         "root_pair": plan["root_pair"],
         "scale_proportions": scale_proportions,
