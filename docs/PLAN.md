@@ -328,6 +328,14 @@ one pull request each, code first; models are run through the tool only in R6.
     the beetle's leg skin sinks 10-18% of its height into the floor in attack, block, the jumps and death, and
     pops in the canine's trot and gallop, the beetle's death and two of the wyvern's attacks. Tried and dropped: a
     stride capped at the legs' reach, and the body lowered to bend straight legs (no better, or worse, measured).
+  - Fixed from the clip audit: the gallop swept each foot twice the canine's leg length, the IK could not follow and
+    the hind knees flipped (5 pops, 180 degrees); its sweep now stays within 1.1 x the shortest leg (0 pops). The
+    beetle death's roll pivoted on the floor and swung the near side through it (a leg 21 cm under); the root now
+    rises as a body rolling on its side edge does (floor 12.8% to 1.1%).
+  - Still open, each a clip or rig change rather than a quick fix: placed legs are built straight, so a foot off its
+    rest spot is out of reach and lifts at the ends of each stance, which snaps the knee in the faster trot; the
+    beetle's legs flip as they curl past its body mid-roll in the death; its front shins go under the floor at the
+    bite's lunge, and its middle shins angle a little into it in the walk.
 
 ## Risks
 
