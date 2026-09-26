@@ -273,7 +273,28 @@ one pull request each, code first; models are run through the tool only in R6.
   - Not done: the creature walk and trot do not call gait's quadruped walk (the humanoid clips and the creature
     gallop do), there is no budgeted GLB for the web package, and the viewer's preview.glb may list the per-clip face
     actions as clips of their own (<clip>_morph): to check in R6.
-- **R5: speed**: one weight matrix per rig, vectorised passes, fewer Blender launches, and a lighter GUI.
+- **R5: speed** (done; the results must not change, and tests/test_speed.py checks each new helper number for number
+  against the loop it replaced). On the five bundled samples, the whole run (rig, trim, audit, clips) took 23.3 s against
+  29.6 s before, the rig step 1.1-1.2 s against 1.6-1.8 s, with every audit figure and every clip key identical:
+  - Skin: write_weights writes a bone's rows in a few calls (one remove, one add per distinct weight, nothing for an
+    entry that already holds its value), where it made one call per row per bone. The mesh's loose pieces are found
+    vectorised and remembered while the topology holds (the passes asked five or six times a rig). skin() logs each
+    pass's seconds (`skin_seconds` in the rig log), for R6 to measure.
+  - Skeleton: the surface graph is built with numpy, skips the seam-bridging search on a one-piece mesh, and
+    remembers each surface-distance run (tips, tube and medial_axis asked for the same ends again and again).
+  - Blender: the mesh's Armature modifier is off during the IK pole search (55 scene updates a leg, each re-skinning
+    the mesh) and the humanoid's T-pose straightening; steps start with --factory-startup (AUTORIG_USER_PREFS=1 keeps
+    the user's preferences). Pictures read and write pixels in bulk. make_clips writes each clip's bone keys a curve at
+    a time (AUTORIG_SLOW_KEYS=1 goes back to keyframe_insert for comparison). -noQA skips the rig step's bend picture.
+  - Audit: vertex areas, loose pieces and bleed are vectorised; the unused neighbour table is gone.
+  - Retarget: what Blender reports about a mocap file or a target rig is remembered per file, size and time.
+  - Server and GUI: audit grades are re-read only when the audit changes, the Blender lookup is remembered, each step
+    logs its time, preview GLBs have versioned URLs the browser may cache, a dropped event stream resumes where it
+    stopped, a job's end is handled once (the stream and a poll both reloaded the model), and job waits follow the
+    event stream instead of fetching the whole log every second.
+  - Not done: one Blender process for rig + trim + audit, skipping the rig step's FBX when trim rewrites it, and one
+    weight matrix handed from pass to pass (passes that write groups directly still sit between them). All three
+    change how steps fit together, so they wait for R6's timings to show they are worth it.
 - **R6: measured on models**: timing and audits before and after, and each weight pass tried on and off.
 
 ## Risks

@@ -2,7 +2,7 @@
 # Autorig Workbench: surface geometry helpers for building skeletons where a model came with none: distances
 # measured along the mesh's surface find the tips of its limbs, and rings of equal distance between two points give
 # the line down the middle of a limb, a tail or a whole serpent.
-import heapq, math
+import array, heapq, math
 try:
     import rig_geom
 except ImportError:
@@ -53,45 +53,50 @@ except ImportError:
 
 class Surface:
     def __init__(self, mesh, bridge=0.02):
+        import numpy as np
+        try:
+            import placed_rules
+        except ImportError:
+            from autorig.core import placed_rules
         me = mesh.data
-        self.co = [v.co.copy() for v in me.vertices]
-        n = len(self.co)
+        n = len(me.vertices)
+        co32 = np.empty(n * 3, dtype=np.float32); me.vertices.foreach_get("co", co32); co32 = co32.reshape(n, 3)
+        self.co = [Vector(p) for p in co32.tolist()]
+        ed = np.empty(len(me.edges) * 2, dtype=np.int64); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
+        # edge lengths as mathutils measured them (float differences and squares, summed in double from z to x as
+        # dot_vn_vn does), in edge order
+        sq = co32[ed[:, 0]] - co32[ed[:, 1]]; sq = sq * sq
+        el = np.sqrt(sq[:, 2].astype(np.float64) + sq[:, 1] + sq[:, 0]).tolist()
         self.adj = [[] for _ in range(n)]
-        for e in me.edges:
-            a, b = e.vertices
-            d = (self.co[a] - self.co[b]).length
+        for (a, b), d in zip(ed.tolist(), el):
             self.adj[a].append((b, d)); self.adj[b].append((a, d))
-        lo = Vector((min(p.x for p in self.co), min(p.y for p in self.co), min(p.z for p in self.co)))
-        hi = Vector((max(p.x for p in self.co), max(p.y for p in self.co), max(p.z for p in self.co)))
+        lo = Vector(co32.min(axis=0).tolist()) if n else Vector((0, 0, 0))
+        hi = Vector(co32.max(axis=0).tolist()) if n else Vector((0, 0, 0))
         self.lo, self.hi, self.size = lo, hi, hi - lo
+        self._memo = {}
         # Generated sculpts are often loose pieces pushed into one another: join what touches, or distances stop at every seam.
-        parent = list(range(n))
-        def find(x):
-            while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
-            return x
-        for e in me.edges:
-            a, b = find(e.vertices[0]), find(e.vertices[1])
-            if a != b: parent[a] = b
+        pieces = placed_rules.islands_from_edges(n, ed)
+        label = np.empty(n, dtype=np.int64)
+        for k, part in enumerate(pieces): label[part] = k
+        label = label.tolist()
         self.kd = kdtree.KDTree(n)
         for i, p in enumerate(self.co): self.kd.insert(p, i)
         self.kd.balance()
-        r = max(self.size) * bridge
-        for i, p in enumerate(self.co):
-            for _, j, d in self.kd.find_range(p, r):
-                if j > i and find(i) != find(j):
-                    self.adj[i].append((j, d * 1.5)); self.adj[j].append((i, d * 1.5))
+        bridges = []
+        if len(pieces) > 1:                       # one watertight piece: nothing to join, and n range searches saved
+            r = max(self.size) * bridge
+            for i, p in enumerate(self.co):
+                for _, j, d in self.kd.find_range(p, r):
+                    if j > i and label[i] != label[j]:
+                        self.adj[i].append((j, d * 1.5)); self.adj[j].append((i, d * 1.5)); bridges.append((i, j))
         # pieces still apart (a floating tentacle): one bridge each to the nearest vertex of the main body
-        for i in range(n):
-            for j, _ in self.adj[i]:
-                a, b = find(i), find(j)
-                if a != b: parent[a] = b
-        groups = {}
-        for i in range(n): groups.setdefault(find(i), []).append(i)
-        main = max(groups.values(), key=len)
+        groups = placed_rules.islands_from_edges(n, np.concatenate([ed, np.array(bridges, dtype=np.int64).reshape(-1, 2)]))
+        if len(groups) <= 1: return
+        main = max(groups, key=len)
         mkd = kdtree.KDTree(len(main))
         for k, i in enumerate(main): mkd.insert(self.co[i], k)
         mkd.balance()
-        for g in groups.values():
+        for g in groups:
             if g is main: continue
             best = min(((mkd.find(self.co[i]), i) for i in g[::max(1, len(g) // 60)]), key=lambda t: t[0][2])
             (_, k, d), i = best
@@ -103,6 +108,18 @@ class Surface:
     def nearest(self, p): return self.kd.find(p)[1]
 
     def distances(self, sources):
+        """Shortest distances along the surface from the source vertices to every vertex. Remembered per source set
+        (tips, tube and medial_axis ask for the same ends again and again); each caller gets its own copy."""
+        key = tuple(sources)
+        memo = getattr(self, "_memo", None)
+        if memo is not None and key in memo: return list(memo[key])
+        dist = self._dijkstra(sources)
+        if memo is not None:
+            if len(memo) >= 32: memo.clear()
+            memo[key] = array.array("d", dist)          # 8 bytes a vertex, not a list of floats
+        return dist
+
+    def _dijkstra(self, sources):
         dist = [float("inf")] * len(self.co)
         heap = []
         for s in sources: dist[s] = 0.0; heap.append((0.0, s))

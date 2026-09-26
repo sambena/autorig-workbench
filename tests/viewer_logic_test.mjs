@@ -610,6 +610,12 @@ test("parseJobProgressLine parses directives, banners, and fallbacks", () => {
   assert.equal(L.parseJobProgressLine("== rig (placed) done"), null);
   assert.equal(L.parseJobProgressLine("!! rig (placed) failed (exit code 1)"), null);
   assert.equal(L.parseJobProgressLine("== trim to budget done"), null);
+  // the runner now says how long each step took
+  assert.deepEqual(L.parseJobProgressLine("== 3/12: knight rig done (41.2 s)"),
+                   { current: 3, total: 12, model: "knight", lastResult: { model: "knight", status: "PASSED" } });
+  assert.deepEqual(L.parseJobProgressLine("!! 2/12: archer rig failed (exit code 1, 3.0 s)"),
+                   { current: 2, total: 12, lastResult: { model: "archer", status: "FAILED" } });
+  assert.equal(L.parseJobProgressLine("== rig (placed) done (12.5 s)"), null);
 
   const p8 = L.parseJobProgressLine("AUDIT_FAIL swamp_monster (score=0.45)");
   assert.deepEqual(p8, { lastResult: { model: "swamp_monster", status: "FAILED" } });

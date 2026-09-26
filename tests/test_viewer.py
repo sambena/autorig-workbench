@@ -150,7 +150,7 @@ class ViewerTest(unittest.TestCase):
         self.assertEqual(set(by), {"shown", "unseen"})
         s, u = by["shown"], by["unseen"]
         self.assertEqual((s["group"], s["rig_folder"], s["stale"]), ("Things", "rigged", False))
-        self.assertEqual(s["preview"], "/files/models/Things/shown/rigged/preview.glb")
+        self.assertRegex(s["preview"], r"^/files/models/Things/shown/rigged/preview\.glb\?v=\d+-\d+$")
         self.assertEqual(s["info"]["metres"], 1.5)
         self.assertIsNone(u["preview"])
         self.assertIsNone(u["info"])
@@ -163,9 +163,10 @@ class ViewerTest(unittest.TestCase):
         self.assertEqual(a["worst_bone"], "leg_1.L")
         self.assertEqual(a["bones"][0]["bone"], "leg_1.L")                     # the failed check's bone, first
         self.assertEqual(a["bones"][0]["level"], "bad")
-        code, _, data = self.get(s["preview"])
+        code, headers, data = self.get(s["preview"])
         self.assertEqual(code, 200)
         self.assertEqual(data[:4], b"glTF")
+        self.assertIn("immutable", headers.get("Cache-Control", ""))                 # versioned: cacheable
         self.assertEqual(self.get(s["preview"], token=None)[0], 403)
 
     def test_viewer_logic_is_static(self):

@@ -2,7 +2,7 @@
 # Autorig Workbench: the standard humanoid skeleton (SKELETONS.md, "Humanoid") built on a sculpt, fully
 # automatically.
 #
-#   blender -b --python autorig/steps/rerig_humanoid.py -- -only knight,miner [-qa dir] [-noExport]
+#   blender -b --python autorig/steps/rerig_humanoid.py -- -only knight,miner [-qa dir] [-noExport] [-noQA]
 #   python autorig/cli/pipeline.py knight,miner -rig rerig_humanoid.py
 #
 # Mixamo's bone names without the "mixamorig:" namespace: Hips, Spine, Spine1, Spine2, Neck, Head, Left/Right
@@ -322,11 +322,12 @@ def straighten(arm, size):
         pb.matrix = new_mat
         bpy.context.view_layer.update()
 
-    for side, sx in (("Left", 1), ("Right", -1)):
-        aim(side + "UpLeg", down); aim(side + "Leg", down)
-        aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
-        for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
-            aim(side + b, (sx, 0, 0))
+    with rerig.deform_off(arm):                    # bone matrices only: the mesh is posed once, by the apply below
+        for side, sx in (("Left", 1), ("Right", -1)):
+            aim(side + "UpLeg", down); aim(side + "Leg", down)
+            aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
+            for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
+                aim(side + b, (sx, 0, 0))
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh = next(o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm)
     rerig.select_only(mesh)
@@ -454,8 +455,9 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     os.makedirs(qa_dir, exist_ok=True)
     for c in chains:  # QA sticks from the straightened rest
         c["points"] = [arm.data.bones[b].head_local.copy() for b in c["bones"]] + [arm.data.bones[c["bones"][-1]].tail_local.copy()]
-    try: rerig.qa_pictures(key, mesh, arm, chains, size, qa_dir, log)
-    except Exception as e: log["qa_error"] = repr(e)
+    if rerig.qa_wanted():
+        try: rerig.qa_pictures(key, mesh, arm, chains, size, qa_dir, log)
+        except Exception as e: log["qa_error"] = repr(e)
     log["seconds"] = round(time.time() - t0, 1)
     return log
 

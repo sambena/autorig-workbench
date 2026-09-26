@@ -2800,6 +2800,25 @@ async function revertSpec() {
   }
 }
 
+// The job's final state, from its event stream's end (it used to be asked for, full log included, every second);
+// a stream that closes without one falls back to asking once a second.
+function jobEnd(id) {
+  return new Promise((resolve) => {
+    let over = false;
+    const es = new EventSource(withToken(`/api/jobs/${id}/events?from=0`));
+    es.addEventListener("end", (ev) => { over = true; es.close(); resolve(JSON.parse(ev.data)); });
+    es.onerror = async () => {
+      if (over || es.readyState !== EventSource.CLOSED) return;
+      over = true;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const j = await api("/api/jobs/" + id).catch(() => null);
+        if (j && j.state !== "queued" && j.state !== "running") return resolve(j);
+      }
+    };
+  });
+}
+
 async function suggestSkeleton() {
   try {
     flashTop("Analyzing model and suggesting skeleton…");
@@ -2808,14 +2827,8 @@ async function suggestSkeleton() {
       // the server measures the mesh first (a Blender job); follow it, then take the measured suggestion
       follow(res.job);
       tab = "run"; renderTabs(); renderPane();
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 1000));
-        const j = await api("/api/jobs/" + res.job.id);
-        if (j.state !== "queued" && j.state !== "running") {
-          if (j.state !== "done") { flashTop("Measuring the mesh " + j.state + ": see the Run tab."); return; }
-          break;
-        }
-      }
+      const j = await jobEnd(res.job.id);
+      if (j.state !== "done") { flashTop("Measuring the mesh " + j.state + ": see the Run tab."); return; }
       res = await api("/api/spec/suggest", { model: MODEL, measure: false });
     }
     if (!res || !res.rig) {
@@ -2952,17 +2965,15 @@ function follow(j) {
   }
   if (es) es.close();
   job = Object.assign({}, j, { log: [] });
-  es = new EventSource(withToken(`/api/jobs/${j.id}/events?from=0`));
-  es.onmessage = (ev) => {
-    job.log.push(JSON.parse(ev.data));
-    const lg = $("paneLog") || $("log");
-    if (lg && tab === "run") { const stick = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 30; lg.textContent += JSON.parse(ev.data) + "\n"; if (stick) lg.scrollTop = lg.scrollHeight; }
-  };
-  es.addEventListener("end", async (ev) => {
-    es.close(); es = null;
-    const finalJob = JSON.parse(ev.data);
+  let finished = false;
+  // One ending per job, whichever tells first: the stream's "end" event, or the fallback poll below. Both used to
+  // run it, so every job reloaded the model twice.
+  const finish = async (finalJob) => {
+    if (finished || !job || job.id !== j.id) return;
+    finished = true;
+    if (es) { es.close(); es = null; }
     Object.assign(job, finalJob);
-    if (job.model !== MODEL) return;
+    if (job.model !== MODEL) { renderTabs(); renderPane(); return; }
     await reload(false);
     redraw();
     if (job.step === "source view") {
@@ -2990,33 +3001,28 @@ function follow(j) {
     if (job.step === "flat views") tab = "flat";
     renderTabs(); renderPane(); runCheck();
     resize();
-  });
+  };
+  es = new EventSource(withToken(`/api/jobs/${j.id}/events?from=0`));
+  es.onmessage = (ev) => {
+    job.log.push(JSON.parse(ev.data));
+    const lg = $("paneLog") || $("log");
+    if (lg && tab === "run") { const stick = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 30; lg.textContent += JSON.parse(ev.data) + "\n"; if (stick) lg.scrollTop = lg.scrollHeight; }
+  };
+  es.addEventListener("end", (ev) => { finish(JSON.parse(ev.data)); });
+  // The poll only catches what the stream does not carry (queued -> running, the PID), or an ending the stream
+  // missed because it dropped; while the stream is open and the job is running there is nothing to ask.
   const poll = setInterval(async () => {
-    if (!job || job.id !== j.id || !(job.state === "running" || job.state === "queued" || job.state === undefined)) return clearInterval(poll);
+    if (finished || !job || job.id !== j.id) return clearInterval(poll);
+    if (job.state === "running" && job.pid && es && es.readyState !== EventSource.CLOSED) return;
     try {
       const s = await api(`/api/jobs/${j.id}`);
+      const moved = s.state !== job.state || s.pid !== job.pid;
       job.state = s.state; job.pid = s.pid;
-      if (tab === "run") { const lg = $("paneLog") || $("log"); const top = lg && lg.scrollTop; renderPane(); }
       if (s.state === "done" || s.state === "failed" || s.state === "cancelled") {
         clearInterval(poll);
-        if (es) { es.close(); es = null; }
-        if (job.model === MODEL) {
-          await reload(false);
-          redraw();
-          if (job.step === "source view") {
-            if (s.state === "done" && SRC && SRC.glb_url) {
-              tab = "rig";
-              await loadModel(SRC.glb_url).catch(() => {});
-              redraw();
-              frameView([0.35, -1, 0.3]);
-              message("");
-            } else if (s.state !== "done") {
-              message("The source view failed", "See the Run tab.");
-            }
-          }
-          renderTabs(); renderPane(); runCheck();
-          resize();
-        }
+        if (!es || es.readyState === EventSource.CLOSED) finish(s);   // else the stream's "end" is on its way
+      } else if (moved && tab === "run") {
+        renderPane();
       }
     } catch (e) {}
   }, 2500);
@@ -3103,13 +3109,19 @@ function markReady() {
 }
 
 let switchModelSeq = 0;
+let switchModelBusy = null;     // the model a switchModel is still opening
 
 async function switchModel(name) {
   if (!name) return;
   // the model already open stays as it is (its draft and undo too): the page's first load and the workbench's
   // first selectModel name the same model, and a second load would throw the first one away
-  if (name === MODEL && draft) return;
+  if (name === MODEL && (draft || switchModelBusy === name)) return;       // open, or opening now
   const seq = ++switchModelSeq;
+  switchModelBusy = name;
+  try { await openModel(name, seq); } finally { if (seq === switchModelSeq) switchModelBusy = null; }
+}
+
+async function openModel(name, seq) {
   modelLoadSeq++;
   riggedLoadSeq++;
   MODEL = name;
@@ -3482,7 +3494,7 @@ function wireUIEvents() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) checkDiskChanges();
   });
-  setInterval(checkDiskChanges, 1500);
+  setInterval(() => { if (!document.hidden) checkDiskChanges(); }, 1500);   // not while the tab is hidden
 }
 
 // Global specEditor interface exported immediately

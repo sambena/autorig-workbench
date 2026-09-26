@@ -4,7 +4,7 @@
 # trace chains through the mesh). Sources are never touched; results go to <model>/rigged/<model>.blend and .fbx,
 # and a bend-test picture to <AUTORIG_WORK>/qa/<model>.png.
 #
-#   blender -b --python autorig/steps/rerig.py -- [-only a,b] [-noExport] [-qa <dir>]
+#   blender -b --python autorig/steps/rerig.py -- [-only a,b] [-noExport] [-qa <dir>] [-noQA]
 #
 # Conventions of the result: the creature faces Blender's -Y (front view shows its face), its left is +X (.L bones),
 # walkers stand on z=0 over the origin. Bones: root > hips > spine_N > neck > head, leg_front_N.L ..., tail_N,
@@ -31,6 +31,11 @@ def args():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     def val(n): return a[a.index(n) + 1] if n in a and a.index(n) + 1 < len(a) else None
     return val("-only"), os.path.abspath(val("-qa") or work_dir("qa")), "-noExport" in a
+
+def qa_wanted():
+    """False with -noQA: no bend-test picture (auto-tune rigs a model many times and reads only the audit)."""
+    a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    return "-noQA" not in a
 
 def select_only(*objs):
     bpy.ops.object.select_all(action='DESELECT')
@@ -666,6 +671,21 @@ def build_armature(key, chains, size):
     ad.display_type = 'OCTAHEDRAL'; arm.show_in_front = True
     return arm, iks
 
+class deform_off:
+    """Switches off the Armature modifiers that bend meshes by `arm` while only bone matrices are wanted: every
+    view_layer.update() in the pole search (55 a leg) used to re-skin the whole mesh too. Restored on leaving,
+    before anything reads or applies the skinned mesh."""
+    def __init__(self, arm):
+        self.mods = [m for o in bpy.data.objects if o.type == 'MESH' for m in o.modifiers
+                     if m.type == 'ARMATURE' and m.object == arm and m.show_viewport]
+    def __enter__(self):
+        for m in self.mods: m.show_viewport = False
+        return self
+    def __exit__(self, *exc):
+        for m in self.mods: m.show_viewport = True
+        bpy.context.view_layer.update()
+        return False
+
 def add_ik(arm, iks):
     import rig_geom
     for entry in iks:
@@ -1149,17 +1169,15 @@ def envelope(mesh, arm, chains, spec, size, log):
 def skinned(v): return any(g.weight > 1e-4 for g in v.groups)
 
 def islands_of(mesh):
+    """The mesh's loose pieces (placed_rules.mesh_islands: vectorised, and remembered while the topology holds)."""
+    return placed_rules.mesh_islands(mesh)
+
+def _lo_span(mesh):
+    """The mesh's lowest corner and its extent per axis (at least 1e-9), as Vectors."""
     n = len(mesh.data.vertices)
-    parent = list(range(n))
-    def find(x):
-        while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
-        return x
-    for e in mesh.data.edges:
-        a, b = find(e.vertices[0]), find(e.vertices[1])
-        if a != b: parent[a] = b
-    out = {}
-    for i in range(n): out.setdefault(find(i), []).append(i)
-    return list(out.values())
+    co = np.empty(n * 3, dtype=np.float32); mesh.data.vertices.foreach_get("co", co); co = co.reshape(n, 3)
+    lo = co.min(axis=0).tolist()
+    return Vector(lo), Vector([max(1e-9, h - l) for h, l in zip(co.max(axis=0).tolist(), lo)])
 
 def skin(mesh, arm, chains, spec, size, log):
     height = size.z
@@ -1170,6 +1188,7 @@ def skin(mesh, arm, chains, spec, size, log):
         verts = mesh.data.vertices
     select_only(mesh, arm)
     mesh.vertex_groups.clear()
+    t_heat = time.time()
     if spec.get("mesh_heal") or spec.get("heal"):
         try:
             import mesh_doctor
@@ -1244,31 +1263,38 @@ def skin(mesh, arm, chains, spec, size, log):
     spec["_plan"] = "biped" if spec.get("skeleton") == "humanoid" else placed_rules.body_plan(chains)
     spec["_locked"] = set()
     log["body_plan"] = spec["_plan"]
-    envelope(mesh, arm, chains, spec, size, log)
-    root_mask(mesh, arm, chains, spec, log)
-    girdle_pass(mesh, arm, chains, spec, log)
-    skin_jaw(mesh, arm, spec, size, log)
+    timing = log.setdefault("skin_seconds", {})       # seconds per pass, to see where a slow rig spends its time
+    def timed(name, fn, *a):
+        t = time.time()
+        try: return fn(*a)
+        finally: timing[name] = round(timing.get(name, 0.0) + time.time() - t, 3)
+    timing["bone_heat"] = round(time.time() - t_heat, 3)
+    timed("envelope", envelope, mesh, arm, chains, spec, size, log)
+    timed("root_mask", root_mask, mesh, arm, chains, spec, log)
+    timed("girdle", girdle_pass, mesh, arm, chains, spec, log)
+    timed("jaw", skin_jaw, mesh, arm, spec, size, log)
     if spec.get("membranes"):
-        placed_rules.membrane_pass(mesh, arm, chains, spec, size, log)
+        timed("membranes", placed_rules.membrane_pass, mesh, arm, chains, spec, size, log)
     if spec.get("parts"):
-        placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
+        timed("parts", placed_rules.parts_rules_pass, mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
-        placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
+        timed("blends", placed_rules.blend_joins_pass, mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out. Before the
         # barrier, so its cuts stay cuts (the barrier used to run before and again after smoothing).
-        smooth_weights(mesh, int(spec["smooth"]))
+        timed("smooth", smooth_weights, mesh, int(spec["smooth"]))
     if spec.get("barrier", True):
-        placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
+        timed("barrier", placed_rules.geodesic_barrier_pass, mesh, arm, chains, spec, size, log)
     if spec.get("sibling_isolation", True):
-        placed_rules.sibling_appendage_pass(mesh, arm, chains, spec, size, log)
+        timed("sibling_isolation", placed_rules.sibling_appendage_pass, mesh, arm, chains, spec, size, log)
     if spec.get("centerline_armor", True):
-        placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
+        timed("centerline_armor", placed_rules.centerline_armor_pass, mesh, arm, chains, spec, size, log)
     # hinges and twisting shafts, each joint once (the two passes used to go over the same joints)
-    placed_rules.joint_relaxation_pass(mesh, arm, chains, spec, size, log)
+    timed("joint_relaxation", placed_rules.joint_relaxation_pass, mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
-        placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
+        timed("rigid_islands", placed_rules.rigid_islands_pass, mesh, arm, chains, spec, size, log)
     locked = spec["_locked"]
+    t_rest = time.time()
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
     to_body = set()
@@ -1284,14 +1310,18 @@ def skin(mesh, arm, chains, spec, size, log):
     leg_chains = [c for c in chains if c["role"] == "leg"]
     # A loose piece near a leg that the leg's bones took, but which isn't joined to the leg, goes back to the body.
     near = {}
-    for e in mesh.data.edges:
-        a, b = e.vertices; near.setdefault(a, []).append(b); near.setdefault(b, []).append(a)
+    def build_near():                                  # only the old leg-stray pass reads it, and it rarely runs
+        if near: return
+        ed = np.empty(len(mesh.data.edges) * 2, dtype=np.int64); mesh.data.edges.foreach_get("vertices", ed)
+        for a, b in ed.reshape(-1, 2).tolist():
+            near.setdefault(a, []).append(b); near.setdefault(b, []).append(a)
     def to_segment(p, a, b):
         ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-12, ab.dot(ab)))); return (p - (a + ab * t)).length
     strays = 0
     # With the envelope run, a leg only owns what lies along it, so this older pass (which snapped whatever a leg
     # took away from it onto the body bone, whole) has nothing left to fix and only undoes the torso's blending.
     for c in ([] if log.get("envelope") or spec.get("envelope", "root") == "root" else leg_chains):
+        build_near()
         cn = set(c["bones"]) | {b for s in chains if s["parent"] and chains[s["parent"][0]] is c for b in s["bones"]}
         segs = list(zip(c["points"][:-1], c["points"][1:]))
         owned = {}
@@ -1341,8 +1371,7 @@ def skin(mesh, arm, chains, spec, size, log):
     # model's bounds, as the chains' points) rides that bone whole. A fish's teeth, for one: bone heat gave the
     # upper row to a nearby chain's root and some to a fin, and they hung in the open mouth when those moved.
     boxes = spec.get("rigid_to", [])
-    lo3 = Vector([min(v.co[k] for v in verts) for k in range(3)])
-    span3 = Vector([max(1e-9, max(v.co[k] for v in verts) - lo3[k]) for k in range(3)])
+    lo3, span3 = _lo_span(mesh)
     for idx in isl:
         if len(idx) == biggest and limit < 1.0: continue
         cs = [verts[i].co for i in idx]
@@ -1392,8 +1421,7 @@ def skin(mesh, arm, chains, spec, size, log):
         # one piece inside another (a fan's rotor in its duct: their centres all but coincide), so nearest-bone
         # guesses the duct as readily as the rotor. With rigid_parts "listed", every piece not listed rides the body.
         listed = {}
-        lo3 = Vector([min(v.co[k] for v in verts) for k in range(3)])
-        span3 = Vector([max(1e-9, max(v.co[k] for v in verts) - lo3[k]) for k in range(3)])
+        lo3, span3 = _lo_span(mesh)
         def centre(idx):
             cs = [verts[i].co for i in idx]
             return Vector([((min(p[k] for p in cs) + max(p[k] for p in cs)) * 0.5 - lo3[k]) / span3[k] for k in range(3)])
@@ -1427,8 +1455,9 @@ def skin(mesh, arm, chains, spec, size, log):
             for g in list(v.groups): mesh.vertex_groups[g.group].remove([v.index])
             (up if v.co.z > cut else down).add([v.index], 1.0, 'REPLACE')
         locked.update(range(len(verts)))           # a lid's cut is the point: the healer must not blur it
+    timing["body_pieces_parts_split"] = round(time.time() - t_rest, 3)
     if spec.get("auto_heal", True):
-        placed_rules.closed_loop_healing_pass(mesh, arm, spec, size, log)
+        timed("heal", placed_rules.closed_loop_healing_pass, mesh, arm, spec, size, log)
     select_only(mesh)
     bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
     bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
@@ -1486,7 +1515,7 @@ def qa_pictures(key, mesh, arm, chains, size, out_dir, log):
             fp = os.path.join(out_dir, "_tmp_%s_%s.png" % (key, name)); scene.render.filepath = fp
             bpy.ops.render.render(write_still=True)
             img = bpy.data.images.load(fp); w, h = img.size
-            px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+            px = np.empty(w * h * 4, dtype=np.float32); img.pixels.foreach_get(px); px = px.reshape(h, w, 4)
             bpy.data.images.remove(img); os.remove(fp); return px
         for o in st: o.hide_render = True
         mesh.hide_render = False
@@ -1537,7 +1566,7 @@ def qa_pictures(key, mesh, arm, chains, size, out_dir, log):
     sheet = np.concatenate([np.concatenate(posed, axis=1), np.concatenate(tiles, axis=1)], axis=0)  # image rows run bottom-up
     hh, ww = sheet.shape[:2]
     im = bpy.data.images.new("sheet", width=ww, height=hh, alpha=True)
-    im.pixels = sheet.ravel().tolist()
+    im.pixels.foreach_set(np.ascontiguousarray(sheet, dtype=np.float32).ravel())
     im.filepath_raw = os.path.join(out_dir, key + ".png"); im.file_format = 'PNG'; im.save()
 
 # ---------------------------------------------------------------- saving
@@ -1600,7 +1629,7 @@ def rerig(key, spec, qa_dir, export):
     arm, iks = build_armature(key, chains, size)
     for bn in dead: arm.data.bones[bn].use_deform = False
     if not skin(mesh, arm, chains, spec, size, log): return log
-    add_ik(arm, iks)
+    with deform_off(arm): add_ik(arm, iks)
     if spec.get("twist_bones", False):
         try:
             import twist_bones
@@ -1621,7 +1650,13 @@ def rerig(key, spec, qa_dir, export):
     # does the rig, with its IK switched on, still stand exactly as sculpted?
     dg = bpy.context.evaluated_depsgraph_get()
     ev = mesh.evaluated_get(dg)
-    shift = max(((ev.data.vertices[i].co - mesh.data.vertices[i].co).length for i in range(len(mesh.data.vertices))), default=0.0)
+    nv = len(mesh.data.vertices)
+    if nv and len(ev.data.vertices) == nv:
+        a = np.empty(nv * 3, dtype=np.float32); ev.data.vertices.foreach_get("co", a)
+        b = np.empty(nv * 3, dtype=np.float32); mesh.data.vertices.foreach_get("co", b)
+        shift = float(np.linalg.norm((a - b).reshape(-1, 3).astype(np.float64), axis=1).max())
+    else:
+        shift = max(((ev.data.vertices[i].co - mesh.data.vertices[i].co).length for i in range(nv)), default=0.0)
     log["rest_shift"] = round(shift / max(size), 5)
     log["chains"] = [{"bones": c["bones"], "from": c["joints"]} for c in chains]
     import skeletons
@@ -1629,8 +1664,9 @@ def rerig(key, spec, qa_dir, export):
 
     if export: save_rig(key, mesh, arm, log)
     os.makedirs(qa_dir, exist_ok=True)
-    try: qa_pictures(key, mesh, arm, chains, size, qa_dir, log)
-    except Exception as e: log["qa_error"] = repr(e)
+    if qa_wanted():
+        try: qa_pictures(key, mesh, arm, chains, size, qa_dir, log)
+        except Exception as e: log["qa_error"] = repr(e)
     log["seconds"] = round(time.time() - t0, 1)
     return log
 

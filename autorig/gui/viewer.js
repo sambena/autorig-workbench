@@ -1431,13 +1431,28 @@ function hudPlay() { $("bPlay").textContent = playing ? "Pause" : "Play"; }
 // Running the preview step from here
 // ---------------------------------------------------------------------------------------------------------------
 
+// Follows the job's event stream to its end, then fetches the job (with its log) once. It used to fetch the whole
+// log every second. A stream that closes without an end falls back to that poll.
 async function waitForJob(id, onTick) {
-  for (;;) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const j = await api("/api/jobs/" + id);
-    if (onTick) onTick(j);
-    if (j.state !== "queued" && j.state !== "running") return j;
-  }
+  await new Promise((resolve) => {
+    let lines = 0, over = false;
+    const es = new EventSource(withToken(`/api/jobs/${id}/events?from=0`));
+    const stop = () => { over = true; es.close(); resolve(); };
+    es.onmessage = () => { lines++; if (onTick) onTick({ state: "running", lines }); };
+    es.addEventListener("end", stop);
+    es.onerror = async () => {
+      if (over || es.readyState !== EventSource.CLOSED) return;       // CONNECTING: the browser retries itself
+      over = true;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const j = await api("/api/jobs/" + id).catch(() => null);
+        if (j && onTick) onTick(j);
+        if (j && j.state !== "queued" && j.state !== "running") break;
+      }
+      resolve();
+    };
+  });
+  return api("/api/jobs/" + id);
 }
 
 async function runPreview(name, btn) {

@@ -411,7 +411,7 @@ class EditorServer(unittest.TestCase):
         first = self.call("/api/spec/rerig", {"model": "boned", "spec": spec, "base": b["base"]})
         j = self.wait(first["job"])
         self.assertEqual(j["state"], "done", "\n".join(j["log"][-40:]))
-        self.assertEqual([l for l in j["log"] if l.startswith("== ") and not l.endswith("done")],
+        self.assertEqual([l for l in j["log"] if l.startswith("== ") and " done (" not in l],
                          ["== rig (tripo)", "== trim to budget", "== audit", "== preview for the viewer"])
         b = self.call("/api/spec?name=boned")
         self.assertIsNotNone(b["audit"])

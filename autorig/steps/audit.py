@@ -35,6 +35,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 # (0.03% of the model, left where two surfaces of the sculpt meet) reaches 10x on a weight difference of 0.05 and opens
 # a gap far under a pixel at any normal camera distance; tear_edges_raw keeps the plain 2x count.
 from grades import GAP, THRESHOLDS, grade_audit
+import placed_rules
 SITE_CAP = 12        # tear clusters kept per pose
 POINT_CAP = 40       # tear edges kept per pose (the widest), for a viewer to mark one by one
 CLUSTER_R = 0.05     # tear edges closer than this x the model's size are one site
@@ -107,7 +108,14 @@ for o in meshes:
     mw = np.array(o.matrix_world)
     co = co @ mw[:3, :3].T + mw[:3, 3]
     P.append(co)
-    POLYS.extend(tuple(int(v) + off for v in p.vertices) for p in me.polygons)
+    npoly = len(me.polygons)
+    lt = np.empty(npoly, int); me.polygons.foreach_get("loop_total", lt)
+    ls = np.empty(npoly, int); me.polygons.foreach_get("loop_start", ls)
+    lv = np.empty(len(me.loops), int); me.loops.foreach_get("vertex_index", lv)
+    pa = np.empty(npoly); me.polygons.foreach_get("area", pa)
+    corner = np.arange(int(lt.sum())) - np.repeat(np.cumsum(lt) - lt, lt) + np.repeat(ls, lt)   # every face's loops
+    cv = lv[corner]                                   # each face's vertices, face after face (as p.vertices)
+    if npoly: POLYS.extend(tuple(q.tolist()) for q in np.split(cv + off, np.cumsum(lt)[:-1]))
     w = np.zeros((n, nb))
     gmap = {}
     for g in o.vertex_groups:
@@ -124,22 +132,11 @@ for o in meshes:
     E.append(ed + off)
     # vertex areas
     va = np.zeros(n)
-    for p in me.polygons:
-        a = p.area / max(1, len(p.vertices))
-        for vi in p.vertices: va[vi] += a
+    if npoly: np.add.at(va, cv, np.repeat(pa / np.maximum(1, lt), lt))   # face by face, corner by corner, as before
     F_area.append(va)
     # islands
-    par = np.arange(n)
-    def find(x):
-        r = x
-        while par[r] != r: r = par[r]
-        while par[x] != r: par[x], x = r, par[x]
-        return r
-    for a_, b_ in ed:
-        ra, rb = find(a_), find(b_)
-        if ra != rb: par[ra] = rb
-    roots = np.array([find(i) for i in range(n)])
-    _, lab = np.unique(roots, return_inverse=True)
+    lab = np.empty(n, int)
+    for k_, part in enumerate(placed_rules.islands_from_edges(n, ed)): lab[part] = k_
     island_of.append(lab + isl_off); isl_off += lab.max() + 1
     per_mesh.append(dict(name=o.name, verts=n, max_influences=int(ninf.max()) if n else 0,
                          verts_over_4=int((ninf > 4).sum())))
@@ -244,18 +241,22 @@ def related(a, b):
 # upstream of it. Upstream ownership - the body keeping the shell over a leg's root, as the envelope means it to -
 # makes a region stiff, not wrong, and tears are what measure stiffness. The first audit counted it too; that figure
 # is kept as bleed_legacy_pct.
+# related() and ancestor() depend on the two bones only: tabled once per pair, then every vertex at once (the test
+# used to run vertex by vertex, walking the hierarchy each time)
+REL = np.array([[related(a_, b_) for b_ in range(nb)] for a_ in range(nb)], bool).reshape(nb, nb)
+ANC = np.array([[ancestor(a_, b_) for b_ in range(nb)] for a_ in range(nb)], bool).reshape(nb, nb)
 bleed_pairs = {}
 mismatch = np.zeros(NV, bool)
 legacy = np.zeros(NV, bool)
-for v in range(NV):
-    d = dom[v]
-    if d < 0: continue
-    n_ = nearest[v]
-    if not related(d, n_) and D[v, d] > 1.5 * D[v, n_] + 0.01 * S:
-        legacy[v] = True
-        if ancestor(d, n_): continue
-        mismatch[v] = True
-        k = (BN[d], BN[n_]); bleed_pairs[k] = bleed_pairs.get(k, 0.0) + VA[v]
+vv = np.nonzero(dom >= 0)[0]
+if len(vv):
+    dv, nv_ = dom[vv], nearest[vv]
+    hit = ~REL[dv, nv_] & (D[vv, dv] > 1.5 * D[vv, nv_] + 0.01 * S)
+    legacy[vv[hit]] = True
+    wrong = hit & ~ANC[dv, nv_]
+    mismatch[vv[wrong]] = True
+    for v in vv[wrong].tolist():                      # pairs in the order first met, sums in vertex order
+        k = (BN[dom[v]], BN[nearest[v]]); bleed_pairs[k] = bleed_pairs.get(k, 0.0) + VA[v]
 bleed_legacy = round(100 * float(VA[legacy].sum()) / area_total, 2)
 bleed = sorted(([a, b, round(100 * x / area_total, 2)] for (a, b), x in bleed_pairs.items()), key=lambda r: -r[2])
 bleed_total = round(100 * float(VA[mismatch].sum()) / area_total, 2)
@@ -282,13 +283,11 @@ for k in isl_ids:
     else:
         single = True
         bone_name = None
-    isl_info.append((int(m.sum()), single, bone_name, float(VA[m].sum())))
-isl_info.sort(key=lambda r: -r[0])
+    isl_info.append((int(m.sum()), single, bone_name, float(VA[m].sum()), int(np.argmax(m))))
+isl_info.sort(key=lambda r: (-r[0], r[4]))     # equal sizes: by lowest vertex, not label order
 rigid_islands = [r for r in isl_info if r[1]]
 
 # ---------------------------------------------------------------- joint blend
-nbr = [[] for _ in range(NV)]
-for a_, b_ in E: nbr[a_].append(b_); nbr[b_].append(a_)
 joints = []
 for c in deform:
     p = parent[c]
@@ -498,7 +497,7 @@ result = dict(slug=SLUG, fbx=FBX, meshes=per_mesh, unskinned_meshes=unskinned_me
               nonconventional_names=nonconv,
               unweighted_verts=int(unweighted.sum()), unweighted_area_pct=round(100 * float(VA[unweighted].sum()) / area_total, 2),
               islands=len(isl_ids), rigid_islands=len(rigid_islands),
-              largest_islands=[dict(verts=a, rigid=b, bone=c, area_pct=round(100 * d / area_total, 2)) for a, b, c, d in isl_info[:8]],
+              largest_islands=[dict(verts=a, rigid=b, bone=c, area_pct=round(100 * d / area_total, 2)) for a, b, c, d, _ in isl_info[:8]],
               bleed_total_pct=bleed_total, bleed_legacy_pct=bleed_legacy, bleed_pairs=bleed[:15], dominant_share=share, joints=joints, bends=bends,
               rest=rest, bone_colours=bone_colours)
 
@@ -555,7 +554,7 @@ def render_sheets():
         fp = os.path.join(OUT, "_tmp_%s_%s.png" % (SLUG, tag)); scene.render.filepath = fp
         bpy.ops.render.render(write_still=True)
         img = bpy.data.images.load(fp); w, h = img.size
-        px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+        px = np.empty(w * h * 4, dtype=np.float32); img.pixels.foreach_get(px); px = px.reshape(h, w, 4)
         bpy.data.images.remove(img); os.remove(fp); return px
     def shot(direction, tag, sticks, mesh_alpha=1.0):
         d = Vector(direction).normalized()
@@ -600,7 +599,7 @@ def render_sheets():
 def save(arr, name):
     h, w = arr.shape[:2]
     im = bpy.data.images.new(name, width=w, height=h, alpha=True)
-    im.pixels = arr.ravel().tolist()
+    im.pixels.foreach_set(np.ascontiguousarray(arr, dtype=np.float32).ravel())
     im.filepath_raw = os.path.join(OUT, name); im.file_format = 'PNG'; im.save()
 
 if RENDER:

@@ -75,32 +75,90 @@ def read_weights(mesh, bone_names):
 def write_weights(mesh, bone_names, W_old, W_new, eps=1e-3, locked=None):
     """Writes back the rows of W_new that changed from W_old (by more than eps). A bone that gains weight but has no
     vertex group yet gets one (its weight used to be dropped, leaving the row short); a row in `locked` (vertices a
-    deliberate cut owns, spec["_locked"]) is never changed. Returns how many rows were written."""
+    deliberate cut owns, spec["_locked"]) is never changed. Returns how many rows were written.
+
+    Batched by bone: one remove call for the rows a bone leaves, and one add call per distinct weight (rigid rows
+    share 1.0). An entry that is already exactly the new weight is not written again (REPLACE with the same value
+    changed nothing). It used to be one add or remove call per row per bone, most of them no-ops."""
     vg = mesh.vertex_groups
     diff = np.abs(W_new - W_old).sum(axis=1)
     rows = np.where(diff > eps)[0]
     if locked:
-        rows = np.array([r for r in rows if int(r) not in locked], dtype=int)
+        rows = rows[~np.isin(rows, np.fromiter(locked, dtype=np.int64, count=len(locked)))]
     if len(rows) == 0:
         return 0
-    groups = {}
     for bi, name in enumerate(bone_names):
+        new = W_new[rows, bi]
+        keep = new > 1e-4
         g = vg.get(name)
-        if g is None and float(W_new[rows, bi].max()) > 1e-4:
+        made = g is None
+        if made:
+            if not keep.any():
+                continue
             g = vg.new(name=name)
-        if g is not None:
-            groups[bi] = g
-    for vi in rows:
-        for bi, g in groups.items():
-            w = float(W_new[vi, bi])
-            if w > 1e-4:
-                g.add([int(vi)], w, 'REPLACE')
-            else:
-                try:
-                    g.remove([int(vi)])
-                except RuntimeError:
-                    pass
+        gone = rows[~keep]
+        if len(gone):
+            try:
+                g.remove(gone.tolist())
+            except RuntimeError:
+                pass
+        put = keep if made else keep & (new != W_old[rows, bi])
+        if not put.any():
+            continue
+        vals = new[put].astype(np.float32)        # what the group stores: one call per distinct stored value
+        idx = rows[put]
+        uniq, inv = np.unique(vals, return_inverse=True)
+        if len(uniq) == len(vals):
+            for vi, w in zip(idx.tolist(), vals.tolist()):
+                g.add([vi], w, 'REPLACE')
+        else:
+            for k, w in enumerate(uniq.tolist()):
+                g.add(idx[inv == k].tolist(), w, 'REPLACE')
     return int(len(rows))
+
+
+def islands_from_edges(n, edges):
+    """Connected pieces of an n-vertex mesh from its (m, 2) edge array: a list of vertex-index lists, each sorted,
+    ordered by each piece's lowest vertex (the order the old one-edge-at-a-time union-find gave). Vectorised: roots
+    hook onto the smaller root across every edge at once, then labels jump to their roots, until nothing changes."""
+    lab = np.arange(n, dtype=np.int64)
+    edges = np.asarray(edges, dtype=np.int64).reshape(-1, 2)
+    if n == 0:
+        return []
+    if len(edges):
+        a, b = edges[:, 0], edges[:, 1]
+        while True:
+            la, lb = lab[a], lab[b]
+            lo, hi = np.minimum(la, lb), np.maximum(la, lb)
+            moved = lo != hi
+            if not moved.any():
+                break
+            np.minimum.at(lab, hi[moved], lo[moved])
+            while True:
+                nxt = lab[lab]
+                if np.array_equal(nxt, lab):
+                    break
+                lab = nxt
+    order = np.argsort(lab, kind="stable")
+    cuts = np.flatnonzero(np.diff(lab[order])) + 1
+    return [part.tolist() for part in np.split(order, cuts)]
+
+
+_ISLANDS = {}
+
+
+def mesh_islands(mesh):
+    """islands_from_edges for a Blender mesh, remembered for as long as its topology stays the same (the skin passes
+    asked for the same pieces five or six times per rig). A fresh copy of the lists each call."""
+    me = mesh.data
+    n = len(me.vertices)
+    ed = np.empty(len(me.edges) * 2, dtype=np.int64)
+    me.edges.foreach_get("vertices", ed)
+    key = (me.as_pointer(), n, hash(ed.tobytes()))
+    if key not in _ISLANDS:
+        _ISLANDS.clear()
+        _ISLANDS[key] = islands_from_edges(n, ed.reshape(-1, 2))
+    return [list(part) for part in _ISLANDS[key]]
 
 
 def limb_groups(chains):
