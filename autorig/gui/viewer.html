@@ -161,6 +161,7 @@ a { color: var(--accent); }
   <button id="bOverlay" title="Rig overlay: off, skeleton, bone names, weights, bleed, tears (R, Y)">Overlay: off</button>
   <button id="bView" title="Camera view: 3/4 Hero, Front, Side, Free orbit (V, X)">3/4 Hero view</button>
   <button id="bFrame" title="Frame the model and the figure tight, or the stage around them (F, B)">Frame</button>
+  <button id="bRetarget" title="Retarget external BVH/FBX mocap onto this model" style="color:var(--accent);">Retarget Mocap ✦</button>
   <a id="helpLink" href="#" target="_blank" title="Comprehensive guide and 3D viewer instructions"><button type="button" style="padding:4px 9px">Help ↗</button></a>
   <a id="back" href="#" title="Back to the workbench">workbench</a>
 </div>
@@ -172,6 +173,43 @@ a { color: var(--accent); }
   Pad: D-pad or left stick model/clip · <b>A</b> play · <b>Y</b> overlay · <b>X</b> view · <b>B</b> frame · <b>LB RB</b> bone · <b>LT RT</b> step
 </div>
 <div class="hud" id="msg"><div class="big" id="msgBig"></div><div class="sub" id="msgSub"></div><div id="msgAct"></div></div>
+
+<div class="hud" id="mocapModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:100; width:460px; max-width:92vw; padding:16px 20px; box-shadow:0 8px 32px rgba(0,0,0,.6); border:1px solid var(--accent);">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h3 style="margin:0; font-size:15px; font-weight:650;">Retarget External Mocap</h3>
+    <button id="bCloseMocap" style="background:transparent; border:none; color:var(--muted); font-size:18px; cursor:pointer;">✕</button>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin:0 0 12px;">Drop any external <b>.fbx</b> or <b>.bvh</b> mocap file, or select one to transfer onto <b id="mocapTargetModel" style="color:var(--ink);"></b>.</p>
+
+  <div id="mocapDropZone" style="border:2px dashed var(--line); border-radius:8px; padding:20px; text-align:center; cursor:pointer; background:rgba(255,255,255,.02); transition:border-color .2s; margin-bottom:12px;">
+    <input type="file" id="mocapFileInput" accept=".fbx,.bvh" style="display:none;">
+    <div style="font-size:24px; margin-bottom:4px;">📥</div>
+    <div style="font-weight:600;" id="mocapDropText">Choose or drop .fbx / .bvh mocap file</div>
+    <div style="color:var(--muted); font-size:11px; margin-top:4px;">Multi-action libraries supported (Quaternius, Mixamo, Unreal)</div>
+  </div>
+
+  <div id="mocapDetails" style="display:none; margin-bottom:14px;">
+    <div style="margin-bottom:8px;">
+      <label style="display:block; font-size:11px; text-transform:uppercase; color:var(--muted); margin-bottom:4px;">Select Action Track</label>
+      <select id="mocapActionSelect" style="width:100%; font:inherit; background:#252b36; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px;"></select>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:8px;">
+      <div style="flex:1;">
+        <label style="display:block; font-size:11px; text-transform:uppercase; color:var(--muted); margin-bottom:4px;">Target Clip Name</label>
+        <input type="text" id="mocapClipName" style="width:100%; font:inherit; background:#252b36; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px;">
+      </div>
+      <div style="width:120px; display:flex; align-items:flex-end;">
+        <label style="display:flex; gap:6px; align-items:center; font-size:12px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="mocapRootMotion" checked> Root Motion</label>
+      </div>
+    </div>
+    <div id="mocapMetaInfo" style="font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums;"></div>
+  </div>
+
+  <div style="display:flex; justify-content:flex-end; gap:8px;">
+    <button id="bCancelMocap" style="background:#252b36; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 12px; cursor:pointer;">Cancel</button>
+    <button id="bExecuteRetarget" disabled style="background:var(--accent); border:none; color:#0b0e14; font-weight:600; border-radius:6px; padding:6px 14px; cursor:pointer;">Retarget & Play</button>
+  </div>
+</div>
 <script>window.AUTORIG_TOKEN = "__AUTORIG_TOKEN__";</script>
 <script type="module" src="./viewer.js"></script>
 </body>

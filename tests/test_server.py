@@ -327,6 +327,38 @@ class ServerTest(unittest.TestCase):
         self.assertIsNotNone(pedestal["steps"].get("rebake-clips"))
         self.assertEqual(self.status("/api/run", body={"model": "pedestal", "step": "rebake-clips"}), 409)
 
+    def test_8e_retarget_endpoints(self):
+        # 1. upload a sample mocap BVH via /api/retarget/upload
+        bvh_data = b"""HIERARCHY
+ROOT Hips
+{
+  OFFSET 0.00 0.00 0.00
+  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation
+  End Site
+  {
+    OFFSET 0.00 1.00 0.00
+  }
+}
+MOTION
+Frames: 2
+Frame Time: 0.0333333
+0.0 0.0 0.0 0.0 0.0 0.0
+0.0 0.0 1.0 0.0 0.0 0.0
+"""
+        req = urllib.request.Request(self.base + "/api/retarget/upload?filename=test_motion.bvh&t=" + TOKEN,
+                                     data=bvh_data, method="POST", headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            up_res = json.load(r)
+        self.assertTrue(up_res.get("stored"))
+        self.assertTrue(os.path.isfile(up_res["file"]))
+        self.assertEqual(up_res["meta"]["format"], "BVH")
+        self.assertEqual(up_res["meta"]["frames"], 2)
+
+        # 2. inspect endpoint
+        insp = self.call("/api/retarget/inspect", body={"file": up_res["file"]})
+        self.assertEqual(insp.get("format"), "BVH")
+        self.assertEqual(insp.get("frames"), 2)
+
 
 
 def alive(pid):

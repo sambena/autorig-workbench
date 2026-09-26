@@ -1582,6 +1582,147 @@ function applyParams(q) {
   frame();
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Mocap Retargeting Modal & Workflow
+// ---------------------------------------------------------------------------------------------------------------
+
+let mocapUploadedFile = null;
+let mocapMeta = null;
+
+function openMocapModal() {
+  if (!cur) return;
+  $("mocapTargetModel").textContent = cur.name;
+  $("mocapModal").style.display = "block";
+  $("mocapDropZone").style.display = "block";
+  $("mocapDetails").style.display = "none";
+  $("bExecuteRetarget").disabled = true;
+  $("mocapDropText").textContent = "Choose or drop .fbx / .bvh mocap file";
+  mocapUploadedFile = null;
+  mocapMeta = null;
+}
+
+function closeMocapModal() {
+  $("mocapModal").style.display = "none";
+}
+
+if ($("bRetarget")) $("bRetarget").addEventListener("click", openMocapModal);
+if ($("bCloseMocap")) $("bCloseMocap").addEventListener("click", closeMocapModal);
+if ($("bCancelMocap")) $("bCancelMocap").addEventListener("click", closeMocapModal);
+
+const dropZone = $("mocapDropZone");
+const fileInput = $("mocapFileInput");
+
+if (dropZone && fileInput) {
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--accent)";
+    dropZone.style.background = "rgba(91, 143, 240, 0.08)";
+  });
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "var(--line)";
+    dropZone.style.background = "rgba(255,255,255,.02)";
+  });
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--line)";
+    dropZone.style.background = "rgba(255,255,255,.02)";
+    if (e.dataTransfer.files.length) handleMocapUpload(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files.length) handleMocapUpload(e.target.files[0]);
+  });
+}
+
+async function handleMocapUpload(file) {
+  $("mocapDropText").textContent = `Uploading & inspecting ${file.name}...`;
+  try {
+    const res = await fetch(`/api/retarget/upload?filename=${encodeURIComponent(file.name)}&t=${TOKEN}`, {
+      method: "POST",
+      body: file,
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
+    const data = await res.json();
+    mocapUploadedFile = data.file;
+    mocapMeta = data.meta;
+    setupMocapActions(data.meta, file.name);
+  } catch (err) {
+    $("mocapDropText").textContent = "Error: " + err.message;
+  }
+}
+
+function setupMocapActions(meta, originalFilename) {
+  $("mocapDropZone").style.display = "none";
+  $("mocapDetails").style.display = "block";
+  $("bExecuteRetarget").disabled = false;
+
+  const select = $("mocapActionSelect");
+  select.innerHTML = "";
+  const actions = meta.actions && meta.actions.length ? meta.actions : [(meta.active_action || "default")];
+  for (const act of actions) {
+    const opt = document.createElement("option");
+    opt.value = act;
+    opt.textContent = act;
+    select.appendChild(opt);
+  }
+  if (meta.active_action && actions.includes(meta.active_action)) {
+    select.value = meta.active_action;
+  }
+
+  function updateClipName() {
+    const selAct = select.value || actions[0] || "mocap";
+    const clean = selAct.replace(/[^a-zA-Z0-9_]+/g, "_").toLowerCase().replace(/^_+|_+$/g, "");
+    $("mocapClipName").value = clean || "mocap_clip";
+  }
+  select.addEventListener("change", updateClipName);
+  updateClipName();
+
+  const dur = meta.duration ? meta.duration.toFixed(2) + "s" : "";
+  const frames = meta.frames ? meta.frames + " frames" : "";
+  const fps = meta.fps ? meta.fps + " fps" : "";
+  $("mocapMetaInfo").textContent = `${meta.format || "Mocap"} · ${actions.length} action(s) · ${[frames, dur, fps].filter(Boolean).join(" · ")}`;
+}
+
+if ($("bExecuteRetarget")) {
+  $("bExecuteRetarget").addEventListener("click", async () => {
+    if (!cur || !mocapUploadedFile) return;
+    const btn = $("bExecuteRetarget");
+    btn.disabled = true;
+    btn.textContent = "Retargeting...";
+
+    try {
+      const payload = {
+        model: cur.name,
+        file: mocapUploadedFile,
+        source_action: $("mocapActionSelect").value,
+        clip_name: $("mocapClipName").value.trim() || undefined,
+        root_motion: $("mocapRootMotion").checked,
+        export_glb: true,
+      };
+
+      const res = await fetch(`/api/retarget?t=${TOKEN}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Retargeting failed");
+
+      closeMocapModal();
+      // Reload model and select the newly created clip
+      const targetClip = result.clip_name || $("mocapClipName").value.trim();
+      await refreshList(cur.name);
+      await show(mi, targetClip);
+    } catch (err) {
+      alert("Retargeting error: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Retarget & Play";
+    }
+  });
+}
+
 let ready = false;                                   // the first model is up (for a script taking pictures)
 resize();
 setView("side");

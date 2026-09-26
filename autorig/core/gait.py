@@ -1108,3 +1108,226 @@ def evaluate_secondary_chain(chain_length, phase, frequency=1.0, base_amplitude=
 
     return angles
 
+
+# ---------------------------------------------------------------------------------------------------------------
+# Agility and Combat Kinematics (Jump, Roll, Block, Root Motion)
+# ---------------------------------------------------------------------------------------------------------------
+
+def evaluate_biped_jump_start(t_norm, hip_height, leg_length, params=None, is_shooter=False):
+    """Synthesizes a biped anticipation crouch and explosive upward jump launch.
+    t_norm in [0, 1]: 0..0.5 = compression crouch; 0.5..1.0 = explosive upward thrust.
+    """
+    H = float(hip_height)
+    t = max(0.0, min(1.0, float(t_norm)))
+
+    crouch = _smooth_step(0.0, 0.5, t)
+    launch = _smooth_step(0.5, 1.0, t)
+
+    # Pelvis drops in anticipation, then rockets upward
+    pelvis_z = -0.18 * H * crouch * (1.0 - launch) + 0.12 * H * launch
+    pelvis_pitch = 18.0 * crouch * (1.0 - launch) - 6.0 * launch
+    pelvis_y = 0.04 * H * crouch * (1.0 - launch) - 0.06 * H * launch
+
+    # Legs compress then extend into toe-point
+    thigh_p = -38.0 * crouch * (1.0 - launch) + 12.0 * launch
+    knee_p = 68.0 * crouch * (1.0 - launch) + 2.0 * launch
+    foot_p = -24.0 * crouch * (1.0 - launch) + 28.0 * launch
+
+    # Arms swing back during crouch, then whip up during launch
+    arm_pitch = 28.0 * crouch * (1.0 - launch) - 52.0 * launch
+    forearm_p = 20.0 * crouch * (1.0 - launch) + 14.0 * launch
+
+    return {
+        "pelvis": {"pos": (0.0, pelvis_y, pelvis_z), "rot": (pelvis_pitch, 0.0, 0.0)},
+        "spine": {"pitch": pelvis_pitch * 0.7, "roll": 0.0, "yaw": 0.0},
+        "chest": {"pitch": pelvis_pitch * 0.5, "roll": 0.0, "yaw": 0.0},
+        "head": {"pitch": -pelvis_pitch * 0.4, "roll": 0.0, "yaw": 0.0},
+        "legs": {
+            "L": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+            "R": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+        },
+        "arms": {
+            "L": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": 10.0, "roll": 0.0},
+            "R": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": -10.0, "roll": 0.0},
+        },
+    }
+
+
+def evaluate_biped_jump_loop(phase, hip_height, leg_length, params=None, is_shooter=False):
+    """Synthesizes a biped mid-air apex suspension loop with subtle aerodynamic floating."""
+    H = float(hip_height)
+    u = float(phase) % 1.0
+    w = 2.0 * math.pi * u
+
+    pelvis_z = 0.12 * H + 0.015 * H * math.sin(w)
+    pelvis_pitch = -4.0 + 1.2 * math.cos(w)
+
+    thigh_p = -22.0 + 2.0 * math.sin(w)
+    knee_p = 42.0 + 3.0 * math.sin(w)
+    foot_p = 12.0 + 2.0 * math.cos(w)
+
+    arm_pitch = -24.0 + 3.0 * math.cos(w)
+    forearm_p = 32.0 + 4.0 * math.sin(w)
+
+    return {
+        "pelvis": {"pos": (0.0, 0.0, pelvis_z), "rot": (pelvis_pitch, 0.0, 0.0)},
+        "spine": {"pitch": -3.0, "roll": 0.0, "yaw": 0.0},
+        "chest": {"pitch": -2.0, "roll": 0.0, "yaw": 0.0},
+        "head": {"pitch": 4.0, "roll": 0.0, "yaw": 0.0},
+        "legs": {
+            "L": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+            "R": {"thigh_pitch": thigh_p + 4.0, "knee_pitch": knee_p - 4.0, "foot_pitch": foot_p},
+        },
+        "arms": {
+            "L": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": 22.0, "roll": 0.0},
+            "R": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": -22.0, "roll": 0.0},
+        },
+    }
+
+
+def evaluate_biped_jump_land(t_norm, hip_height, leg_length, params=None, is_shooter=False):
+    """Synthesizes an athletic biped landing impact absorption and elastic recovery to standing.
+    t_norm in [0, 1]: 0..0.4 = impact compression; 0.4..1.0 = smooth spring recovery.
+    """
+    H = float(hip_height)
+    t = max(0.0, min(1.0, float(t_norm)))
+
+    # Fast impact compression peaking around t=0.35, then damped spring recovery
+    if t < 0.35:
+        impact = _smooth_step(0.0, 0.35, t)
+    else:
+        recover_t = (t - 0.35) / 0.65
+        impact = 1.0 - _smooth_step(0.0, 1.0, recover_t)
+
+    pelvis_z = -0.16 * H * impact
+    pelvis_pitch = 16.0 * impact
+    pelvis_y = 0.05 * H * impact
+
+    thigh_p = -32.0 * impact
+    knee_p = 58.0 * impact
+    foot_p = -14.0 * impact
+
+    arm_pitch = -12.0 * impact
+    forearm_p = 26.0 * impact
+
+    return {
+        "pelvis": {"pos": (0.0, pelvis_y, pelvis_z), "rot": (pelvis_pitch, 0.0, 0.0)},
+        "spine": {"pitch": pelvis_pitch * 0.6, "roll": 0.0, "yaw": 0.0},
+        "chest": {"pitch": pelvis_pitch * 0.4, "roll": 0.0, "yaw": 0.0},
+        "head": {"pitch": -pelvis_pitch * 0.5, "roll": 0.0, "yaw": 0.0},
+        "legs": {
+            "L": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+            "R": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+        },
+        "arms": {
+            "L": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": 18.0 * impact, "roll": 0.0},
+            "R": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": -18.0 * impact, "roll": 0.0},
+        },
+    }
+
+
+def evaluate_biped_roll(t_norm, hip_height, leg_length, params=None, is_shooter=False):
+    """Synthesizes a full acrobatic forward tumble / combat dodge roll.
+    t_norm in [0, 1]: Dive -> Fetal tuck -> Ground roll -> Spring unroll -> Stand.
+    """
+    H = float(hip_height)
+    t = max(0.0, min(1.0, float(t_norm)))
+
+    # Full 360-degree forward pitch rotation over the roll
+    total_pitch = 360.0 * t
+    # Compression into fetal tuck during mid-roll (peaks around t=0.5)
+    tuck = math.sin(math.pi * t)
+
+    pelvis_z = -0.55 * H * tuck
+    pelvis_y = 1.4 * H * t  # continuous forward translation
+
+    thigh_p = -70.0 * tuck
+    knee_p = 110.0 * tuck
+    foot_p = -25.0 * tuck
+
+    arm_pitch = -45.0 * tuck
+    forearm_p = 75.0 * tuck
+
+    return {
+        "pelvis": {"pos": (0.0, pelvis_y, pelvis_z), "rot": (total_pitch, 0.0, 0.0)},
+        "spine": {"pitch": 25.0 * tuck, "roll": 0.0, "yaw": 0.0},
+        "chest": {"pitch": 20.0 * tuck, "roll": 0.0, "yaw": 0.0},
+        "head": {"pitch": 30.0 * tuck, "roll": 0.0, "yaw": 0.0},
+        "legs": {
+            "L": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+            "R": {"thigh_pitch": thigh_p, "knee_pitch": knee_p, "foot_pitch": foot_p},
+        },
+        "arms": {
+            "L": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": 15.0 * tuck, "roll": 0.0},
+            "R": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": -15.0 * tuck, "roll": 0.0},
+        },
+    }
+
+
+def evaluate_biped_block(phase, hip_height, leg_length, params=None, is_shooter=False):
+    """Synthesizes a solid defensive guard brace with forearms raised in protective cover."""
+    H = float(hip_height)
+    u = float(phase) % 1.0
+    w = 2.0 * math.pi * u
+
+    breath = math.sin(w)
+    pelvis_z = -0.06 * H + 0.005 * H * breath
+    pelvis_pitch = 8.0 + 0.8 * breath
+
+    # Staggered defensive leg stance
+    thigh_l = -14.0
+    knee_l = 28.0
+    thigh_r = 10.0
+    knee_r = 18.0
+
+    # Raised defensive guard over face/chest
+    arm_pitch = -48.0 + 1.5 * breath
+    forearm_p = 82.0 + 2.0 * breath
+
+    return {
+        "pelvis": {"pos": (0.0, 0.0, pelvis_z), "rot": (pelvis_pitch, 0.0, -8.0)},
+        "spine": {"pitch": 6.0, "roll": 0.0, "yaw": 6.0},
+        "chest": {"pitch": 4.0, "roll": 0.0, "yaw": 8.0},
+        "head": {"pitch": -6.0, "roll": 0.0, "yaw": -6.0},
+        "legs": {
+            "L": {"thigh_pitch": thigh_l, "knee_pitch": knee_l, "foot_pitch": -8.0},
+            "R": {"thigh_pitch": thigh_r, "knee_pitch": knee_r, "foot_pitch": -5.0},
+        },
+        "arms": {
+            "L": {"pitch": arm_pitch, "forearm_pitch": forearm_p, "yaw": 24.0, "roll": 0.0},
+            "R": {"pitch": arm_pitch - 4.0, "forearm_pitch": forearm_p + 4.0, "yaw": -24.0, "roll": 0.0},
+        },
+    }
+
+
+def compute_root_motion_displacement(clip_name, t_norm, stride_distance, height=1.0):
+    """Computes accumulated root bone forward translation (x, y, z) for root-motion playback.
+    Returns: Vector tuple (x, y, z) in armature coordinates.
+    """
+    t = max(0.0, min(1.0, float(t_norm)))
+    name = clip_name.lower()
+
+    if "walk" in name:
+        # 1 cycle = 2 strides
+        dist = 2.0 * float(stride_distance) * t
+        return (0.0, dist, 0.0)
+    elif "run" in name or "gallop" in name:
+        # Run stride is ~1.5x walk stride
+        dist = 3.0 * float(stride_distance) * t
+        return (0.0, dist, 0.0)
+    elif "roll" in name or "dodge" in name:
+        dist = 1.6 * float(height) * _smooth_step(0.0, 1.0, t)
+        return (0.0, dist, 0.0)
+    elif "jump" in name:
+        if "start" in name:
+            dist = 0.25 * float(height) * _smooth_step(0.5, 1.0, t)
+            return (0.0, dist, 0.0)
+        elif "loop" in name:
+            dist = 0.6 * float(height) * t
+            return (0.0, dist, 0.0)
+        elif "land" in name:
+            dist = 0.25 * float(height) * (1.0 - (1.0 - t) ** 2)
+            return (0.0, dist, 0.0)
+    return (0.0, 0.0, 0.0)
+
+
