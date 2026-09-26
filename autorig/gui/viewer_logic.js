@@ -234,13 +234,16 @@ export function tearMarkerRadius(edges, baseRadius) {
 
 /** Maps Blender world coordinates [x, y, z] (+Z up, -Y forward) to glTF space [x, z, -y] (Y up, +Z forward).
  * If `at` is missing, falls back to `at_bbox` [fx, fy, fz] relative to the bounding box if provided. */
-export function mapTearPoint(at, atBbox, box) {
-  if (Array.isArray(at) && at.length === 3 && at.every((x) => typeof x === "number" && !isNaN(x))) {
-    return [at[0], at[2], -at[1]];
+export function mapTearPoint(at, atBbox, box, fileBox) {
+  if (Array.isArray(at) && at.length >= 3 && at.every((v) => Number.isFinite(v))) {
+    return [at[0], at[2], -at[1]];                                 // Blender Z up -> glTF Y up
   }
-  if (Array.isArray(atBbox) && atBbox.length === 3 && box) {
-    const szX = box.max.x - box.min.x, szY = box.max.y - box.min.y, szZ = box.max.z - box.min.z;
-    return [box.min.x + atBbox[0] * szX, box.min.y + atBbox[2] * szY, -(box.min.z + atBbox[1] * szZ)];
+  // the audit's fractions of the FBX's box (Blender axes) against the file's own box in the root's frame:
+  // Blender x -> glTF x, Blender z (up) -> glTF y, Blender y -> glTF -z
+  const fb = fileBox || box;
+  if (Array.isArray(atBbox) && atBbox.length >= 3 && fb && fb.min && fb.max) {
+    const sx = fb.max.x - fb.min.x, sy = fb.max.y - fb.min.y, sz = fb.max.z - fb.min.z;
+    return [fb.min.x + atBbox[0] * sx, fb.min.y + atBbox[2] * sy, fb.max.z - atBbox[1] * sz];
   }
   return [0, 0, 0];
 }
@@ -449,29 +452,23 @@ export function nextView(curView) {
 export function isHumanoidOrBiped(info, bones, box) {
   if (!info && !bones && !box) return false;
   const arch = String((info && (info.archetype || info.skeleton)) || "").toLowerCase();
-  if (arch === "humanoid" || arch === "biped" || arch === "walker") return true;
+  if (arch === "humanoid" || arch === "biped") return true;
+  if (arch) return false;                                          // a quadruped, hexapod, winged... says so
 
   if (Array.isArray(bones) && bones.length > 0) {
-    const boneNames = bones.map((b) => (typeof b === "string" ? b : (b && b.name) || "").toLowerCase());
-    const hasHips = boneNames.some((n) => n.includes("hip") || n.includes("pelvis"));
-    const hasSpine = boneNames.some((n) => n.includes("spine"));
-    const hasArm = boneNames.some((n) => n.includes("arm") || n.includes("shoulder") || n.includes("hand"));
-    const hasLeg = boneNames.some((n) => n.includes("leg") || n.includes("thigh") || n.includes("foot"));
-    const hasHead = boneNames.some((n) => n.includes("head"));
-    if (hasHips && hasSpine && (hasArm || hasHead) && hasLeg) return true;
+    // arms and legs, and nothing that names a quadruped's legs, wings or a tail: the rig step's own names
+    // (leg_front_1.L, wing_2.L, tail_1) are what a creature carries, and they used to pass as "humanoid"
+    const names = bones.map((b) => (typeof b === "string" ? b : (b && b.name) || "").toLowerCase());
+    const hasArm = names.some((n) => /arm(?!o)|shoulder|clavicle|hand|elbow|wrist/.test(n));   // not armour
+    const hasLeg = names.some((n) => /leg|thigh|upleg|foot|shin|calf/.test(n));
+    const creature = names.some((n) => /leg_front|leg_hind|leg\d|wing|tail|tentacle|fin($|[_.])|mandible/.test(n));
+    return hasArm && hasLeg && !creature;
   }
 
-  if (box && typeof box.getSize === "function") {
-    const s = box.getSize({ x: 0, y: 0, z: 0 });
-    if (s.y > 0.8 && s.y > 1.35 * Math.max(s.x, s.z)) {
-      return true;
-    }
-  } else if (box && typeof box.x === "number" && typeof box.y === "number" && typeof box.z === "number") {
-    if (box.y > 0.8 && box.y > 1.35 * Math.max(box.x, box.z)) {
-      return true;
-    }
-  }
-  return false;
+  // no bones to go by: taller than wide by a clear margin (the box is a three.js Box3 or a plain size)
+  const s = box && box.min && box.max ? { x: box.max.x - box.min.x, y: box.max.y - box.min.y, z: box.max.z - box.min.z }
+          : box && typeof box.y === "number" ? box : null;
+  return !!(s && s.y > 0.8 && s.y > 1.35 * Math.max(s.x, s.z));
 }
 
 /** Returns the recommended default camera view: "hero" (3/4 perspective) for humanoids/bipeds, "side" for quadrupeds/creatures. */
@@ -894,6 +891,11 @@ export function quaternionToEulerDegrees(q) {
  * Parses progress and result information from a job log line.
  * Returns an object with any extracted fields: { current, total, model, lastResult: { model, status } }
  */
+/** Text into HTML: a model name is a folder name on disk, never markup. */
+export function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 export function parseJobProgressLine(line) {
   if (!line || typeof line !== "string") return null;
   const res = {};
@@ -977,9 +979,9 @@ export function parseJobProgressLine(line) {
   }
 
   // == 2/12: hero rig done
-  const mDone = line.match(/^==\s*(?:source view |audit |make clips |preview )?(?:(\d+)\/(\d+):\s*)?([A-Za-z0-9_\-]+).*done/i);
+  const mDone = line.match(/^==\s*(?:source view |audit |make clips |preview )?(\d+)\/(\d+):\s*([A-Za-z0-9_\-]+).*done/i);
   if (mDone && !res.lastResult) {
-    if (mDone[1] && mDone[2] && !res.current) {
+    if (!res.current) {
       res.current = parseInt(mDone[1], 10);
       res.total = parseInt(mDone[2], 10);
     }
@@ -1059,7 +1061,7 @@ export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optD
       const isPass = shownResult.status === "PASSED" || shownResult.status === "PASS" || shownResult.status === "OK";
       const badgeCls = isFail ? "result-failed" : (isPass ? "result-passed" : "result-check");
       const prefix = (!isRunning) ? "Last" : "Prev";
-      prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${shownResult.model}</b> ${shownResult.status}</span>`;
+      prevHtml = ` · ${prefix}: <span class="job-prev-result ${badgeCls}"><b>${escapeHtml(shownResult.model)}</b> ${escapeHtml(shownResult.status)}</span>`;
       prevText = ` · ${prefix}: ${shownResult.model} ${shownResult.status}`;
     }
   }
@@ -1069,12 +1071,12 @@ export function formatJobHeader(job, subCount, prevOrResult, lastOrDisplay, optD
     countsSummary = ` (${job.passed} passed, ${job.failed} failed)`;
   }
 
-  const modelHtml = model ? ` · Working on: <span class="job-active-model">${model}</span>` : (job.model && !job.model.startsWith("(") ? ` · ${job.model}` : "");
+  const modelHtml = model ? ` · Working on: <span class="job-active-model">${escapeHtml(model)}</span>` : (job.model && !job.model.startsWith("(") ? ` · ${escapeHtml(job.model)}` : "");
   const modelText = model ? ` · ${model}` : "";
 
   const pidHtml = job.pid ? ` · PID ${job.pid}` : "";
 
-  const html = `Job ${job.id}: <b>${step}</b>${countHtml}${modelHtml}${prevHtml} · <span class="state ${st}">${st}</span>${countsSummary}${pidHtml}`;
+  const html = `Job ${job.id}: <b>${escapeHtml(step)}</b>${countHtml}${modelHtml}${prevHtml} · <span class="state ${st}">${st}</span>${countsSummary}${pidHtml}`;
   const text = `Job ${job.id}: ${step}${countText}${modelText}${prevText} · ${st}${countsSummary}`;
 
   return { html, text };

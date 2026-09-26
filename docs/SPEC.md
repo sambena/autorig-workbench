@@ -133,6 +133,28 @@ For `kind: "placed"`, hand-placed chains (like `build`) are augmented with body-
 | `rigid_islands` | `[{"bone", "at": [x,y,z]}, ...]`: loose pieces or armour plates (pauldrons) that ride a bone 100% rigid without bending |
 | `jaw` | `{"hinge": [x,y,z], "tip": [x,y,z], "band": 0.08}`: jaw hinge and chin line |
 
+### Experimental skinning passes (opt-in)
+
+`core/placed_rules.py` holds a set of extra skinning passes added in September 2026. They are **off unless the
+spec turns them on**: on by default they tore the collection's quadrupeds apart (docs/PLAN.md, "Cleanup"), and none
+has yet shown a measured gain on a real model. Each is a `rig` field (a humanoid's go in `humanoid`):
+
+| Field | Pass |
+|---|---|
+| `barrier` | name-based "skin barrier": crotch, armpit, flank, tail and appendage rules moving weight to the hips |
+| `sibling_isolation` | a limb's weight zeroed where a sibling chain of the same kind overlaps it (cuts wing membranes) |
+| `centerline_armor` | midline loose pieces to the hips, and a pelvic "garment" transfer on the thighs |
+| `hinge_smoothing`, `hinge_max_gradient`, `hinge_passes` | clamps the weight gradient across each joint |
+| `twist_relaxation`, `twist_max_gradient`, `twist_passes` | the same clamp along a bone's length |
+| `auto_heal` | a Laplacian blur over every steep weight edge, run last (undoes hard cuts) |
+| `rigid_islands`, `rigid_armor`, `armor`, `accessories` | loose islands bound whole to one bone (`rigid_pieces`, `rigid_to` and `parts` already do this) |
+| `mesh_heal` | the mesh doctor's repairs (loose verts, degenerate faces, doubles) before bone heat |
+| `rip_welds` | seams split between two bones' surfaces (`[["boneA", "boneB"], ...]`) |
+| `twist_bones`, `morph_targets` | twist bones on limb shafts; face shape keys (dormant: no clip uses either) |
+| `forward: "auto"` | the facing detector instead of a vector (unreliable: read it off the facing views) |
+
+Chains also take `pre_bend` (a knee kink on a collinear limb) and `medial` (joints traced along the medial axis).
+
 ### `humanoid`
 
 For `kind: "humanoid"`: `forward`, then joint heights `z` (`hip`, `knee`, `ankle`, `spine`, `spine1`, `spine2`,
@@ -149,7 +171,8 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 | Field | Meaning |
 |---|---|
 | `archetype` | `walker`, `flyer`, `exploder`, `swimmer`, `turret`, `machine` (write `clips/`) or `winged` (writes an export beside the rig) |
-| `gait` | walker: `walk` (4-beat lateral sequence for quadrupeds), `trot` (2-beat diagonal suspension), or `gallop` (rotary gallop with gathered/extended suspension flight phases) |
+| `gait` | walker: the quadruped gait preset for the walk clip, `walk` (4-beat lateral), `trot` (2-beat diagonal) or `gallop` |
+| `root_motion` | humanoid walker: the root bone travels through walk, run, jump and roll instead of animating in place (the loop's last key is a whole cycle on) |
 | `walk` | procedural gait tuning: `{preset, stride, cadence, sway, bob, lean, arm_swing, duty_factor}`. Presets: `natural`, `soldier`, `swagger`, `stealth`, `heavy`, `run`, `sprint`, `quadruped_walk`, `quadruped_trot`, `quadruped_gallop`. Humanoids author `walk`, `run`, `idle_to_walk`, `walk_to_idle`; quadrupeds author `walk`, `trot`, `gallop`. |
 | `display`, `category` | a display name and a category, carried into the clip files |
 | `attack` | walker: `bite` (rear with forelegs raised, lunge), `discharge` (rear onto planted legs, tail arched over, a crackle, a whip forward), `shoot` / `smash` (humanoids) |

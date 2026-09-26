@@ -122,7 +122,10 @@ def run_ci():
             audit_data = json.load(fh)
 
         print("--> Verifying audit results against strict thresholds:", flush=True)
-        verdict = grades.grade_audit(audit_data)
+        verdict = audit_data.get("verdict") or {}
+        if not verdict.get("checks"):
+            print("FAILED: the audit wrote no verdict", file=sys.stderr)
+            return 1
         print(f"    Grade: {verdict['grade']} (Pass: {verdict['pass']})", flush=True)
         for chk, details in verdict.get("checks", {}).items():
             val = details.get("value")

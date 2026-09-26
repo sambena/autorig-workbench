@@ -123,6 +123,8 @@ class Pose:
 _LAST_Q = {}
 
 
+ROOT_MOTION = False
+
 def apply(rig, pose, frame):
     """Poses every bone and keys it at this frame. Every bone is keyed on every frame: a channel an action does not
     key keeps whatever the last action left there, in Blender and in the exporter."""
@@ -690,7 +692,8 @@ def creature_walker(rig, style, spec=None):
     L = rig.size
     spec = spec or {}
     walk_spec = spec.get("walk") if isinstance(spec.get("walk"), dict) else {}
-    preset_name = walk_spec.get("preset") or spec.get("gait") or ("quadruped_trot" if spec.get("gait") == "trot" else "quadruped_walk")
+    GAITS = {"walk": "quadruped_walk", "trot": "quadruped_trot", "gallop": "quadruped_gallop"}
+    preset_name = walk_spec.get("preset") or GAITS.get(spec.get("gait"), spec.get("gait") or "quadruped_walk")
     overrides = dict(walk_spec)
     for k in ("stride", "cadence", "sway", "bob", "foot_lift", "duty_factor", "tail_wave"):
         if k in spec and k not in overrides:
@@ -716,7 +719,7 @@ def creature_walker(rig, style, spec=None):
             return
         angles = gait.evaluate_secondary_chain(
             len(rig.tail),
-            phase=t / (2.0 * math.pi) if t > 1.0 else t,
+            phase=(t / (2.0 * math.pi)) % 1.0,
             frequency=1.0,
             base_amplitude=amount * 0.6,
             amplitude_growth=1.22,
@@ -831,7 +834,7 @@ def creature_walker(rig, style, spec=None):
     def gallop(f, n):
         p = Pose()
         phase = f / float(n)
-        st = gait.evaluate_quadruped_gallop(phase, L, L, feet_info=rig.feet)
+        st = gait.evaluate_quadruped_gallop(phase, L, L, feet_info=[dict(ft, is_front=ft["name"] in rig.front) for ft in rig.feet])
         feet_st = st["feet"]
         body_st = st["body"]
         for foot in rig.feet:
@@ -1097,7 +1100,7 @@ def creature_walker(rig, style, spec=None):
 
     clips["block"] = (16, creature_block, True)
 
-    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 16}
+    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 24 if is_quad else 16}
 
 
 def humanoid_walker(rig, style, spec=None):
@@ -1141,7 +1144,8 @@ def humanoid_walker(rig, style, spec=None):
     thigh_swing = 22.0 * gait_params.get("stride", 1.0)
     stride = 2.0 * H * math.sin(math.radians(thigh_swing))
     root_bone = r.get("root") or getattr(rig, "root", None) or ("root" if "root" in rig.names else None)
-    root_motion = bool(spec.get("root_motion", False)) or ("--root-motion" in sys.argv)
+    global ROOT_MOTION
+    root_motion = ROOT_MOTION = bool(spec.get("root_motion", False)) or ("--root-motion" in sys.argv)
 
     # Automated finger / digit articulation (Pillar 2)
     fingers = []
@@ -2398,7 +2402,11 @@ def build(rig, clips):
         arm.animation_data.action = action
         last = frames if loops else frames - 1           # a loop's last key is its first again: no hitch at the seam
         for f in range(0, last + 1):
-            apply(rig, fn(f % frames if loops else f, frames), f)
+            if loops and f == frames and ROOT_MOTION:
+                pose = fn(frames, frames)                  # the seam with the root a whole cycle on, not back at 0
+            else:
+                pose = fn(f % frames if loops else f, frames)
+            apply(rig, pose, f)
         action.use_frame_range = True
         action.frame_start, action.frame_end = 0, last
         made.append((name, last, loops))

@@ -338,18 +338,19 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             "smooth": h.get("smooth", rig_spec.get("smooth", 4)),
             "rigid_pieces": h.get("rigid_pieces", rig_spec.get("rigid_pieces", 0.35)),
             "envelope": h.get("envelope", rig_spec.get("envelope", "root")),
-            "barrier": h.get("barrier", rig_spec.get("barrier", True)),
-            "sibling_isolation": h.get("sibling_isolation", rig_spec.get("sibling_isolation", True)),
-            "centerline_armor": h.get("centerline_armor", rig_spec.get("centerline_armor", True)),
-            "auto_heal": h.get("auto_heal", rig_spec.get("auto_heal", True)),
-            "rigid_islands": h.get("rigid_islands", rig_spec.get("rigid_islands", "auto")),
-            "rigid_armor": h.get("rigid_armor", rig_spec.get("rigid_armor", True)),
+            # the experimental placed_rules passes: opt-in, as for every other kind (rerig.skin)
+            "barrier": h.get("barrier", rig_spec.get("barrier", False)),
+            "sibling_isolation": h.get("sibling_isolation", rig_spec.get("sibling_isolation", False)),
+            "centerline_armor": h.get("centerline_armor", rig_spec.get("centerline_armor", False)),
+            "auto_heal": h.get("auto_heal", rig_spec.get("auto_heal", False)),
+            "rigid_islands": h.get("rigid_islands", rig_spec.get("rigid_islands", False)),
+            "rigid_armor": h.get("rigid_armor", rig_spec.get("rigid_armor", False)),
             "armor": h.get("armor", rig_spec.get("armor")),
             "accessories": h.get("accessories", rig_spec.get("accessories")),
-            "hinge_smoothing": h.get("hinge_smoothing", rig_spec.get("hinge_smoothing", True)),
+            "hinge_smoothing": h.get("hinge_smoothing", rig_spec.get("hinge_smoothing", False)),
             "hinge_max_gradient": h.get("hinge_max_gradient", rig_spec.get("hinge_max_gradient", 0.28)),
             "hinge_passes": h.get("hinge_passes", rig_spec.get("hinge_passes", 8)),
-            "twist_relaxation": h.get("twist_relaxation", rig_spec.get("twist_relaxation", True)),
+            "twist_relaxation": h.get("twist_relaxation", rig_spec.get("twist_relaxation", False)),
             "twist_max_gradient": h.get("twist_max_gradient", rig_spec.get("twist_max_gradient", 0.25)),
             "twist_passes": h.get("twist_passes", rig_spec.get("twist_passes", 12)),
             "girdle_blend": h.get("girdle_blend", rig_spec.get("girdle_blend", 0.9)),
@@ -386,12 +387,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     if spec.get("morph_targets", False):
         try:
             import morph_generator
-            head_b = arm.data.bones.get("Head") or arm.data.bones.get("head")
-            head_coord = tuple(head_b.head_local) if head_b else None
-            top_coord = tuple(head_b.tail_local) if head_b else None
-            created_morphs = morph_generator.generate_blender_shape_keys(
-                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
-            )
+            created_morphs = morph_generator.generate_blender_shape_keys(mesh, arm)
             if created_morphs:
                 log["morph_targets"] = created_morphs
         except Exception as e:

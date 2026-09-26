@@ -61,8 +61,23 @@ def wanted(rel):
     return name not in SKIP_FILES and not name.startswith(".") and os.path.splitext(name)[1].lower() in UPLOAD_EXTS
 
 
+def mocap_path(given):
+    """The uploaded mocap file a request names (its file name, or its path under <work>/mocap), or None: a
+    request never names an arbitrary file on the disk."""
+    given = (given or "").strip()
+    if not given:
+        return None
+    folder = os.path.realpath(os.path.join(layout.WORK, "mocap"))
+    p = os.path.realpath(os.path.join(folder, os.path.basename(given)))
+    if os.path.commonpath([os.path.normcase(p), os.path.normcase(folder)]) != os.path.normcase(folder):
+        return None
+    return p if os.path.isfile(p) else None
+
+
 def clean_name(s):
-    s = re.sub(r"[^A-Za-z0-9_\-]+", "_", s.strip()).strip("_").lower()
+    """A model name as the request gave it, with anything that is not a name character replaced (never lower-cased:
+    "Wolf" is a folder of its own)."""
+    s = re.sub(r"[^A-Za-z0-9_\-]+", "_", s.strip()).strip("_")
     return s[:64]
 
 
@@ -166,7 +181,11 @@ class Runner:
                 job.current_label = label
                 job.prev_result = job.last_result
 
-                if prep: prep()
+                if prep:
+                    try:
+                        prep()
+                    except Exception as e:
+                        job.add("!! could not prepare %s: %r" % (label, e)); ok = False; break
 
                 if total_cmds > 1:
                     job.add("--------------------------------------------------------------------------------")
@@ -198,7 +217,7 @@ class Runner:
                     import watchdog as _wd
                 except ImportError:
                     from autorig.core import watchdog as _wd
-                guard = _wd.JobWatchdog(job, p, label)
+                guard = _wd.JobWatchdog(job, p, label, script=next((a for a in argv if a.endswith(".py")), label))
                 guard.start()
                 for line in p.stdout:
                     job.add(line)
@@ -212,6 +231,7 @@ class Runner:
                     elif line.startswith("Traceback") or (TAG.match(line) and '"error"' in line):
                         failed = True
                 rc = p.wait()
+                p.stdout.close()
                 guard.stop()
                 job.proc = None
                 if job.cancelled: break
@@ -313,7 +333,7 @@ def status(group, name):
         "clips_spec": c_arch,
         "clips": os.path.exists(os.path.join(d, "clips", name + "_clips.json")) or export_manifest(name)[0] is not None,
         "card": os.path.exists(os.path.join(d, "model.json")),
-        "budget": _quiet(layout.budget, name) if spec or True else None,
+        "budget": _quiet(layout.budget, name),
         "audit": None,
     })
     a = audit_file(name)
@@ -336,7 +356,7 @@ def availability(st, spec, d):
     if st["spec_error"]:
         why["rig"] = "rig.json cannot be read: " + st["spec_error"]
     elif not rig:
-        why["rig"] = "no rig spec yet: press Edit spec (or run Survey, read the facing views, and write rig.json: docs/SPEC.md)"
+        why["rig"] = "no rig spec yet: press Suggest in the Rig Inspector and Save (or run Survey, read the facing views, and write rig.json: docs/SPEC.md)"
     elif rig.get("kind") == "custom" and not os.path.exists(os.path.join(d, rig.get("builder", ""))):
         why["rig"] = "the custom builder %s is not in the model folder" % rig.get("builder")
     elif not st["source"]:
@@ -825,7 +845,6 @@ class App:
         env = dict(os.environ, AUTORIG_MODELS=layout.ROOT, AUTORIG_WORK=layout.WORK, PYTHONUNBUFFERED="1")
         self.runner = Runner(env)
         self.uploads = Uploads()
-        self.page = open(os.path.join(HERE, "index.html"), encoding="utf-8").read()
 
 
 def make_handler(app):
@@ -937,30 +956,16 @@ def make_handler(app):
                     return self._send(200, _doc.inspect_source_model(src))
                 if path == "/api/retarget/plan":
                     name = clean_name((q.get("model") or q.get("name") or [""])[0])
-                    mocap_file = (q.get("file") or [""])[0].strip()
+                    mocap_file = mocap_path((q.get("file") or [""])[0])
                     g = find_group(name)
                     if g is None: return self._send(404, {"error": "no model " + name})
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found"})
+                    if not mocap_file:
+                        return self._send(400, {"error": "mocap file not found: give the name of an uploaded file"})
                     try:
                         import retargeter as _ret
                     except ImportError:
                         from autorig.core import retargeter as _ret
                     return self._send(200, _ret.plan_retarget(name, mocap_file, clip_name=(q.get("clip_name") or [None])[0]))
-                if path == "/api/watchdog/status":
-                    try:
-                        import watchdog as _wd
-                    except ImportError:
-                        from autorig.core import watchdog as _wd
-                    cur_pid = app.runner.current.pid if app.runner.current else None
-                    cur_mem = _wd.get_process_rss_mb(cur_pid) if cur_pid else 0.0
-                    return self._send(200, {
-                        "timeouts": _wd.DEFAULT_TIMEOUTS,
-                        "global_timeout": os.environ.get("AUTORIG_STEP_TIMEOUT"),
-                        "max_memory_mb": _wd.get_max_memory_mb(),
-                        "current_job_pid": cur_pid,
-                        "current_job_rss_mb": cur_mem,
-                    })
                 if path == "/api/audits":                           # the collection table (Audit all)
                     spec_store.reload()
                     return self._send(200, {"models": audit_table()})
@@ -1003,6 +1008,11 @@ def make_handler(app):
                 self._send(404, {"error": "not found"})
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
+            except SystemExit as e:                   # blender.find(required=True): Blender is not installed
+                try:
+                    self._send(500, {"error": str(e)})
+                except Exception:
+                    pass
             except Exception as e:
                 try:
                     self._send(500, {"error": repr(e)})
@@ -1156,9 +1166,9 @@ def make_handler(app):
                     res = _exp.create_export_package(name, target=target)
                     return self._send(200, res)
                 if path == "/api/retarget/inspect":
-                    mocap_file = body.get("file", "").strip()
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
+                    mocap_file = mocap_path(body.get("file", ""))
+                    if not mocap_file:
+                        return self._send(400, {"error": "mocap file not found: give the name of an uploaded file"})
                     try:
                         import retargeter as _ret
                     except ImportError:
@@ -1169,13 +1179,14 @@ def make_handler(app):
                     name = clean_name(body.get("model", ""))
                     g = find_group(name)
                     if g is None: return self._send(404, {"error": "no such model"})
-                    mocap_file = body.get("file", "").strip()
-                    if not mocap_file or not os.path.exists(mocap_file):
-                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
+                    mocap_file = mocap_path(body.get("file", ""))
+                    if not mocap_file:
+                        return self._send(400, {"error": "mocap file not found: give the name of an uploaded file"})
                     try:
                         import retargeter as _ret
                     except ImportError:
                         from autorig.core import retargeter as _ret
+                    # preview=True: the viewer's preview.glb is remade with the new clip, so it can play it
                     res = _ret.retarget_clip(
                         model_name=name,
                         mocap_file=mocap_file,
@@ -1183,21 +1194,20 @@ def make_handler(app):
                         source_action=body.get("source_action"),
                         root_motion=body.get("root_motion", True),
                         export_glb=body.get("export_glb", True),
+                        preview=True,
                     )
                     return self._send(200, res)
-                if path == "/api/watchdog/reap":
-                    try:
-                        import watchdog as _wd
-                    except ImportError:
-                        from autorig.core import watchdog as _wd
-                    reaped = _wd.reap_orphaned_blender_processes()
-                    return self._send(200, {"reaped_pids": reaped, "count": len(reaped)})
                 self._send(404, {"error": "not found"})
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
             except ValueError as e:
                 try:
                     self._send(400, {"error": str(e)})
+                except Exception:
+                    pass
+            except SystemExit as e:                   # blender.find(required=True): Blender is not installed
+                try:
+                    self._send(500, {"error": str(e)})
                 except Exception:
                     pass
             except Exception as e:
@@ -1230,10 +1240,10 @@ def main(argv=None):
     if a.models: os.environ["AUTORIG_MODELS"] = os.path.abspath(a.models)
     if a.work: os.environ["AUTORIG_WORK"] = os.path.abspath(a.work)
 
-    global layout, spec_store, blender, grades, exporter
+    global layout, spec_store, blender, grades
     sys.path.insert(0, CORE)
-    import layout as _l, spec_store as _s, blender as _b, grades as _g, exporter as _e
-    layout, spec_store, blender, grades, exporter = _l, _s, _b, _g, _e
+    import layout as _l, spec_store as _s, blender as _b, grades as _g
+    layout, spec_store, blender, grades = _l, _s, _b, _g
     os.makedirs(layout.ROOT, exist_ok=True)
     os.makedirs(layout.WORK, exist_ok=True)
 

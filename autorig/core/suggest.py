@@ -216,10 +216,12 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         slice_end = round(min(0.92, max(slice_end, legs[-1]["y"] + 0.06)), 2)
 
     num_body_bones = 6 if archetype == "serpent" else 4 if archetype in ("quadruped", "winged") else 3
+    # A slice runs hips to head (rerig.slice_centres names its first link hips and its last head), and the head is
+    # at the low end of y (the model faces -Y once normalised): rear end first.
     body_chain = {
         "name": "body" if archetype in ("hexapod", "octopod") else "spine",
         "role": "spine",
-        "slice": [slice_start, slice_end],
+        "slice": [slice_end, slice_start],
         "bones": num_body_bones
     }
     if archetype == "serpent":
@@ -233,11 +235,11 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
             y_mid = round((yf + yh) * 0.5, 2)
             st_start = round(max(0.08, min(slice_start, yf - 0.06)), 2)
             st_end = round(min(0.92, max(slice_end, yh + 0.06)), 2)
-            candidate_stations = [st_start, yf, y_mid, yh, st_end]
-            if all(candidate_stations[i] < candidate_stations[i + 1] for i in range(len(candidate_stations) - 1)):
+            candidate_stations = [st_end, yh, y_mid, yf, st_start]          # hips first, head last
+            if all(candidate_stations[i] > candidate_stations[i + 1] for i in range(len(candidate_stations) - 1)):
                 body_chain["stations"] = candidate_stations
                 body_chain["bones"] = len(candidate_stations) - 1
-                body_chain["slice"] = [st_start, st_end]
+                body_chain["slice"] = [st_end, st_start]
 
     chains.append(body_chain)
 
@@ -381,7 +383,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
             "bones": 4,
             "medial": True,
             "parent_nearest": True,
-            "parent": [body_chain["name"], -1]
+            "parent": [body_chain["name"], 0]
         })
 
     # 6. Head (for humanoid or models with head tip)
@@ -395,7 +397,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
             "base": h_base,
             "bones": 2,
             "parent_nearest": True,
-            "parent": [body_chain["name"], 0]
+            "parent": [body_chain["name"], -1]
         })
 
     return chains
@@ -442,8 +444,10 @@ def suggest_from_tripo(source_joints, lo, hi):
     }
 
 
-def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None):
+def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None, forward=None):
     """Main heuristic suggestion entry point.
+    `forward` is the facing the tips were measured in (steps/suggest.py normalises the mesh with it first); left
+    out, it is detected from the vertices.
     Returns: dict with 'rig' spec, 'archetype', 'confidence', 'reasons'."""
     reasons = []
 
@@ -480,7 +484,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     if skel_kind == "mixamo":
         lo, hi, size = _get_bounds_data()
         archetype = "humanoid"
-        fwd = detect_mesh_forward(vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices"), joints=joints)
+        fwd = forward or detect_mesh_forward(vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices"), joints=joints)
         rig_spec = {
             "kind": "humanoid",
             "skeleton": "humanoid",
@@ -558,7 +562,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     verts = vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices")
     chains = build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=verts)
 
-    fwd = detect_mesh_forward(verts, joints=joints)
+    fwd = forward or detect_mesh_forward(verts, joints=joints)
     rig_spec = {
         "kind": "placed",
         "skeleton": archetype,
@@ -569,7 +573,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     # Add head_line and head_to_snout if head/snout is detected ahead of body
     head_pt = centerline_info.get("head")
     body_chain = next((c for c in chains if c["role"] == "spine"), None)
-    slice_start = (body_chain.get("slice") or [0.2])[0] if body_chain else 0.2
+    slice_start = min(body_chain.get("slice") or [0.2]) if body_chain else 0.2    # the head end of the body
     if head_pt and head_pt[1] < slice_start:
         rig_spec["head_line"] = [
             [0.5, round(slice_start, 3), round(head_pt[2], 3)],

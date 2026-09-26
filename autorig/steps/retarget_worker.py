@@ -71,7 +71,9 @@ def main(argv=None):
     print(f"RETARGET_WORKER: Importing source motion '{source_file}'")
     ext = os.path.splitext(source_file)[1].lower()
     if ext == ".bvh":
-        bpy.ops.import_anim.bvh(filepath=source_file, use_fps_scale=False,
+        # the clip is rescaled onto the rig's own frame rate (24, as make_clips authors): the scene's fps is never
+        # changed, or every other clip in the .blend would play at the mocap's rate
+        bpy.ops.import_anim.bvh(filepath=source_file, use_fps_scale=True,
                                 update_scene_fps=False, update_scene_duration=True)
     elif ext == ".fbx":
         bpy.ops.import_scene.fbx(filepath=source_file, use_anim=True)
@@ -83,8 +85,7 @@ def main(argv=None):
         raise ValueError("Failed to locate imported source armature")
 
     # Determine frame range and FPS
-    fps = int(fps_override or config.get("fps") or bpy.context.scene.render.fps or 30)
-    bpy.context.scene.render.fps = fps
+    fps = int(bpy.context.scene.render.fps or 24)
     frame_start = 1
     frame_end = 30
 

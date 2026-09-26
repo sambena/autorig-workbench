@@ -76,6 +76,12 @@ def main(argv=None):
                     res = mesh_doctor.heal_mesh_object(main_obj)
                     print(f"HEALED {name} score: {res['before']['health_score']} -> {res['after']['health_score']}")
                     print(f"  ACTIONS: {res['actions']}")
+                    # the healed mesh, beside the report; the source is never written over
+                    healed = os.path.join(out_d, f"{name}_healed.obj")
+                    for o in bpy.data.objects: o.select_set(o == main_obj)
+                    bpy.context.view_layer.objects.active = main_obj
+                    bpy.ops.wm.obj_export(filepath=healed, export_selected_objects=True)
+                    print(f"  WROTE {healed}")
             else:
                 print(f"NOTICE: deep healing requires running under Blender (blender -b --python ...)")
 

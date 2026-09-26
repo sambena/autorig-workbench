@@ -101,7 +101,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None):
                     raise ValueError(f"no rig spec (rig.json 'rig') for '{model}'")
                 kind = spec.get("rig", {}).get("kind", spec.get("kind", "placed"))
                 script = "rerig_humanoid.py" if kind == "humanoid" else (
-                    os.path.join(pack_d, spec["builder"]) if kind == "custom" else "rerig.py"
+                    os.path.join(pack_d, spec.get("rig", {}).get("builder") or spec.get("builder") or "") if kind == "custom" else "rerig.py"
                 )
                 r = blender.run(script, "-only", model, "-qa", layout.work_dir("qa"))
                 if r.returncode != 0:

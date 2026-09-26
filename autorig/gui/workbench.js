@@ -87,8 +87,13 @@ async function init() {
   const queryModel = new URLSearchParams(location.search).get("model");
   const initial = hashModel || queryModel || (state && state.models && state.models[0]?.name) || "";
 
-  if (initial) {
+  const editorHas = window.specEditor && window.specEditor.getModel && window.specEditor.getModel();
+  if (initial && initial !== editorHas) {
     await selectModel(initial);
+  } else if (initial) {
+    currentModel = initial;
+    renderModelSelector();
+    setWorkbenchMode(state && state.models ? state.models.find((m) => m.name === initial) : null);
   }
 
   // Periodic poll for background jobs if active
@@ -111,6 +116,11 @@ async function refreshState() {
   } else if (!activeJob && state.jobs && state.jobs.length > 0) {
     loadJobLog(state.jobs[0].id);
   }
+}
+
+// the editor's draft has edits the user has not saved: nothing switches the model out from under them
+function editorUnsaved() {
+  return Boolean(window.specEditor && window.specEditor.unsaved && window.specEditor.unsaved());
 }
 
 let currentModelFilter = "all";
@@ -546,6 +556,10 @@ async function handleAction(action) {
       break;
 
     // View
+    case "view-viewer":
+      if (!currentModel) { alert("Pick a model first."); break; }
+      window.open("/viewer.html?model=" + encodeURIComponent(currentModel) + "&t=" + encodeURIComponent(TOKEN), "_blank");
+      break;
     case "view-mode-rig":
       setWorkbenchMode("source");
       break;
@@ -845,7 +859,7 @@ function detectAndSwitchJobModel(line) {
         (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
       );
       if (!isBulkJob && state && state.models && state.models.some((m) => m.name === p.model)) {
-        if (currentModel !== p.model) {
+        if (currentModel !== p.model && !editorUnsaved()) {
           selectModel(p.model);
         }
       }
@@ -875,7 +889,7 @@ function detectAndSwitchJobModel(line) {
         (currentJobSubCount && currentJobSubCount.total > 1) ||
         (activeJob && (activeJob.total > 1 || (activeJob.model && activeJob.model.startsWith("("))))
       );
-      if (!isBulkJob && currentModel !== detected) {
+      if (!isBulkJob && currentModel !== detected && !editorUnsaved()) {
         selectModel(detected);
       }
     }
@@ -1703,6 +1717,8 @@ function setupShortcuts() {
       }
       return;
     }
+
+    if (e.ctrlKey || e.metaKey || e.altKey) return;             // the rest are plain keys
 
     // 1: Camera Front
     if (e.key === "1") {

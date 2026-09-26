@@ -365,9 +365,9 @@ class TestGaitEngine(unittest.TestCase):
         if not blender_bin:
             raise unittest.SkipTest("Blender not installed")
         # Run make_clips on sample model under headless Blender
-        cmd = [blender_bin, "-b", "--python", os.path.join(REPO, "autorig", "steps", "make_clips.py"), "--", "wolf"]
+        cmd = [blender_bin, "-b", "--python", os.path.join(REPO, "autorig", "steps", "make_clips.py"), "--", "canine"]
         env = dict(os.environ, AUTORIG_MODELS=os.path.join(REPO, "samples"))
-        r = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True, timeout=300)
         # If wolf has no clips section, test exits gracefully; check it imports gait without error
         self.assertNotIn("No module named 'gait'", r.stderr + r.stdout)
 

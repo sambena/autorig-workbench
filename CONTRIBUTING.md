@@ -10,7 +10,7 @@ Autorig Workbench provides automated rigging, skinning, decimation, and quality 
 
 1. **Pure Python & Headless Blender**: The core server and CLI are built with the Python standard library. Blender runs exclusively in the background (headless) as subprocesses and never opens an interactive window.
 2. **Zero `pip` Dependencies**: Standard library only for core and GUI. Pillow is only optional for sheet layout scripts.
-3. **Offline & Self-Contained**: `three.js` is vendored locally under [`autorig/gui/vendor/three/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/gui/vendor/three/).
+3. **Offline & Self-Contained**: `three.js` is vendored locally under [`autorig/gui/vendor/three/`](autorig/gui/vendor/three/).
 4. **Safety by Default**:
    - The GUI server binds only to `127.0.0.1`.
    - Requires random session token per session.
@@ -25,7 +25,7 @@ Autorig Workbench provides automated rigging, skinning, decimation, and quality 
 
 - **Python**: 3.9 or higher (standard library).
 - **Blender**: 5.2 LTS (tested range). Accessible via `blender` on `PATH`, `/usr/bin/blender`, `/snap/bin/blender`, or the `AUTORIG_BLENDER` environment variable.
-- **Node.js**: 18+ (used for testing the gamepad and viewer logic in [`tests/viewer_logic_test.mjs`](file:///var/home/cosmo/Work/autorig-workbench/tests/viewer_logic_test.mjs)).
+- **Node.js**: 18+ (used for testing the gamepad and viewer logic in [`tests/viewer_logic_test.mjs`](tests/viewer_logic_test.mjs)).
 
 ---
 
@@ -78,12 +78,12 @@ All 48+ Python tests, 10 Node tests, and the headless Blender pipeline check mus
 
 ## Project Structure
 
-- [`autorig/core/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/core/): Pure-Python utilities (`layout`, `spec_store`, `blender`, `grades`, `suggest`, `placed_rules`). Kept free of `bpy` and `numpy` imports where possible so GUI server and tests remain fast.
-- [`autorig/steps/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest.py`).
-- [`autorig/gui/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/gui/): Local HTTP server (`server.py`), 3D results viewer (`viewer.html`, `viewer.js`), and spec editor (`spec_editor.html`, `spec_editor.js`, `spec_api.py`).
-- [`autorig/cli/`](file:///var/home/cosmo/Work/autorig-workbench/autorig/cli/): Command-line drivers (`run.py`, `pipeline.py`, `audit_all.py`).
-- [`docs/`](file:///var/home/cosmo/Work/autorig-workbench/docs/): Architecture guides ([`PLAN.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/PLAN.md), [`PIPELINE.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/PIPELINE.md)), specs ([`SPEC.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/SPEC.md), [`FORMATS.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/FORMATS.md)), CI ([`CI.md`](file:///var/home/cosmo/Work/autorig-workbench/docs/CI.md)), and formal schema ([`rig.schema.json`](file:///var/home/cosmo/Work/autorig-workbench/docs/rig.schema.json)).
-- [`samples/`](file:///var/home/cosmo/Work/autorig-workbench/samples/): Freely licensed CC0/CC-BY sample models for testing.
+- [`autorig/core/`](autorig/core/): Pure-Python utilities (`layout`, `spec_store`, `blender`, `grades`, `suggest`, `placed_rules`). Kept free of `bpy` and `numpy` imports where possible so GUI server and tests remain fast.
+- [`autorig/steps/`](autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest.py`).
+- [`autorig/gui/`](autorig/gui/): Local HTTP server (`server.py`), 3D results viewer (`viewer.html`, `viewer.js`), and spec editor (`spec_editor.html`, `spec_editor.js`, `spec_api.py`).
+- [`autorig/cli/`](autorig/cli/): Command-line drivers (`run.py`, `pipeline.py`, `audit_all.py`).
+- [`docs/`](docs/): Architecture guides ([`PLAN.md`](docs/PLAN.md), [`PIPELINE.md`](docs/PIPELINE.md)), specs ([`SPEC.md`](docs/SPEC.md), [`FORMATS.md`](docs/FORMATS.md)), CI ([`CI.md`](docs/CI.md)), and formal schema ([`rig.schema.json`](docs/rig.schema.json)).
+- [`samples/`](samples/): Freely licensed CC0/CC-BY sample models for testing.
 
 ---
 
@@ -103,4 +103,4 @@ All 48+ Python tests, 10 Node tests, and the headless Blender pipeline check mus
 
 ## Licensing
 
-Autorig Workbench is licensed under the **GNU General Public License v3.0 or later** ([GPL-3.0-or-later](file:///var/home/cosmo/Work/autorig-workbench/LICENSE)). All contributions submitted will be covered under this license.
+Autorig Workbench is licensed under the **GNU General Public License v3.0 or later** ([GPL-3.0-or-later](LICENSE)). All contributions submitted will be covered under this license.

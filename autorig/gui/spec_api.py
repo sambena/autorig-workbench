@@ -827,8 +827,14 @@ def post(h, app, srv, path, body):
             _, old = read_spec_text(srv, name)
             errs, warns = check(body.get("spec"), _load(os.path.join(layout.WORK, "source", name + ".json")))
             new = dumps(body.get("spec")) if isinstance(body.get("spec"), dict) else ""
-            h._send(200, {"errors": errs, "warnings": warns, "text": new, "diff": diff(old, new),
-                          "changed": (old or "") != new})
+            # changed by content, not by formatting: a hand-written rig.json laid out differently from dumps()
+            # used to read as "unsaved changes" the moment it was opened
+            try:
+                same = json.loads(old) == body.get("spec") if old else False
+            except Exception:
+                same = False
+            h._send(200, {"errors": errs, "warnings": warns, "text": new, "diff": "" if same else diff(old, new),
+                          "changed": not same})
         elif what in ("save", "rerig", "rebake_clips"):
             force = bool(body.get("force", False))
             text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
@@ -897,13 +903,39 @@ def post(h, app, srv, path, body):
             h._send(200, _job(app, srv, name, "flat views",
                               [("flat views of the draft", srv.blender_cmd("measure.py", name, "-out", ed, "-spec", draft), None)]))
         elif what == "suggest":
+            # Measured under Blender (steps/suggest.py: the mesh's geodesic tips, its proportions, its own skeleton
+            # if any): a few seconds, waited for here. Without those measurements suggest_skeleton can only return
+            # its template quadruped, so that is the fallback and it says so.
+            proposal = None
             try:
-                import suggest
-            except ImportError:
-                from autorig.core import suggest
-            src = body.get("source") or _load(os.path.join(layout.WORK, "source", name + ".json"))
-            surv = body.get("survey") or _load(os.path.join(layout.WORK, "survey", name + ".json"))
-            proposal = suggest.suggest_skeleton(name, source_data=src, survey_data=surv)
+                import subprocess
+                argv = srv.blender_cmd("suggest.py", name)
+                env = dict(os.environ, AUTORIG_MODELS=layout.ROOT, AUTORIG_WORK=layout.WORK, PYTHONUNBUFFERED="1")
+                r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                   env=env, cwd=srv.REPO, timeout=180,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                for line in (r.stdout or "").splitlines():
+                    if line.startswith("SUGGEST {"):
+                        proposal = json.loads(line[8:])
+                        break
+                if proposal is None:
+                    tail = "\n".join((r.stdout or "").splitlines()[-6:])
+                    proposal = {"error": "the suggest step wrote no proposal", "log": tail}
+            except Exception as e:
+                proposal = {"error": "the suggest step could not run: %r" % e}
+            if proposal.get("error"):
+                try:
+                    import suggest
+                except ImportError:
+                    from autorig.core import suggest
+                src = body.get("source") or _load(os.path.join(layout.WORK, "source", name + ".json"))
+                surv = body.get("survey") or _load(os.path.join(layout.WORK, "survey", name + ".json"))
+                why = proposal["error"]
+                proposal = suggest.suggest_skeleton(name, source_data=src, survey_data=surv)
+                proposal.setdefault("reasons", []).insert(0, "not measured (%s): a template proposal" % why)
+                proposal["measured"] = False
+            else:
+                proposal["measured"] = True
             h._send(200, proposal)
         else:
             h._send(404, {"error": "not found"})

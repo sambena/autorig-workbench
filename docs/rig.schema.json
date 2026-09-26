@@ -7,7 +7,9 @@
   "properties": {
     "schema": {
       "type": "string",
-      "enum": ["autorig-spec/1"],
+      "enum": [
+        "autorig-spec/1"
+      ],
       "description": "Schema version identifier. Must be 'autorig-spec/1'."
     },
     "rig": {
@@ -16,7 +18,13 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["tripo", "build", "placed", "humanoid", "custom"],
+          "enum": [
+            "tripo",
+            "build",
+            "placed",
+            "humanoid",
+            "custom"
+          ],
           "description": "Rig builder type: 'tripo' (reuse joints), 'build' (trace mesh), 'placed' (hand-placed with rules), 'humanoid' (standard biped), or 'custom' (script)."
         },
         "skeleton": {
@@ -25,7 +33,9 @@
         },
         "forward": {
           "type": "array",
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3,
           "description": "Direction vector the model faces in source coordinates before turning to -Y (e.g. [0, -1, 0])."
@@ -36,7 +46,10 @@
         },
         "origin": {
           "type": "string",
-          "enum": ["feet", "center"],
+          "enum": [
+            "feet",
+            "center"
+          ],
           "description": "Origin placement: 'feet' (ground at z=0) or 'center' (centred at origin for flyers/swimmers)."
         },
         "builder": {
@@ -57,22 +70,30 @@
         },
         "legs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Source bone names designated as legs (tripo)."
         },
         "mirror": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Bone names to mirror across symmetry plane (tripo)."
         },
         "fold": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Bones to fold into their parent during re-rooting (tripo)."
         },
         "discard": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Bones to discard with their subtrees (tripo)."
         },
         "chains": {
@@ -80,11 +101,15 @@
           "oneOf": [
             {
               "type": "array",
-              "items": { "$ref": "#/$defs/chainDefinition" }
+              "items": {
+                "$ref": "#/$defs/chainDefinition"
+              }
             },
             {
               "type": "object",
-              "additionalProperties": { "type": "string" }
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           ]
         },
@@ -92,33 +117,58 @@
           "type": "object",
           "description": "Jaw bone placement and binding parameters.",
           "properties": {
-            "hinge": { "$ref": "#/$defs/vec3" },
-            "tip": { "$ref": "#/$defs/vec3" },
-            "band": { "type": "number", "minimum": 0 }
+            "hinge": {
+              "$ref": "#/$defs/vec3"
+            },
+            "tip": {
+              "$ref": "#/$defs/vec3"
+            },
+            "band": {
+              "type": "number",
+              "minimum": 0
+            }
           },
-          "required": ["hinge", "tip"]
+          "required": [
+            "hinge",
+            "tip"
+          ]
         },
         "head_line": {
           "type": "object",
           "description": "Head and snout guide line.",
           "properties": {
-            "head": { "$ref": "#/$defs/vec3" },
-            "chin": { "$ref": "#/$defs/vec3" },
-            "top": { "$ref": "#/$defs/vec3" }
+            "head": {
+              "$ref": "#/$defs/vec3"
+            },
+            "chin": {
+              "$ref": "#/$defs/vec3"
+            },
+            "top": {
+              "$ref": "#/$defs/vec3"
+            }
           }
         },
         "add_tail": {
           "type": "object",
           "description": "Appends a segmented tail chain.",
           "properties": {
-            "start": { "$ref": "#/$defs/vec3" },
-            "tip": { "$ref": "#/$defs/vec3" },
-            "bones": { "type": "integer", "minimum": 1 }
+            "start": {
+              "$ref": "#/$defs/vec3"
+            },
+            "tip": {
+              "$ref": "#/$defs/vec3"
+            },
+            "bones": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "hard_split": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Bone names with abrupt rigid step falloff rather than smooth blending."
         },
         "parts": {
@@ -128,13 +178,33 @@
               "type": "object",
               "additionalProperties": {
                 "oneOf": [
-                  { "type": "array", "items": { "type": "string" } },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
                   {
                     "type": "object",
                     "properties": {
-                      "bones": { "type": "array", "items": { "type": "string" } },
-                      "allow": { "type": "array", "items": { "type": "string" } },
-                      "deny": { "type": "array", "items": { "type": "string" } }
+                      "bones": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "allow": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "deny": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 ]
@@ -145,12 +215,31 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "name": { "type": "string" },
-                  "bones": { "type": "array", "items": { "type": "string" } },
-                  "allow": { "type": "array", "items": { "type": "string" } },
-                  "deny": { "type": "array", "items": { "type": "string" } }
+                  "name": {
+                    "type": "string"
+                  },
+                  "bones": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "allow": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deny": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 },
-                "required": ["bones"]
+                "required": [
+                  "bones"
+                ]
               }
             }
           ]
@@ -163,16 +252,31 @@
               {
                 "type": "object",
                 "properties": {
-                  "bone": { "type": "string" },
-                  "with": { "type": "string" },
-                  "radius": { "type": "number", "minimum": 0 },
-                  "fade": { "type": "number", "minimum": 0 }
+                  "bone": {
+                    "type": "string"
+                  },
+                  "with": {
+                    "type": "string"
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fade": {
+                    "type": "number",
+                    "minimum": 0
+                  }
                 },
-                "required": ["bone", "with"]
+                "required": [
+                  "bone",
+                  "with"
+                ]
               },
               {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "minItems": 2,
                 "maxItems": 2
               }
@@ -184,7 +288,9 @@
           "description": "Seams between parts to rip apart before skinning to prevent tearing.",
           "items": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "minItems": 2,
             "maxItems": 2
           }
@@ -195,14 +301,32 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "bones": { "type": "array", "items": { "type": "string" } },
-              "root_bone": { "type": "string" },
-              "cut_flank": { "type": "boolean" },
-              "gradient": { "type": "number" },
-              "span_power": { "type": "number" }
+              "name": {
+                "type": "string"
+              },
+              "bones": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "root_bone": {
+                "type": "string"
+              },
+              "cut_flank": {
+                "type": "boolean"
+              },
+              "gradient": {
+                "type": "number"
+              },
+              "span_power": {
+                "type": "number"
+              }
             },
-            "required": ["name", "bones"]
+            "required": [
+              "name",
+              "bones"
+            ]
           }
         },
         "rigid_islands": {
@@ -211,72 +335,248 @@
           "items": {
             "type": "object",
             "properties": {
-              "bone": { "type": "string" },
+              "bone": {
+                "type": "string"
+              },
               "box": {
                 "type": "array",
-                "items": { "type": "number" },
+                "items": {
+                  "type": "number"
+                },
                 "minItems": 6,
                 "maxItems": 6
               },
-              "max_verts": { "type": "integer" }
+              "max_verts": {
+                "type": "integer"
+              }
             },
-            "required": ["bone"]
+            "required": [
+              "bone"
+            ]
           }
         },
         "audit": {
           "type": "object",
           "description": "Audit check allowances override for this model (requires notes['rig.audit']).",
           "properties": {
-            "bleed_pct": { "type": "number" },
-            "combined_tears": { "type": "integer" },
-            "bend_tears": { "type": "integer" },
-            "head_pct": { "type": "number" },
-            "max_influences": { "type": "integer" }
+            "bleed_pct": {
+              "type": "number"
+            },
+            "combined_tears": {
+              "type": "integer"
+            },
+            "bend_tears": {
+              "type": "integer"
+            },
+            "head_pct": {
+              "type": "number"
+            },
+            "max_influences": {
+              "type": "integer"
+            }
           },
           "additionalProperties": false
-        }
+        },
+        "barrier": {
+          "type": "boolean",
+          "description": "Experimental (off): the name-based skin barrier pass. SPEC.md, Experimental skinning passes."
+        },
+        "sibling_isolation": {
+          "type": "boolean",
+          "description": "Experimental (off): sibling appendage isolation."
+        },
+        "centerline_armor": {
+          "type": "boolean",
+          "description": "Experimental (off): centreline island binding and the pelvic garment transfer."
+        },
+        "hinge_smoothing": {
+          "type": "boolean",
+          "description": "Experimental (off): clamp the weight gradient across joints."
+        },
+        "hinge_max_gradient": {
+          "type": "number"
+        },
+        "hinge_passes": {
+          "type": "integer"
+        },
+        "twist_relaxation": {
+          "type": "boolean",
+          "description": "Experimental (off): clamp the weight gradient along a bone."
+        },
+        "twist_max_gradient": {
+          "type": "number"
+        },
+        "twist_passes": {
+          "type": "integer"
+        },
+        "auto_heal": {
+          "type": "boolean",
+          "description": "Experimental (off): a Laplacian blur over steep weight edges, run last."
+        },
+        "rigid_armor": {
+          "type": "boolean"
+        },
+        "armor": {},
+        "accessories": {},
+        "mesh_heal": {
+          "type": "boolean",
+          "description": "The mesh doctor's repairs before bone heat."
+        },
+        "heal": {
+          "type": "boolean"
+        },
+        "twist_bones": {
+          "type": "boolean",
+          "description": "Dormant: twist bones on limb shafts."
+        },
+        "morph_targets": {
+          "type": "boolean",
+          "description": "Dormant: face shape keys."
+        },
+        "smooth": {
+          "type": "integer",
+          "description": "Weight smoothing passes."
+        },
+        "joint_blend": {
+          "type": "number"
+        },
+        "girdle_blend": {
+          "type": "number"
+        },
+        "limb_radius": {
+          "type": "number"
+        },
+        "spike_reach": {
+          "type": "number"
+        },
+        "envelope_skip": {},
+        "envelope": {},
+        "centre": {},
+        "shell": {},
+        "rigid_pieces": {},
+        "rigid_to": {
+          "type": "array"
+        },
+        "rigid_parts": {
+          "type": "array"
+        },
+        "soft": {
+          "type": "array"
+        },
+        "machine": {
+          "type": "boolean"
+        },
+        "girdle": {
+          "type": "array"
+        },
+        "neck": {
+          "type": "integer"
+        },
+        "delete": {
+          "type": "array"
+        },
+        "move": {},
+        "single": {},
+        "body": {}
       },
-      "required": ["kind"]
+      "required": [
+        "kind"
+      ]
     },
     "humanoid": {
       "type": "object",
       "description": "Measurements for standard biped skeleton (kind: 'humanoid').",
       "properties": {
-        "forward": { "$ref": "#/$defs/vec3" },
+        "forward": {
+          "$ref": "#/$defs/vec3"
+        },
         "z": {
           "type": "object",
           "description": "Z height coordinates (0..1 of model height).",
           "properties": {
-            "top": { "type": "number" },
-            "head": { "type": "number" },
-            "neck": { "type": "number" },
-            "arm": { "type": "number" },
-            "spine2": { "type": "number" },
-            "spine1": { "type": "number" },
-            "spine": { "type": "number" },
-            "hip": { "type": "number" },
-            "knee": { "type": "number" },
-            "ankle": { "type": "number" }
+            "top": {
+              "type": "number"
+            },
+            "head": {
+              "type": "number"
+            },
+            "neck": {
+              "type": "number"
+            },
+            "arm": {
+              "type": "number"
+            },
+            "spine2": {
+              "type": "number"
+            },
+            "spine1": {
+              "type": "number"
+            },
+            "spine": {
+              "type": "number"
+            },
+            "hip": {
+              "type": "number"
+            },
+            "knee": {
+              "type": "number"
+            },
+            "ankle": {
+              "type": "number"
+            }
           },
-          "required": ["top", "head", "neck", "arm", "spine2", "spine1", "spine", "hip", "knee", "ankle"]
+          "required": [
+            "top",
+            "head",
+            "neck",
+            "arm",
+            "spine2",
+            "spine1",
+            "spine",
+            "hip",
+            "knee",
+            "ankle"
+          ]
         },
         "x": {
           "type": "object",
           "description": "X half-span coordinates (0..0.5 from centerline).",
           "properties": {
-            "shoulder": { "type": "number" },
-            "elbow": { "type": "number" },
-            "wrist": { "type": "number" },
-            "knuckle": { "type": "number" },
-            "tip": { "type": "number" }
+            "shoulder": {
+              "type": "number"
+            },
+            "elbow": {
+              "type": "number"
+            },
+            "wrist": {
+              "type": "number"
+            },
+            "knuckle": {
+              "type": "number"
+            },
+            "tip": {
+              "type": "number"
+            }
           },
-          "required": ["shoulder", "elbow", "wrist", "knuckle", "tip"]
+          "required": [
+            "shoulder",
+            "elbow",
+            "wrist",
+            "knuckle",
+            "tip"
+          ]
         }
       },
-      "required": ["z", "x"]
+      "required": [
+        "z",
+        "x"
+      ]
     },
     "budget": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "minimum": 1,
       "description": "Engine decimation triangle budget target. Null keeps full resolution."
     },
@@ -286,96 +586,191 @@
       "properties": {
         "archetype": {
           "type": "string",
-          "enum": ["walker", "flyer", "exploder", "swimmer", "turret", "winged", "machine"],
+          "enum": [
+            "walker",
+            "flyer",
+            "exploder",
+            "swimmer",
+            "turret",
+            "winged",
+            "machine"
+          ],
           "description": "Clip authoring archetype."
         },
-        "display": { "type": "string" },
-        "category": { "type": "string" },
-        "attack": { "type": "string" },
-        "windup": { "type": "string" },
-        "hit_rear": { "type": "number" },
-        "beats": { "type": "number" },
-        "flap": { "type": "number" },
-        "loop": { "type": "integer" }
+        "display": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "attack": {
+          "type": "string"
+        },
+        "windup": {
+          "type": "string"
+        },
+        "hit_rear": {
+          "type": "number"
+        },
+        "beats": {
+          "type": "number"
+        },
+        "flap": {
+          "type": "number"
+        },
+        "loop": {
+          "type": "integer"
+        },
+        "gait": {
+          "type": "string",
+          "enum": [
+            "walk",
+            "trot",
+            "gallop"
+          ]
+        },
+        "walk": {
+          "type": "object"
+        },
+        "root_motion": {
+          "type": "boolean"
+        },
+        "quadruped": {},
+        "rig": {},
+        "triangles": {},
+        "flySpeed": {},
+        "splitWalkSpeed": {},
+        "body": {}
       },
-      "required": ["archetype"]
+      "required": [
+        "archetype"
+      ]
     },
     "card": {
       "type": "object",
       "description": "Engine metadata card published with the rigged assets.",
       "properties": {
-        "metres": { "type": "number", "minimum": 0 },
-        "role": { "type": "string" },
-        "tint": { "type": "string" }
+        "metres": {
+          "type": "number",
+          "minimum": 0
+        },
+        "role": {
+          "type": "string"
+        },
+        "tint": {
+          "type": "string"
+        }
       }
     },
     "notes": {
       "type": "object",
       "description": "Explanations and rationale for allowances or non-default options.",
       "properties": {
-        "rig.audit": { "type": "string" },
-        "budget": { "type": "string" },
-        "clips": { "type": "string" }
+        "rig.audit": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "string"
+        },
+        "clips": {
+          "type": "string"
+        }
       },
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   },
-  "required": ["schema", "rig"],
+  "required": [
+    "schema",
+    "rig"
+  ],
   "$defs": {
     "vec3": {
       "type": "array",
-      "items": { "type": "number" },
+      "items": {
+        "type": "number"
+      },
       "minItems": 3,
       "maxItems": 3
     },
     "chainDefinition": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "role": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
         "slice": {
           "type": "array",
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "minItems": 2,
           "maxItems": 2
         },
         "tube": {
           "type": "array",
-          "items": { "$ref": "#/$defs/vec3" },
+          "items": {
+            "$ref": "#/$defs/vec3"
+          },
           "minItems": 2,
           "maxItems": 2
         },
         "points": {
           "type": "array",
-          "items": { "$ref": "#/$defs/vec3" },
+          "items": {
+            "$ref": "#/$defs/vec3"
+          },
           "minItems": 2
         },
-        "tip": { "$ref": "#/$defs/vec3" },
-        "base": { "$ref": "#/$defs/vec3" },
+        "tip": {
+          "$ref": "#/$defs/vec3"
+        },
+        "base": {
+          "$ref": "#/$defs/vec3"
+        },
         "stations": {
           "type": "array",
-          "items": { "type": "number" }
+          "items": {
+            "type": "number"
+          }
         },
-        "bones": { "type": "integer", "minimum": 1 },
+        "bones": {
+          "type": "integer",
+          "minimum": 1
+        },
         "names": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "parent": {
           "oneOf": [
-            { "type": "string" },
+            {
+              "type": "string"
+            },
             {
               "type": "array",
               "prefixItems": [
-                { "type": "string" },
-                { "type": "integer" }
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
               ],
               "items": false
             }
           ]
         }
       },
-      "required": ["name"]
+      "required": [
+        "name"
+      ]
     }
   }
 }

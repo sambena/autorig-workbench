@@ -150,9 +150,9 @@ def inspect_mocap_file(filepath):
             blender.find(),
             "-b",
             "--python-expr",
-            f"""
-import bpy, json
-bpy.ops.import_scene.fbx(filepath="{os.path.abspath(filepath)}", use_anim=True)
+            """
+import bpy, json, sys
+bpy.ops.import_scene.fbx(filepath=sys.argv[sys.argv.index("--") + 1], use_anim=True)
 arm = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
 bones = [b.name for b in arm.data.bones] if arm else []
 fps = bpy.context.scene.render.fps
@@ -161,7 +161,7 @@ for a in bpy.data.actions:
     f_start = int(a.frame_range[0])
     f_end = int(a.frame_range[1])
     f_count = max(1, f_end - f_start + 1)
-    actions.append({{"name": a.name, "frames": f_count, "frame_start": f_start, "frame_end": f_end, "fps": fps}})
+    actions.append({"name": a.name, "frames": f_count, "frame_start": f_start, "frame_end": f_end, "fps": fps})
 
 act = None
 if arm and arm.animation_data and arm.animation_data.action:
@@ -171,10 +171,13 @@ elif bpy.data.actions:
 
 frames = int(act.frame_range[1] - act.frame_range[0] + 1) if act else 0
 active_name = act.name if act else None
-print("__FBX_META__" + json.dumps({{"format": "FBX", "joints": bones, "frames": frames, "fps": fps, "actions": actions, "active_action": active_name}}))
-"""
+print("__FBX_META__" + json.dumps({"format": "FBX", "joints": bones, "frames": frames, "fps": fps, "actions": actions, "active_action": active_name}))
+""",
+            "--", os.path.abspath(filepath),
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=300)
+        if r.returncode != 0 or "__FBX_META__" not in (r.stdout or ""):
+            raise RuntimeError("Blender could not read the FBX: " + "\n".join((r.stdout or "").splitlines()[-5:]))
         meta = {"format": "FBX", "joints": [], "frames": 0, "fps": 30.0, "actions": [], "active_action": None}
         for line in r.stdout.splitlines():
             if line.startswith("__FBX_META__"):
@@ -373,7 +376,7 @@ if arm:
 print("__TGT_BONES__" + json.dumps({"bones": bones, "dirs": dirs}))
 """
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=300)
     tgt_bones = []
     tgt_dirs = {}
     for line in r.stdout.splitlines():

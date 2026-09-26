@@ -16,7 +16,18 @@ def run_suggest(key):
         return {"model": key, "error": "no source export found"}
 
     mesh, joints = rerig.load(path)
-    rerig.normalise(mesh, joints or {}, {"kind": "build", "forward": "auto"})
+    # The facing comes from the model's rig.json when it has one (read off the survey's facing views, SPEC.md), else
+    # the default; the tips are measured in that frame and the proposal carries the same forward, so the two agree.
+    spec = {}
+    spec_path = os.path.join(layout.pack_dir(key), "rig.json")
+    if os.path.exists(spec_path):
+        try:
+            with open(spec_path, encoding="utf-8") as fh:
+                spec = (json.load(fh).get("rig") or {})
+        except Exception:
+            spec = {}
+    forward = spec.get("forward") if isinstance(spec.get("forward"), list) else [0, -1, 0]
+    rerig.normalise(mesh, joints or {}, {"kind": "build", "forward": forward})
     s = geo.Surface(mesh)
 
     raw_tips = s.tips(most=18, least=0.12)
@@ -44,7 +55,8 @@ def run_suggest(key):
         },
         survey_data=surv,
         tips=norm_tips,
-        proportions=[float(v) for v in s.size]
+        proportions=[float(v) for v in s.size],
+        forward=forward,
     )
     res["model"] = key
     res["tips_count"] = len(norm_tips)

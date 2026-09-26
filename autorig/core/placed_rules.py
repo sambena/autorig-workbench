@@ -184,27 +184,36 @@ def rip_welds_pass(mesh, arm, chains, spec, size, log):
             if facesA and facesB:
                 verts_to_rip.append((v, facesB))
 
-        # Separate side B faces onto a duplicate vertex
+        # Separate side B faces onto duplicate vertices. Every seam vertex is copied first, then each side-B face
+        # is remade once with all of its seam vertices swapped: a face that touches two seam vertices used to be
+        # removed at the first and then read again at the second (a BMesh ReferenceError), and was left riding
+        # the original second vertex when it survived.
         if verts_to_rip:
             dlayer = bm.verts.layers.deform.verify()
+            copies = {}
+            side_b = []
+            seen = set()
             for v, b_faces in verts_to_rip:
                 v_copy = bm.verts.new(v.co)
-                # Copy existing vertex weights if any
-                v_weights = v[dlayer]
-                for g_idx, weight in v_weights.items():
+                for g_idx, weight in v[dlayer].items():
                     v_copy[dlayer][g_idx] = weight
-
-                # Remake side B faces using v_copy
+                copies[v] = v_copy
                 for f in b_faces:
-                    vert_seq = [v_copy if u == v else u for u in f.verts]
-                    try:
-                        new_f = bm.faces.new(vert_seq)
-                        new_f.material_index = f.material_index
-                        new_f.smooth = f.smooth
-                        bm.faces.remove(f)
-                    except ValueError:
-                        pass
-                total_ripped += 1
+                    if f.index not in seen:
+                        seen.add(f.index); side_b.append(f)
+            for f in side_b:
+                if not f.is_valid:
+                    continue
+                vert_seq = [copies.get(u, u) for u in f.verts]
+                material_index, smooth = f.material_index, f.smooth
+                try:
+                    new_f = bm.faces.new(vert_seq)
+                except ValueError:
+                    continue
+                new_f.material_index = material_index
+                new_f.smooth = smooth
+                bm.faces.remove(f)
+            total_ripped += len(verts_to_rip)
 
             bm.verts.ensure_lookup_table()
             bm.faces.ensure_lookup_table()

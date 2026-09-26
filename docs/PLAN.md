@@ -138,36 +138,106 @@ Done: the viewer, the spec editor (the spec form) and Save and re-rig (Rig again
 Done when a user changes an option in the form, presses Rig again, and sees the new skeleton in 3D, a clip playing on
 it, and the audit delta, without touching a text file (done).
 
-### P3: click-to-place joints (8-10 days)
+### P3: click-to-place joints (mostly done)
 
-- The measure sheet's three orthographic views, made interactive in the page as images with the grid drawn over them,
-  so there is no 3D picking to get wrong. Started: the editor's **Flat views** tab runs `measure.py` on the unsaved
-  draft (the rig it would build drawn over the model) and a click in a view sets two of a point's three numbers.
-- **Click to place** a chain's joints, or just a limb's tip and base (done). Pick beside `tip`, `base`, `points`,
-  `head_line`, `jaw` and `rigid_to` boxes, in 3D or on the flat views; drag to move a joint in 3D or flat views,
-  mirroring a placed chain across symmetry ($X \to 1 - X$) in one click with intelligent renaming, `stations` placement
-  by click/input, and live redrawing of the flat views as points move.
-- **`kind: "placed"`** (done): a hand-placed winged builder generalised. Its body-part rules become spec data: which bones
-  each part may use (`parts`), which parts blend at a join (`blends`), which welds to rip (`rip_welds`), membranes
-  riding only wing spar bones by distance gradients and cut free from the flank (`membranes`), the jaw line (`jaw`),
-  and rigid islands (`rigid_islands`).
+- Pick beside `tip`, `base`, `points`, `head_line`, `jaw` and `rigid_to`, in 3D or on the flat views; drag to move a
+  joint; "+ Mirror chain"; `stations` by click; the flat views redrawn as points move. Done. The "mirror .L/.R"
+  checkbox (a drag on one side moving the other) was dead until the cleanup fixed its path check; unverified since.
+- **`kind: "placed"`**: the winged builder generalised. `parts`, `blends` and `rip_welds` are small and work
+  (`rip_welds` crashed on any real seam until the cleanup); `membranes` is half-built (`cut_flank` and `root_bone`
+  are read and never used, and a forelimb near the wing root rides the spars); no sample uses any of them.
 
-Done when a model with no spec goes from drop-in to a PASS audit using only clicks and the spec form.
+Done when a model with no spec goes from drop-in to a PASS audit using only clicks and the spec form. Not there:
+the three generated creature samples need a hand-edited spec (samples/README.md).
 
-### P4: suggest a skeleton, and open-source readiness (5-7 days)
+### P4: suggest a skeleton, and open-source readiness (partly done)
 
-- **Suggest a skeleton** (done): from survey (Tripo-style or Mixamo bones, if any), `probe_tips` (geodesic tips),
-  the model's symmetry plane, and its proportions, propose an archetype and chains with tips. Pure-Python heuristics
-  in `autorig/core/suggest.py`, standalone step `autorig/steps/suggest.py`, `POST /api/spec/suggest` endpoint, and
-  **Suggest skeleton** button in the spec editor (`gui/spec_editor.html` / `gui/spec_editor.js`).
-- **Samples:** 3-5 models under CC0 or CC-BY, with their licences in `samples/`: a quadruped, a hexapod, a humanoid,
-  a flier and a prop.
-- **Docs** (done): architecture guides, CONTRIBUTING.md, and formal JSON schema for `rig.json` (`docs/rig.schema.json`).
-- **CI** (done): GitHub Actions workflow on Linux (`ci/ci.yml`, documented in `docs/CI.md`) with cached Blender 5.2.2 LTS, running full unit test suites, Node tests, and headless Blender audit pipeline verifying audit thresholds via `scripts/ci_audit_thresholds.py` and `autorig/cli/audit_all.py`.
-- **Blender version check** (done): at start-up in `autorig/gui/server.py` and `autorig/cli/run.py`, warns outside tested range (5.2 LTS); inspection functions, state reporting, and tested-range checks in `autorig/core/blender.py` with tests in `tests/test_blender_version.py`.
+- **Suggest a skeleton**: `core/suggest.py` + `steps/suggest.py`. Since the cleanup the GUI's Suggest runs the
+  Blender measurement (tips, symmetry, proportions) instead of returning a template quadruped, and the spine it
+  emits runs hips-to-head. Its base guesses (a humanoid's hips at z 0.70, a shoulder at hand height) and the
+  facing detector (ties fall to -Y) are unproven on real sculpts.
+- **Samples**: five generated from primitives (`scripts/generate_samples.py`), not sculpts: 3 PASS, 1 CHECK, 1
+  FAIL after the cleanup. To be replaced by CC0 sculpts (P5).
+- **Docs**: CONTRIBUTING, `docs/rig.schema.json` (loose: it lists the fields the code reads, it does not yet
+  match every shape), `help.html` (describes the previous page in places).
+- **CI**: `.github/workflows/ci.yml` (moved from `ci/`, where GitHub never ran it); not yet seen green. The
+  audit-threshold step is a smoke test on a generated column (docs/CI.md).
+- **Blender version check**: done.
 
-Done when a fresh clone on a machine with only Python and Blender rigs every sample to PASS through the GUI, and CI
-is green.
+## The September 2026 batch (PRs 5-42)
+
+Thirty-eight pull requests generated with an AI coding tool in one week, ~27k lines, reviewed on 2026-09-26
+(six reviews, one per area, plus a run of the real collection). The state of each after the cleanup below:
+
+| Feature | State |
+|---|---|
+| Viewer: tears overlay, test poses, worst-bone select, clip switcher | kept; the pose list navigation, playback on leaving the overlay and the retarget modal were broken and are fixed |
+| Viewer: "camera system", ground plane, axis locks, feet levelling | two fixed views added to the original fitter; a humanoid check that matched every rig (and threw) is fixed; the rest lives in the editor |
+| Spec editor: humanoid/custom forms, embedded clips, joint drag, stations, mirror chain, flat views | kept and plausibly working |
+| Spec editor: live bend preview, gait HUD, pose gizmo | half-built: nothing to bend for `tripo`, an arbitrary hinge on 2-point chains; HUD/gizmo only on `spec_editor.html` |
+| Workbench page (menus, console drawer, bulk-job counter, samples gallery, re-bake) | kept; fixed: the double source job on open, a job switching the model under an edited draft, the hidden chain legend, Ctrl+F, a re-bake that force-saved and picked an archetype by itself, the disk watcher dying after one edit, a job header that said "Prev: rig PASSED", no way to the 3D viewer |
+| "Universal" skinning passes (barrier, sibling isolation, centreline/pelvic, hinge, twist, closed-loop healer, rigid islands/armour) | **off by default**. On for every rig they took the gravehound from 39/9 tears to 215/214 and skinned nothing of its tail; every rule is a bone-name substring with `hips` as the sink. To be evaluated one at a time on the bench (P5) |
+| Auto-tune ("self-healing rigs") | kept, minus the strategy that wrote audit allowances into rig.json (a PASS with the same rig) and the one that ripped the tearing joint's own seam; the joint nudge now works in the spec's frame; a humanoid past six iterations crashed; a rejected candidate's rig no longer stays on disk |
+| Suggest skeleton | see P4 |
+| Mesh doctor | OBJ diagnostics; `--heal` now writes the healed copy; non-OBJ sources are reported as not inspected (were "HEALTHY 100"); the silent heal-and-reskin retry inside the rig step is gone |
+| Facing detector | opt-in (`forward: "auto"`); unreliable |
+| Semantic bone dictionary (`skeletons.detect_convention`) | useful and tested; the placed rig it proposes from a known skeleton has no hand bones and an empty humanoid map |
+| Clips: gait engine, root motion, agility clips, quadruped gaits | kept; fixed: the tail whipping over the first frames of every creature cycle, a gallop where every foot was a hind foot, the quadruped walk speed derived from 16 frames instead of 24, `gait: trot/gallop` doing nothing, root motion snapping to 0 at the loop seam. Humanoid feet still slide (FK only); the roll likely puts the head through the floor; unrendered |
+| Morph targets, twist bones, digits | dormant or dead: never wired, the morph call had the wrong signature |
+| Mocap retargeting (BVH/FBX) + "live web" modal | BVH onto an FK humanoid plausibly works (a test bakes one); FBX inspection was a Windows path injection and is fixed; still runs Blender synchronously inside request handlers, rewrites the rig .blend, ignores IK rigs; the modal's "& Play" now selects the clip |
+| Watchdog | timeouts now off unless `AUTORIG_STEP_TIMEOUT` / `AUTORIG_TIMEOUT_<SCRIPT>` is set (60-180 s defaults killed real rigs, matched on labels); the kill-by-name "reap" route is removed; memory guard Linux-only |
+| Batch rigger, watch folder | batch: custom builders crashed (fixed), `-j` summary wrong; watch folder: folder drops crash it or are ignored, zips with a top folder unlisted, auto-runs anything dropped. Decoration until reworked |
+| Export presets (Unreal/Unity/Godot/Web) | file copies plus generated notes; no conversion; Godot/Web may ship the unrigged source GLB; the web page loads a Google CDN |
+| CI | see P4 |
+
+Reviews' remaining findings are in this branch's pull request; the ones worth fixing are in P5.
+
+## Cleanup (2026-09-26)
+
+Measured on the collection with the same Blender 5.2.2: before, gravehound (Tripo quadruped) FAIL 215 combined /
+214 bend tears and crawler CHECK; after, both PASS at exactly their Sept 21 numbers (39/9 and 0/0). The samples,
+with their invented allowances removed: beetle FAIL 1/5 (was 27/118 with allowances), canine CHECK 4/5 (was 25/62),
+wyvern PASS (was FAIL), biped and pedestal PASS. Bone names from a chain called `leg_mid.L` are `leg_mid_1.L`
+(were `leg_mid.L_1.L`). Tests: the export tests build their own fixture, the retargeter tests rig the biped once or
+skip, the CI check reads the verdict it was ignoring. Three tests still need a look: `test_viewer.test_previews_list`,
+`test_spec_editor.test_3` (its source view) and whatever `test_5` inherits from it.
+
+## P5: the auto-rigging experience
+
+What the reviews and the collection run say: the original pipeline (build/tripo chains, envelope skinning, the
+graded audit) is sound and deterministic; what was bolted on was unmeasured. The tool is not slow to rig, it is slow
+to *converge*: a real model takes a spec, a rig, an audit, a look, a fix, and round again, with no measurement
+between rounds and a page that hides the next step. So, in order:
+
+1. **A regression bench before any more rigging code** (2 days). `run.py bench`: rig, trim and audit a fixed set
+   (the samples, and a collection's models when `AUTORIG_BENCH` points at one), write one table per run (grade,
+   combined/bend tears, worst gap, bleed, head share, seconds) and diff it against a stored baseline
+   (`bench/baseline.json`). CI fails on a model getting worse. Every change to `rerig.py` / `placed_rules.py` /
+   `make_clips.py` shows its bench diff in the pull request. This is what would have caught the batch's regression
+   the day it was made.
+2. **Real samples** (1 day). Replace the primitive samples with five CC0 sculpt-like models (a quadruped, a
+   humanoid, an insect, a flier, a prop: Quaternius and Kenney packs are CC0), with the creases, loose pieces and
+   thin parts the audit exists for. The bench runs on them.
+3. **One first-run path in the page** (3-4 days). Drop a model: survey runs, Suggest runs, the editor opens on the
+   proposal with the three things to confirm (facing, head and hips, the legs' tips) and one primary button, **Rig**.
+   The result shows the grade and the worst three problems as clickable fixes ("leg_front_1.L tears at the knee:
+   move the joint / widen joint_blend"), each a one-click spec change and re-rig. Menus fold back to the P1 rule: a
+   button that cannot run says why. The viewer is one click from every state, opening on the worst bone with tears
+   or bleed showing. The editor and the workbench stop sharing one 3.5k-line module by `if ($("id"))` guards.
+4. **Skinning, measured** (1-2 weeks, on the bench). Evaluate the gated passes one at a time; keep only what lowers
+   tears or bleed on real models, and rewrite the keepers to use the chain roles the rig knows instead of bone-name
+   substrings. Then the two failure modes the collection actually shows: limb-root bleed (the envelope's girdle and
+   joint blend, per joint rather than global) and thin-part tears (the rip/weld case, done at welded vertices). Auto-
+   tune becomes a bench-scored search over the documented levers (`joint_blend`, `limb_radius`, `girdle_blend`,
+   `smooth`, joint positions in the spec's frame) and nothing else.
+5. **Clips you can see** (3-4 days). Render a strip of every clip on the bench models into the run's report;
+   fix the humanoid walk's sliding feet (IK targets from the gait's foot positions, which it already computes), check
+   the roll and the quadruped gaits by eye, put root motion in the manifest. Retargeting becomes a job in the runner
+   (log, cancel, no synchronous Blender in a handler) and writes its clip beside the rig, not into the rig .blend.
+6. **Cut** (1 day). Remove what has no user until one appears: the export presets, the watch folder, twist bones,
+   digits, morph targets, the humanoid "auto-framing". Less to review, less to break.
+
+Done when a dropped sculpt reaches PASS through the page in one sitting, and the bench says so for every change.
 
 ## Risks
 
@@ -178,4 +248,6 @@ is green.
   other bone naming) will FAIL more often. P3's manual placement is the escape hatch, and survey flags anything unusual.
 - **Long or stuck runs** (bone heat on a dense mesh, the voxel-proxy retries). A streamed log, Cancel by PID, and later a
   timeout per step.
+- **Unmeasured changes.** The September 2026 batch shows what happens without a bench: every pass looked right in
+  its own test and was wrong on the collection. Nothing touches skinning again without a bench diff (P5.1).
 - **GPL-3.0** (Blender's own licence, which scripts that `import bpy` generally share) may put off some contributors.

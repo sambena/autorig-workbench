@@ -58,8 +58,11 @@ In the model's `clips/` folder:
 ```
 
 Clip names: `idle`, `walk` (or a swimmer's swim), `attack`, `hit`, `death`, plus `attack_windup` (the wind-up to full,
-held) and `strike` (from the release on) cut from `attack`; flyers have `fly`, exploders `arm` and `explode`. Events:
-`footfall`, `windup_full`, `strike_release`, `strike_impact`, `hit`, `death_rest`, `armed`.
+held) and `strike` (from the release on) cut from `attack`; flyers have `fly`, exploders `arm` and `explode`. Walkers
+also author `jump_start`, `jump_loop`, `jump_land` and `block`; creatures `dodge`, quadrupeds `trot` and `gallop`;
+humanoids `run`, `roll`, `idle_to_walk` and `walk_to_idle`. Events: `footfall`, `windup_full`, `strike_release`,
+`strike_impact`, `hit`, `death_rest`, `armed`, `jump_launch`, `land_impact`, `land_recover`, `roll_contact`,
+`roll_recover`, `block_brace`. Only `walk` carries `speed`.
 
 ## Winged export: `autorig-export/1` (make_clips.py, archetype winged)
 

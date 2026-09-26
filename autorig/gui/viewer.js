@@ -303,6 +303,13 @@ function setup(item, gltf) {
   holder.position.set(-c.x, -box.min.y, -c.z);
   holder.updateMatrixWorld(true);
   box = new THREE.Box3().setFromObject(holder);
+  // the file's own box, in the root's frame (glTF Y up, unscaled): where the audit's bbox fractions map to
+  const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert(), fileBox = new THREE.Box3(), m4 = new THREE.Matrix4();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    fileBox.union(o.geometry.boundingBox.clone().applyMatrix4(m4.multiplyMatrices(toRoot, o.matrixWorld)));
+  });
 
   // the rig overlay: one octahedron per bone, drawn over the mesh
   const overlayGroup = new THREE.Group();
@@ -341,7 +348,7 @@ function setup(item, gltf) {
   mixer.addEventListener("finished", () => { playing = false; hudPlay(); });
   const clips = gltf.animations.slice();
   cur = { item, info, gltf, holder, root, overlay: overlayGroup, mixer, clips, bones, skinned, meshes, box, scale,
-          fileSize, fps: info.fps || 24, weightMats: [], origMats: new Map(), audit: item.audit || null,
+          fileSize, fileBox, fps: info.fps || 24, weightMats: [], origMats: new Map(), audit: item.audit || null,
           analysis: null, keys: clips.map((c) => keyTimes(c.tracks.map((t) => t.times))),
           fullAudit: undefined, tearSites: null, tearPoseIndex: 0, tearsGroup: null, tearLabels: [], _inTearPose: false };
   for (const m of meshes) cur.origMats.set(m, m.material);
@@ -359,8 +366,7 @@ function setup(item, gltf) {
   applyOverlay();
   renderChecks(checks());
   renderWorst();
-  const defView = defaultCameraView(info, cur.bones, box);
-  setView(defView);
+  if (!viewChosen) { viewChosen = true; setView(defaultCameraView(info, cur.bones, box)); }
   layoutPanels();
 }
 
@@ -567,6 +573,7 @@ function applyOverlay() {
       cur.holder.updateMatrixWorld(true);
       updateOverlay();
       cur._inTearPose = false;
+      if (!action && cur.clips.length) playClip(ci);              // the clip Tears stopped
     }
   }
   if (mode === "tears") setupTears();
@@ -877,15 +884,16 @@ function renderBleed() {
 // ---------------------------------------------------------------------------------------------------------------
 
 async function fetchFullAudit(name) {
-  if (!cur) return null;
-  if (cur.fullAudit !== undefined) return cur.fullAudit;
+  const c = cur;
+  if (!c) return null;
+  if (c.fullAudit !== undefined) return c.fullAudit;
   try {
     const res = await fetch(withToken("/api/audit?name=" + encodeURIComponent(name)));
-    cur.fullAudit = res.ok ? await res.json() : null;
+    c.fullAudit = res.ok ? await res.json() : null;
   } catch (e) {
-    cur.fullAudit = null;
+    c.fullAudit = null;
   }
-  return cur.fullAudit;
+  return c.fullAudit;
 }
 
 function clearTearMarkers() {
@@ -901,11 +909,12 @@ function clearTearMarkers() {
 }
 
 async function setupTears() {
-  if (!cur) return;
+  const c = cur;
+  if (!c) return;
   if (playing) { playing = false; $("bPlay").textContent = "Play"; }
   if (action) { action.stop(); action = null; }
-  const full = await fetchFullAudit(cur.item.name);
-  if (!cur) return;
+  const full = await fetchFullAudit(c.item.name);
+  if (cur !== c || OVERLAYS[overlay] !== "tears") return;          // the user moved on while it loaded
   cur.tearSites = (full && full.tear_sites) || [];
   if (cur.tearPoseIndex === undefined || cur.tearPoseIndex >= cur.tearSites.length) cur.tearPoseIndex = 0;
   renderTears();
@@ -942,7 +951,7 @@ function applyTearPose(index) {
     }
     if (site.clusters && site.clusters.length && site.clusters[0].bone) {
       const bi = boneByName(site.clusters[0].bone);
-      if (bi >= 0) selectBone(bi);
+      if (bi >= 0) sel = bi;
     }
   } else {
     const bi = boneByName(site.bone);
@@ -952,9 +961,10 @@ function applyTearPose(index) {
       if (rot[0]) b.bone.rotateX(rot[0] * Math.PI / 180);
       if (rot[1]) b.bone.rotateY(rot[1] * Math.PI / 180);
       if (rot[2]) b.bone.rotateZ(rot[2] * Math.PI / 180);
-      selectBone(bi);
+      sel = bi;
     }
   }
+  highlight();
   cur.holder.updateMatrixWorld(true);
   updateOverlay();
   drawTearMarkers(site);
@@ -975,7 +985,7 @@ function drawTearMarkers(site) {
   const longest = Math.max(cur.fileSize.x, cur.fileSize.y, cur.fileSize.z) || 1;
   const r0 = longest * 0.015;
   for (const c of site.clusters) {
-    const p = mapTearPoint(c.at, c.at_bbox, cur.box);
+    const p = mapTearPoint(c.at, c.at_bbox, cur.box, cur.fileBox);
     const pos = new THREE.Vector3(p[0], p[1], p[2]);
     const r = tearMarkerRadius(c.edges, r0);
     const isBad = tearSeverity(c.gap_pct, site.pose) === "bad";
@@ -1066,7 +1076,7 @@ function pickBone(x, y) {
     const site = cur.tearSites[cur.tearPoseIndex];
     if (site && site.clusters) {
       site.clusters.forEach((c) => {
-        const cp = mapTearPoint(c.at, c.at_bbox, cur.box);
+        const cp = mapTearPoint(c.at, c.at_bbox, cur.box, cur.fileBox);
         const v = new THREE.Vector3(cp[0], cp[1], cp[2]);
         cur.root.localToWorld(v);
         v.project(camera);
@@ -1560,7 +1570,7 @@ function tick(now) {
 function applyParams(q) {
   if (q.get("speed")) setSpeed(Number(q.get("speed")));
   if (q.get("loop") === "0") setLoop(false);
-  if (q.get("view") === "orbit") setView("orbit");
+  if (q.get("view") && VIEWS.includes(q.get("view"))) { viewChosen = true; setView(q.get("view")); }
   if (q.get("framing") === "all" || q.get("framing") === "model") framing = q.get("framing");
   if (!cur) { frame(); return; }
   const c = q.get("clip");
@@ -1572,6 +1582,9 @@ function applyParams(q) {
   if (b) { const i = cur.bones.findIndex((x) => x.name === b); if (i >= 0) sel = i; }
   const o = OVERLAYS.indexOf(q.get("overlay"));
   if (o >= 0) overlay = o;
+  else if (cur.audit && (cur.audit.grade === "CHECK" || cur.audit.grade === "FAIL") && overlay === 0) {
+    overlay = OVERLAYS.indexOf("skeleton");                        // the worst bone, tinted, from the start
+  }
   applyOverlay();
   if (q.get("time") !== null && action) {
     setPlaying(false);
@@ -1591,7 +1604,7 @@ let mocapMeta = null;
 
 function openMocapModal() {
   if (!cur) return;
-  $("mocapTargetModel").textContent = cur.name;
+  $("mocapTargetModel").textContent = cur.item.name;
   $("mocapModal").style.display = "block";
   $("mocapDropZone").style.display = "block";
   $("mocapDetails").style.display = "none";
@@ -1675,7 +1688,7 @@ function setupMocapActions(meta, originalFilename) {
     const clean = selAct.replace(/[^a-zA-Z0-9_]+/g, "_").toLowerCase().replace(/^_+|_+$/g, "");
     $("mocapClipName").value = clean || "mocap_clip";
   }
-  select.addEventListener("change", updateClipName);
+  select.onchange = updateClipName;                                // one listener, however many uploads
   updateClipName();
 
   const dur = meta.duration ? meta.duration.toFixed(2) + "s" : "";
@@ -1693,7 +1706,7 @@ if ($("bExecuteRetarget")) {
 
     try {
       const payload = {
-        model: cur.name,
+        model: cur.item.name,
         file: mocapUploadedFile,
         source_action: $("mocapActionSelect").value,
         clip_name: $("mocapClipName").value.trim() || undefined,
@@ -1712,8 +1725,9 @@ if ($("bExecuteRetarget")) {
       closeMocapModal();
       // Reload model and select the newly created clip
       const targetClip = result.clip_name || $("mocapClipName").value.trim();
-      await refreshList(cur.name);
-      await show(mi, targetClip);
+      await refreshList(cur.item.name);
+      await show(mi);
+      if (cur && targetClip) { const k = cur.clips.findIndex((c) => c.name === targetClip); if (k >= 0) playClip(k); }
     } catch (err) {
       alert("Retargeting error: " + err.message);
     } finally {
@@ -1723,6 +1737,7 @@ if ($("bExecuteRetarget")) {
   });
 }
 
+let viewChosen = false;                              // the first model picks the view (side, or hero for a person)
 let ready = false;                                   // the first model is up (for a script taking pictures)
 resize();
 setView("side");

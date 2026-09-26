@@ -144,12 +144,7 @@
           0
         ]
       }
-    ],
-    "audit": {
-      "bleed_pct": 3.0,
-      "combined_tears": 8,
-      "bend_tears": 10
-    }
+    ]
   },
   "budget": 1200,
   "clips": {
@@ -163,7 +158,6 @@
     "role": "creature"
   },
   "notes": {
-    "rig": "Stylized quadruped canine",
-    "rig.audit": "Allowance for compact quadruped leg root proximity"
+    "rig": "Stylized quadruped canine"
   }
 }

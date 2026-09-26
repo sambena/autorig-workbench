@@ -1465,12 +1465,11 @@ function legend() {
 function findOppositePath(path) {
   const el = $("mirrorEdits");
   if (!el || !el.checked) return null;
-  if (!path || path.length < 3) return null;
-  const listKey = path[0];
-  if (listKey !== "chains" && listKey !== "placed") return null;
-  const list = draft[listKey];
-  if (!Array.isArray(list) || typeof path[1] !== "number") return null;
-  const chain = list[path[1]];
+  if (!path || path.length < 4) return null;
+  if (path[0] !== "rig" || path[1] !== "chains") return null;          // a chain's point: ["rig", "chains", i, ...]
+  const list = draft.rig && draft.rig.chains;
+  if (!Array.isArray(list) || typeof path[2] !== "number") return null;
+  const chain = list[path[2]];
   if (!chain || !chain.name) return null;
   let oppName = null;
   if (chain.name.includes(".L")) oppName = chain.name.replace(".L", ".R");
@@ -1480,7 +1479,7 @@ function findOppositePath(path) {
   if (!oppName) return null;
   const oppIdx = list.findIndex(c => c && c.name === oppName);
   if (oppIdx === -1) return null;
-  return [listKey, oppIdx, ...path.slice(2)];
+  return ["rig", "chains", oppIdx, ...path.slice(3)];
 }
 
 function applyPointEdit(path, type, u, isMirror = false) {
@@ -2770,6 +2769,7 @@ function changed() {
 }
 
 async function runCheck() {
+  checkTimer = null;
   try { checked = await api("/api/spec/check", { model: MODEL, spec: draft }); }
   catch (e) { checked = { errors: [{ path: "", message: e.message }], warnings: [], diff: "", changed: true }; }
   $("dirty").textContent = checked.changed ? "● unsaved changes" : "";
@@ -3355,13 +3355,8 @@ function applyWalkParamsToSpec() {
 async function rebakeClipsFromSpec() {
   applyWalkParamsToSpec();
   if (!draft.clips || !draft.clips.archetype) {
-    const skel = (draft.rig && draft.rig.skeleton) || "";
-    let defaultArch = "walker";
-    if (skel === "winged") defaultArch = "winged";
-    else if (skel === "serpent") defaultArch = "swimmer";
-    else if (skel === "floater") defaultArch = "flyer";
-    else if (skel === "rigid") defaultArch = "turret";
-    setPath(["clips", "archetype"], defaultArch);
+    flashTop("No clips to bake: pick a clip archetype under Clips & animation first");
+    return;
   }
   const btn = $("bBakeWalkClips");
   if (btn) btn.disabled = true;
@@ -3372,7 +3367,6 @@ async function rebakeClipsFromSpec() {
       model: MODEL,
       spec: draft,
       base: base,
-      force: true
     });
     base = r.base; B.text = r.text;
     userEdited = false;
@@ -3472,6 +3466,7 @@ function wireUIEvents() {
 // Global specEditor interface exported immediately
 window.specEditor = {
   getModel: () => MODEL,
+  unsaved: () => userEdited,
   draft: () => clone(draft),
   viewMode: () => viewMode,
   setViewMode,
@@ -3542,6 +3537,7 @@ async function main() {
     markReady();
     return;
   }
+  wireUIEvents();
   try { await reload(true); } catch (e) { markReady(); return message("Cannot open " + MODEL, e.message); }
   renderTabs();
   redraw();

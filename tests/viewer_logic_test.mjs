@@ -150,6 +150,10 @@ test("tears overlay: gap thresholds, marker sizing, and mapping", () => {
 
   // Point mapping: [x, y, z] Blender (+Z up, -Y forward) -> [x, z, -y] glTF (Y up, +Z forward)
   assert.deepEqual(L.mapTearPoint([1, 2, 3]), [1, 3, -2]);
+  // the bbox fallback: Blender fractions (x, y, z) into the file's box in the root's frame (x, y up, -z along)
+  const fb = { min: { x: -1, y: 0, z: -2 }, max: { x: 1, y: 2, z: 2 } };
+  assert.deepEqual(L.mapTearPoint(null, [0.5, 0, 1], null, fb), [0, 2, 2]);
+  assert.deepEqual(L.mapTearPoint(null, [0, 1, 0], null, fb), [-1, 0, -2]);
 
   // Combined pose angle heuristics
   assert.equal(L.defaultCombinedAngle("spine"), 12);
@@ -261,7 +265,7 @@ test("universal camera system: views, labels, cycling, and humanoid detection", 
 
   // Humanoid detection by archetype
   assert.ok(L.isHumanoidOrBiped({ archetype: "humanoid" }));
-  assert.ok(L.isHumanoidOrBiped({ skeleton: "walker" }));
+  assert.ok(!L.isHumanoidOrBiped({ skeleton: "walker" }));      // "walker" clips are quadrupeds' too: the bones decide
   assert.ok(L.isHumanoidOrBiped({ archetype: "biped" }));
   assert.ok(!L.isHumanoidOrBiped({ archetype: "quadruped" }));
   assert.ok(!L.isHumanoidOrBiped({ archetype: "serpent" }));
@@ -278,6 +282,12 @@ test("universal camera system: views, labels, cycling, and humanoid detection", 
     { name: "body" }, { name: "leg_front_1.L" }, { name: "leg_back_1.L" }
   ];
   assert.ok(!L.isHumanoidOrBiped({}, quadBones));
+  // the rig step's own quadruped names (hips, spine, head, leg_front...) are not a person's, whatever they contain
+  const rigQuad = ["root", "hips", "spine_1", "neck", "head", "leg_front_1.L", "leg_front_2.L", "leg_hind_1.L", "tail_1"].map((n) => ({ name: n }));
+  assert.ok(!L.isHumanoidOrBiped({}, rigQuad));
+  assert.equal(L.defaultCameraView({}, rigQuad), "side");
+  // a three.js-like Box3 (min/max) reads as a size too
+  assert.ok(L.isHumanoidOrBiped({}, [], { min: { x: 0, y: 0, z: 0 }, max: { x: 0.5, y: 1.8, z: 0.3 } }));
 
   // Humanoid detection by bounding box proportions (tall upright figure)
   const tallBox = { x: 0.5, y: 1.8, z: 0.3 };

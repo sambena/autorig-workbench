@@ -164,11 +164,7 @@
           0
         ]
       }
-    ],
-    "audit": {
-      "bleed_pct": 3.0,
-      "bend_tears": 6
-    }
+    ]
   },
   "budget": 1400,
   "clips": {
@@ -181,7 +177,6 @@
     "role": "creature"
   },
   "notes": {
-    "rig": "Six-legged hexapod beetle",
-    "rig.audit": "Allowance for multi-leg proximity on compact carapace"
+    "rig": "Six-legged hexapod beetle"
   }
 }

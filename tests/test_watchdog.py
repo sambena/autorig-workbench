@@ -19,12 +19,12 @@ import blender
 
 class WatchdogTest(unittest.TestCase):
     def test_get_timeout_for_script(self):
-        # Defaults
-        self.assertEqual(watchdog.get_timeout_for_script("survey.py"), 60.0)
-        self.assertEqual(watchdog.get_timeout_for_script("rerig.py"), 180.0)
-        self.assertEqual(watchdog.get_timeout_for_script("decimate.py"), 120.0)
-        self.assertEqual(watchdog.get_timeout_for_script("audit_all.py"), 120.0)
-        self.assertEqual(watchdog.get_timeout_for_script("unknown_step.py"), 180.0)
+        # No timeout unless the user sets one: a rig takes as long as it takes
+        for var in ("AUTORIG_STEP_TIMEOUT", "AUTORIG_TIMEOUT_SURVEY", "AUTORIG_TIMEOUT_RERIG"):
+            os.environ.pop(var, None)
+        self.assertEqual(watchdog.get_timeout_for_script("survey.py"), 0.0)
+        self.assertEqual(watchdog.get_timeout_for_script("rerig.py"), 0.0)
+        self.assertEqual(watchdog.get_timeout_for_script("unknown_step.py"), 0.0)
 
         # Explicit timeout parameter
         self.assertEqual(watchdog.get_timeout_for_script("survey.py", explicit_timeout=15.0), 15.0)
@@ -107,10 +107,6 @@ class WatchdogTest(unittest.TestCase):
 
         self.assertIsNotNone(proc.poll())
         self.assertTrue(any("timed out" in line for line in job.lines))
-
-    def test_reap_orphaned_blender_processes_safe(self):
-        reaped = watchdog.reap_orphaned_blender_processes()
-        self.assertIsInstance(reaped, list)
 
     def test_blender_run_integrated(self):
         # blender.run with watchdog

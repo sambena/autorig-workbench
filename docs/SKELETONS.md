@@ -246,5 +246,8 @@ When importing pre-rigged models, Autorig Workbench's semantic bone engine (`aut
 | **Source Engine / Valve** | `ValveBiped.Bip01_Pelvis`, `ValveBiped.Bip01_L_UpperArm` | `valve` |
 | **Tripo AI** | `bone_0`, `bone_1`, `bone_2`... | `tripo` |
 
-When detected, the auto-rigger preserves existing joint coordinates directly from the source export, retaining fingers, toes, and limb hinge locations with 100% fidelity without discarding bones.
+When detected, `suggest` proposes a `placed` spec whose chains start from the source's joint positions. The rig it
+builds is the tool's own skeleton (SKELETONS.md names, IK controls), not the source's: fingers, toes and the source's
+bone names are not kept, and the proposal is a starting point to check in the spec editor, not a finished rig
+(docs/PLAN.md, "Cleanup", for what is still wrong with it).
 

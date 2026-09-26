@@ -24,8 +24,15 @@ class ExportPresetsTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="autorig-test-export-")
         cls.orig_models = os.environ.get("AUTORIG_MODELS")
         cls.orig_work = os.environ.get("AUTORIG_WORK")
-        # Point to repo samples
-        os.environ["AUTORIG_MODELS"] = os.path.join(REPO, "samples")
+        # A models root of its own with one "rigged" biped: the rig.json from samples/ and stand-in rig files
+        # (the exporter copies files, it never reads them), so a clean checkout passes too.
+        models = os.path.join(cls.tmp, "models")
+        rigged = os.path.join(models, "biped", "rigged")
+        os.makedirs(rigged)
+        shutil.copy2(os.path.join(REPO, "samples", "biped", "rig.json"), os.path.join(models, "biped", "rig.json"))
+        for f in ("biped.fbx", "biped.blend", "preview.glb"):
+            with open(os.path.join(rigged, f), "wb") as fh: fh.write(b"stand-in")
+        os.environ["AUTORIG_MODELS"] = models
         os.environ["AUTORIG_WORK"] = os.path.join(cls.tmp, "_autorig")
         layout.ROOT = os.path.abspath(os.environ["AUTORIG_MODELS"])
         layout.WORK = os.path.abspath(os.environ["AUTORIG_WORK"])

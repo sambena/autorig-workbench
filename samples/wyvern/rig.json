@@ -144,10 +144,7 @@
           0
         ]
       }
-    ],
-    "audit": {
-      "bleed_pct": 3.0
-    }
+    ]
   },
   "budget": 1200,
   "clips": {
@@ -160,7 +157,6 @@
     "role": "creature"
   },
   "notes": {
-    "rig": "Winged wyvern flier with membrane rules",
-    "rig.audit": "Allowance for wings and legs in close proximity to body"
+    "rig": "Winged wyvern flier with membrane rules"
   }
 }

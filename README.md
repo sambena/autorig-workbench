@@ -7,8 +7,11 @@ card an engine importer can read. Blender never opens a window.
 
 **Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
 3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
-grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. Expect
-rough edges; issues and pull requests are welcome.
+grades the whole collection. Click-to-place joints, a measured **Suggest skeleton** and a `placed` rig kind exist
+for models with no skeleton. A batch of generated features (mocap retargeting, an auto-tune loop, engine export
+presets, a watch folder, extra skinning passes) landed in September 2026 and was then reviewed: what works, what is
+switched off by default and what is still broken is in [docs/PLAN.md](docs/PLAN.md), "The September 2026 batch".
+Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -25,7 +28,8 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
    or choose files or a folder; or paste paths on this computer (copied, never moved). It lands in
    `<models>/<group>/<name>/`.
 2. **Survey** shows what the source holds and renders four views to read its facing from.
-3. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
+3. The page opens the model in the **spec editor** (below): press **Suggest** in the Rig Inspector for a first
+   `rig.json`, fix it by clicking, and **Save**; or write it by hand (docs/SPEC.md).
 4. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
    time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process only).
 5. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
@@ -35,7 +39,7 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
 6. **Audit all** (above the model list) audits every rigged model one after another, with the live log and Cancel,
    then shows a table worst first: grade, tears, the widest gap, bleed, head share, the worst bone. A row opens its
    model; **Table** shows the last results again.
-7. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
+7. **View › 3D Results Viewer** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
    beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), both always framed whole
    whatever the model's size; its clips with a scrub bar (drag to any frame; it pauses while you drag); a skeleton /
    bone names / weights / bleed overlay; the audit's verdict and its worst bones, tinted red (a failed check) or
@@ -51,16 +55,16 @@ The server binds to 127.0.0.1 and opens the page on a link carrying a session to
 The local GUI server includes a comprehensive, interactive HTML guide with diagrams, button walkthroughs, bone placement instructions, and troubleshooting tips:
 
 - Open via the **Help & Guide ↗** button in the workbench top bar, or visit `/help.html` (served with session token).
-- **Button breakdown**: Detailed reference for every action (`Survey`, `Edit spec`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Table`, `Open output folder`, `Cancel`).
+- **Button breakdown**: a reference for every action (`Survey`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Open output folder`, `Cancel`). It still describes the earlier page in places (a "Survey tab", an "Edit spec" button): the menus above are the current layout.
 - **How to place bones**: Coordinate system conventions (0..1 bounding box space facing -Y), 1-click **Suggest skeleton**, raycast click-to-place ("points in the middle"), and constructive build chains (`slice`, `tube`, `tip`, `points`).
 - **How to fix rigs & audits**: Diagnostic guide for reversed facing vectors, combined and single-bend mesh tears, weight bleed (> 2%), low head share (< 2.5%), rip welds, rigid piece assignment, and audit allowances.
 - **Visual reference gallery**: Includes rendered QA bend test sheets and skin ownership audit sheets from sample models.
 
 ## The spec editor
 
-**Edit spec** (on a model, and in its Spec and card tab) opens `spec_editor.html`: the source model as it came, with its
-own skeleton drawn over it and every bone named (the first time, a few seconds' Blender step makes that view), and
-the spec as a form beside it. Nothing needs Blender or JSON:
+The workbench page is the spec editor (`spec_editor.html` is the same editor on its own): the source model as it came,
+with its own skeleton drawn over it and every bone named (the first time, a few seconds' Blender step makes that
+view), and the spec as a form in the **Rig Inspector** drawer. Nothing needs Blender or JSON:
 
 - **Click a bone** to see what it is and what the spec makes of it, with one-click jobs: make it the head or the hips,
   a leg, throw it away (with everything under it), mirror a one-sided limb from it, or start a chain (wing, leg,
@@ -73,8 +77,9 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 - Every change is checked (a bone the source does not have, the head and hips the same bone, an audit allowance
   with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
   `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
-- **Suggest skeleton**: One click proposes an archetype and placed bone chains from geodesic extremities (`probe_tips`),
-  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies.
+- **Suggest**: one click runs a few seconds of Blender to measure the mesh (its geodesic tips, symmetry and
+  proportions) and proposes an archetype and placed chains, or maps an existing Tripo or Mixamo skeleton. It is a
+  starting point to check, not a finished rig.
 - **Placed builder (`kind: "placed"`)**: Body-part rules (allowed/denied bones), join blending radii, weld seam ripping
   to prevent stretch between limbs, distance gradient wing membranes with flank cutoffs, jaw hinges, and rigid islands.
 - **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
@@ -116,7 +121,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
     tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py
                      test_suggest.py  test_placed_rules.py  test_blender_version.py
                      test_audit_thresholds_ci.py  test_json_schema.py  viewer_logic_test.mjs
-    ci/              ci.yml                                GitHub Actions Linux workflow
+    .github/workflows/ci.yml                               GitHub Actions Linux workflow
     samples/         the default models root
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
@@ -126,6 +131,10 @@ conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.j
 ## Tests
 
     python -m unittest discover -s tests -v
+
+Two optional pip packages make more of the tests run outside Blender: `numpy` (the skinning-math tests in
+`test_placed_rules.py`, which otherwise run only inside Blender) and `jsonschema` (`test_samples.py` validating the
+sample specs). The tool itself needs neither.
 
 The server test starts the GUI's server with no browser against a temporary models folder, uploads a generated OBJ
 model with its `rig.json` the way the page does, runs every step through the API, cancels a running step, and checks

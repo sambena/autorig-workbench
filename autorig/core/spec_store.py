@@ -116,14 +116,14 @@ def infer_clip_archetype(spec):
         return clips["archetype"]
     rig = spec.get("rig") or {}
     skel = (rig.get("skeleton") or ("humanoid" if rig.get("kind") == "humanoid" else "")).lower()
-    if skel in ("winged", "flyer"):
-        return "winged"
+    if skel in ("winged", "flyer", "floater"):
+        return "flyer"
     if skel in ("serpent", "swimmer", "fish"):
         return "swimmer"
-    if skel in ("floater",):
-        return "flyer"
-    if skel in ("turret", "rigid"):
+    if skel in ("turret",):
         return "turret"
+    if skel in ("rigid",):
+        return None                     # a static prop: nothing to animate
     if skel in ("machine",):
         return "machine"
     # Quadrupeds, hexapods, octopods, humanoids, tripo creatures default to walker

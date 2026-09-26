@@ -1,37 +1,24 @@
-# Continuous Integration (CI) and Audit Thresholds
+# Continuous integration
 
-Autorig Workbench includes an automated headless Blender CI pipeline for Linux (`ci/ci.yml` and `scripts/ci_audit_thresholds.py`).
+`.github/workflows/ci.yml` runs on every push and pull request to `main`, on Linux:
 
-## Workflow Overview
+1. Python 3.11 and Node 20; Blender 5.2.2 LTS downloaded into `/opt/blender` (cached) with its runtime libraries;
+   `numpy` and `jsonschema` installed for the tests only (the tool needs nothing from pip).
+2. The Blender version check (`autorig/core/blender.py`, the tested range is 5.2 LTS).
+3. `python3 -m unittest discover -s tests -v` and `node tests/viewer_logic_test.mjs`.
+4. `scripts/ci_audit_thresholds.py`: rigs, trims and audits a generated two-bone column and reads the verdict the
+   audit wrote, then `audit_all -strict` over it.
 
-The CI workflow:
-1. Sets up Python 3.11 and Node.js 20.
-2. Caches and installs Blender 5.2.2 LTS (`blender-5.2.2-linux-x64.tar.xz`).
-3. Verifies Blender version detection and tested range (`5.2 LTS`).
-4. Executes the full Python unit test suite (`python3 -m unittest discover -s tests -v`).
-5. Executes viewer and gamepad tests under Node (`node tests/viewer_logic_test.mjs`).
-6. Executes the headless Blender audit pipeline (`scripts/ci_audit_thresholds.py`), which builds a sample rig, decimate/trims it, runs `audit.py`, and validates against strict audit thresholds (`autorig/cli/audit_all.py all -render 0 -strict`).
+Step 4 is a smoke test of the pipeline, not a quality gate: the column cannot tear. The samples in `samples/` are
+rigged by the tests but their grades are not asserted yet, because only three of the five PASS (samples/README.md).
+The gate the tool needs is the regression bench in docs/PLAN.md, P5: every skinning change measured against a stored
+baseline of real models.
 
-## Enabling in GitHub Actions
+The workflow has not yet been seen green on GitHub: it was moved under `.github/workflows/` in the September 2026
+cleanup (it lived in `ci/`, where GitHub does not look) and its Blender install steps were rewritten unrun.
 
-The workflow definition is located in [`ci/ci.yml`](file:///var/home/cosmo/Work/autorig-workbench/ci/ci.yml). To activate it in GitHub Actions:
-```bash
-mkdir -p .github/workflows
-cp ci/ci.yml .github/workflows/ci.yml
-git add .github/workflows/ci.yml
-git commit -m "ci: activate GitHub Actions workflow"
-git push
-```
-*(Note: Pushing `.github/workflows/` files requires the `workflow` OAuth scope on your GitHub token or personal access token).*
+Locally:
 
-## Running Locally
-
-To run the CI audit thresholds check locally without GitHub Actions:
-```bash
-python3 scripts/ci_audit_thresholds.py
-```
-To run the full test suite:
-```bash
-python3 -m unittest discover -s tests -v
-node tests/viewer_logic_test.mjs
-```
+    python3 scripts/ci_audit_thresholds.py
+    python3 -m unittest discover -s tests -v
+    node tests/viewer_logic_test.mjs

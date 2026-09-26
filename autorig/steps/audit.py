@@ -636,6 +636,7 @@ result["tears"] = dict(combined=values["combined_tears"], bend_max=bend_tears,
                        by_bone=by_bone)
 result["tear_sites"] = tear_sites
 warn = []
+if arm is None: warn.append("no armature in the FBX: a static prop, or a rig the export lost (nothing was bent)")
 if twist_tears: warn.append("twist tears %d (%s)" % (twist_tears, max((b for b in bends if b["mode"] == "twist"), key=lambda b: b["tear_edges"])["bone"]))
 for x in share:
     if role_of(x["bone"]) in ("leg", "arm", "wing", "tentacle", "claw") and x["reach_p90"] > 0.2:

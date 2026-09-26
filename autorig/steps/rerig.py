@@ -9,7 +9,7 @@
 # Conventions of the result: the creature faces Blender's -Y (front view shows its face), its left is +X (.L bones),
 # walkers stand on z=0 over the origin. Bones: root > hips > spine_N > neck > head, leg_front_N.L ..., tail_N,
 # and ik_<leg> controls (not exported: the FBX carries deform bones only).
-import bpy, sys, os, math, json, time
+import bpy, sys, os, re, math, json, time
 import numpy as np
 from mathutils import Vector, Matrix, kdtree
 from mathutils.bvhtree import BVHTree
@@ -454,7 +454,10 @@ def build_chains(mesh, spec, size):
                      for k in range(len(ch_["points"]) - 1)]
             _, pi, pidx = min(cands)
             if c.get("girdle"): pts[0] = on_polyline(chains[pi]["points"], pts[1])
-        ch = {"role": c.get("role", c["name"]), "joints": [], "points": pts, "ik": bool(c.get("ik")),
+        # a chain with no role is named by its name; the side is measured (name_chains), so a name that carries
+        # one ("leg_front.L") must not carry it into the bone names too ("leg_front.L_1.L")
+        role = c.get("role") or re.sub(r"[._]([LR]|[Ll]eft|[Rr]ight)$", "", c["name"]) or c["name"]
+        ch = {"role": role, "joints": [], "points": pts, "ik": bool(c.get("ik")),
               "parent": None if pi is None else (pi, pidx), "girdle": bool(c.get("girdle")) and pi is not None,
               "centre": c.get("centre")}
         if c.get("names"): ch["bones"] = list(c["names"]); ch["base"] = c["name"]
@@ -1107,21 +1110,6 @@ def skin(mesh, arm, chains, spec, size, log):
     log["unreached"] = len(bare)
     proxy = None
     if len(bare) > len(verts) * 0.05:
-        # If bone heat weighting failed, attempt geometric auto-healing before voxel remesh
-        if not spec.get("mesh_heal") and not spec.get("heal"):
-            try:
-                import mesh_doctor
-                h_rep = mesh_doctor.heal_mesh_object(mesh)
-                log["mesh_heal_recovery"] = h_rep.get("actions", {})
-                verts = mesh.data.vertices
-                mesh.vertex_groups.clear()
-                select_only(mesh, arm)
-                bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-                bare = [v.index for v in verts if not skinned(v)]
-                log["unreached_after_heal"] = len(bare)
-            except Exception:
-                pass
-    if len(bare) > len(verts) * 0.05:
         # Bone heat gives up on a sculpt made of loose pieces: skin a watertight voxel copy and carry the weights over.
         for voxel in (0.016, 0.022, 0.012, 0.03):
             select_only(mesh); bpy.ops.object.duplicate()
@@ -1171,23 +1159,26 @@ def skin(mesh, arm, chains, spec, size, log):
         placed_rules.parts_rules_pass(mesh, arm, chains, spec, size, log)
     if spec.get("blends"):
         placed_rules.blend_joins_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("barrier", True):
+    # The experimental passes (placed_rules.py: the name-based skin barrier, sibling isolation, centreline and
+    # armour binding, hinge smoothing, twist relaxation) are opt-in. Switched on for every rig they tore the
+    # collection's quadrupeds apart (a hanging tail frozen, a scapula handed to the hips): PLAN.md, "Cleanup".
+    if spec.get("barrier"):
         placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("sibling_isolation", True):
+    if spec.get("sibling_isolation"):
         placed_rules.sibling_appendage_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("centerline_armor", True):
+    if spec.get("centerline_armor"):
         placed_rules.centerline_armor_pass(mesh, arm, chains, spec, size, log)
     if spec.get("smooth"):
         # Bone heat on a thick body leaves patchy weights behind it; smoothing passes even them out.
         # Run before rigid-piece pass so loose pieces still end up rigid.
         smooth_weights(mesh, int(spec["smooth"]))
-        if spec.get("barrier", True):
+        if spec.get("barrier"):
             placed_rules.geodesic_barrier_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("hinge_smoothing", True):
+    if spec.get("hinge_smoothing"):
         placed_rules.joint_hinge_smoothing_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("twist_relaxation", True):
+    if spec.get("twist_relaxation"):
         placed_rules.twist_shaft_relaxation_pass(mesh, arm, chains, spec, size, log)
-    if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
+    if spec.get("rigid_islands") or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         placed_rules.rigid_islands_pass(mesh, arm, chains, spec, size, log)
 
     gname ={g.index: g.name for g in mesh.vertex_groups}
@@ -1339,7 +1330,7 @@ def skin(mesh, arm, chains, spec, size, log):
         for v in verts:
             for g in list(v.groups): mesh.vertex_groups[g.group].remove([v.index])
             (up if v.co.z > cut else down).add([v.index], 1.0, 'REPLACE')
-    if spec.get("auto_heal", True):
+    if spec.get("auto_heal"):
         placed_rules.closed_loop_healing_pass(mesh, arm, spec, size, log)
     select_only(mesh)
     bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
@@ -1521,12 +1512,7 @@ def rerig(key, spec, qa_dir, export):
     if spec.get("morph_targets", False):
         try:
             import morph_generator
-            head_b = arm.data.bones.get("head") or arm.data.bones.get("Head")
-            head_coord = tuple(head_b.head_local) if head_b else None
-            top_coord = tuple(head_b.tail_local) if head_b else None
-            created_morphs = morph_generator.generate_blender_shape_keys(
-                mesh, head_coord=head_coord, top_coord=top_coord, forward=(0.0, -1.0, 0.0), up=(0.0, 0.0, 1.0)
-            )
+            created_morphs = morph_generator.generate_blender_shape_keys(mesh, arm)
             if created_morphs:
                 log["morph_targets"] = created_morphs
         except Exception as e:

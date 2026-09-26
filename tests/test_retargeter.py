@@ -17,6 +17,7 @@ import retargeter
 import skeletons
 import layout
 import spec_store
+import blender
 
 SAMPLE_BVH = """HIERARCHY
 ROOT Hips
@@ -122,8 +123,19 @@ class RetargeterTest(unittest.TestCase):
         with open(cls.bvh_file, "w", encoding="utf-8") as fh:
             fh.write(SAMPLE_BVH)
 
-        # Locate sample FBX if present
-        cls.sample_fbx = "/var/home/cosmo/Work/Smeltdown/Library/PackageCache/com.unity.timeline@9cd41035b3ab/Samples~/GameplaySequenceDemo/Animation/Victory-anim1.fbx"
+        # An FBX clip to retarget, when the machine has one to offer (AUTORIG_TEST_FBX); else that test skips
+        cls.sample_fbx = os.environ.get("AUTORIG_TEST_FBX") or ""
+
+        # plan_retarget reads the rigged .blend's bones under Blender: rig the biped once here when Blender is
+        # installed (rigged/ is not committed), else the plan and retarget tests skip
+        cls.blend = os.path.join(cls.test_models, "biped", "rigged", "biped.blend")
+        cls.blender_exe = blender.find(required=False)
+        if cls.blender_exe and not os.path.exists(cls.blend):
+            r = blender.run("rerig.py", "-only", "biped", "-qa", os.path.join(cls.test_work, "qa"))
+            if r.returncode != 0:
+                cls.blend = None
+        elif not cls.blender_exe:
+            cls.blend = None
 
     @classmethod
     def tearDownClass(cls):

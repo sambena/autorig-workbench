@@ -161,7 +161,10 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
     if not os.path.exists(bak_path):
         shutil.copy2(spec_path, bak_path)
 
-    # 2. Iterative optimization loop
+    # 2. Iterative optimization loop. Every candidate is rigged in place (rigged/<model>.blend, .fbx, the audit),
+    # so after a rejected one the files on disk are the candidate's, not the best spec's: on_disk tracks that,
+    # and the end of the loop rigs the spec it keeps once more when they differ.
+    on_disk = "best"
     try:
         for iteration in range(1, max_iterations + 1):
             cand = auto_tune.propose_tuning_candidate(best_spec, best_audit, iteration=iteration, history=history)
@@ -175,6 +178,7 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
             save_spec_to_disk(model, cand["spec"])
 
             # Re-evaluate
+            on_disk = "candidate"
             new_audit = run_pipeline_eval(model, work_dir=w, log_fn=log_fn)
             if new_audit is None:
                 log_fn(f"  Iteration {iteration}: Evaluation failed. Rejecting candidate.")
@@ -220,6 +224,7 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
                 best_score = new_score
                 best_spec = copy.deepcopy(cand["spec"])
                 best_audit = new_audit
+                on_disk = "best"
                 if best_score == 0.0 and new_diag["pass"]:
                     log_fn("  Target achieved: PASS with 0 tears! Converged early.")
                     break
@@ -231,8 +236,13 @@ def auto_tune_model(model, max_iterations=3, dry_run=False, work_dir=None, log_f
         if dry_run:
             log_fn("[Dry Run] Reverting to original spec.")
             save_spec_to_disk(model, orig_spec)
+            keep = orig_spec
         else:
             save_spec_to_disk(model, best_spec)
+            keep = best_spec
+        if on_disk != "best" or (dry_run and keep is not best_spec):
+            log_fn("Rigging the spec kept once more, so the rig and audit on disk are its own.")
+            run_pipeline_eval(model, work_dir=w, log_fn=log_fn)
 
     # 3. Final summary
     report = auto_tune.format_tuning_report(history)
