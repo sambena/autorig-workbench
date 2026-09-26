@@ -316,6 +316,50 @@ class TestGaitEngine(unittest.TestCase):
         # Settles/decays over time
         self.assertGreater(abs(imp0[0]), abs(imp_later[0]))
 
+    def test_biped_agility_and_root_motion(self):
+        # 1. Jump Start: starts at neutral crouch and launches upward
+        js0 = gait.evaluate_biped_jump_start(0.0, hip_height=1.0, leg_length=0.9)
+        js_mid = gait.evaluate_biped_jump_start(0.5, hip_height=1.0, leg_length=0.9)
+        js_end = gait.evaluate_biped_jump_start(1.0, hip_height=1.0, leg_length=0.9)
+
+        self.assertAlmostEqual(js0["pelvis"]["pos"][2], 0.0, places=4)
+        self.assertLess(js_mid["pelvis"]["pos"][2], -0.1)    # deep crouch
+        self.assertGreater(js_end["pelvis"]["pos"][2], 0.05) # launch extension
+        self.assertGreater(js_end["legs"]["L"]["foot_pitch"], 20.0) # toes pointed
+
+        # 2. Jump Loop: apex suspension continuity (phase=0 matches phase=1)
+        jl0 = gait.evaluate_biped_jump_loop(0.0, hip_height=1.0, leg_length=0.9)
+        jl1 = gait.evaluate_biped_jump_loop(1.0, hip_height=1.0, leg_length=0.9)
+        self.assertAlmostEqual(jl0["pelvis"]["pos"][2], jl1["pelvis"]["pos"][2], places=5)
+        self.assertGreater(jl0["pelvis"]["pos"][2], 0.1) # suspended above ground
+
+        # 3. Jump Land: impact compression then recovery
+        jland0 = gait.evaluate_biped_jump_land(0.0, hip_height=1.0, leg_length=0.9)
+        jland_imp = gait.evaluate_biped_jump_land(0.35, hip_height=1.0, leg_length=0.9)
+        jland_end = gait.evaluate_biped_jump_land(1.0, hip_height=1.0, leg_length=0.9)
+        self.assertLess(jland_imp["pelvis"]["pos"][2], -0.1)  # impact absorption
+        self.assertAlmostEqual(jland_end["pelvis"]["pos"][2], 0.0, places=4) # recovered
+
+        # 4. Roll / Dodge: 360-degree rotation and forward translation
+        r0 = gait.evaluate_biped_roll(0.0, hip_height=1.0, leg_length=0.9)
+        r_mid = gait.evaluate_biped_roll(0.5, hip_height=1.0, leg_length=0.9)
+        r_end = gait.evaluate_biped_roll(1.0, hip_height=1.0, leg_length=0.9)
+        self.assertAlmostEqual(r0["pelvis"]["rot"][0], 0.0, places=4)
+        self.assertAlmostEqual(r_mid["pelvis"]["rot"][0], 180.0, places=4)
+        self.assertAlmostEqual(r_end["pelvis"]["rot"][0], 360.0, places=4)
+        self.assertGreater(r_end["pelvis"]["pos"][1], 1.2) # forward roll distance
+
+        # 5. Block: solid guard with raised forearms
+        blk = gait.evaluate_biped_block(0.0, hip_height=1.0, leg_length=0.9)
+        self.assertGreater(blk["arms"]["L"]["forearm_pitch"], 75.0)
+        self.assertGreater(blk["arms"]["R"]["forearm_pitch"], 75.0)
+
+        # 6. Root Motion Displacement Calculation
+        walk_rm = gait.compute_root_motion_displacement("walk", 0.5, stride_distance=0.8)
+        self.assertAlmostEqual(walk_rm[1], 0.8, places=4) # 2 strides * 0.5 = 1 stride
+        run_rm = gait.compute_root_motion_displacement("run", 1.0, stride_distance=0.8)
+        self.assertAlmostEqual(run_rm[1], 2.4, places=4)
+        roll_rm = gait.compute_root_motion_displacement("roll", 1.0, stride_distance=0.8, height=1.8)
     def test_walker_clips_under_blender(self):
         blender_bin = blender.find(required=False)
         if not blender_bin:

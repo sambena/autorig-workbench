@@ -580,7 +580,10 @@ def humanoid_roles(names):
     short = {n.split(":")[-1]: n for n in names}
     roles = {role: short.get(mixamo) for role, mixamo in HUMANOID_ROLES.items()}
     needed = ("hips", "thigh.L", "thigh.R", "shin.L", "shin.R", "arm.L", "arm.R")
-    return roles if all(roles[r] for r in needed) else None
+    if not all(roles[r] for r in needed):
+        return None
+    roles["root"] = short.get("root") or short.get("Root") or ("root" if "root" in names else None)
+    return roles
 
 
 class CreatureRig:
@@ -1029,6 +1032,71 @@ def creature_walker(rig, style, spec=None):
 
     clips["die"] = (18, die, False)
 
+    # ---- creature agility: jump, dodge, block ------------------------------------------------
+    def creature_jump_start(f, n):
+        p = Pose()
+        tau = f / float(n)
+        crouch = gait._smooth_step(0.0, 0.5, tau)
+        launch = gait._smooth_step(0.5, 1.0, tau)
+        p.move(rig.body, -UP * (0.08 * L * crouch * (1.0 - launch)) + UP * (0.10 * L * launch))
+        p.turn(rig.body, LATERAL, 10.0 * crouch * (1.0 - launch) - 8.0 * launch)
+        for foot in rig.feet:
+            p.move(foot["name"], -UP * (0.04 * L * crouch * (1.0 - launch)) + UP * (0.06 * L * launch))
+        tail_wave(p, tau * 2.0 * math.pi, 6.0)
+        return p
+
+    clips["jump_start"] = (12, creature_jump_start, False)
+
+    def creature_jump_loop(f, n):
+        p = Pose()
+        phase = f / float(n)
+        w = 2.0 * math.pi * phase
+        p.move(rig.body, UP * (0.10 * L + 0.015 * L * math.sin(w)))
+        p.turn(rig.body, LATERAL, 2.0 * math.cos(w))
+        for foot in rig.feet:
+            p.move(foot["name"], -FORWARD * (0.02 * L) + UP * (0.03 * L * math.sin(w)))
+        tail_wave(p, phase * 2.0 * math.pi, 8.0)
+        return p
+
+    clips["jump_loop"] = (16, creature_jump_loop, True)
+
+    def creature_jump_land(f, n):
+        p = Pose()
+        tau = f / float(n)
+        impact = 1.0 - abs(tau - 0.3) / 0.7 if tau > 0.3 else tau / 0.3
+        impact = max(0.0, min(1.0, impact))
+        p.move(rig.body, -UP * (0.09 * L * impact))
+        p.turn(rig.body, LATERAL, 12.0 * impact)
+        tail_wave(p, tau * 2.0 * math.pi, 10.0, impulse_time=impact)
+        return p
+
+    clips["jump_land"] = (14, creature_jump_land, False)
+
+    def creature_dodge(f, n):
+        p = Pose()
+        tau = f / float(n)
+        evade = math.sin(math.pi * tau)
+        p.move(rig.body, LATERAL * (0.12 * L * evade) - FORWARD * (0.05 * L * evade))
+        p.turn(rig.body, UP, 18.0 * evade)
+        tail_wave(p, tau * 2.0 * math.pi, 14.0)
+        return p
+
+    clips["dodge"] = (16, creature_dodge, False)
+
+    def creature_block(f, n):
+        p = Pose()
+        phase = f / float(n)
+        w = 2.0 * math.pi * phase
+        brace = 0.8 + 0.2 * math.sin(w)
+        p.move(rig.body, -UP * (0.05 * L * brace))
+        p.turn(rig.body, LATERAL, 8.0 * brace)
+        for j in rig.jaws:
+            side = 1.0 if j.endswith(".L") else -1.0
+            turn_jaw(p, j, side * -12.0 * brace)
+        return p
+
+    clips["block"] = (16, creature_block, True)
+
     return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 16}
 
 
@@ -1072,6 +1140,8 @@ def humanoid_walker(rig, style, spec=None):
     walk_frames = max(12, int(round(24.0 / cadence)))
     thigh_swing = 22.0 * gait_params.get("stride", 1.0)
     stride = 2.0 * H * math.sin(math.radians(thigh_swing))
+    root_bone = r.get("root") or getattr(rig, "root", None) or ("root" if "root" in rig.names else None)
+    root_motion = bool(spec.get("root_motion", False)) or ("--root-motion" in sys.argv)
 
     # Automated finger / digit articulation (Pillar 2)
     fingers = []
@@ -1203,6 +1273,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "relax")
         animate_secondary(p, phase)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("walk", phase, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
         return p
 
     clips["walk"] = (walk_frames, walk, True)
@@ -1257,6 +1330,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "splay" if st.get("is_flight") else "relax")
         animate_secondary(p, phase)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("run", phase, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
         return p
 
     clips["run"] = (run_frames, run, True)
@@ -1442,6 +1518,202 @@ def humanoid_walker(rig, style, spec=None):
         return p
 
     clips["die"] = (18, die, False)
+
+    # ---- agility: jump, roll, block --------------------------------------------------------
+    def jump_start(f, n):
+        p = Pose()
+        tau = f / float(n)
+        st = gait.evaluate_biped_jump_start(tau, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, leg["foot_pitch"])
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "fist" if tau < 0.6 else "splay")
+        animate_secondary(p, tau)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("jump_start", tau, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
+        return p
+
+    clips["jump_start"] = (12, jump_start, False)
+
+    def jump_loop(f, n):
+        p = Pose()
+        phase = f / float(n)
+        st = gait.evaluate_biped_jump_loop(phase, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, leg["foot_pitch"])
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "splay")
+        animate_secondary(p, phase)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("jump_loop", phase, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
+        return p
+
+    clips["jump_loop"] = (16, jump_loop, True)
+
+    def jump_land(f, n):
+        p = Pose()
+        tau = f / float(n)
+        st = gait.evaluate_biped_jump_land(tau, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, leg["foot_pitch"])
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "relax")
+        animate_secondary(p, tau)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("jump_land", tau, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
+        return p
+
+    clips["jump_land"] = (14, jump_land, False)
+
+    def roll(f, n):
+        p = Pose()
+        tau = f / float(n)
+        st = gait.evaluate_biped_roll(tau, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, leg["foot_pitch"])
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "fist" if 0.2 < tau < 0.8 else "relax")
+        animate_secondary(p, tau)
+        if root_motion and root_bone:
+            rm = gait.compute_root_motion_displacement("roll", tau, stride, H)
+            p.move(root_bone, FORWARD * rm[1])
+        return p
+
+    clips["roll"] = (20, roll, False)
+
+    def block(f, n):
+        p = Pose()
+        phase = f / float(n)
+        st = gait.evaluate_biped_block(phase, H, H, gait_params, is_shooter=shooter)
+        pelvis = st["pelvis"]
+        legs_st = st["legs"]
+        arms_st = st["arms"]
+        spine_st = st["spine"]
+
+        arms_down(p, bend=None)
+        p.move(r["hips"], LATERAL * pelvis["pos"][0] + UP * pelvis["pos"][2] + FORWARD * pelvis["pos"][1])
+        p.turn(r["hips"], LATERAL, pelvis["rot"][0])
+        p.turn(r["hips"], UP, pelvis["rot"][2])
+
+        if spine:
+            num_spine = len(spine)
+            for s in spine:
+                p.turn(s, LATERAL, spine_st["pitch"] / num_spine)
+                p.turn(s, UP, spine_st["yaw"] / num_spine)
+
+        for side in ("L", "R"):
+            leg = legs_st[side]
+            p.turn(r["thigh." + side], LATERAL, leg["thigh_pitch"])
+            p.turn(r["shin." + side], LATERAL, leg["knee_pitch"])
+            p.turn(r["foot." + side], LATERAL, leg["foot_pitch"])
+
+        for side in ("L", "R"):
+            arm_b, fa_b = r["arm." + side], r["forearm." + side]
+            side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
+            p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
+            p.turn(arm_b, UP, side_sign * arms_st[side]["yaw"])
+            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+
+        curl_fingers(p, "fist")
+        animate_secondary(p, phase)
+        return p
+
+    clips["block"] = (16, block, True)
 
     return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": walk_frames}
 
@@ -2011,6 +2283,14 @@ class Authored:
                 ev[name] = [{"name": "hit", "time": 0.0}]
             elif name in ("death", "explode"):
                 ev[name] = [{"name": "death_rest", "time": round(length, 4)}]
+            elif name == "jump_start":
+                ev[name] = [{"name": "jump_launch", "time": round(s(6), 4)}]
+            elif name == "jump_land":
+                ev[name] = [{"name": "land_impact", "time": 0.0}, {"name": "land_recover", "time": round(s(5), 4)}]
+            elif name == "roll":
+                ev[name] = [{"name": "roll_contact", "time": round(s(4), 4)}, {"name": "roll_recover", "time": round(s(16), 4)}]
+            elif name == "block":
+                ev[name] = [{"name": "block_brace", "time": 0.0}]
             elif name == "arm":
                 ev[name] = [{"name": "armed", "time": round(length, 4)}]
         return ev

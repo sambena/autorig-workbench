@@ -28,7 +28,7 @@ CORE, STEPS, CLI = (os.path.join(PKG, d) for d in ("core", "steps", "cli"))
 
 # What may be brought into the models root: sources and their textures, archives, the model's own data.
 UPLOAD_EXTS = {".fbx", ".glb", ".gltf", ".bin", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tif",
-               ".tiff", ".webp", ".zip", ".json", ".py"}
+               ".tiff", ".webp", ".zip", ".json", ".py", ".bvh"}
 SKIP_FILES = {"model.json", "pack.json"}          # outputs: publish writes them again
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all", "rebake-clips", "rebake_clips")
@@ -1076,6 +1076,25 @@ def make_handler(app):
                     n = int(self.headers.get("Content-Length") or 0)
                     ok = app.uploads.put((q.get("batch") or [""])[0], (q.get("path") or [""])[0], self.rfile, n)
                     return self._send(200, {"stored": ok})
+                if path == "/api/retarget/upload":
+                    n = int(self.headers.get("Content-Length") or 0)
+                    filename = (q.get("filename") or ["mocap.fbx"])[0]
+                    clean_fn = re.sub(r"[^A-Za-z0-9_\-\.]+", "_", os.path.basename(filename))
+                    mocap_dir = os.path.join(layout.WORK, "mocap")
+                    os.makedirs(mocap_dir, exist_ok=True)
+                    dest = os.path.join(mocap_dir, clean_fn)
+                    left = n
+                    with open(dest, "wb") as fh:
+                        while left > 0:
+                            chunk = self.rfile.read(min(1 << 20, left))
+                            if not chunk: break
+                            fh.write(chunk); left -= len(chunk)
+                    try:
+                        import retargeter as _ret
+                    except ImportError:
+                        from autorig.core import retargeter as _ret
+                    meta = _ret.inspect_mocap_file(dest)
+                    return self._send(200, {"stored": True, "file": dest, "meta": meta})
                 body = self._json_body()
                 if path == "/api/upload/done":
                     r = app.uploads.finish(body.get("batch", ""), body.get("group", ""), clean_name(body.get("name", "")))
@@ -1136,6 +1155,16 @@ def make_handler(app):
                         from autorig.core import exporter as _exp
                     res = _exp.create_export_package(name, target=target)
                     return self._send(200, res)
+                if path == "/api/retarget/inspect":
+                    mocap_file = body.get("file", "").strip()
+                    if not mocap_file or not os.path.exists(mocap_file):
+                        return self._send(400, {"error": "mocap file not found: " + mocap_file})
+                    try:
+                        import retargeter as _ret
+                    except ImportError:
+                        from autorig.core import retargeter as _ret
+                    meta = _ret.inspect_mocap_file(mocap_file)
+                    return self._send(200, meta)
                 if path == "/api/retarget":
                     name = clean_name(body.get("model", ""))
                     g = find_group(name)
@@ -1151,8 +1180,9 @@ def make_handler(app):
                         model_name=name,
                         mocap_file=mocap_file,
                         clip_name=body.get("clip_name"),
+                        source_action=body.get("source_action"),
                         root_motion=body.get("root_motion", True),
-                        export_glb=body.get("export_glb", False),
+                        export_glb=body.get("export_glb", True),
                     )
                     return self._send(200, res)
                 if path == "/api/watchdog/reap":
