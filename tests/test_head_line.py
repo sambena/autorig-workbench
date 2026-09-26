@@ -68,6 +68,45 @@ else:
             self.assertIn("head", chains[0]["bones"])
             self.assertEqual(chains[0]["bones"][0], "hips")
 
+        def test_shell_preserves_head_weights(self):
+            # Create armature with body and head bones
+            ad = bpy.data.armatures.new("test_arm")
+            arm = bpy.data.objects.new("test_arm", ad)
+            bpy.context.scene.collection.objects.link(arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode='EDIT')
+            b_body = ad.edit_bones.new("body")
+            b_body.head = (0, 0, 0); b_body.tail = (0, 0.5, 0)
+            b_head = ad.edit_bones.new("head")
+            b_head.head = (0, 0.5, 0); b_head.tail = (0, 1.0, 0)
+            b_head.parent = b_body
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            chains = [
+                {"role": "spine", "joints": ["__body"], "points": [Vector((0, 0, 0)), Vector((0, 0.5, 0)), Vector((0, 1, 0))],
+                 "parent": None, "ik": False, "bones": ["body", "head"]},
+            ]
+            spec = {"kind": "tripo", "body": "single", "shell": "bone_unmapped"}
+            size = Vector((1, 1, 1))
+            log = {}
+            # Vertex groups on mesh
+            vg_head = self.mesh.vertex_groups.new(name="head")
+            vg_body = self.mesh.vertex_groups.new(name="body")
+            # Assign first half to head, second half to body
+            for i, v in enumerate(self.mesh.data.vertices):
+                if i < len(self.mesh.data.vertices) // 2:
+                    vg_head.add([v.index], 1.0, 'REPLACE')
+                else:
+                    vg_body.add([v.index], 1.0, 'REPLACE')
+
+            # Run skin pass
+            rerig.skin(self.mesh, arm, chains, spec, size, log)
+            # Head bone should have preserved its vertices, not wiped by shell
+            head_vg = self.mesh.vertex_groups.get("head")
+            head_weights = [head_vg.weight(v.index) for v in self.mesh.data.vertices if any(g.group == head_vg.index for g in v.groups)]
+            self.assertGreater(len(head_weights), 0)
+            self.assertNotIn("head", log.get("bones_without_skin", []))
+
 
 if __name__ == "__main__":
     clean_argv = [sys.argv[0]]
