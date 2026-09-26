@@ -208,7 +208,16 @@ def merge_gait_params(preset_name="natural", overrides=None):
     base["arm_swing"] = max(0.0, min(3.0, float(base["arm_swing"])))
     base["foot_lift"] = max(0.1, min(3.0, float(base["foot_lift"])))
     base["duty_factor"] = max(0.20, min(0.85, float(base["duty_factor"])))
+    # multipliers no preset carries, kept when given (they used to be dropped with every other unknown key, so a
+    # spec's tail_wave did nothing): clamped like the rest
+    for k, (lo, hi) in OPTIONAL_PARAMS.items():
+        v = (overrides or {}).get(k) if isinstance(overrides, dict) else None
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            base[k] = max(lo, min(hi, float(v)))
     return base
+
+
+OPTIONAL_PARAMS = {"tail_wave": (0.0, 3.0)}      # the creature walk's tail swing, x its default
 
 
 # ---------------------------------------------------------------------------------------------------------------

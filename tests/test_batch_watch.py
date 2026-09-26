@@ -343,6 +343,25 @@ class BatchWatchTest(unittest.TestCase):
         finally:
             os.remove(builder)
 
+    def test_rig_that_crashed_inside_blender_is_a_failure(self):
+        # rerig.py catches a model's exception, logs it and exits 0: the batch took that for a pass, then trimmed,
+        # audited and animated the stale rig left from before
+        class R:
+            returncode, stderr = 0, ""
+            stdout = "\n".join(['RERIG {"model": "biped", "kind": "placed", "error": "IndexError(2)"}',
+                                "RERIG_DONE 0 of 1", ""])
+        calls = []
+
+        def fake_run(script, *a, **k):
+            calls.append(script)
+            return R()
+        with patch("batch_runner.spec_store.model", return_value={"rig": {"kind": "placed"}}), \
+                patch.object(batch_runner.blender, "run", fake_run):
+            res = batch_runner.run_model_pipeline("biped", steps=["rig", "trim", "audit"])
+        self.assertEqual(res["status"], "ERROR")
+        self.assertIn("IndexError", res["error"])
+        self.assertEqual(calls, ["rerig.py"])                          # nothing ran on the stale rig
+
     def test_bad_rig_json_fails_that_model_only(self):
         with patch("batch_runner.spec_store.model", side_effect=ValueError("schema is 'x'")):
             res = batch_runner.run_model_pipeline("biped", steps=["rig"])

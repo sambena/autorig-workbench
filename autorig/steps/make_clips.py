@@ -40,6 +40,7 @@ import layout
 import gait
 import digits
 import morph_generator
+import clip_contract
 # Per-model clip settings (archetype, display name, category, attack...): rig.json "clips"; the licence line:
 # the collection's autorig.json.
 from spec_store import CLIPS as MODELS, LICENCE
@@ -2462,14 +2463,19 @@ def author(key, spec, argv):
         "metres": metres, "unitsPerMetre": round(per_metre, 6),
         "fps": CREATURE_FPS, "archetype": spec.get("archetype", "walker"),
         "skeleton": rig.skeleton or None,
+        **clip_contract.header(),
+        # each clip says its slot, whether its rate follows ground speed, its speed and its own wind-up end
+        # (core/clip_contract.py, docs/FORMATS.md "The engine contract")
         "clips": [{"name": n, "take": n, "frames": (last if loops else last + 1),
                    "seconds": round((last if loops else last + 1) / float(CREATURE_FPS), 4), "loops": loops,
-                   **({"speed": round(speed_m, 4)} if n == "walk" and speed_m else {}),
+                   **clip_contract.clip_fields(n, (last if loops else last + 1) / float(CREATURE_FPS),
+                                               [m[0] for m in made], arche.windup_end(),
+                                               speed_m if n == "walk" else None),
                    "events": ev.get(n, [])} for n, last, loops in made],
-        "windUpEnd": round(arche.windup_end(), 4),
-        # walkSpeed: twice the stride per walk cycle, scaled by the card's metres (the rig's longest axis is about 1).
-        # An older unit kept for engines that already read it; "speed" on the walk clip is metres a second.
-        "walkSpeed": round(facts["stride"] * metres / (duty_f * walk_s), 4) if facts.get("stride") else 1.0,
+        "windUpEnd": round(arche.windup_end(), 4),              # a fraction of "attack" (each clip has its own too)
+        # walkSpeed: the walk's speed in metres a second, as the walk clip's "speed". It was the stride times metres
+        # per cycle, right only when the rig's longest side was 1 unit.
+        "walkSpeed": round(speed_m, 4) if speed_m else 1.0,
         "decimation": dec,
         "licence": LICENCE,
     }
@@ -2792,7 +2798,11 @@ def main():
         export_fbx(os.path.join(split, name + ".fbx"), [arm], 1.0, True)
         # and the mesh file it binds to, from the same armature with the same settings
         export_fbx(os.path.join(split, name + "_model.fbx"), [arm, dup], 1.0, False)
-        meta = {"clips": [{"name": n, "seconds": round((last if loops else last + 1) / float(FPS), 4), "loops": loops}
+        meta = {**clip_contract.header(),
+                "clips": [{"name": n, "seconds": round((last if loops else last + 1) / float(FPS), 4), "loops": loops,
+                           **clip_contract.clip_fields(n, (last if loops else last + 1) / float(FPS),
+                                                       [m[0] for m in made], arche.windup_end(),
+                                                       spec.get("flySpeed") if n == "fly" else None)}
                           for n, last, loops in made],
                 "fps": FPS, "walkSpeed": spec.get("splitWalkSpeed", 1.0), "windUpEnd": round(arche.windup_end(), 4)}
         with open(os.path.join(split, name + "_clips.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -2816,9 +2826,12 @@ def main():
         "motion": "authored clips (Autorig Workbench make_clips.py, archetype %s)" % spec["archetype"],
         "flies": True,
         "frameRate": FPS,
+        **clip_contract.header(),
         "clips": [{"name": n, "take": n, "length": round(last / float(FPS) if loops else (last + 1) / float(FPS), 4),
                    "frames": last if loops else last + 1, "loop": loops,
-                   **({"speed": spec["flySpeed"]} if n == "fly" and spec.get("flySpeed") is not None else {}),
+                   **clip_contract.clip_fields(n, last / float(FPS) if loops else (last + 1) / float(FPS),
+                                               [m[0] for m in made], arche.windup_end(),
+                                               spec.get("flySpeed") if n == "fly" else None),
                    "events": ev.get(n, [])} for n, last, loops in made],
         "windUpEnd": round(arche.windup_end(), 4),
         "notes": arche.notes(),

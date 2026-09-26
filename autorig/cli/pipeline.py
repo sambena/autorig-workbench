@@ -28,8 +28,10 @@ def step(script, *args):
     for line in r.stdout.splitlines():
         if TAG.match(line) or "Error" in line:
             print(line[:600])
-    if r.returncode != 0 or "Traceback" in r.stdout + r.stderr:
+    err = blender.step_error(r.stdout)            # a model the step caught failing still exits 0
+    if r.returncode != 0 or "Traceback" in r.stdout + r.stderr or err:
         print((r.stdout + r.stderr)[-3000:])
+        if err: print("PIPELINE step failed: %s" % err)
         return False
     return True
 

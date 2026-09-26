@@ -132,13 +132,13 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
                 else:
                     script = "rerig_humanoid.py" if kind == "humanoid" else "rerig.py"
                 r = blender.run(script, "-only", model, "-qa", layout.work_dir("qa"))
-                if r.returncode != 0:
-                    raise RuntimeError(f"rig step failed ({os.path.basename(script)}): {_tail(r)}")
+                if r.returncode != 0 or blender.step_error(r.stdout):
+                    raise RuntimeError(f"rig step failed ({os.path.basename(script)}): {blender.step_error(r.stdout) or _tail(r)}")
                 executed.append("rig")
 
             elif st == "trim":
                 r = blender.run("decimate.py", "-only", model)
-                if r.returncode != 0:
+                if r.returncode != 0 or blender.step_error(r.stdout):
                     raise RuntimeError(f"trim (decimate) step failed: {_tail(r)}")
                 executed.append("trim")
 
@@ -173,7 +173,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
                 c_arch = spec_store.infer_clip_archetype(spec)
                 if c_arch:
                     r = blender.run("make_clips.py", model, "--archetype", c_arch)
-                    if r.returncode != 0:
+                    if r.returncode != 0 or blender.step_error(r.stdout):
                         raise RuntimeError(f"clips step failed for '{model}': {_tail(r)}")
                     executed.append("clips")
 
@@ -190,7 +190,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
 
             elif st == "preview":
                 r = blender.run("preview_glb.py", "-only", model)
-                if r.returncode != 0:
+                if r.returncode != 0 or blender.step_error(r.stdout):
                     raise RuntimeError(f"preview step failed: {_tail(r)}")
                 executed.append("preview")
 

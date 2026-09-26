@@ -172,7 +172,7 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 |---|---|
 | `archetype` | `walker`, `flyer`, `exploder`, `swimmer`, `turret`, `machine` (write `clips/`) or `winged` (writes an export beside the rig) |
 | `gait` | walker: `walk` (4-beat lateral sequence for quadrupeds), `trot` (2-beat diagonal suspension), or `gallop` (rotary gallop with gathered/extended suspension flight phases) |
-| `walk` | procedural gait tuning: `{preset, stride, cadence, sway, bob, lean, arm_swing, duty_factor}`. Presets: `natural`, `soldier`, `swagger`, `stealth`, `heavy`, `run`, `sprint`, `quadruped_walk`, `quadruped_trot`, `quadruped_gallop`. Humanoids author `walk`, `run`, `idle_to_walk`, `walk_to_idle`; quadrupeds author `walk`, `trot`, `gallop`. |
+| `walk` | procedural gait tuning: `{preset, stride, cadence, sway, bob, lean, arm_swing, duty_factor, tail_wave}` (`tail_wave`: a creature walk's tail swing, x its default, 0-3). Presets: `natural`, `soldier`, `swagger`, `stealth`, `heavy`, `run`, `sprint`, `quadruped_walk`, `quadruped_trot`, `quadruped_gallop`. Humanoids author `walk`, `run`, `idle_to_walk`, `walk_to_idle`; quadrupeds author `walk`, `trot`, `gallop`. |
 | `display`, `category` | a display name and a category, carried into the clip files |
 | `attack` | walker: `bite` (rear with forelegs raised, lunge), `discharge` (rear onto planted legs, tail arched over, a crackle, a whip forward), `shoot` / `smash` (humanoids) |
 | `windup`, `hit_rear` | walker: `windup: "head_down"` braces for a bite with the front end dropped and the whole neck (the card's neck bones) and head low, then lunges low, instead of rearing; `hit_rear` scales how far a hit rocks it back and up (default 1) |
@@ -180,7 +180,7 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 | `beats`, `flap` | flyer: wingbeats per loop, the wing root's swing in degrees |
 | `loop`, `ripple`, `flicker`, `pulse` | flyer: loop length in frames, rippling wings, flickering flames, the bone that pulses (a bell) |
 | `body` | the body bone, when it is not the one the card names |
-| `rig`, `triangles`, `flySpeed`, `splitWalkSpeed` | winged: the rig folder, the export's triangle budget, the fly loop's speed in metres a second, and the `walkSpeed` written with `--split-clips` |
+| `rig`, `triangles`, `flySpeed`, `splitWalkSpeed` | winged, all optional: the rig folder (default: the one the rig step wrote), the export's triangle budget (default: the model's budget), the fly loop's speed in metres a second (default: none written), and the `walkSpeed` written with `--split-clips` |
 
 ### Suggesting a skeleton
 

@@ -311,6 +311,18 @@ one pull request each, code first; models are run through the tool only in R6.
     order, per-clip morphs in preview.glb, T-pose to A-pose retargeting), and skeleton warnings promoted to grades
     once there is enough data to set thresholds.
 
+- **After R6: the tool-to-game seam** (feedback from a Smeltdown session, 2026-09-26):
+  - B, the contract: every clips manifest now says each clip's slot, whether its rate follows ground speed, its
+    speed in metres a second and its own wind-up end (docs/FORMATS.md, "The engine contract"). The legacy
+    walkSpeed is metres a second (it was the stride times metres per cycle, right only when the rig's longest side
+    was 1 unit). windUpEnd was not wrong (a fraction of the 24-frame attack: 14/24), but nothing said of what, so
+    each attack clip now carries its own. Smeltdown's side (reading the contract) is its own change.
+  - The batch runner and pipeline.py count a rig step that failed inside Blender (it logs the error and exits 0)
+    as a failure; they counted it as a pass and went on to trim, audit and animate the stale rig.
+  - tail_wave in a creature's walk spec is kept (merge_gait_params dropped every key no preset carries).
+  - C, next: a clip audit that plays each baked clip and grades foot slide, floor contact, pops, loop seams and
+    left/right symmetry.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

@@ -17,6 +17,10 @@ sys.path[:0] = [HERE, os.path.join(REPO, "autorig", "core"), os.path.join(REPO, 
 import exporter
 import layout
 
+# the packages carry the rigged sample's FBX, which is an output (git-ignored): only there once biped has been rigged
+RIGGED = os.path.isfile(os.path.join(REPO, "samples", "biped", "rigged", "biped.fbx"))
+needs_rig = unittest.skipUnless(RIGGED, "samples/biped has not been rigged here (rig it once: its FBX is git-ignored)")
+
 
 class ExportPresetsTest(unittest.TestCase):
     @classmethod
@@ -69,6 +73,7 @@ class ExportPresetsTest(unittest.TestCase):
         self.assertEqual(mappings["unity"].get("spine"), "Spine")
         self.assertEqual(mappings["unity"].get("head"), "Head")
 
+    @needs_rig
     def test_create_export_package_unreal(self):
         out_dir = os.path.join(self.tmp, "out_unreal")
         res = exporter.create_export_package("biped", target="unreal", out_dir=out_dir)
@@ -88,6 +93,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertEqual(mapping_content["model"], "biped")
             self.assertIn("mannequin_mappings", mapping_content)
 
+    @needs_rig
     def test_create_export_package_unity(self):
         out_dir = os.path.join(self.tmp, "out_unity")
         res = exporter.create_export_package("biped", target="unity", out_dir=out_dir)
@@ -104,6 +110,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertIn("avatar", avatar)
             self.assertIn("humanDescription", avatar["avatar"])
 
+    @needs_rig
     def test_create_export_package_godot(self):
         out_dir = os.path.join(self.tmp, "out_godot")
         res = exporter.create_export_package("biped", target="godot", out_dir=out_dir)
@@ -119,6 +126,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertIn("character_controller.gd", names)
             self.assertIn("Godot_Import_Guide.md", names)
 
+    @needs_rig
     def test_create_export_package_web(self):
         out_dir = os.path.join(self.tmp, "out_web")
         res = exporter.create_export_package("biped", target="web", out_dir=out_dir)
