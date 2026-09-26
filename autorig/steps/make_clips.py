@@ -88,6 +88,9 @@ class Rig:
         return out
 
 
+KEY = {"f": 0}    # the key build() is making, not wrapped: a loop's last key is `frames` here, 0 in the pose phase
+
+
 class Pose:
     def __init__(self):
         self.turns, self.aims, self.moves, self.scales, self.morphs = {}, {}, {}, {}, {}
@@ -171,6 +174,13 @@ def ease(t):
 
 def over(f, a, b):
     return ease((f - a) / float(max(1e-6, b - a)))
+
+
+def since(f, onset, n):
+    """Time since an impact at frame `onset`, as a share of the clip (0 before it): what a damped secondary ripple
+    (gait.evaluate_secondary_chain's impulse_time) runs on. An envelope that rises and falls ran the ripple
+    backwards on its way down."""
+    return max(0.0, (f - onset) / float(max(1, n)))
 
 
 def lerp(a, b, t): return a + (b - a) * t
@@ -646,6 +656,10 @@ class CreatureRig:
         for side in (1.0, -1.0):
             row = [f for f in self.feet if f["side"] == side]
             if row: self.front.add(max(row, key=lambda f: f["along"])["name"])
+        # gait's gallop and quadruped walk read which feet are the front ones: without this every foot was a hind
+        # foot, LF moved with LH and RF with RH (a bound, not a rotary gallop)
+        for f in self.feet:
+            f["is_front"] = f["name"] in self.front
 
     def direction(self, bone):
         b = self.arm.data.bones[bone]
@@ -716,7 +730,9 @@ def creature_walker(rig, style, spec=None):
             return
         angles = gait.evaluate_secondary_chain(
             len(rig.tail),
-            phase=t / (2.0 * math.pi) if t > 1.0 else t,
+            # every caller passes an angle (radians); the old "t > 1: radians, else a 0..1 phase" read the first
+            # radian of every loop as a whole cycle, a jump each time t crossed 1
+            phase=t / (2.0 * math.pi),
             frequency=1.0,
             base_amplitude=amount * 0.6,
             amplitude_growth=1.22,
@@ -1067,7 +1083,7 @@ def creature_walker(rig, style, spec=None):
         impact = max(0.0, min(1.0, impact))
         p.move(rig.body, -UP * (0.09 * L * impact))
         p.turn(rig.body, LATERAL, 12.0 * impact)
-        tail_wave(p, tau * 2.0 * math.pi, 10.0, impulse_time=impact)
+        tail_wave(p, tau * 2.0 * math.pi, 10.0, impulse_time=max(0.0, tau - 0.3))
         return p
 
     clips["jump_land"] = (14, creature_jump_land, False)
@@ -1097,7 +1113,11 @@ def creature_walker(rig, style, spec=None):
 
     clips["block"] = (16, creature_block, True)
 
-    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 16}
+    # the walk as built: a quadruped's 4-beat walk is 24 frames with each foot planted `duty` of the cycle, the
+    # 2-group gait 16 frames at half and half (the facts used to say 16 frames for both, so the quad walk's speed
+    # was a third too fast for its feet)
+    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 24 if is_quad else 16,
+                   "duty": duty if is_quad else 0.5}
 
 
 def humanoid_walker(rig, style, spec=None):
@@ -1140,19 +1160,35 @@ def humanoid_walker(rig, style, spec=None):
     walk_frames = max(12, int(round(24.0 / cadence)))
     thigh_swing = 22.0 * gait_params.get("stride", 1.0)
     stride = 2.0 * H * math.sin(math.radians(thigh_swing))
+    # the duty factors and run stride gait's evaluators use, so root motion moves the body at the planted foot's speed
+    walk_duty = gait.merge_gait_params("natural", gait_params)["duty_factor"]
+    run_p = gait.merge_gait_params("run", gait_params)
+    run_stride = 2.4 * H * math.sin(math.radians(26.0 * run_p["stride"]))
     root_bone = r.get("root") or getattr(rig, "root", None) or ("root" if "root" in rig.names else None)
     root_motion = bool(spec.get("root_motion", False)) or ("--root-motion" in sys.argv)
+    # the travel goes on the root bone, or, on a rig with none (a Mixamo humanoid), on the hips
+    rm_bone = root_bone or r.get("hips")
+
+    def root_t(n):
+        """How far through a looping clip this key is, 0..1 including the last key (build() evaluates a loop's last
+        key at phase 0 so the pose closes the loop, but the travel must not snap back to the start there)."""
+        return KEY["f"] / float(n)
 
     # Automated finger / digit articulation (Pillar 2)
     fingers = []
+    short_names = {n.split(":")[-1]: n for n in rig.names}      # a rig that kept "mixamorig:" still has fingers
     for side in ("Left", "Right"):
         side_sign = 1.0 if side == "Left" else -1.0
         for fname in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
-            f_bones = [b for b in [f"{side}Hand{fname}1", f"{side}Hand{fname}2", f"{side}Hand{fname}3"] if b in rig.names]
+            f_bones = [short_names[b] for b in (f"{side}Hand{fname}1", f"{side}Hand{fname}2", f"{side}Hand{fname}3")
+                       if b in short_names]
             if f_bones:
                 fingers.append((side, fname, side_sign, f_bones))
 
     def curl_fingers(p, state="relax", intensity=1.0):
+        # T-pose, palms down, fingers along +-X: a curl folds them down toward the palm (about the forward axis),
+        # a spread fans them within the palm (about the up axis). Curl used to turn about up (a fan) and spread about
+        # the lateral axis (a twist of each finger about its own length).
         if not fingers:
             return
         angles = digits.compute_finger_curl_angles(state, intensity)
@@ -1160,9 +1196,9 @@ def humanoid_walker(rig, style, spec=None):
             pitch_curl, spread = angles.get(fname, (18.0, 0.0))
             per_seg = pitch_curl / float(len(f_bones))
             for i, fb in enumerate(f_bones):
-                p.turn(fb, UP, -side_sign * per_seg)
+                p.turn(fb, FORWARD, -side_sign * per_seg)
                 if i == 0 and abs(spread) > 1e-4:
-                    p.turn(fb, LATERAL, spread)
+                    p.turn(fb, UP, side_sign * spread)
 
     # Dynamic secondary physics (Pillar 3: Tails, Capes, Hair, Ears)
     secondary_chains = []
@@ -1273,9 +1309,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "relax")
         animate_secondary(p, phase)
-        if root_motion and root_bone:
-            rm = gait.compute_root_motion_displacement("walk", phase, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+        if root_motion and rm_bone:
+            rm = gait.compute_root_motion_displacement("walk", root_t(n), stride, H, duty=walk_duty)
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["walk"] = (walk_frames, walk, True)
@@ -1330,9 +1366,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "splay" if st.get("is_flight") else "relax")
         animate_secondary(p, phase)
-        if root_motion and root_bone:
-            rm = gait.compute_root_motion_displacement("run", phase, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+        if root_motion and rm_bone:
+            rm = gait.compute_root_motion_displacement("run", root_t(n), run_stride, H, duty=run_p["duty_factor"])
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["run"] = (run_frames, run, True)
@@ -1443,7 +1479,7 @@ def humanoid_walker(rig, style, spec=None):
         p.turn(r["head"], LATERAL, -6.0 * crouch)
         curl_fingers(p, "fist", 1.0 if kick > 0.1 else 0.8)
         p.morph("jawOpen", 0.5 * kick)
-        animate_secondary(p, f / float(n), impulse_time=kick)
+        animate_secondary(p, f / float(n), impulse_time=since(f, windup_end, n))
         return p
 
     def smash(f, n):
@@ -1468,7 +1504,7 @@ def humanoid_walker(rig, style, spec=None):
         curl_fingers(p, "fist")
         p.morph("jawOpen", 0.8 * strike)
         p.morph("viseme_aa", 0.6 * strike)
-        animate_secondary(p, f / float(n), impulse_time=strike)
+        animate_secondary(p, f / float(n), impulse_time=since(f, windup_end, n))
         return p
 
     clips["attack"] = (24, shoot if shooter else smash, False)
@@ -1489,7 +1525,7 @@ def humanoid_walker(rig, style, spec=None):
         p.morph("eyeBlink_L", k * 0.8)
         p.morph("eyeBlink_R", k * 0.8)
         p.morph("jawOpen", k * 0.5)
-        animate_secondary(p, f / float(n), impulse_time=k)
+        animate_secondary(p, f / float(n), impulse_time=since(f, 0, n))
         return p
 
     clips["hit"] = (8, hit, False)
@@ -1514,7 +1550,7 @@ def humanoid_walker(rig, style, spec=None):
         p.morph("eyeBlink_L", min(1.0, fall * 1.2))
         p.morph("eyeBlink_R", min(1.0, fall * 1.2))
         p.morph("jawOpen", fall * 0.35)
-        animate_secondary(p, f / float(n), impulse_time=fall)
+        animate_secondary(p, f / float(n), impulse_time=since(f, 3, n))
         return p
 
     clips["die"] = (18, die, False)
@@ -1552,9 +1588,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "fist" if tau < 0.6 else "splay")
         animate_secondary(p, tau)
-        if root_motion and root_bone:
+        if root_motion and rm_bone:
             rm = gait.compute_root_motion_displacement("jump_start", tau, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["jump_start"] = (12, jump_start, False)
@@ -1591,9 +1627,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "splay")
         animate_secondary(p, phase)
-        if root_motion and root_bone:
-            rm = gait.compute_root_motion_displacement("jump_loop", phase, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+        if root_motion and rm_bone:
+            rm = gait.compute_root_motion_displacement("jump_loop", root_t(n), stride, H)
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["jump_loop"] = (16, jump_loop, True)
@@ -1630,9 +1666,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "relax")
         animate_secondary(p, tau)
-        if root_motion and root_bone:
+        if root_motion and rm_bone:
             rm = gait.compute_root_motion_displacement("jump_land", tau, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["jump_land"] = (14, jump_land, False)
@@ -1669,9 +1705,9 @@ def humanoid_walker(rig, style, spec=None):
 
         curl_fingers(p, "fist" if 0.2 < tau < 0.8 else "relax")
         animate_secondary(p, tau)
-        if root_motion and root_bone:
+        if root_motion and rm_bone:
             rm = gait.compute_root_motion_displacement("roll", tau, stride, H)
-            p.move(root_bone, FORWARD * rm[1])
+            p.move(rm_bone, FORWARD * rm[1])
         return p
 
     clips["roll"] = (20, roll, False)
@@ -1715,7 +1751,8 @@ def humanoid_walker(rig, style, spec=None):
 
     clips["block"] = (16, block, True)
 
-    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": walk_frames}
+    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": walk_frames,
+                   "duty": walk_duty}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -2348,7 +2385,10 @@ def author(key, spec, argv):
     ev = arche.events(made)
     facts = arche.facts
     walk_s = facts["walkFrames"] / float(CREATURE_FPS)
-    speed_m = 2.0 * facts["stride"] / per_metre / walk_s if facts.get("stride") else None
+    # a planted foot goes back one stride in `duty` of the cycle, so the body goes stride / (duty x cycle): twice
+    # the stride per cycle only when duty is a half (the 2-group gait)
+    duty_f = float(facts.get("duty", 0.5)) or 0.5
+    speed_m = facts["stride"] / per_metre / (duty_f * walk_s) if facts.get("stride") else None
     data = {
         "format": "autorig-clips/1",
         "model": key, "display": spec.get("display") or key.replace("_", " ").title(),
@@ -2366,7 +2406,7 @@ def author(key, spec, argv):
         "windUpEnd": round(arche.windup_end(), 4),
         # walkSpeed: twice the stride per walk cycle, scaled by the card's metres (the rig's longest axis is about 1).
         # An older unit kept for engines that already read it; "speed" on the walk clip is metres a second.
-        "walkSpeed": round(2.0 * facts["stride"] * metres / walk_s, 4) if facts.get("stride") else 1.0,
+        "walkSpeed": round(facts["stride"] * metres / (duty_f * walk_s), 4) if facts.get("stride") else 1.0,
         "decimation": dec,
         "licence": LICENCE,
     }
@@ -2396,16 +2436,43 @@ def build(rig, clips):
     for a in list(bpy.data.actions):
         if a not in kept: bpy.data.actions.remove(a)
     made = []
+    # Morph targets: each clip keys its blinks, jaw and visemes into a shape-key action of its own (<clip>_morph),
+    # laid on an NLA track named for the clip beside the armature's, so a clip plays its own face. They all used to
+    # key the mesh's one shape-key action, and every clip overwrote the one before it.
+    mesh = getattr(rig, "mesh", None)
+    keys = mesh.data.shape_keys if mesh is not None and getattr(mesh.data, "shape_keys", None) else None
+    morph_actions = {}
+    if keys is not None:
+        keys.animation_data_create()
     for name, (frames, fn, loops) in clips.items():
         action = bpy.data.actions.new(name)
         action.use_fake_user = True
         arm.animation_data.action = action
+        if keys is not None:
+            ka = bpy.data.actions.new(name + "_morph")
+            ka.use_fake_user = True
+            keys.animation_data.action = ka
+            morph_actions[name] = ka
         last = frames if loops else frames - 1           # a loop's last key is its first again: no hitch at the seam
+        # live IK (creature rigs) keyed on in every authored clip: a retargeted clip keys it off (retarget_worker),
+        # and a channel one action keys and another does not keeps whatever was played last
+        for pb in arm.pose.bones:
+            for c in pb.constraints:
+                if not c.mute and c.type in ("IK", "COPY_ROTATION", "DAMPED_TRACK", "LOCKED_TRACK", "TRACK_TO"):
+                    c.influence = 1.0
+                    c.keyframe_insert("influence", frame=0)
         for f in range(0, last + 1):
+            KEY["f"] = f                                   # root motion reads the unwrapped key (root_t)
             apply(rig, fn(f % frames if loops else f, frames), f)
         action.use_frame_range = True
         action.frame_start, action.frame_end = 0, last
         made.append((name, last, loops))
+    if keys is not None:
+        keys.animation_data.action = None
+        for t in list(keys.animation_data.nla_tracks): keys.animation_data.nla_tracks.remove(t)
+        for name, ka in morph_actions.items():
+            tr = keys.animation_data.nla_tracks.new(); tr.name = name
+            st = tr.strips.new(name, 0, ka); st.name = name
     for a in kept:
         lo, hi = a.frame_range
         made.append((a.name, int(round(hi - lo)), False))
@@ -2499,7 +2566,12 @@ def decimated_copy(mesh, target):
     # the exported mesh keeps the rig's mesh name (the full-resolution one is only renamed in memory)
     keep = mesh.name; mesh.name = keep + "_full"; dup.name = keep; dup.data.name = keep
     dup.data.calc_loop_triangles(); before = len(dup.data.loop_triangles)
-    if before > target:
+    skipped = None
+    if before > target and getattr(dup.data, "shape_keys", None):
+        # Blender cannot apply a modifier to a mesh with shape keys: the engine copy keeps its morph targets
+        # (morph_targets: true asked for them) at full resolution rather than failing the whole step
+        skipped = "shape keys: decimation skipped, the morph targets kept"
+    elif before > target:
         mod = dup.modifiers.new("Decimate", 'DECIMATE')
         mod.decimate_type = 'COLLAPSE'; mod.use_collapse_triangulate = True; mod.ratio = target / float(before)
         while dup.modifiers[0] != mod: bpy.ops.object.modifier_move_up(modifier=mod.name)
@@ -2508,7 +2580,10 @@ def decimated_copy(mesh, target):
     bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
     dup.data.calc_loop_triangles()
     worst = max((sum(1 for g in v.groups if g.weight > 0) for v in dup.data.vertices), default=0)
-    return dup, {"triangles_before": before, "triangles": len(dup.data.loop_triangles), "max_influences": worst}
+    out = {"triangles_before": before, "triangles": len(dup.data.loop_triangles), "max_influences": worst}
+    if skipped:
+        out["note"] = skipped
+    return dup, out
 
 
 def export_fbx(path, objs, scale, animated):
@@ -2516,6 +2591,28 @@ def export_fbx(path, objs, scale, animated):
     for o in objs: o.select_set(True)
     bpy.context.view_layer.objects.active = objs[0]
     kinds = {o.type for o in objs}
+    # The FBX exporter solos each take's NLA strip on objects only, never on a mesh's shape keys: every clip's morph
+    # track would play at once and the top one (the last clip's face) would go into every take. They are muted for
+    # the export, so takes carry a neutral face; the per-clip faces stay in the clips .blend.
+    # Their values are zeroed as well: unanimated, a key holds whatever the last frame evaluated left in it.
+    muted, values = [], []
+    for o in objs:
+        sk = getattr(o.data, "shape_keys", None) if o.type == 'MESH' else None
+        if sk is None:
+            continue
+        if sk.animation_data:
+            for t in sk.animation_data.nla_tracks:
+                muted.append((t, t.mute)); t.mute = True
+        for kb in sk.key_blocks[1:]:                 # [0] is the basis
+            values.append((kb, kb.value)); kb.value = 0.0
+    try:
+        _write_fbx(path, kinds, scale, animated)
+    finally:
+        for t, was in muted: t.mute = was
+        for kb, v in values: kb.value = v
+
+
+def _write_fbx(path, kinds, scale, animated):
     bpy.ops.export_scene.fbx(
         filepath=path, use_selection=True, object_types=kinds, global_scale=scale,
         apply_scale_options='FBX_SCALE_UNITS', bake_space_transform=True,

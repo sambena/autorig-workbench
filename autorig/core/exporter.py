@@ -2,10 +2,18 @@
 # Autorig Workbench: Multi-target engine export presets and packaging system.
 #
 # Generates tailor-made export packages for major game engines and runtimes:
-#   - Unreal Engine 4 / 5: Z-up FBX, UE Mannequin bone mapping, root motion guide, import preset.
-#   - Unity: Y-up FBX, Mecanim HumanDescription avatar descriptor, clip loop settings, import guide.
-#   - Godot 4: Self-contained GLB scene, .import presets, GDScript CharacterBody3D loader template.
-#   - Web / glTF: Self-contained GLB, web manifest with metadata/clips, and standalone HTML 3D preview.
+#   - Unreal Engine 4 / 5: the budgeted FBX (written Y-up; Unreal's Convert Scene turns it Z-up on import), UE
+#     Mannequin bone mapping, import settings notes, import guide.
+#   - Unity: the budgeted FBX, Mecanim bone-slot notes, import guide.
+#   - Godot 4: the budgeted FBX (Godot 4.3+ imports FBX itself), .import settings, GDScript CharacterBody3D template.
+#   - Web / glTF: the viewer's GLB (preview.glb: full resolution; no budgeted GLB is made yet), web manifest,
+#     standalone HTML 3D preview.
+#
+# Textures are copied beside the FBX. The clips FBX names them by file name alone (make_clips.py, path_mode='STRIP');
+# the rig FBX keeps paths relative to the collection (decimate.py, path_mode='AUTO') that do not resolve inside a
+# package, and importers then fall back to looking for the file name beside the FBX.
+# The JSON files beside the models are notes to read while filling in the engine's import dialog; no engine loads
+# them as presets.
 #
 # Packages are assembled in <work>/export/<model>/<target>/ and archived to <work>/export/<model>_<target>.zip.
 
@@ -37,7 +45,7 @@ PRESETS = {
         "name": "Unreal Engine 4 / 5",
         "primary_format": "FBX",
         "badge": "UE4 / UE5",
-        "description": "Z-up skeletal mesh FBX package with UE Mannequin hierarchy mapping, root motion guide, and engine import preset.",
+        "description": "Budgeted skeletal mesh FBX (Unreal's Convert Scene turns it Z-up on import) with UE Mannequin bone mapping, import settings notes and guide.",
         "doc_file": "Unreal_Import_Guide.md",
     },
     "unity": {
@@ -45,15 +53,15 @@ PRESETS = {
         "name": "Unity (Mecanim)",
         "primary_format": "FBX",
         "badge": "Unity Mecanim",
-        "description": "Y-up FBX package with Unity Humanoid Mecanim avatar descriptor, clip loop flags, and import guide.",
+        "description": "Budgeted Y-up FBX with Unity Humanoid bone-slot notes and import guide.",
         "doc_file": "Unity_Import_Guide.md",
     },
     "godot": {
         "id": "godot",
         "name": "Godot 4.x",
-        "primary_format": "GLB",
+        "primary_format": "FBX",
         "badge": "Godot 4",
-        "description": "Self-contained GLB scene with embedded animation library, Godot 4 .import presets, and sample GDScript character controller.",
+        "description": "Budgeted FBX and clips FBX (Godot 4.3+ imports FBX), .import settings, and sample GDScript character controller.",
         "doc_file": "Godot_Import_Guide.md",
     },
     "web": {
@@ -61,7 +69,7 @@ PRESETS = {
         "name": "Web / glTF",
         "primary_format": "GLB",
         "badge": "WebGL / WebGPU",
-        "description": "Optimized standalone GLB with web manifest and complete HTML/JS 3D preview player.",
+        "description": "The viewer's GLB (full resolution, every clip) with web manifest and HTML/JS 3D preview player.",
         "doc_file": "Web_Usage_Guide.md",
     },
 }
@@ -232,6 +240,16 @@ def compute_bone_mappings(bones):
     return out
 
 
+def copy_textures(dest_dir, assets):
+    """Copies the textures beside the FBX, where an importer looks for a texture by its file name."""
+    files = []
+    for t in assets["textures"]:
+        dst = os.path.join(dest_dir, os.path.basename(t))
+        shutil.copy2(t, dst)
+        files.append(os.path.basename(dst))
+    return files
+
+
 def build_unreal_package(model_name, dest_dir, assets):
     """Assembles Unreal Engine 4 / 5 optimized export folder."""
     os.makedirs(dest_dir, exist_ok=True)
@@ -249,14 +267,8 @@ def build_unreal_package(model_name, dest_dir, assets):
         shutil.copy2(assets["clips_fbx"], dst)
         files.append(os.path.basename(dst))
 
-    # 3. Textures
-    if assets["textures"]:
-        tex_dir = os.path.join(dest_dir, "Textures")
-        os.makedirs(tex_dir, exist_ok=True)
-        for t in assets["textures"]:
-            dst = os.path.join(tex_dir, os.path.basename(t))
-            shutil.copy2(t, dst)
-            files.append(f"Textures/{os.path.basename(dst)}")
+    # 3. Textures, beside the FBX
+    files += copy_textures(dest_dir, assets)
 
     # 4. Bone Mapping JSON
     mappings = compute_bone_mappings(assets["bones"])
@@ -270,10 +282,11 @@ def build_unreal_package(model_name, dest_dir, assets):
         }, fh, indent=2)
     files.append(os.path.basename(map_path))
 
-    # 5. Unreal Import Preset & Metadata
-    preset_path = os.path.join(dest_dir, "unreal_import_preset.json")
+    # 5. Unreal import settings: notes for the FBX Import Options dialog, not a file Unreal loads
+    preset_path = os.path.join(dest_dir, "unreal_import_notes.json")
     with open(preset_path, "w", encoding="utf-8") as fh:
         json.dump({
+            "note": "Reference values for Unreal's FBX Import Options dialog. Unreal does not load this file.",
             "MeshType": "SkeletalMesh",
             "ImportMesh": True,
             "ImportTextures": True,
@@ -310,7 +323,10 @@ Generated by **Autorig Workbench**.
    - **Import Uniform Scale**: `1.0` (or `100.0` if using centimeter conversion).
    - **Normal Import Method**: `Import Normals and Tangents`.
    - **Create Physics Asset**: `Checked`.
+   - **Convert Scene**: `Checked`. The FBX is written Y-up; this turns it Z-up.
 4. Click **Import All**.
+
+The values are also in `unreal_import_notes.json`, for reference; Unreal does not load that file.
 
 ---
 
@@ -352,14 +368,8 @@ def build_unity_package(model_name, dest_dir, assets):
         shutil.copy2(assets["clips_fbx"], dst)
         files.append(os.path.basename(dst))
 
-    # 3. Textures
-    if assets["textures"]:
-        tex_dir = os.path.join(dest_dir, "Textures")
-        os.makedirs(tex_dir, exist_ok=True)
-        for t in assets["textures"]:
-            dst = os.path.join(tex_dir, os.path.basename(t))
-            shutil.copy2(t, dst)
-            files.append(f"Textures/{os.path.basename(dst)}")
+    # 3. Textures, beside the FBX
+    files += copy_textures(dest_dir, assets)
 
     # 4. Unity Humanoid Avatar Descriptor
     mappings = compute_bone_mappings(assets["bones"])
@@ -368,6 +378,8 @@ def build_unity_package(model_name, dest_dir, assets):
     is_humanoid = len(human_slots) >= 6
 
     avatar_desc = {
+        "note": "Reference for Unity's Configure Avatar screen: which model bone fills each Humanoid slot. "
+                "Unity does not load this file; it builds the Avatar from the FBX.",
         "avatar": {
             "name": f"{model_name}Avatar",
             "type": "Humanoid" if is_humanoid else "Generic",
@@ -384,7 +396,7 @@ def build_unity_package(model_name, dest_dir, assets):
             }
         }
     }
-    avatar_path = os.path.join(dest_dir, "unity_avatar_definition.json")
+    avatar_path = os.path.join(dest_dir, "unity_avatar_notes.json")
     with open(avatar_path, "w", encoding="utf-8") as fh:
         json.dump(avatar_desc, fh, indent=2)
     files.append(os.path.basename(avatar_path))
@@ -410,7 +422,7 @@ Generated by **Autorig Workbench**.
    - **Avatar Definition**: `Create From This Model`
    - **Root Node**: `None` (or select `root` / `Hips`)
 2. Click **Apply**.
-3. (Optional) Click **Configure...** to verify bones match `unity_avatar_definition.json`.
+3. (Optional) Click **Configure...** and check the slots against `unity_avatar_notes.json` (a reference; Unity does not load it).
 
 ---
 
@@ -420,7 +432,7 @@ Generated by **Autorig Workbench**.
   - **Normals**: `Import`
   - **Tangents**: `Calculate Mikktspace`
 - In the **Materials** tab:
-  - Click **Extract Textures...** and **Extract Materials...** if textures are packed.
+  - The textures sit beside the FBX, where the importer finds them by name. Use **Extract Materials...** to edit them.
 
 ---
 
@@ -438,36 +450,31 @@ def build_godot_package(model_name, dest_dir, assets):
     os.makedirs(dest_dir, exist_ok=True)
     files = []
 
-    # 1. Model GLB
-    glb_src = assets["glb"] or assets["fbx"]
-    glb_name = f"{model_name}.glb"
-    if glb_src and glb_src.lower().endswith(".glb"):
-        dst = os.path.join(dest_dir, glb_name)
-        shutil.copy2(glb_src, dst)
-        files.append(glb_name)
-    elif assets["fbx"]:
-        # Fallback to FBX if GLB preview not generated yet
-        dst = os.path.join(dest_dir, f"{model_name}.fbx")
-        shutil.copy2(assets["fbx"], dst)
-        files.append(f"{model_name}.fbx")
+    # 1. The budgeted model. preview.glb is the viewer's full-resolution copy, so the engine gets the FBX the trim
+    # step cut to budget (Godot 4.3+ imports FBX itself); the clips FBX carries the budgeted mesh with every clip.
+    # Only when neither FBX exists does the viewer's GLB stand in.
+    model_files = []
+    for src, name in ((assets["fbx"], f"{model_name}.fbx"), (assets["clips_fbx"], f"{model_name}_Clips.fbx")):
+        if src:
+            shutil.copy2(src, os.path.join(dest_dir, name))
+            model_files.append(name)
+    if not model_files and assets["glb"] and assets["glb"].lower().endswith(".glb"):
+        shutil.copy2(assets["glb"], os.path.join(dest_dir, f"{model_name}.glb"))
+        model_files.append(f"{model_name}.glb")
+    files += model_files
+    scene_file = model_files[-1] if model_files else f"{model_name}.fbx"   # the clips file when there is one
 
-    # 2. Textures (if external)
-    if assets["textures"]:
-        tex_dir = os.path.join(dest_dir, "textures")
-        os.makedirs(tex_dir, exist_ok=True)
-        for t in assets["textures"]:
-            dst = os.path.join(tex_dir, os.path.basename(t))
-            shutil.copy2(t, dst)
-            files.append(f"textures/{os.path.basename(dst)}")
+    # 2. Textures, beside the FBX
+    files += copy_textures(dest_dir, assets)
 
-    # 3. Godot 4 .import Preset
-    import_cfg = os.path.join(dest_dir, f"{model_name}.glb.import")
+    # 3. Godot 4 .import settings for the scene file. No uid: Godot assigns its own on first import, and a made-up
+    # one is not a valid uid.
+    import_cfg = os.path.join(dest_dir, f"{scene_file}.import")
     with open(import_cfg, "w", encoding="utf-8") as fh:
         fh.write(f"""[remap]
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://autorig_{model_name.lower()}"
 
 [params]
 nodes/root_type="CharacterBody3D"
@@ -484,7 +491,7 @@ _subresources={{
 }}
 }}
 """)
-    files.append(f"{model_name}.glb.import")
+    files.append(f"{scene_file}.import")
 
     # 4. Sample Godot 4 Character Controller GDScript
     script_path = os.path.join(dest_dir, "character_controller.gd")
@@ -544,12 +551,12 @@ Generated by **Autorig Workbench**.
 
 ### Step 1: Add to Godot Project
 1. Copy this entire folder into your Godot 4 project folder (e.g. `res://characters/{model_name}/`).
-2. Switch to the Godot Editor window to let it auto-import `{model_name}.glb`.
+2. Switch to the Godot Editor window to let it auto-import `{scene_file}` (FBX needs Godot 4.3 or later).
 
 ---
 
 ### Step 2: Instantiate Scene
-1. Right-click `{model_name}.glb` in the FileSystem dock -> **New Inherited Scene**.
+1. Right-click `{scene_file}` in the FileSystem dock -> **New Inherited Scene**.
 2. Save the scene as `{model_name}.tscn`.
 3. Check the `AnimationPlayer` node to view and trigger baked clips (e.g. `idle`, `walk`, `attack`).
 
@@ -569,7 +576,7 @@ def build_web_package(model_name, dest_dir, assets):
     os.makedirs(dest_dir, exist_ok=True)
     files = []
 
-    # 1. Model asset (GLB if available, fallback to FBX)
+    # 1. Model asset: the viewer's GLB (full resolution; no budgeted GLB is made yet), else the budgeted FBX
     glb_src = assets["glb"]
     model_file = f"{model_name}.glb"
     if glb_src and glb_src.lower().endswith(".glb"):
@@ -581,6 +588,12 @@ def build_web_package(model_name, dest_dir, assets):
         dst = os.path.join(dest_dir, model_file)
         shutil.copy2(assets["fbx"], dst)
         files.append(model_file)
+
+    full_res = model_file.endswith(".glb")
+    res_label = "full resolution" if full_res else "budgeted"
+    model_desc = ("the viewer's GLB: full-resolution mesh with textures, skeleton and every clip. "
+                  "It is not cut to the engine budget." if full_res else
+                  "the budgeted FBX (no GLB has been made; run the preview step for one).")
 
     # 2. Web Manifest
     clips_list = []
@@ -600,7 +613,7 @@ def build_web_package(model_name, dest_dir, assets):
         "format": "glTF 2.0 Binary (GLB)" if model_file.endswith(".glb") else "Autodesk FBX",
         "height_metres": card.get("metres", 1.8),
         "role": card.get("role", "character"),
-        "budget": assets["spec"].get("budget", 1500),
+        "resolution": "full (the viewer's copy, not cut to budget)" if full_res else "budgeted",
         "clips": clips_list,
     }
     man_path = os.path.join(dest_dir, "web_manifest.json")
@@ -633,7 +646,7 @@ def build_web_package(model_name, dest_dir, assets):
 <body>
 <header>
   <h1>{model_name}</h1>
-  <span class="meta">{card.get('metres', 1.8)} m · {assets['spec'].get('budget', 1500)} tris · WebGL / WebGPU</span>
+  <span class="meta">{card.get('metres', 1.8)} m · {res_label} · WebGL / WebGPU</span>
 </header>
 <main>
   <model-viewer id="mv" src="{model_file}" camera-controls auto-rotate shadow-intensity="1" exposure="1" autoplay ar>
@@ -674,7 +687,7 @@ Generated by **Autorig Workbench**.
 ---
 
 ### Included Files:
-- `{model_file}`: Self-contained 3D model asset with embedded textures, skeleton, and baked clips.
+- `{model_file}`: {model_desc}
 - `web_manifest.json`: Metadata, clip durations, loop states, and bounding dimensions.
 - `index.html`: Standalone interactive HTML previewer using `<model-viewer>`.
 

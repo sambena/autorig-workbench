@@ -246,7 +246,33 @@ one pull request each, code first; models are run through the tool only in R6.
   Evidence to start from: an earlier review (closed PR #43, branch `fix/review-cleanup`) re-rigged real models with the new passes (barrier,
   sibling isolation, centreline/pelvic, hinge, twist, healer) on for every rig, and one went from 39/9 to 215/214
   tears; with them off, both real models audited as on 21 September.
-- **R4: rigging and animation**: gait continuity, root motion, gallop, morphs per clip, retarget quality, and export.
+- **R4: rigging and animation** (done, untested in Blender):
+  - Walk: the swing starts where the stance ended (it began from the heel-strike pose, a 44-degree thigh pop at every
+    toe-off), and the pelvis is lowest at heel strike. The walk-to-idle knee and elbow pops are gone. The roll stays in
+    place and root motion carries the travel (it used to move the body twice).
+  - Root motion: a loop's last key is the whole cycle's travel, not phase 0, and a rig with no root bone (Mixamo)
+    moves its hips. The humanoid walk and run travel stride / duty a cycle, the planted foot's speed (the walk moved
+    2 strides a cycle at a duty of 0.62, so its feet slid), and clips.json's walk speed says the same.
+  - Creature clips: the gallop knows its front feet (every foot was a hind foot: a bound). Quadruped walk frames and
+    speed are corrected, the tail wave's phase is radians throughout, and each impulse starts at its own onset.
+  - Fingers curl about the right axis and are found on prefixed (mixamorig:) names.
+  - Morphs: each clip gets its own shape-key action and NLA track in the clips .blend. The FBX exporter cannot solo a
+    mesh's shape-key tracks per take, so the clips FBX is written with them muted and zeroed: a neutral face in every
+    take, where it used to get the last clip's. Decimation leaves a mesh with shape keys at full resolution and says
+    so in its result, instead of failing.
+  - Constraints are keyed on at the start of every clip, so a clip after one that turned them off is not left
+    without its IK.
+  - Retarget: rotations transfer in world space, with rest alignment on limbs (T-pose to A-pose; the root and torso
+    keep their own rest, whose direction is a rig convention). IK is muted while baking and keyed back afterwards.
+    Bones evaluate ancestors first, with no one-frame lag. --fps resamples, the result reports the source frames and
+    the clip's own, and --all-actions reports each failed action and carries on.
+  - Export: engines get the budgeted FBX with textures beside it, where importers look for them by name. Godot takes
+    the FBX (4.3+) with no made-up uid. The web package says its GLB is the viewer's full-resolution copy. The Unreal
+    and Unity JSON files are labelled as notes. The Unreal FBX is not re-exported Z-up: it is written Y-up, and Unreal's
+    Convert Scene turns it on import, as docs/SKELETONS.md says.
+  - Not done: the creature walk and trot do not call gait's quadruped walk (the humanoid clips and the creature
+    gallop do), there is no budgeted GLB for the web package, and the viewer's preview.glb may list the per-clip face
+    actions as clips of their own (<clip>_morph): to check in R6.
 - **R5: speed**: one weight matrix per rig, vectorised passes, fewer Blender launches, and a lighter GUI.
 - **R6: measured on models**: timing and audits before and after, and each weight pass tried on and off.
 

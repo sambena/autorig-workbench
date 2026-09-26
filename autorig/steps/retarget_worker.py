@@ -12,6 +12,7 @@ from mathutils import Matrix, Vector, Quaternion
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.dirname(HERE)
 sys.path[:0] = [os.path.join(PKG, "core"), HERE]
+from placed_rules import bone_side
 
 
 def action_fcurves(action):
@@ -31,8 +32,10 @@ def action_fcurves(action):
 
 
 def topological_sort_bones(arm, bone_names):
-    """Sorts bone names so parents appear before children."""
+    """Sorts bone names so every listed ancestor comes before its descendants, through unlisted bones between them
+    (a source with no Spine1 leaves the chest's mapped grandparent behind an unmapped parent)."""
     dbones = arm.data.bones
+    listed = set(bone_names)
     order = []
     visited = set()
 
@@ -40,8 +43,11 @@ def topological_sort_bones(arm, bone_names):
         if bname in visited:
             return
         b = dbones.get(bname)
-        if b and b.parent and b.parent.name in bone_names:
-            visit(b.parent.name)
+        up = b.parent if b else None
+        while up is not None and up.name not in listed:
+            up = up.parent
+        if up is not None:
+            visit(up.name)
         visited.add(bname)
         order.append(bname)
 
@@ -103,8 +109,7 @@ def main(argv=None):
         raise ValueError("Failed to locate imported source armature")
 
     # Determine frame range and FPS
-    fps = int(fps_override or config.get("fps") or bpy.context.scene.render.fps or 30)
-    bpy.context.scene.render.fps = fps
+    fps = float(config.get("source_fps") or bpy.context.scene.render.fps or 30)   # the source's; --fps resamples below
     frame_start = 1
     frame_end = 30
 
@@ -142,7 +147,7 @@ def main(argv=None):
         frame_end = min(frame_end, int(frame_range_override[1]))
 
     total_frames = max(1, frame_end - frame_start + 1)
-    print(f"RETARGET_WORKER: Frame range {frame_start}..{frame_end} ({total_frames} frames @ {fps} fps)")
+    print(f"RETARGET_WORKER: Source frames {frame_start}..{frame_end} ({total_frames} frames @ {fps:g} fps)")
 
     # Height proportion scaling
     src_heads = [src_arm.matrix_world @ b.head_local for b in src_arm.data.bones]
@@ -185,6 +190,54 @@ def main(argv=None):
 
     tgt_w_inv = tgt_arm.matrix_world.to_3x3().inverted()
 
+    # Rest alignment, per mapped bone: the world rotation that turns the source bone's rest direction onto the
+    # target's (swing only). A T-posed source driving an A-posed target differs by ~45 degrees at the shoulders; the
+    # source's motion is applied on top of this, so the target bone points where the source bone points.
+    # Limbs only (bones with a side: arms, legs, fingers, wings), within 90 degrees. The root and torso are left as
+    # they were: their rest directions differ by rig convention, not by pose (Mixamo's Hips point up, this tool's
+    # root lies along -Y), and turning one of those would tip the whole body. Past 90 degrees, and at 180 where the
+    # turn's axis is arbitrary, it is a different convention too, not a T-pose against an A-pose.
+    align_inv = {}
+    for sb, tb in sorted_pairs:
+        s_dir = (src_rest_r[sb] @ Vector((0, 1, 0))).normalized()
+        t_dir = (tgt_rest_r[tb] @ Vector((0, 1, 0))).normalized()
+        limb = bone_side(tb) != "" and not (root_pair and tb == root_pair[1])
+        align_inv[tb] = (s_dir.rotation_difference(t_dir).inverted().to_matrix()
+                         if solve_offsets and limb and s_dir.dot(t_dir) > 0.0 else Matrix.Identity(3))
+
+    # IK and copy-rotation constraints on the target would drive its legs from their (still) controls over the keys
+    # this bakes: silenced while baking, and keyed off (influence 0) in the clip itself, so it plays as baked;
+    # make_clips keys them back on in its own clips
+    silenced = []
+    for pb in tgt_arm.pose.bones:
+        for c in pb.constraints:
+            if c.type in ("IK", "COPY_ROTATION", "DAMPED_TRACK", "LOCKED_TRACK", "TRACK_TO"):
+                silenced.append((pb, c, c.mute))
+                c.mute = True
+
+    tgt_rest3 = {b.name: b.matrix_local.to_3x3() for b in tgt_arm.data.bones}
+
+    def orient(bname, cur):
+        """Armature-space rotation of a target bone this frame: baked if mapped, else its rest relation to its
+        parent's (unmapped bones are not keyed): never the pose's own matrix, which is still last frame's."""
+        if bname in cur:
+            return cur[bname]
+        b = tgt_arm.data.bones[bname]
+        r = tgt_rest3[bname] if b.parent is None else \
+            orient(b.parent.name, cur) @ (tgt_rest3[b.parent.name].inverted() @ tgt_rest3[bname])
+        cur[bname] = r
+        return r
+
+    # Frames to bake: every source frame, or resampled to --fps (the output frame k shows the source at time k/fps)
+    src_fps = float(config.get("source_fps") or bpy.context.scene.render.fps or 30)
+    out_fps = float(fps_override or src_fps)
+    span_s = (frame_end - frame_start) / src_fps
+    n_out = max(1, int(round(span_s * out_fps)) + 1)
+    bpy.context.scene.render.fps = max(1, int(round(out_fps)))
+    bpy.context.scene.render.fps_base = bpy.context.scene.render.fps / out_fps
+    fps = out_fps
+    total_frames = n_out
+
     # Create target action
     if not tgt_arm.animation_data:
         tgt_arm.animation_data_create()
@@ -202,10 +255,11 @@ def main(argv=None):
     scene = bpy.context.scene
 
     cur_arm_r = {}
-    # Process all frames
-    for f in range(frame_start, frame_end + 1):
-        scene.frame_set(f)
-        bpy.context.view_layer.update()
+    # Process all frames (only the source moves: the target's pose is computed here, not read back)
+    for k in range(n_out):
+        src_t = frame_start + k * src_fps / out_fps
+        scene.frame_set(int(math.floor(src_t)), subframe=src_t - math.floor(src_t))
+        f = frame_start + k                      # keyed here, shifted to start at 0 afterwards
         cur_arm_r.clear()
 
         for sb, tb in sorted_pairs:
@@ -213,35 +267,23 @@ def main(argv=None):
             tgt_pb = tgt_arm.pose.bones[tb]
             db = tgt_arm.data.bones[tb]
 
-            # Source world rotation
+            # Source world rotation, and its change from the source's rest (in world space: roll-independent)
             r_src_w = src_arm.matrix_world.to_3x3() @ src_pb.matrix.to_3x3()
-
-            if solve_offsets:
-                # Local delta rotation relative to source rest orientation
-                delta_r_local = src_rest_r[sb].inverted() @ r_src_w
-                # Desired target world rotation: apply same anatomical delta to target rest orientation
-                r_tgt_w = tgt_rest_r[tb] @ delta_r_local
-            else:
-                # Direct delta rotation without rest offset compensation
-                delta_r = r_src_w @ src_rest_r[sb].inverted()
-                r_tgt_w = delta_r @ tgt_rest_r[tb]
+            delta_r = r_src_w @ src_rest_r[sb].inverted()
+            # the same change, applied to the target's rest after aligning the rests (align_inv)
+            r_tgt_w = delta_r @ align_inv[tb] @ tgt_rest_r[tb]
 
             # Convert to target armature local coordinates
             r_tgt_local = tgt_w_inv @ r_tgt_w
             cur_arm_r[tb] = r_tgt_local
 
-            # Decompose into parent-relative basis matrix
+            # Decompose into parent-relative basis matrix, against the parent as computed this frame
             if tgt_pb.parent is None:
                 mat_basis = db.matrix_local.to_3x3().inverted() @ r_tgt_local
             else:
                 p_name = tgt_pb.parent.name
-                p_rest_r = tgt_arm.data.bones[p_name].matrix_local.to_3x3()
-                c_rest_r = db.matrix_local.to_3x3()
-                rel_rest_r = p_rest_r.inverted() @ c_rest_r
-                p_orient = cur_arm_r.get(p_name)
-                if p_orient is None:
-                    p_orient = tgt_arm.pose.bones[p_name].matrix.to_3x3()
-                p_frame = p_orient @ rel_rest_r
+                rel_rest_r = tgt_rest3[p_name].inverted() @ tgt_rest3[tb]
+                p_frame = orient(p_name, cur_arm_r) @ rel_rest_r
                 mat_basis = p_frame.inverted() @ r_tgt_local
 
             tgt_pb.rotation_mode = "QUATERNION"
@@ -259,7 +301,15 @@ def main(argv=None):
                 tgt_pb.location = db.matrix_local.to_3x3().inverted() @ delta_p_local
                 tgt_pb.keyframe_insert("location", frame=f)
 
-        bpy.context.view_layer.update()
+    # the constraints come back for every other clip; this one keys them off at its first and last frame
+    for pb, c, was in silenced:
+        c.mute = was
+        c.influence = 0.0
+        for fr in (frame_start, frame_start + n_out - 1):
+            c.keyframe_insert("influence", frame=fr)
+        c.influence = 1.0
+    src_range = [frame_start, frame_end]     # reported beside the output's own 0..n_out-1
+    frame_end = frame_start + n_out - 1
 
     # Clean up everything the import brought in: the rig's file keeps only its own objects and the new clip
     for o in [o for o in bpy.data.objects if o not in before_objs]:
@@ -302,8 +352,9 @@ def main(argv=None):
         "status": "OK",
         "clip_name": clip_name,
         "frames": total_frames,
-        "frame_start": frame_start,
-        "frame_end": frame_end,
+        "source_frames": src_range,
+        "frame_start": 0,                    # the saved clip's range: it starts at 0 like every authored clip
+        "frame_end": n_out - 1,
         "fps": fps,
         "duration": round(total_frames / (fps or 30), 2),
         "scale_factor": round(scale_factor, 3),
