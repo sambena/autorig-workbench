@@ -1088,7 +1088,7 @@ def islands_of(mesh):
 def skin(mesh, arm, chains, spec, size, log):
     height = size.z
     verts = mesh.data.vertices
-    jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])} if spec["kind"] == "tripo" else {}
+    jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])} if spec.get("kind") == "tripo" else {}
     if spec.get("rip_welds"):
         placed_rules.rip_welds_pass(mesh, arm, chains, spec, size, log)
         verts = mesh.data.vertices
@@ -1193,11 +1193,13 @@ def skin(mesh, arm, chains, spec, size, log):
     gname ={g.index: g.name for g in mesh.vertex_groups}
     to_body = set()
     body = jmap.get(spec.get("shell"), spec.get("shell")) if spec.get("shell") else None
+    if body and body not in arm.data.bones:
+        body = chains[0]["bones"][0]
     if body:
-        # A rigid body on limbs: whatever the limbs' bones don't mostly own belongs to the body alone.
-        limb_bones = {b for c in chains if c["role"] != "spine" for b in c["bones"]}
+        # A rigid body on limbs: whatever other articulating bones don't mostly own belongs to the body alone.
+        other_bones = {b for c in chains for b in c["bones"] if b != body}
         for v in verts:
-            if sum(g.weight for g in v.groups if gname.get(g.group) in limb_bones) < 0.5: to_body.add(v.index)
+            if sum(g.weight for g in v.groups if gname.get(g.group) in other_bones) < 0.5: to_body.add(v.index)
     body = body or chains[0]["bones"][0]
     leg_chains = [c for c in chains if c["role"] == "leg"]
     # A loose piece near a leg that the leg's bones took, but which isn't joined to the leg, goes back to the body.
