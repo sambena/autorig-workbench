@@ -298,6 +298,14 @@ def find_blend_file(model_identifier):
             if os.path.isfile(bp):
                 return bp, m
 
+    # Check relative to cwd
+    cwd = os.getcwd()
+    for cand in (os.path.join(cwd, name, "rigged", f"{name}.blend"),
+                 os.path.join(cwd, "Heartroot", name, "rigged", f"{name}.blend"),
+                 os.path.join(cwd, "Kaiju", name, "rigged", f"{name}.blend")):
+        if os.path.isfile(cand):
+            return os.path.abspath(cand), name
+
     raise FileNotFoundError(f"Rigged blend file not found for model '{model_identifier}': {blend_path}")
 
 

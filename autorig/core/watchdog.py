@@ -28,8 +28,8 @@ DEFAULT_TIMEOUTS = {
     "publish": 60.0,
     "doctor": 60.0,
     "mesh_doctor": 60.0,
-    "retarget": 120.0,
-    "retarget_worker": 120.0,
+    "retarget": 300.0,
+    "retarget_worker": 300.0,
     "auto_tune": 300.0,
     "default": 180.0,
 }
@@ -280,8 +280,29 @@ def run_with_watchdog(argv, timeout=None, memory_limit_mb=None, poll_interval=0.
     timed_out = False
     memory_exceeded = False
     peak_rss = 0.0
-    stdout_data = ""
-    stderr_data = ""
+    stdout_chunks = []
+    stderr_chunks = []
+
+    def _reader(stream, chunks):
+        try:
+            for chunk in iter(lambda: stream.read(4096), ""):
+                chunks.append(chunk)
+        except Exception:
+            pass
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    t_out = None
+    t_err = None
+    if proc.stdout is not None:
+        t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_chunks), daemon=True)
+        t_out.start()
+    if proc.stderr is not None:
+        t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_chunks), daemon=True)
+        t_err.start()
 
     while True:
         rc = proc.poll()
@@ -312,11 +333,17 @@ def run_with_watchdog(argv, timeout=None, memory_limit_mb=None, poll_interval=0.
     duration = round(time.time() - t0, 2)
 
     try:
-        out, err = proc.communicate(timeout=2.0)
-        stdout_data = out or ""
-        stderr_data = err or ""
+        proc.wait(timeout=2.0)
     except Exception:
         kill_process_tree(proc)
+
+    if t_out is not None:
+        t_out.join(timeout=2.0)
+    if t_err is not None:
+        t_err.join(timeout=2.0)
+
+    stdout_data = "".join(stdout_chunks)
+    stderr_data = "".join(stderr_chunks)
 
     final_rc = proc.returncode
 

@@ -4,6 +4,7 @@
 import json
 import math
 import os
+import shutil
 import sys
 import bpy
 from mathutils import Matrix, Vector, Quaternion
@@ -249,6 +250,13 @@ def main(argv=None):
         glb_file = os.path.splitext(target_blend)[0] + f"_{clip_name}.glb"
         print(f"RETARGET_WORKER: Exporting GLB preview '{glb_file}'")
         bpy.ops.export_scene.gltf(filepath=glb_file, export_format="GLB", export_animations=True)
+        if preview:
+            prev_glb = os.path.join(os.path.dirname(target_blend), "preview.glb")
+            try:
+                shutil.copyfile(glb_file, prev_glb)
+                print(f"RETARGET_WORKER: Updated '{prev_glb}' for viewer preview.")
+            except Exception as e:
+                print(f"RETARGET_WORKER: Note: could not update preview.glb: {e}")
 
     result = {
         "status": "OK",

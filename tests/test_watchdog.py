@@ -75,6 +75,14 @@ class WatchdogTest(unittest.TestCase):
         self.assertLess(r.duration, 2.0)
         self.assertIn("TIMEOUT", r.stderr)
 
+    def test_run_with_watchdog_large_output_no_deadlock(self):
+        # Outputs 1 MB of text (substantially exceeding standard 64KB OS pipe buffer)
+        cmd = [sys.executable, "-c", "import sys; sys.stdout.write('x' * (1024 * 1024)); sys.stdout.flush()"]
+        r = watchdog.run_with_watchdog(cmd, timeout=10.0)
+        self.assertEqual(r.returncode, 0)
+        self.assertFalse(r.timed_out)
+        self.assertEqual(len(r.stdout), 1024 * 1024)
+
     def test_kill_process_tree(self):
         # Spawn a sleeping process and verify kill
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
