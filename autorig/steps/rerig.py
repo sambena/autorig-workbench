@@ -502,9 +502,10 @@ def name_chains(chains, size, girdles=(), neck=None):
         n = len(c["points"]) - 1
         if c.get("bones"): continue
         if c["role"] == "spine":
-            if n == 1: c["bones"] = ["body" if c.get("single") else "hips"]
-            elif n == 2: c["bones"] = ["hips", "head"]
-            elif n == 3: c["bones"] = ["hips", "spine_1", "head"]
+            root_name = "body" if c.get("single") else "hips"
+            if n == 1: c["bones"] = [root_name]
+            elif n == 2: c["bones"] = [root_name, "head"]
+            elif n == 3: c["bones"] = [root_name, "spine_1", "head"]
             elif neck and neck > 1 and n - 1 - neck >= 1:
                 # spec neck=k: the last k links before the head are the neck (a quadruped's long neck: SKELETONS.md
                 # neck_1..k), so the card names them and a game that lowers the neck lowers all of it
@@ -694,7 +695,8 @@ def head_line(chains, mesh, spec):
     P = lambda u: Vector(tuple(lo[k] + (hi[k] - lo[k]) * u[k] for k in range(3)))
     start, tip = P(hl[0]), P(hl[1])
     sp = chains[0]
-    k = min(range(1, len(sp["points"]) - 1), key=lambda i: (sp["points"][i] - start).length)
+    candidates = range(1, len(sp["points"]) - 1)
+    k = min(candidates, key=lambda i: (sp["points"][i] - start).length) if candidates else 1
     sp["points"] = sp["points"][:k] + [start, tip]
     sp["joints"] = sp["joints"][:k + 1]
     for c in chains[1:]:
