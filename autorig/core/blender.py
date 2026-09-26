@@ -3,7 +3,7 @@
 #
 # Order: the AUTORIG_BLENDER or BLENDER environment variable, `blender` on PATH, then the usual install folders
 # (newest version first). AUTORIG_NO_BLENDER=1 hides it (the test suite then skips its Blender tests).
-import glob, os, re, shutil, subprocess, sys
+import glob, json, os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STEPS = os.path.join(os.path.dirname(HERE), "steps")
@@ -127,6 +127,31 @@ def command(script, *args):
     if os.path.isabs(script) or os.sep in script or "/" in script:
         return head + [os.path.join(STEPS, "run_builder.py"), "--", script] + list(args)
     return head + [os.path.join(STEPS, script), "--"] + list(args)
+
+
+_TAGGED = re.compile(r"^([A-Z][A-Z0-9_]+) (\{.*\})\s*$")
+_DONE_OF = re.compile(r"^[A-Z][A-Z0-9_]*_DONE (\d+) of (\d+)")
+
+
+def step_error(output):
+    """Why a step that exited 0 still failed, or None. A step catches a model's exception, logs it and carries on
+    with the next model, so the exit code stays 0: its tagged result line (RERIG {...}) holds an "error", and its
+    summary says RERIG_DONE 0 of 1. The batch runner and pipeline.py read only the exit code, and counted a crashed
+    rig as a pass (then trimmed, audited and animated the stale rig left from before)."""
+    for line in (output or "").splitlines():
+        m = _TAGGED.match(line)
+        if m:
+            try:
+                d = json.loads(m.group(2))
+            except ValueError:
+                continue
+            if isinstance(d, dict) and d.get("error"):
+                return "%s %s: %s" % (m.group(1), d.get("model", ""), d["error"])
+            continue
+        m = _DONE_OF.match(line)
+        if m and int(m.group(1)) < int(m.group(2)):
+            return line.strip()
+    return None
 
 
 def run(script, *args, timeout=None, memory_limit_mb=None, **kw):

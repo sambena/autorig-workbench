@@ -48,10 +48,14 @@ In the model's `clips/` folder:
   "units": "...", "metres": 1.6, "unitsPerMetre": 0.62,
   "fps": 24, "archetype": "walker",
   "skeleton": { ... },                                   // the card's rig.skeleton
-  "clips": [ {"name": "walk", "take": "walk", "frames": 16, "seconds": 0.6667, "loops": true, "speed": 1.9,
-              "events": [{"name": "footfall", "time": 0.0, "detail": "leg1.L,..."}]}, ... ],
-  "windUpEnd": 0.5833,                                   // a fraction of "attack": the wind-up ends here
-  "walkSpeed": 1.2,                                      // twice the stride per walk cycle, times metres (an older unit)
+  "contract": "autorig-clips-contract/1", "speedUnits": "metres per second at the manifest's 'metres' size; ...",
+  "clips": [ {"name": "walk", "take": "walk", "frames": 16, "seconds": 0.6667, "loops": true,
+              "slot": "locomotion", "rateFollowsSpeed": true, "speed": 1.9,
+              "events": [{"name": "footfall", "time": 0.0, "detail": "leg1.L,..."}]},
+             {"name": "attack", "take": "attack", "frames": 24, "seconds": 1.0, "loops": false,
+              "slot": "attack", "rateFollowsSpeed": false, "windUpEnd": 0.5833, "windUpSeconds": 0.5833, "events": [...]}, ... ],
+  "windUpEnd": 0.5833,                                   // a fraction of "attack" (each attack clip has its own)
+  "walkSpeed": 1.9,                                      // the walk's speed in metres a second, as its clip's "speed"
   "decimation": {"triangles_before": 19000, "triangles": 2000, "max_influences": 4},
   "licence": "..."                                       // the collection's licence line
 }
@@ -83,7 +87,9 @@ and `<rig folder>/<model>.blend` gains every clip as an action.
   "bones": {"root": "root", "spine": [...], "neck": [...], "head": "head", "jaw": "jaw", "tail": [...],
             "leg_left": [...], "arm_left": [...], "wing_left": [...], "wing_fingers_left": [[...], ...], ...},
   "motion": "authored clips (...)", "flies": true, "frameRate": 30,
-  "clips": [ {"name": "fly", "take": "fly", "length": 1.0, "frames": 30, "loop": true, "speed": 6.2, "events": [...]}, ... ],
+  "contract": "autorig-clips-contract/1", "speedUnits": "...",
+  "clips": [ {"name": "fly", "take": "fly", "length": 1.0, "frames": 30, "loop": true,
+              "slot": "locomotion", "rateFollowsSpeed": false, "speed": 6.2, "events": [...]}, ... ],
   "windUpEnd": 0.5556, "notes": {...},
   "textures": [{"file": "Wyvern.jpg", "role": "baseColor", "material": "..."}],
   "decimation": {...}, "provenance": {"pack": "...", "rig": "...", "card": {...}},
@@ -93,8 +99,25 @@ and `<rig folder>/<model>.blend` gains every clip as an action.
 
 With `--split-clips <dir>`, make_clips also writes a split pair for engines that bind takes to a separate mesh:
 `<dir>/<Display>.fbx` (armature and takes only, the rig's own units), `<dir>/<Display>_model.fbx` (the mesh on the
-same armature) and `<dir>/<Display>_clips.json` (`clips` with `seconds` and `loops`, `fps`, `walkSpeed` from the
-spec's `splitWalkSpeed`, `windUpEnd`).
+same armature) and `<dir>/<Display>_clips.json` (`contract`, `speedUnits`, `clips` with `seconds`, `loops` and the
+contract's fields, `fps`, `walkSpeed` from the spec's `splitWalkSpeed`, `windUpEnd`).
+
+## The engine contract: `autorig-clips-contract/1` (core/clip_contract.py)
+
+Every clips manifest above (creature, winged, split pair) says, for each clip, how an engine should play it, so a
+game needs no name map or timing guesses of its own:
+
+| Field | Meaning |
+|---|---|
+| `slot` | where the clip goes: `idle`, `locomotion`, `attack` (any full attack, `attack_<kind>` included), `attack_windup` (the rear to full, held), `attack_strike` (the release on), `hit`, `death`, `arm`, or `extra` (jumps, dodge, block, roll, perch: authored for engines that want them, safe to ignore) |
+| `rateFollowsSpeed` | `true`: speed it up or slow it to match ground speed (a walk: rate = ground speed / `speed`, so planted feet stay planted). `false`: always play at its own rate, however fast the body goes (a flyer's `fly` and `idle`: a wingbeat slowed to travel speed looked half-hearted) |
+| `speed` | on locomotion clips, when known: metres a second at the manifest's `metres` size |
+| `windUpEnd`, `windUpSeconds` | on attack clips: where the wind-up ends in **this** clip, as a fraction of it and in seconds. Scrub `[0, windUpSeconds]` from the telegraph, then play the rest as the strike. `attack_windup` is all wind-up (1), `strike` none (0) |
+
+Manifest level: `contract` names this contract, and `speedUnits` says what speeds are in. **An engine that shows
+the model at a size other than `metres` scales every speed by its size / `metres`**: a model fitted to 2 m that the
+manifest measures at 1 m walks twice as fast in metres a second. The top-level `windUpEnd` (a fraction of the plain
+`attack`) and `walkSpeed` stay for engines that already read them.
 
 ## Work files (`AUTORIG_WORK`)
 
