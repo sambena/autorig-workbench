@@ -97,7 +97,8 @@
         "parent": [
           "spine",
           0
-        ]
+        ],
+        "ik": true
       },
       {
         "name": "leg.R",
@@ -117,7 +118,8 @@
         "parent": [
           "spine",
           0
-        ]
+        ],
+        "ik": true
       }
     ]
   },

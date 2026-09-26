@@ -382,7 +382,7 @@ class BatchWatchTest(unittest.TestCase):
     def test_clips_use_the_inferred_archetype(self):
         spec = {"schema": "autorig-spec/1", "rig": {"kind": "placed", "skeleton": "quadruped"}}
         res, calls = self._pipe("biped", spec, {}, ["clips"])
-        self.assertEqual(calls, ["make_clips.py"])
+        self.assertEqual(calls, ["make_clips.py", "clip_audit.py"])     # the clips, then graded
         self.assertIn("clips", res["steps"])
 
     def test_clippable_models_filtering(self):

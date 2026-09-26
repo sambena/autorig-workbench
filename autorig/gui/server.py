@@ -321,6 +321,24 @@ def audit_grade(path, overrides):
     return g
 
 
+def clip_grade(path):
+    """The clip audit's grade (steps/clip_audit.py), re-read only when its file changes."""
+    try:
+        st = os.stat(path)
+        key = ("clip", path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+    if _GRADES.get(path, (None,))[0] == key:
+        return _GRADES[path][1]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            g = json.load(fh).get("grade") or "?"
+    except Exception:
+        g = "?"
+    _GRADES[path] = (key, g)
+    return g
+
+
 def status(group, name):
     d = model_dir(group, name)
     out = {"name": name, "group": group}
@@ -350,6 +368,8 @@ def status(group, name):
     a = audit_file(name)
     if a:
         out["audit"] = audit_grade(a, rig.get("audit"))
+    ca = os.path.join(layout.WORK, "clip_audit", name + ".json")
+    out["clip_audit"] = clip_grade(ca) if os.path.exists(ca) else None
     out["preview"] = viewer_api.has_preview(layout, name)          # results viewer
     out["steps"] = availability(out, spec, d)
     return out
@@ -426,7 +446,10 @@ def commands(group, name, step, spec):
         if c_arch:
             args.extend(["--archetype", c_arch])
         return [("make clips (%s)" % (c_arch or "auto"),
-                 blender_cmd(*args), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
+                 blender_cmd(*args), lambda: shutil.rmtree(pv, ignore_errors=True), name),
+                # every clip played and graded (steps/clip_audit.py): foot slide, floor, pops, loop seams
+                ("clip audit", blender_cmd("clip_audit.py", "-model", name, "-out", os.path.join(work, "clip_audit")),
+                 None, name)]
 
     def rebake_clips():
         return clips() + preview()
@@ -702,6 +725,15 @@ def details(group, name):
         out["clips"] = {"file": url(man_path), "format": man.get("format"), "clips": [{"name": x["name"], "seconds": x.get("length"), "loops": x.get("loop")} for x in man.get("clips", [])]}
     else:
         out["clips"] = None
+    ca = os.path.join(work, "clip_audit", name + ".json")
+    out["clip_audit"] = None
+    if os.path.exists(ca):
+        try:
+            full = json.load(open(ca, encoding="utf-8"))
+            out["clip_audit"] = {"grade": full.get("grade"), "feet": full.get("feet"), "clips": full.get("clips", []),
+                                 "limits": full.get("limits")}
+        except Exception as e:
+            out["clip_audit"] = {"grade": "?", "error": str(e), "clips": []}
     cp = os.path.join(d, "model.json")
     out["card"] = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else None
     return out

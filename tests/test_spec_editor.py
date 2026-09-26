@@ -413,7 +413,7 @@ class EditorServer(unittest.TestCase):
         self.assertEqual(j["state"], "done", "\n".join(j["log"][-40:]))
         self.assertEqual([l for l in j["log"] if l.startswith("== ") and " done (" not in l],
                          ["== rig (tripo)", "== trim to budget", "== audit", "== make clips (walker)",
-                          "== preview for the viewer"])          # clips: the archetype inferred from the rig (R1)
+                          "== clip audit", "== preview for the viewer"])          # clips: the archetype inferred from the rig (R1)
         b = self.call("/api/spec?name=boned")
         self.assertIsNotNone(b["audit"])
         self.assertIsNone(b["before"])                    # the first rig had nothing to compare with

@@ -12,7 +12,8 @@ pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch run
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. Expect rough edges; issues and pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. A clip audit now plays every baked
+clip and grades foot slide, floor contact, pops and loop seams beside the skin audit. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start

@@ -2424,6 +2424,13 @@ def author(key, spec, argv):
     mesh = next(o for o in bpy.data.objects if o.type == 'MESH' and o.find_armature() == arm)
     bpy.context.scene.render.fps = CREATURE_FPS
     rig = CreatureRig(arm, card, spec.get("body"))
+    warnings = []
+    if not rig.feet and any(n.split(":")[-1].lower().startswith("leg") for n in rig.names) and             spec.get("archetype", "walker") in ("walker", "quadruped"):
+        # the walk moves feet by their IK controls: a rig built with no IK on its legs (a placed chain without
+        # "ik": true) gets the legless heave, the body rocking while the legs hang, and every foot slides
+        warnings.append("legs without IK controls: the walk cannot step them (give the leg chains \"ik\": true "
+                        "in rig.json and rig again)")
+        print("MAKE_CLIPS warning: %s: %s" % (key, warnings[-1]))
     arche = Authored(rig, spec)
     clips = arche.clips()
     made = build(rig, clips)          # IK stays live: feet are placed by their targets and the export bakes the result
@@ -2476,6 +2483,7 @@ def author(key, spec, argv):
         # walkSpeed: the walk's speed in metres a second, as the walk clip's "speed". It was the stride times metres
         # per cycle, right only when the rig's longest side was 1 unit.
         "walkSpeed": round(speed_m, 4) if speed_m else 1.0,
+        **({"warnings": warnings} if warnings else {}),
         "decimation": dec,
         "licence": LICENCE,
     }
