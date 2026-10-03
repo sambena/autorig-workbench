@@ -212,8 +212,13 @@ class BatchWatchTest(unittest.TestCase):
         with open(os.path.join(inc, "tex", "wood.png"), "wb") as fh:
             fh.write(b"\x89PNG....")
         self._age(inc)
-        res = watch_daemon.scan_incoming(inc, auto_rig=False, log=lambda *_: None)
-        self.assertEqual([r["model"] for r in res], ["crate"])     # the .mtl is not a model of its own
+        # the texture folder listed first, as Linux may list it (the files tie on age, so the listing decides the
+        # order): it is the model's, never a model of its own
+        listdir = os.listdir
+        with patch.object(watch_daemon.os, "listdir",
+                          lambda d: sorted(listdir(d), key=lambda f: f != "tex") if d == inc else listdir(d)):
+            res = watch_daemon.scan_incoming(inc, auto_rig=False, log=lambda *_: None)
+        self.assertEqual([r["model"] for r in res], ["crate"])     # the .mtl and tex/ are not models of their own
         placed = os.path.join(layout.ROOT, "crate")
         self.assertTrue(os.path.isfile(os.path.join(placed, "crate.mtl")))
         self.assertTrue(os.path.isfile(os.path.join(placed, "tex", "wood.png")))
