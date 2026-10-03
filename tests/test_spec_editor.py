@@ -412,7 +412,8 @@ class EditorServer(unittest.TestCase):
         j = self.wait(first["job"])
         self.assertEqual(j["state"], "done", "\n".join(j["log"][-40:]))
         self.assertEqual([l for l in j["log"] if l.startswith("== ") and " done (" not in l],
-                         ["== rig (tripo)", "== trim to budget", "== audit", "== preview for the viewer"])
+                         ["== rig (tripo)", "== trim to budget", "== audit", "== make clips (walker)",
+                          "== preview for the viewer"])                   # clips as the Clips button: a tripo rig walks
         b = self.call("/api/spec?name=boned")
         self.assertIsNotNone(b["audit"])
         self.assertIsNone(b["before"])                    # the first rig had nothing to compare with
@@ -425,26 +426,34 @@ class EditorServer(unittest.TestCase):
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
     def test_4_suggest_api(self):
-        # Suggestion using source from boned
+        # Suggestion using source from boned: the server measures the mesh first (a queued Blender job), and the
+        # page follows the job and asks again, as here
         sug = self.call("/api/spec/suggest", {"model": "boned"})
+        if sug.get("pending"):
+            self.assertEqual(sug["job"]["step"], "suggest")
+            j = self.wait(sug["job"])
+            self.assertEqual(j["state"], "done", "\n".join(j["log"][-30:]))
+            sug = self.call("/api/spec/suggest", {"model": "boned", "measure": False})
+            self.assertTrue(sug.get("measured"))
         self.assertIn("spec", sug)
         self.assertIn("archetype", sug)
         self.assertEqual(sug["spec"]["schema"], "autorig-spec/1")
         self.assertIn("rig", sug["spec"])
 
-        # Suggestion with direct survey payload
+        # Suggestion with direct survey payload. Tips are in the model's [0..1] bounds, the frame probe_tips and
+        # suggest_step measure in (core/suggest.py pair_tips: mirrored across x = 0.5)
         payload = {
             "model": "boned",
             "source": {
                 "format": "autorig-source/1",
                 "survey": {
                     "probe_tips": [
-                        {"pos": [0.0, 0.4, 0.9], "name": "snout"},
-                        {"pos": [0.0, -0.5, 0.4], "name": "tail"},
-                        {"pos": [0.25, 0.2, 0.0], "name": "foot_FL"},
-                        {"pos": [-0.25, 0.2, 0.0], "name": "foot_FR"},
-                        {"pos": [0.25, -0.3, 0.0], "name": "foot_BL"},
-                        {"pos": [-0.25, -0.3, 0.0], "name": "foot_BR"}
+                        {"pos": [0.5, 0.9, 0.9], "name": "snout"},
+                        {"pos": [0.5, 0.0, 0.4], "name": "tail"},
+                        {"pos": [0.75, 0.7, 0.0], "name": "foot_FL"},
+                        {"pos": [0.25, 0.7, 0.0], "name": "foot_FR"},
+                        {"pos": [0.75, 0.2, 0.0], "name": "foot_BL"},
+                        {"pos": [0.25, 0.2, 0.0], "name": "foot_BR"}
                     ]
                 }
             }
@@ -520,18 +529,22 @@ class EditorServer(unittest.TestCase):
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
     def test_7_rebake_clips_endpoint(self):
+        # a model with no rig: the spec is saved and the reply says why nothing ran, as the Clips button does
         bundle = self.call("/api/spec?name=flat")
-        spec = bundle["spec"]
-        res = self.call("/api/spec/rebake_clips", {
-            "model": "flat",
-            "spec": spec,
-            "base": bundle["base"],
-            "force": True
-        })
+        res = self.call("/api/spec/rebake_clips", {"model": "flat", "spec": bundle["spec"], "base": bundle["base"],
+                                                   "force": True})
         self.assertTrue(res.get("saved"))
-        self.assertIn("job", res)
-        if res.get("job"):
-            self.assertIn("bake", res["job"]["step"].lower())
+        self.assertNotIn("job", res)
+        self.assertIn("no rig yet", res.get("error", ""))
+
+        # the model test_3 rigged: the clips are baked again (and the preview after them)
+        bundle = self.call("/api/spec?name=boned")
+        res = self.call("/api/spec/rebake_clips", {"model": "boned", "spec": bundle["spec"], "base": bundle["base"]})
+        self.assertTrue(res.get("saved"))
+        self.assertIn("job", res, res.get("error"))
+        self.assertIn("bake", res["job"]["step"].lower())
+        j = self.wait(res["job"])
+        self.assertEqual(j["state"], "done", "\n".join(j["log"][-30:]))
 
 
 if __name__ == "__main__":
