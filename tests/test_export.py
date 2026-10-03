@@ -16,6 +16,8 @@ sys.path[:0] = [HERE, os.path.join(REPO, "autorig", "core"), os.path.join(REPO, 
 
 import exporter
 import layout
+import rigged_sample
+import spec_store
 
 
 class ExportPresetsTest(unittest.TestCase):
@@ -24,11 +26,18 @@ class ExportPresetsTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="autorig-test-export-")
         cls.orig_models = os.environ.get("AUTORIG_MODELS")
         cls.orig_work = os.environ.get("AUTORIG_WORK")
-        # Point to repo samples
-        os.environ["AUTORIG_MODELS"] = os.path.join(REPO, "samples")
+        # a copy of the samples, so the rig built below never lands in the checkout
+        cls.test_models = os.path.join(cls.tmp, "models")
+        shutil.copytree(os.path.join(REPO, "samples"), cls.test_models)
+        os.environ["AUTORIG_MODELS"] = cls.test_models
         os.environ["AUTORIG_WORK"] = os.path.join(cls.tmp, "_autorig")
         layout.ROOT = os.path.abspath(os.environ["AUTORIG_MODELS"])
         layout.WORK = os.path.abspath(os.environ["AUTORIG_WORK"])
+        spec_store.reload()
+
+        # the engine packages carry the rigged biped's FBX: rig it once here (rigged/ is not committed); without
+        # Blender the tests that need it skip
+        cls.rig_error = rigged_sample.rig("biped", layout.WORK)
 
     @classmethod
     def tearDownClass(cls):
@@ -70,6 +79,7 @@ class ExportPresetsTest(unittest.TestCase):
         self.assertEqual(mappings["unity"].get("head"), "Head")
 
     def test_create_export_package_unreal(self):
+        rigged_sample.need(self, self.rig_error)
         out_dir = os.path.join(self.tmp, "out_unreal")
         res = exporter.create_export_package("biped", target="unreal", out_dir=out_dir)
         self.assertEqual(res["target"], "unreal")
@@ -89,6 +99,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertIn("mannequin_mappings", mapping_content)
 
     def test_create_export_package_unity(self):
+        rigged_sample.need(self, self.rig_error)
         out_dir = os.path.join(self.tmp, "out_unity")
         res = exporter.create_export_package("biped", target="unity", out_dir=out_dir)
         self.assertEqual(res["target"], "unity")
@@ -105,6 +116,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertIn("humanDescription", avatar["avatar"])
 
     def test_create_export_package_godot(self):
+        rigged_sample.need(self, self.rig_error)
         out_dir = os.path.join(self.tmp, "out_godot")
         res = exporter.create_export_package("biped", target="godot", out_dir=out_dir)
         self.assertEqual(res["target"], "godot")
@@ -120,6 +132,7 @@ class ExportPresetsTest(unittest.TestCase):
             self.assertIn("Godot_Import_Guide.md", names)
 
     def test_create_export_package_web(self):
+        rigged_sample.need(self, self.rig_error)
         out_dir = os.path.join(self.tmp, "out_web")
         res = exporter.create_export_package("biped", target="web", out_dir=out_dir)
         self.assertEqual(res["target"], "web")
