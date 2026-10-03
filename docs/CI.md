@@ -1,6 +1,6 @@
 # Continuous Integration (CI) and Audit Thresholds
 
-Autorig Workbench includes an automated headless Blender CI pipeline for Linux (`ci/ci.yml` and `scripts/ci_audit_thresholds.py`).
+Autorig Workbench includes an automated headless Blender CI pipeline for Linux (`.github/workflows/ci.yml` and `scripts/ci_audit_thresholds.py`).
 
 ## Workflow Overview
 
@@ -12,17 +12,14 @@ The CI workflow:
 5. Executes viewer and gamepad tests under Node (`node tests/viewer_logic_test.mjs`).
 6. Executes the headless Blender audit pipeline (`scripts/ci_audit_thresholds.py`), which builds a sample rig, decimate/trims it, runs `audit.py`, and validates against strict audit thresholds (`autorig/cli/audit_all.py all -render 0 -strict`).
 
-## Enabling in GitHub Actions
+## Where it runs
 
-The workflow definition is located in [`ci/ci.yml`](../ci/ci.yml). To activate it in GitHub Actions:
-```bash
-mkdir -p .github/workflows
-cp ci/ci.yml .github/workflows/ci.yml
-git add .github/workflows/ci.yml
-git commit -m "ci: activate GitHub Actions workflow"
-git push
-```
-*(Note: Pushing `.github/workflows/` files requires the `workflow` OAuth scope on your GitHub token or personal access token).*
+The workflow is [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). It runs on every push to `main` and on every
+pull request into `main`.
+
+Besides Blender itself, the Linux runner needs Blender's runtime libraries, **including libEGL and Mesa**
+(`libegl1 libgles2 libegl-mesa0 libgl1-mesa-dri`). Blender 5.2 renders off-screen through EGL, and without them every
+step that renders aborts with exit code -6 after `Couldn't open libEGL.so.1`.
 
 ## Running Locally
 
