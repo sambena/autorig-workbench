@@ -219,8 +219,10 @@ class RetargeterTest(unittest.TestCase):
         )
         self.assertEqual(res["status"], "OK")
         self.assertEqual(res["clip_name"], "test_walk")
-        self.assertEqual(res["frames"], 3)
-        self.assertEqual(res["fps"], 30)
+        # all three of the BVH's frames: Blender's importer keys every MOTION line (its own rest frame is skipped)
+        ranges = {k: res.get(k) for k in ("frames", "source_frames", "frame_start", "frame_end", "fps")}
+        self.assertEqual(res["frames"], 3, ranges)
+        self.assertEqual(res["fps"], 30, ranges)
         self.assertGreater(res["mapped_bones"], 5)
 
         # Verify action exists in target .blend via Blender inspect
