@@ -203,8 +203,9 @@ class RetargeterTest(unittest.TestCase):
         self.assertIn("RETARGET PLAN", summary)
         self.assertIn("walk_cycle", summary)
         self.assertIn("LeftArm", summary)
-        # the rig names its chains role_n.side (rerig.name_chains): the upper arm is arm_1.L
-        self.assertIn("arm_1.L", summary)
+        # bones are <role>_<i><side> (rerig.name_chains), and a chain's role defaults to its name (SPEC.md): the
+        # sample's chain "arm.L" makes arm.L_1.L, as the rigged biped on CI shows
+        self.assertIn("arm.L_1.L", summary)
 
     def test_retarget_clip_headless_blender(self):
         rigged_sample.need(self, self.rig_error)
