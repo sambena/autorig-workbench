@@ -8,7 +8,9 @@ The CI workflow:
 1. Sets up Python 3.11 and Node.js 20.
 2. Caches and installs Blender 5.2.2 LTS (`blender-5.2.2-linux-x64.tar.xz`).
 3. Verifies Blender version detection and tested range (`5.2 LTS`).
-4. Executes the full Python unit test suite (`python3 -m unittest discover -s tests -v`).
+4. Executes the full Python unit test suite (`python3 -m unittest discover -s tests -v`). Rigs are not committed, so the
+   retarget and export tests rig the biped sample once, in a temporary copy of `samples/` (`tests/rigged_sample.py`);
+   without Blender they skip.
 5. Executes viewer and gamepad tests under Node (`node tests/viewer_logic_test.mjs`).
 6. Executes the headless Blender audit pipeline (`scripts/ci_audit_thresholds.py`), which builds a sample rig, decimate/trims it, runs `audit.py`, and validates against strict audit thresholds (`autorig/cli/audit_all.py all -render 0 -strict`).
 
