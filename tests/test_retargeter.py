@@ -18,6 +18,7 @@ import retargeter
 import skeletons
 import layout
 import spec_store
+import rigged_sample
 
 HAVE_BLENDER = blender.find(required=False) is not None
 
@@ -128,6 +129,10 @@ class RetargeterTest(unittest.TestCase):
         # An FBX with an animated armature, for the FBX tests: AUTORIG_TEST_MOCAP_FBX names one (skipped when unset)
         cls.sample_fbx = os.environ.get("AUTORIG_TEST_MOCAP_FBX", "")
 
+        # the plan reads the rigged biped's bones: rig it once here (rigged/ is not committed); without Blender the
+        # tests that need it skip
+        cls.rig_error = rigged_sample.rig("biped", cls.test_work)
+
     @classmethod
     def tearDownClass(cls):
         if cls.orig_models:
@@ -185,8 +190,8 @@ class RetargeterTest(unittest.TestCase):
         res = retargeter.build_retarget_mapping(source_bones, target_bones, overrides={"Spine": "chest"})
         self.assertEqual(res["mapping"]["Spine"], "chest")
 
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_plan_and_format_summary(self):
+        rigged_sample.need(self, self.rig_error)
         plan = retargeter.plan_retarget("biped", self.bvh_file, clip_name="walk_cycle")
         self.assertEqual(plan["clip_name"], "walk_cycle")
         self.assertEqual(plan["model"], "biped")
@@ -198,10 +203,12 @@ class RetargeterTest(unittest.TestCase):
         self.assertIn("RETARGET PLAN", summary)
         self.assertIn("walk_cycle", summary)
         self.assertIn("LeftArm", summary)
+        # bones are <role>_<i><side> (rerig.name_chains), and a chain's role defaults to its name (SPEC.md): the
+        # sample's chain "arm.L" makes arm.L_1.L, as the rigged biped on CI shows
         self.assertIn("arm.L_1.L", summary)
 
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_retarget_clip_headless_blender(self):
+        rigged_sample.need(self, self.rig_error)
         res = retargeter.retarget_clip(
             model_name="biped",
             mocap_file=self.bvh_file,
@@ -213,8 +220,10 @@ class RetargeterTest(unittest.TestCase):
         )
         self.assertEqual(res["status"], "OK")
         self.assertEqual(res["clip_name"], "test_walk")
-        self.assertEqual(res["frames"], 3)
-        self.assertEqual(res["fps"], 30)
+        # all three of the BVH's frames: Blender's importer keys every MOTION line (its own rest frame is skipped)
+        ranges = {k: res.get(k) for k in ("frames", "source_frames", "frame_start", "frame_end", "fps")}
+        self.assertEqual(res["frames"], 3, ranges)
+        self.assertEqual(res["fps"], 30, ranges)
         self.assertGreater(res["mapped_bones"], 5)
 
         # Verify action exists in target .blend via Blender inspect
@@ -234,6 +243,7 @@ print("__ACTIONS__" + str(action_names))
     def test_retarget_fbx_and_batch(self):
         if not os.path.isfile(self.sample_fbx):
             self.skipTest("Sample FBX not found on system")
+        rigged_sample.need(self, self.rig_error)
 
         meta = retargeter.inspect_mocap_file(self.sample_fbx)
         self.assertEqual(meta["format"], "FBX")
@@ -327,13 +337,14 @@ print("__ACTIONS__" + str(action_names))
 
         # Dry run CLI execution (the plan reads the rigged model: Blender)
         if HAVE_BLENDER:
+            rigged_sample.need(self, self.rig_error)
             r_dry = subprocess.run(
                 [sys.executable, os.path.join(REPO, "autorig", "steps", "retarget.py"),
                  "biped", self.bvh_file, "--dry-run"],
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual(r_dry.returncode, 0)
+            self.assertEqual(r_dry.returncode, 0, r_dry.stdout[-2000:] + r_dry.stderr[-2000:])
             self.assertIn("RETARGET_DRY_RUN", r_dry.stdout)
 
         # List actions CLI execution
@@ -353,8 +364,8 @@ print("__ACTIONS__" + str(action_names))
         self.assertEqual(retargeter.clean_action_name("Sword_Attack-01"), "sword_attack_01")
         self.assertEqual(retargeter.clean_action_name(""), "clip")
 
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (the plan reads the rigged model)")
     def test_plan_with_source_action(self):
+        rigged_sample.need(self, self.rig_error)
         plan = retargeter.plan_retarget("biped", self.bvh_file, source_action="sample_walk")
         self.assertEqual(plan["source_action"], "sample_walk")
         self.assertEqual(plan["clip_name"], "sample_walk")

@@ -34,8 +34,22 @@ jobs:
       - name: Install Blender 5.2.2
         if: steps.cache-blender.outputs.cache-hit != 'true'
         run: |
-          mkdir -p /opt/blender
+          sudo mkdir -p /opt/blender
+          sudo chown "$USER" /opt/blender
           curl -sSL https://download.blender.org/release/Blender5.2/blender-5.2.2-linux-x64.tar.xz | tar -xJ -C /opt/blender --strip-components=1
+
+      - name: Install Blender's runtime libraries
+        run: |
+          sudo apt-get update -qq
+          # libEGL and Mesa: Blender 5.2 renders off-screen through EGL. Without them every step that renders
+          # (facing views, QA shots, audit renders) aborts with exit code -6 after "Couldn't open libEGL.so.1".
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6             libegl1 libgles2 libegl-mesa0 libgl1-mesa-dri
+
+      - name: Install the test-only Python packages
+        run: |
+          # the tool itself needs nothing from pip; numpy lets the skinning-math tests run outside Blender, and
+          # jsonschema lets test_samples validate the sample specs against docs/rig.schema.json
+          python3 -m pip install --quiet numpy jsonschema
 
       - name: Configure Blender PATH
         run: |

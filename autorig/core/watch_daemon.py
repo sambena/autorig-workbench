@@ -323,7 +323,13 @@ def scan_incoming(incoming_dir, target_group=None, auto_rig=True, auto_tune=Fals
     for p in candidates:
         if os.path.isfile(p):
             claimed.update(os.path.normcase(s) for s in sidecars(p))
-    candidates = [p for p in candidates if os.path.normcase(p) not in claimed]
+    # a folder holding nothing but such files (an OBJ's tex/) goes with its model too: taken on its own, it became
+    # a model when the listing happened to put it before the model file
+    def all_claimed(p):
+        files = _files_under(p)
+        return bool(files) and all(os.path.normcase(os.path.abspath(f)) in claimed for f in files)
+    candidates = [p for p in candidates if os.path.normcase(os.path.abspath(p)) not in claimed and
+                  not (os.path.isdir(p) and all_claimed(p))]
 
     processed = []
     for p in candidates:
