@@ -162,29 +162,40 @@ def mesh_islands(mesh):
 
 
 def floating_pieces(co, islands, gap):
-    """The loose pieces that float: every piece but the largest (the body) whose nearest vertex is more than `gap`
-    from the body, as (vertex indices, that distance), farthest first. A trimmed generated model leaves these behind
-    (a sleeve cut short left two scraps 15-17 cm off a robe, and they rode on the hips); a rosary, a buckle or a
-    cross sewn on lies on the body (under a centimetre) and is kept."""
+    """The loose pieces that float: those not reachable from the body (the largest piece) through pieces each within
+    `gap` of one already reached (a hand on a sleeve on a robe is reached), as (vertex indices, distance to the
+    nearest reached piece), farthest first. A trimmed generated model leaves scraps behind (a sleeve cut short left
+    two 15-17 cm off a robe, riding on the hips); a rosary or a cross lying on the body (under a centimetre), or a
+    model built of separate parts (Tripo's), is kept whole."""
     co = np.asarray(co, dtype=np.float64)
     if len(islands) < 2:
         return []
     body_i = max(range(len(islands)), key=lambda k: len(islands[k]))
-    body = co[islands[body_i]]
-    out = []
-    for k, piece in enumerate(islands):
-        if k == body_i:
-            continue
-        pts = co[piece]
-        near = np.inf
-        for s in range(0, len(pts), 256):   # a block of the piece against the whole body at a time
-            d2 = ((pts[s:s + 256, None, :] - body[None, ::max(1, len(body) // 20000), :]) ** 2).sum(-1)
-            near = min(near, float(np.sqrt(d2.min())))
-            if near <= gap:
-                break
-        if near > gap:
-            out.append((list(piece), near))
-    return sorted(out, key=lambda p: -p[1])
+    reached = [co[islands[body_i]][::max(1, len(islands[body_i]) // 20000)]]
+    left = {k for k in range(len(islands)) if k != body_i}
+    near = {}
+
+    def dist(k):
+        pts = co[islands[k]]
+        best = np.inf
+        for R in reached:
+            for s in range(0, len(pts), 256):
+                best = min(best, float(np.sqrt(((pts[s:s + 256, None, :] - R[None, :, :]) ** 2).sum(-1).min())))
+                if best <= gap:
+                    return best
+        return best
+
+    grew = True
+    while grew and left:
+        grew = False
+        for k in sorted(left):
+            d = dist(k)
+            near[k] = d
+            if d <= gap:
+                reached.append(co[islands[k]][::max(1, len(islands[k]) // 5000)])
+                left.discard(k)
+                grew = True
+    return sorted(((list(islands[k]), near[k]) for k in left), key=lambda p: -p[1])
 
 
 def limb_groups(chains):
@@ -1067,8 +1078,9 @@ def auto_isolate_disconnected_islands(mesh, arm, chains, spec, size, log, alread
     for k, idxs in enumerate(isl):
         if k in body_islands:
             continue
-        # Skip if already handled by explicit rule
-        if any(i in assigned_set for i in idxs):
+        # Skip if already handled by explicit rule, or bound on purpose by an earlier pass (a boot that feet_on_legs
+        # gave to the shin and foot must not become one rigid piece on a single bone)
+        if any(i in assigned_set for i in idxs) or any(i in locked for i in idxs):
             continue
 
         # Island vertex coords
@@ -2278,6 +2290,127 @@ def skirt_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     return written
 
 
+LIMB_GROUPS = (("LeftArm", ("LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand"), ("Spine2",)),
+               ("RightArm", ("RightShoulder", "RightArm", "RightForeArm", "RightHand"), ("Spine2",)),
+               ("LeftLeg", ("LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase"), ("Hips",)),
+               ("RightLeg", ("RightUpLeg", "RightLeg", "RightFoot", "RightToeBase"), ("Hips",)),
+               ("Body", ("Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"), ()))
+
+
+def limb_piece_weights(W, bone_names, pieces):
+    """Each piece (index array) keeps only the bones of the limb that carries most of it, plus where that limb joins
+    the body; what the others held goes to the piece's own bones in proportion (or, where it held none, to the
+    forearm, the shin or the spine). Humanoid names (Mixamo's; a hand's fingers count as the hand). Returns the new W and per-piece limbs."""
+    W = W.copy()
+    def group_of(b):
+        for g, own, _ in LIMB_GROUPS:
+            if any(b == o or (o.endswith("Hand") and b.startswith(o)) for o in own): return g
+        return None
+    groups = [group_of(b) for b in bone_names]
+    limbs = []
+    for idx in pieces:
+        sub = W[idx]
+        tot = {g: float(sub[:, [k for k, gg in enumerate(groups) if gg == g]].sum()) for g, _, _ in LIMB_GROUPS}
+        g = max(tot, key=tot.get)
+        attach = next(a for gg, _, a in LIMB_GROUPS if gg == g)
+        keep = np.array([groups[k] == g or bone_names[k] in attach for k in range(len(bone_names))])
+        kept = sub * keep
+        s = kept.sum(1, keepdims=True)
+        main = {"LeftArm": "LeftForeArm", "RightArm": "RightForeArm", "LeftLeg": "LeftLeg", "RightLeg": "RightLeg"}.get(g, "Spine")
+        main_k = next((k for k, b in enumerate(bone_names) if b == main), None)   # a sleeve hangs off the forearm
+        empty = (s[:, 0] < 1e-6)
+        kept[~empty] = kept[~empty] / s[~empty]
+        if main_k is not None and empty.any():
+            kept[empty] = 0; kept[empty, main_k] = 1.0
+        W[idx] = kept
+        limbs.append(g)
+    return W, limbs
+
+
+def limb_pieces_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """`limb_pieces: true` (humanoids): every loose piece but the largest (a sleeve, a boot, hair, a hood made as parts
+    of their own) belongs to one limb: the one carrying most of it, plus where that limb joins the body. Bone heat lets
+    a bell sleeve's hem hanging by the hips take the hips and a thigh, and a boot standing by the other boot take
+    both feet; then they tear as the limbs move apart. Locked, so the healer leaves it."""
+    if spec is None: spec = {}
+    if log is None: log = {}
+    if not spec.get("limb_pieces"): return 0
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    W = read_weights(mesh, bone_names); W0 = W.copy()
+    isl = mesh_islands(mesh)
+    if len(isl) < 2: return 0
+    body = max(range(len(isl)), key=lambda k: len(isl[k]))
+    locked = spec.setdefault("_locked", set())
+    pieces = [np.asarray([i for i in p if i not in locked], dtype=np.int64) for k, p in enumerate(isl) if k != body]
+    pieces = [p for p in pieces if len(p)]
+    W, limbs = limb_piece_weights(W, bone_names, pieces)
+    write_weights(mesh, bone_names, W0, W)
+    for p in pieces: locked.update(int(i) for i in p)
+    log["limb_pieces"] = {g: limbs.count(g) for g in set(limbs)}
+    return sum(len(p) for p in pieces)
+
+
+def follow_weights(P, W, targets, body):
+    """Each target vertex takes the weights of the nearest body vertex: a piece laid over the body (a hood over the
+    back of a head, a plate on a chest) then moves exactly as the surface under it. P (n, 3), W (n, bones); targets
+    and body are index arrays. Returns the new W."""
+    W = W.copy()
+    B = P[body]
+    for s in range(0, len(targets), 256):
+        t = targets[s:s + 256]
+        d2 = ((P[t][:, None, :] - B[None, :, :]) ** 2).sum(-1)
+        W[t] = W[body[d2.argmin(1)]]
+    return W
+
+
+def follow_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """`follow`: [[[x0,y0,z0], [x1,y1,z1]], ...] boxes (0..1 of the model's bounds). Loose pieces' vertices inside a
+    box copy the weights of the nearest vertex of the body (the largest piece), after every other pass, so a piece
+    laid over the body never parts from it (a rigid piece on one bone parted 12 cm from the neck-weighted surface
+    it covered)."""
+    if spec is None: spec = {}
+    if log is None: log = {}
+    boxes = spec.get("follow") or []
+    if not boxes: return 0
+    verts = mesh.data.vertices; n = len(verts)
+    P = np.empty(n * 3); verts.foreach_get("co", P); P = P.reshape(n, 3)
+    lo, hi = P.min(0), P.max(0); span = np.maximum(hi - lo, 1e-9)
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    W = read_weights(mesh, bone_names); W0 = W.copy()
+    isl = mesh_islands(mesh)
+    if len(isl) < 2: return 0
+    body_k = max(range(len(isl)), key=lambda k: len(isl[k]))
+    in_body = np.zeros(n, bool); in_body[isl[body_k]] = True
+    N = (P - lo) / span
+    done = 0
+    for a0, a1 in boxes:
+        box = np.all((N >= np.array(a0)) & (N < np.array(a1)), axis=1)
+        targets = np.where(box & ~in_body)[0]
+        if not len(targets): continue
+        pad = 0.05 * float(span.max())
+        tlo, thi = P[targets].min(0) - pad, P[targets].max(0) + pad
+        body = np.where(in_body & np.all((P >= tlo) & (P <= thi), axis=1))[0]
+        if not len(body): continue
+        W = follow_weights(P, W, targets, body)
+        spec.setdefault("_locked", set()).update(int(i) for i in targets)
+        done += len(targets)
+    write_weights(mesh, bone_names, W0, W)
+    log["followed"] = done
+    return done
+
+
+def _loose_pieces(mesh, P):
+    """Every loose piece but the largest (the body), as vertex index arrays."""
+    try:
+        isl = mesh_islands(mesh)
+    except Exception:
+        return []
+    if len(isl) < 2:
+        return []
+    body = max(range(len(isl)), key=lambda k: len(isl[k]))
+    return [np.asarray(p, dtype=np.int64) for k, p in enumerate(isl) if k != body]
+
+
 def body_parts_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     """Body-part rules for a dressed humanoid, each off unless the spec sets it (fractions are of the height):
 
@@ -2285,7 +2418,9 @@ def body_parts_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
                     arm's own bones; past it, their share goes to the nearest spine, neck or head bone. Long hair over
                     the shoulders and a robe's chest stop lifting with a raised arm.
       feet_on_legs  below the knee, vertices within this distance of a shin, foot or toe bone belong to those alone
-                    (shin above the ankle, foot below, blended over 6% of the height): a boot holds together.
+                    (shin above the ankle, foot below, blended over 6% of the height): a boot holds together. A loose
+                    piece below the knee near a leg (a boot cut free of the robe) belongs to that leg whole, and what
+                    this rule sets is locked, so rigid islands and the healer leave it.
       pin           [[bone, [x0,y0,z0], [x1,y1,z1]], ...]: vertices in the box (0..1 of the model's bounds) ride the
                     bone whole. For pieces welded into the rest (a rosary, a belt buckle): rigid_to needs loose pieces.
 
@@ -2346,11 +2481,24 @@ def body_parts_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
             ds, df, dt = seg(P, shin), seg(P, foot), seg(P, toe)
             knee_z = head[shin][2]
             near = free & (P[:, 2] < knee_z) & (np.minimum(np.minimum(ds, df), dt) < r)
+            # a boot modelled (or cut) as a piece of its own is the leg's whole, however far its shaft stands off
+            # the bone: a loose piece below the knee whose middle is nearer this leg than any other bone's reach
+            other = ("Right" if side == "Left" else "Left")
+            def leg_dist(c, sd):
+                return min(seg(c[None], sd + b)[0] for b in ("Leg", "Foot", "ToeBase") if sd + b in col)
+            for piece in _loose_pieces(mesh, P):
+                c = P[piece].mean(0)
+                d = leg_dist(c, side)
+                # the nearer leg's, and only when near it: two boots stand closer together than a leg's reach
+                if c[2] < knee_z and d < 2.5 * r and d <= leg_dist(c, other):
+                    near[piece] = free[piece]
             idx = np.where(near)[0]
             up = np.clip((P[idx, 2] - head[foot][2]) / (0.06 * height) + 0.5, 0, 1)
             to_toe = np.clip((df[idx] - dt[idx]) / (0.015 * height) + 0.5, 0, 1) * (1 - up)
             W[idx] = 0
             W[idx, col[shin]] = up; W[idx, col[foot]] = (1 - up) * (1 - to_toe); W[idx, col[toe]] = (1 - up) * to_toe
+            # the passes after this one (rigid islands, the healer) leave a boot as it is set here
+            spec.setdefault("_locked", set()).update(int(i) for i in idx)
             log["feet_on_legs_" + side] = int(len(idx)); done += int(len(idx))
     for b, a0, a1 in pins:
         if b not in col: continue

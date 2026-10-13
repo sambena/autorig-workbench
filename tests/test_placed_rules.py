@@ -18,6 +18,24 @@ except ImportError:
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed in system Python (available in Blender)")
 class TestPlacedRulesMath(unittest.TestCase):
+    def test_limb_piece_weights_keeps_a_sleeve_on_its_arm(self):
+        bones = ["Hips", "Spine2", "LeftArm", "LeftForeArm", "LeftUpLeg", "RightArm"]
+        W = np.array([[0, 0, 0.6, 0.4, 0, 0],        # sleeve near the shoulder: all arm
+                      [0.3, 0, 0.1, 0.3, 0.3, 0],    # sleeve hem by the hips: hips and a thigh crept in
+                      [0.5, 0, 0, 0, 0.5, 0]], float)  # a hem vertex the arm lost altogether
+        got, limbs = placed_rules.limb_piece_weights(W, bones, [np.array([0, 1, 2])])
+        self.assertEqual(limbs, ["LeftArm"])
+        np.testing.assert_allclose(got[1], [0, 0, 0.25, 0.75, 0, 0])
+        np.testing.assert_allclose(got[2], [0, 0, 0, 1.0, 0, 0])   # to the forearm: a sleeve hangs off it
+        np.testing.assert_allclose(got.sum(1), 1)
+
+    def test_follow_weights_copies_the_surface_under_each_vertex(self):
+        P = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [0.1, 0.01, 0], [1.9, 0.01, 0]], float)
+        W = np.array([[1, 0], [0.5, 0.5], [0, 1], [0.3, 0.7], [0.3, 0.7]], float)
+        got = placed_rules.follow_weights(P, W, np.array([3, 4]), np.array([0, 1, 2]))
+        np.testing.assert_allclose(got[3], [1, 0]); np.testing.assert_allclose(got[4], [0, 1])
+        np.testing.assert_allclose(got[:3], W[:3])   # the body itself is untouched
+
     def test_floating_pieces_finds_scraps_and_keeps_what_lies_on_the_body(self):
         # a body: a 1 m column of points; a rosary lying on it (5 mm off); two scraps 16 cm and 30 cm out
         body = [(0.1 * np.cos(a), 0.1 * np.sin(a), z) for z in np.linspace(0, 1, 41) for a in np.linspace(0, 6.2, 24)]
@@ -33,6 +51,12 @@ class TestPlacedRulesMath(unittest.TestCase):
         self.assertAlmostEqual(got[1][1], 0.16, delta=0.01)
         self.assertEqual(placed_rules.floating_pieces(co, islands[:2], 0.05), [])
         self.assertEqual(placed_rules.floating_pieces(co[:n0], islands[:1], 0.05), [])
+        # a model of separate parts: a hand 40 cm out, but on a sleeve that touches the body, is not floating
+        sleeve = [(0.12 + 0.02 * k, 0.0, 0.8) for k in range(16)]
+        hand = [(0.44 + 0.01 * k, 0.0, 0.8) for k in range(4)]
+        co2 = body + sleeve + hand
+        isl2 = [list(range(n0)), list(range(n0, n0 + 16)), list(range(n0 + 16, len(co2)))]
+        self.assertEqual(placed_rules.floating_pieces(co2, isl2, 0.05), [])
     def test_compute_membrane_weights_gradient_and_normalization(self):
         # Two parallel spar bones: spar 0 along X=0, spar 1 along X=1
         spars = [

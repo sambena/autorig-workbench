@@ -202,7 +202,7 @@ HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "join
                   "heal_passes", "heal_blend", "rigid_island_max_share", "rigid_island_max_extent", "mesh_heal",
                   "jaw", "parts", "blends", "membranes", "rigid_to", "hard_split", "soft", "spike_reach",
                   "envelope_skip", "girdle_reach", "skirt", "straight_arms",
-                  "arm_reach", "feet_on_legs", "pin", "drop_floating"}
+                  "arm_reach", "feet_on_legs", "pin", "drop_floating", "follow", "joints", "limb_pieces"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [

@@ -50,6 +50,31 @@ def args():
 
 import math
 
+# joints: "source" - a model that came with a Mixamo-named skeleton (Tripo's, Mixamo's own) keeps its joints: the
+# measured ones are replaced by the skeleton's wherever it has them. Measuring follows the body's cross-sections, and
+# long bell sleeves or a robe's drape pulled a measured arm 90 cm down from where the model's own hand bone was.
+SOURCE_JOINTS = {"hip": "Hips", "spine": "Spine", "spine1": "Spine1", "spine2": "Spine2", "neck": "Neck",
+                 "head": "Head", "top": "HeadTop_End"}
+SOURCE_SIDE = {"hip": "UpLeg", "knee": "Leg", "ankle": "Foot", "ball": "ToeBase", "toe": "Toe_End", "shoulder": "Arm",
+               "elbow": "ForeArm", "wrist": "Hand", "knuckle": "HandMiddle1", "tip": "HandMiddle4"}
+
+
+def source_joints(joints, J, digits, log):
+    """J with every joint the source skeleton has taken from it (names without a "mixamorig:" style prefix)."""
+    pos = {name.split(":")[-1]: Vector(j["pos"]) for name, j in joints.items()}
+    J = dict(J); took = []
+    for k, b in SOURCE_JOINTS.items():
+        if b in pos: J[k] = pos[b]; took.append(k)
+    for side in ("Left", "Right"):
+        for k, b in SOURCE_SIDE.items():
+            if side + b in pos: J[side + k] = pos[side + b]; took.append(side + k)
+        tips = [pos.get("%sHand%s4" % (side, f)) for f in ("Thumb", "Index", "Middle", "Ring", "Pinky")]
+        if digits and all(t is not None for t in tips):
+            J[side + "fingertips"] = tips; took.append(side + "fingertips")
+    log["joints_from_source"] = took
+    return J
+
+
 def measure(co, lo, size, h, main=None):
     """Joint positions (world) from cross-sections. co: (n, 3) vertices; main: mask of the body's own mesh (the
     largest pieces), so pouches, holsters and backpacks - loose pieces on generated sculpts - never drag a joint."""
@@ -477,6 +502,9 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             if tips:
                 J[side + "fingertips"] = tips
                 log[side + "_fingertips"] = [[round(c, 4) for c in t] for t in tips]
+    if spec.get("joints") == "source" and joints:
+        J = source_joints(joints, J, bool(spec.get("digits")), log)
+        log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items() if not k.endswith("fingertips")}
     chains = chains_for(J, bool(spec.get("digits")))
     if spec.get("keep_inside", True):              # a measured shoulder or knuckle outside the skin comes back in
         me = mesh.data

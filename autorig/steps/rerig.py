@@ -1349,6 +1349,8 @@ def skin(mesh, arm, chains, spec, size, log):
     timed("joint_relaxation", placed_rules.joint_relaxation_pass, mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         timed("rigid_islands", placed_rules.rigid_islands_pass, mesh, arm, chains, spec, size, log)
+    if spec.get("limb_pieces"):
+        timed("limb_pieces", placed_rules.limb_pieces_pass, mesh, arm, chains, spec, size, log)
     locked = spec["_locked"]
     t_rest = time.time()
 
@@ -1514,6 +1516,8 @@ def skin(mesh, arm, chains, spec, size, log):
     timing["body_pieces_parts_split"] = round(time.time() - t_rest, 3)
     if spec.get("auto_heal", True):
         timed("heal", placed_rules.closed_loop_healing_pass, mesh, arm, spec, size, log)
+    if spec.get("follow"):   # last, so nothing blurs a piece laid over the body away from the surface under it
+        timed("follow", placed_rules.follow_pass, mesh, arm, chains, spec, size, log)
     select_only(mesh)
     bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
     bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
