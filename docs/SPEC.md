@@ -165,7 +165,13 @@ three-bone fingers (`LeftHandThumb1..3` ... `LeftHandPinky1..3`) in place of the
 `x.leg` (optional) is for a long robe, gown or skirt: each leg's middle, measured out from the body's middle (0..1 of
 the width, e.g. `0.035` for boots 6 cm either side on a 1.9 m-wide T-pose). Without it a leg is the middle of
 everything on that side below the hips, which on a robe is out at the hem; with it the hips, knees, ankles and feet are
-read only in a band around that line. Read it off the front view's feet.
+read only in a band around that line. Read it off the front view's feet. The legs then stand straight down under the
+body's middle (a slab's depth is the cloth's, and a train trailing behind would slant them back), and the toe is kept
+within a foot's length ahead of the ankle.
+
+`straight_arms: true` (optional) is for a T-pose with wide sleeves that hang below the arm: each slice's middle is
+then the sleeve's and the arm tracker follows it down. With it the shoulder, elbow, wrist and knuckle lie on the
+straight line from the shoulder (the arm height, the torso's depth) to the measured fingertip.
 
 ### `budget`
 
