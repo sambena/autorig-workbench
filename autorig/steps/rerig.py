@@ -1289,6 +1289,8 @@ def skin(mesh, arm, chains, spec, size, log):
         timed("sibling_isolation", placed_rules.sibling_appendage_pass, mesh, arm, chains, spec, size, log)
     if spec.get("centerline_armor", True):
         timed("centerline_armor", placed_rules.centerline_armor_pass, mesh, arm, chains, spec, size, log)
+    if spec.get("skirt"):
+        timed("skirt", placed_rules.skirt_pass, mesh, arm, chains, spec, size, log)
     # hinges and twisting shafts, each joint once (the two passes used to go over the same joints)
     timed("joint_relaxation", placed_rules.joint_relaxation_pass, mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):

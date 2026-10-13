@@ -2145,6 +2145,101 @@ def find_central_pelvis_bone(arm, chains=None):
     return arm.data.bones[0].name if arm.data.bones else "Hips"
 
 
+def skirt_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """A long robe, gown or skirt sculpted as one mesh with the legs (spec "skirt": true, or a dict of the settings
+    below). Bone heat gives each half of the skirt wholly to the leg on that side, so a stride rips it open down the
+    front and back seams. Below the hips, cloth that lies away from the legs is shared instead:
+
+      - within `radius` of a leg's axis (hip-knee-ankle) nothing changes: the leg itself, the boots;
+      - beyond it the leg's share falls smoothly over `fade` to `floor` (the far hem and a trailing train still
+        follow the legs a little, so a kick does not push the shin through a rigid cone), the rest goes to the hips;
+      - across the middle (`seam` either side of the sagittal plane) the share is split between the two legs, so
+        the front and back seams are one smooth sheet, not a cut;
+      - below the knee the share moves from the thigh to the shin over `knee_blend` of the leg's length.
+
+    Distances are fractions of the model's height. Locked vertices (deliberate cuts) are left alone."""
+    if spec is None: spec = {}
+    if log is None: log = {}
+    cfg = spec.get("skirt")
+    if not cfg: return 0
+    cfg = cfg if isinstance(cfg, dict) else {}
+    legs = {}
+    for c in chains or []:
+        if c.get("role") != "leg" or len(c.get("bones", [])) < 2: continue
+        side = "L" if c["bones"][0].lower().startswith("left") or c["bones"][0].endswith((".L", "_L")) else "R"
+        legs[side] = c
+    hips = find_central_pelvis_bone(arm, chains)
+    if len(legs) != 2 or not hips: return 0
+
+    verts = mesh.data.vertices
+    n = len(verts)
+    P = np.empty(n * 3, dtype=np.float64); verts.foreach_get("co", P); P = P.reshape(n, 3)
+    height = max(1e-6, float(P[:, 2].max() - P[:, 2].min()))
+    radius = float(cfg.get("radius", 0.045)) * height
+    fade = float(cfg.get("fade", 0.12)) * height
+    floor = float(cfg.get("floor", 0.3))
+    seam = float(cfg.get("seam", 0.04)) * height
+    sym = float(spec.get("sym_plane", 0.0))
+
+    def axis(c):
+        pts = [np.array(p[:3], dtype=np.float64) for p in c["points"][:3]]     # hip, knee, ankle
+        return pts
+
+    def dist_to_polyline(Q, pts):
+        best = np.full(len(Q), np.inf); tpar = np.zeros(len(Q))
+        total = sum(np.linalg.norm(b - a) for a, b in zip(pts[:-1], pts[1:])); run = 0.0
+        for a, b in zip(pts[:-1], pts[1:]):
+            ab = b - a; L2 = max(1e-12, float(ab @ ab))
+            t = np.clip(((Q - a) @ ab) / L2, 0.0, 1.0)
+            d = np.linalg.norm(Q - (a + t[:, None] * ab), axis=1)
+            better = d < best
+            best[better] = d[better]
+            tpar[better] = (run + t[better] * np.sqrt(L2)) / max(1e-9, total)
+            run += np.sqrt(L2)
+        return best, tpar
+
+    ax = {s: axis(c) for s, c in legs.items()}
+    hip_z = max(ax["L"][0][2], ax["R"][0][2])
+    knee_t = {s: np.linalg.norm(ax[s][1] - ax[s][0]) / max(1e-9, np.linalg.norm(ax[s][1] - ax[s][0]) + np.linalg.norm(ax[s][2] - ax[s][1])) for s in ax}
+    knee_blend = float(cfg.get("knee_blend", 0.15))
+
+    cand = np.where(P[:, 2] < hip_z)[0]
+    locked = spec.get("_locked") or set()
+    if locked:
+        cand = cand[~np.isin(cand, np.fromiter(locked, dtype=np.int64, count=len(locked)))]
+    if len(cand) == 0: return 0
+    Q = P[cand]
+    dL, tL = dist_to_polyline(Q, ax["L"]); dR, tR = dist_to_polyline(Q, ax["R"])
+    near_leg = np.minimum(dL, dR) <= radius
+    Q, cand, dL, dR, tL, tR = Q[~near_leg], cand[~near_leg], dL[~near_leg], dR[~near_leg], tL[~near_leg], tR[~near_leg]
+    if len(cand) == 0: return 0
+
+    smooth = lambda u: (lambda c: c * c * (3.0 - 2.0 * c))(np.clip(u, 0.0, 1.0))
+    d_near = np.minimum(dL, dR)
+    share = floor + (1.0 - floor) * (1.0 - smooth((d_near - radius) / max(1e-9, fade)))
+    left = smooth((Q[:, 0] - sym + seam) / max(1e-9, 2.0 * seam))          # creature's left is +X
+
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    col = {nm: i for i, nm in enumerate(bone_names)}
+    need = [hips] + [b for c in legs.values() for b in c["bones"][:2]]
+    if any(b not in col for b in need): return 0
+    W_all = read_weights(mesh, bone_names)
+    W_old = W_all[cand].copy()
+    W_new = np.zeros_like(W_old)
+    for s, frac, t in (("L", left, tL), ("R", 1.0 - left, tR)):
+        up, low = legs[s]["bones"][0], legs[s]["bones"][1]
+        to_low = smooth((t - knee_t[s] + knee_blend * 0.5) / max(1e-9, knee_blend))
+        w = share * frac
+        W_new[:, col[up]] += w * (1.0 - to_low)
+        W_new[:, col[low]] += w * to_low
+    W_new[:, col[hips]] += 1.0 - share
+
+    W_full_new = W_all.copy(); W_full_new[cand] = W_new
+    written = write_weights(mesh, bone_names, W_all, W_full_new, locked=locked)
+    log["skirt_verts"] = int(written)
+    return written
+
+
 def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     """Universal anti-tear skinning for skirts, faulds, belts, groin armor, and centerline accessories:
     1. Detects disconnected mesh islands crossing the sagittal plane (X=sym_plane) in the pelvic/hip region
