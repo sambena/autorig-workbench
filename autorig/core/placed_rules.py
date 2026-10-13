@@ -2077,6 +2077,14 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
     P = P.reshape(n, 3)
 
     crotch_thresh = float(spec.get("crotch_barrier", max(size) * 0.03))
+    if "crotch_barrier" not in spec:
+        # never wider than the legs are apart: a seam fade reaching past a leg's own axis hands the leg (feet and
+        # boots too, at every height) to the hips. Legs close together (a robe's) got swallowed by 3% of the size.
+        roots = [abs(c["points"][0][0] - float(spec.get("sym_plane", 0.0))) for c in (chains or [])
+                 if c.get("role") == "leg" and c.get("points")]
+        if roots:
+            crotch_thresh = min(crotch_thresh, 0.5 * min(roots))
+            log["crotch_barrier_auto"] = round(crotch_thresh, 4)
     sym_plane = float(spec.get("sym_plane", 0.0))
     bone_heads = {b.name: list(b.head_local) for b in arm.data.bones}
     h_span = float(size[2]) if hasattr(size, '__getitem__') else float(size.z)
@@ -2242,6 +2250,90 @@ def skirt_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     written = write_weights(mesh, bone_names, W_all, W_full_new, locked=locked)
     log["skirt_verts"] = int(written)
     return written
+
+
+def body_parts_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
+    """Body-part rules for a dressed humanoid, each off unless the spec sets it (fractions are of the height):
+
+      arm_reach     arm bones (shoulder, arm, forearm, hand, fingers) only own vertices within this distance of the
+                    arm's own bones; past it, their share goes to the nearest spine, neck or head bone. Long hair over
+                    the shoulders and a robe's chest stop lifting with a raised arm.
+      feet_on_legs  below the knee, vertices within this distance of a shin, foot or toe bone belong to those alone
+                    (shin above the ankle, foot below, blended over 6% of the height): a boot holds together.
+      pin           [[bone, [x0,y0,z0], [x1,y1,z1]], ...]: vertices in the box (0..1 of the model's bounds) ride the
+                    bone whole. For pieces welded into the rest (a rosary, a belt buckle): rigid_to needs loose pieces.
+
+    Locked vertices are left alone."""
+    if spec is None: spec = {}
+    if log is None: log = {}
+    reach = spec.get("arm_reach"); feet = spec.get("feet_on_legs"); pins = spec.get("pin") or []
+    if not (reach or feet or pins): return 0
+    verts = mesh.data.vertices; n = len(verts)
+    P = np.empty(n * 3); verts.foreach_get("co", P); P = P.reshape(n, 3)
+    lo, hi = P.min(0), P.max(0); span = np.maximum(hi - lo, 1e-9); height = float(span[2])
+    bone_names = [b.name for b in arm.data.bones if b.use_deform]
+    col = {b: k for k, b in enumerate(bone_names)}
+    W = read_weights(mesh, bone_names); W0 = W.copy()
+    locked = spec.get("_locked") or set()
+    free = np.ones(n, bool)
+    if locked: free[np.fromiter(locked, dtype=np.int64, count=len(locked))] = False
+    AW = np.array(arm.matrix_world)
+    head = {b.name: (AW[:3, :3] @ np.array(b.head_local) + AW[:3, 3]) for b in arm.data.bones}
+    tail = {b.name: (AW[:3, :3] @ np.array(b.tail_local) + AW[:3, 3]) for b in arm.data.bones}
+
+    def seg(Q, b):
+        a0, a1 = head[b], tail[b]; ab = a1 - a0
+        t = np.clip(((Q - a0) @ ab) / max(1e-12, ab @ ab), 0, 1)
+        return np.linalg.norm(Q - (a0 + t[:, None] * ab), axis=1)
+
+    done = 0
+    if reach:
+        r = float(reach if not isinstance(reach, bool) else 0.12) * height
+        ARM = ("shoulder", "arm", "hand", "clavicle", "finger", "thumb", "index", "middle", "ring", "pinky")
+        arm_bones = [b for b in bone_names if any(w in b.lower() for w in ARM) and "leg" not in b.lower()]
+        body = [b for b in bone_names if any(w in b.lower() for w in ("spine", "neck", "head", "chest", "hips"))]
+        # reach is measured from the arm itself (upper arm, forearm, hand): hair lying over the collarbone is near
+        # the shoulder bone but not near the arm, and must still come off it
+        limb = [b for b in arm_bones if not any(w in b.lower() for w in ("shoulder", "clavicle"))] or arm_bones
+        if arm_bones and body:
+            d_arm = np.min([seg(P, b) for b in limb], axis=0)
+            ai = [col[b] for b in arm_bones]
+            far = free & (d_arm > r) & (W[:, ai].sum(1) > 1e-4)
+            # the torso column: nearer the middle than the shoulder joints and below them is chest and back (and
+            # hair hanging over them), never arm, however near the shoulder bone it lies
+            joints = [head[b] for b in limb if b.lower().endswith("arm") and "fore" not in b.lower()]
+            if joints:
+                jx = min(abs(j[0]) for j in joints); jz = min(j[2] for j in joints)
+                far |= free & (np.abs(P[:, 0]) < 0.9 * jx) & (P[:, 2] < jz - 0.02 * height) & (W[:, ai].sum(1) > 1e-4)
+            if far.any():
+                d_body = np.stack([seg(P[far], b) for b in body], axis=1)
+                near_b = np.array([col[body[k]] for k in d_body.argmin(1)])
+                moved = W[np.ix_(far, ai)].sum(1)
+                W[np.ix_(far, ai)] = 0
+                W[np.where(far)[0], near_b] += moved
+                log["arm_reach_verts"] = int(far.sum()); done += int(far.sum())
+    if feet:
+        r = float(feet if not isinstance(feet, bool) else 0.035) * height
+        for side in ("Left", "Right"):
+            shin, foot, toe = side + "Leg", side + "Foot", side + "ToeBase"
+            if not all(b in col for b in (shin, foot, toe)): continue
+            ds, df, dt = seg(P, shin), seg(P, foot), seg(P, toe)
+            knee_z = head[shin][2]
+            near = free & (P[:, 2] < knee_z) & (np.minimum(np.minimum(ds, df), dt) < r)
+            idx = np.where(near)[0]
+            up = np.clip((P[idx, 2] - head[foot][2]) / (0.06 * height) + 0.5, 0, 1)
+            to_toe = np.clip((df[idx] - dt[idx]) / (0.015 * height) + 0.5, 0, 1) * (1 - up)
+            W[idx] = 0
+            W[idx, col[shin]] = up; W[idx, col[foot]] = (1 - up) * (1 - to_toe); W[idx, col[toe]] = (1 - up) * to_toe
+            log["feet_on_legs_" + side] = int(len(idx)); done += int(len(idx))
+    for b, a0, a1 in pins:
+        if b not in col: continue
+        N = (P - lo) / span
+        box = free & np.all((N >= np.array(a0)) & (N < np.array(a1)), axis=1)
+        W[box] = 0; W[box, col[b]] = 1.0
+        log.setdefault("pinned", {})[b] = log.get("pinned", {}).get(b, 0) + int(box.sum()); done += int(box.sum())
+    write_weights(mesh, bone_names, W0, W, locked=locked)
+    return done
 
 
 def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None):

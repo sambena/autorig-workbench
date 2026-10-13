@@ -333,6 +333,23 @@ def main(argv=None):
     scene.frame_set(0)
     bpy.context.view_layer.update()
 
+    # A clip that does not move is never saved: a re-retarget into a rig file once came out as a still pose (every
+    # channel two flat keys), and it went to the viewer and a video unnoticed.
+    moving = 0
+    for fc in action_fcurves(new_action):
+        vals = [kp.co.y for kp in fc.keyframe_points]
+        if vals and max(vals) - min(vals) > 1e-4:
+            moving += 1
+    if moving == 0 and n_out > 1:
+        print(f"RETARGET_WORKER: ERROR the baked clip '{clip_name}' does not move (no channel changes over "
+              f"{n_out} frames); the rig's file is left as it was")
+        if out_json:
+            os.makedirs(os.path.dirname(os.path.abspath(out_json)), exist_ok=True)
+            with open(out_json, "w", encoding="utf-8") as fh:
+                json.dump({"status": "FAIL", "clip_name": clip_name, "error": "clip does not move"}, fh, indent=2)
+        return 1
+    print(f"RETARGET_WORKER: {moving} channels move")
+
     # Save target blend
     print(f"RETARGET_WORKER: Saving updated blend '{target_blend}'")
     bpy.ops.wm.save_mainfile(filepath=target_blend)

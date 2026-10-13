@@ -169,4 +169,12 @@ The GUI's `/api/audit?name=<model>` serves the whole JSON.
 - Paper-thin loose strips (ribbons, fins) follow the nearest chain; give them chains of their own if they must move.
 - Robes and skirts sculpted as one mesh with the legs stretch at the hem on a long stride. That is the sculpt, not the
   weights; cloth bones would be the fix.
+- Generated exports (Rodin, glTF in general) repeat every vertex on the texture seams, so the triangles are not
+  joined. `load` welds vertices that sit on top of each other (within 1e-5, `AUTORIG_WELD=0` turns it off); without it
+  decimation and skinning crack such a model open everywhere when it moves.
+- Dances: `run.py smpl-to-bvh` turns an SMPL motion (EDGE's `--save_motions` pickle and the like) into a BVH with the
+  humanoid's bone names, the feet on the floor and the root's rest height right; `--arms-out`, `--feet-keep` and
+  `--leg-twist-keep` adapt a dance learned on dancers in tight clothes to a robe. Then `run.py retarget`, then
+  `run.py clip-check <model>`: does every clip move, do the seams stay closed, how often is a hand inside the body.
+  Retarget refuses to save a clip that does not move.
 - Bend tests are stills of one strong pose. They catch tearing and wrong ownership, not everything an animation will.

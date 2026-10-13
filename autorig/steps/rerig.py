@@ -68,7 +68,30 @@ def load(path):
     mesh = bpy.context.view_layer.objects.active if len(meshes) > 1 else meshes[0]
     for o in list(bpy.data.objects):
         if o is not mesh: bpy.data.objects.remove(o, do_unlink=True)
+    weld(mesh)
     return mesh, joints
+
+
+WELD_DIST = float(os.environ.get("AUTORIG_WELD", "1e-5"))
+
+
+def weld(mesh, dist=WELD_DIST):
+    """Merges vertices that sit on top of each other. Generated exports (Rodin, glTF in general) repeat a vertex on
+    every texture seam, so neighbouring triangles are not joined: decimation then shrinks each piece's edge on its own
+    and skinning pulls them apart, and the model cracks open everywhere when it moves. UVs live on the loops, so
+    the seams' texture stays. AUTORIG_WELD=0 turns it off."""
+    if dist <= 0:
+        return 0
+    import bmesh
+    bm = bmesh.new(); bm.from_mesh(mesh.data)
+    before = len(bm.verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=dist)
+    merged = before - len(bm.verts)
+    if merged:
+        bm.to_mesh(mesh.data); mesh.data.update()
+        print("WELD %d duplicate vertices merged (%d -> %d)" % (merged, before, len(bm.verts)))
+    bm.free()
+    return merged
 
 def bounds(mesh):
     n = len(mesh.data.vertices)
@@ -1291,6 +1314,8 @@ def skin(mesh, arm, chains, spec, size, log):
         timed("centerline_armor", placed_rules.centerline_armor_pass, mesh, arm, chains, spec, size, log)
     if spec.get("skirt"):
         timed("skirt", placed_rules.skirt_pass, mesh, arm, chains, spec, size, log)
+    if spec.get("arm_reach") or spec.get("feet_on_legs") or spec.get("pin"):
+        timed("body_parts", placed_rules.body_parts_pass, mesh, arm, chains, spec, size, log)
     # hinges and twisting shafts, each joint once (the two passes used to go over the same joints)
     timed("joint_relaxation", placed_rules.joint_relaxation_pass, mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
