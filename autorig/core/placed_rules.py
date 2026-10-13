@@ -2210,7 +2210,11 @@ def skirt_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     if len(cand) == 0: return 0
     Q = P[cand]
     dL, tL = dist_to_polyline(Q, ax["L"]); dR, tR = dist_to_polyline(Q, ax["R"])
-    near_leg = np.minimum(dL, dR) <= radius
+    # the feet are leg too: a boot reaches forward past the ankle, and shared with the hips it tears when the foot
+    # points (ankle -> ball -> toe, when the chain has them)
+    feet = [[np.array(p[:3], dtype=np.float64) for p in c["points"][2:5]] for c in legs.values() if len(c["points"]) >= 4]
+    d_foot = np.min([dist_to_polyline(Q, f)[0] for f in feet], axis=0) if feet else np.full(len(Q), np.inf)
+    near_leg = (np.minimum(dL, dR) <= radius) | (d_foot <= radius)
     Q, cand, dL, dR, tL, tR = Q[~near_leg], cand[~near_leg], dL[~near_leg], dR[~near_leg], tL[~near_leg], tR[~near_leg]
     if len(cand) == 0: return 0
 
