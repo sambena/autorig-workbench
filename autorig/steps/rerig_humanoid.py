@@ -165,6 +165,12 @@ def measure(co, lo, size, h, main=None):
         k_x = float(np.median(s_knee[:, 0])) if len(s_knee) else float(xs[0] * 0.5 + xs[1] * 0.5)
         k_y = float(np.median(s_knee[:, 1])) if len(s_knee) else float(spine_y(knee_z))
         raw[side + "knee"] = (k_x, k_y, knee_z)
+        if "leg" in x:
+            # under a robe the depth of a slab is the cloth's (a train trailing behind drags the median back), so
+            # the leg stands straight down under the body's middle, as a T-pose's legs do
+            ly = float(spine_y(z["hip"]))
+            for j in ("hip", "knee", "ankle"):
+                raw[side + j] = (raw[side + j][0], ly, raw[side + j][2])
 
         foot = M[(M[:, 2] < 0.06) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
         if len(foot) == 0:
@@ -178,6 +184,9 @@ def measure(co, lo, size, h, main=None):
         else:
             fx = float(xs[0] * 0.5 + xs[1] * 0.5)
             toe_y = float(raw[side + "ankle"][1] - 0.08)
+        if "leg" in x:                             # a hem lying on the floor ahead of the boot is not the toe
+            ay0 = raw[side + "ankle"][1]
+            toe_y = min(max(toe_y, ay0 - 0.24 / max(1e-6, size[1])), ay0 - 0.08 / max(1e-6, size[1]))
         raw[side + "toe"] = (fx, toe_y, 0.02)
         ay = raw[side + "ankle"][1]
         raw[side + "ball"] = (fx, ay + (toe_y - ay) * 0.68, 0.035)
@@ -256,6 +265,14 @@ def measure(co, lo, size, h, main=None):
             tip_y = float(arm["knuckle"][1])
             tip_z = float(arm["knuckle"][2])
         raw[side + "tip"] = (X(x["tip"]), tip_y, tip_z)
+        if h.get("straight_arms"):
+            # a T-pose whose wide sleeves hang below the arm: the slices' middle is the sleeve's, and the tracker
+            # follows it down. The arm runs straight from the shoulder (its height, the torso's depth) to the tip.
+            s0 = np.array((X(shoulder_x), torso_y, z["arm"])); s1 = np.array(raw[side + "tip"], dtype=float)
+            for j in ("shoulder", "elbow", "wrist", "knuckle"):
+                f = shoulder_x if j == "shoulder" else x[j]
+                t = (X(f) - s0[0]) / (s1[0] - s0[0]) if abs(s1[0] - s0[0]) > 1e-6 else 0.0
+                raw[side + j] = tuple(s0 + (s1 - s0) * t)
     # the hip joints mirror each other: a stride moves the knees and feet, never the pelvis
     hx = (raw["Lefthip"][0] - raw["Righthip"][0]) / 2; hy = (raw["Lefthip"][1] + raw["Righthip"][1]) / 2
     raw["Lefthip"] = (cx + hx, hy, z["hip"]); raw["Righthip"] = (cx - hx, hy, z["hip"])
