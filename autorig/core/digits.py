@@ -10,6 +10,23 @@ DIGIT_NAMES_HUMANOID = ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 DIGIT_NAMES_PAW = ["digit_1", "digit_2", "digit_3", "digit_4"]
 
 
+def humanoid_digits_from_tips(wrist, tips, side="Left"):
+    """Five finger chains on a model's own fingertips (measured on the mesh: rerig_humanoid.find_fingertips), for
+    sculpts whose fingers are long, spread or uneven, where the template below would miss them. tips: five points,
+    any order; they are sorted thumb to little finger across the palm (T-pose, palms down: the thumbs point forward,
+    -Y). Each finger runs from its knuckle (a share of the way from the wrist to its tip) to the tip."""
+    tips = sorted((tuple(t) for t in tips), key=lambda t: t[1])
+    chains = []
+    for fname, t in zip(["Thumb", "Index", "Middle", "Ring", "Pinky"], tips):
+        k_share = 0.30 if fname == "Thumb" else 0.45
+        k = tuple(w + (c - w) * k_share for w, c in zip(wrist, t))
+        lerp = lambda a, b, s: tuple(x + (y - x) * s for x, y in zip(a, b))
+        chains.append({"role": "finger", "name": f"{side}Hand{fname}", "finger": fname, "side": side,
+                       "bones": [f"{side}Hand{fname}1", f"{side}Hand{fname}2", f"{side}Hand{fname}3"],
+                       "points": [k, lerp(k, t, 0.42), lerp(k, t, 0.74), t], "parent_bone": f"{side}Hand"})
+    return chains
+
+
 def generate_humanoid_digits(wrist, knuckle, tip, side="Left", hand_width=None, num_fingers=5):
     """Synthesizes articulated finger chains from wrist, knuckle, and tip landmarks.
     wrist, knuckle, tip are 3D coordinate tuples/vectors (x, y, z).

@@ -160,7 +160,7 @@ For `kind: "humanoid"`: `forward`, then joint heights `z` (`hip`, `knee`, `ankle
 model's bounds, read off `measure.py`'s front view. Everything else about a joint is measured from the mesh: the
 body's middle across the legs (a held prop does not move the spine), each arm followed out from the shoulder (an
 A-pose's sloping arm is tracked), the fingertips from the body's own pieces. `digits: true` gives each hand five
-three-bone fingers (`LeftHandThumb1..3` ... `LeftHandPinky1..3`) in place of the single index chain; `twist_bones`,
+three-bone fingers (`LeftHandThumb1..3` ... `LeftHandPinky1..3`) in place of the single index chain; they are built on the model's own five fingertips when the mesh has them (the farthest points past the wrist, each the tip of its own finger, sorted thumb to little finger across the palm), and on a template otherwise; `twist_bones`,
 `morph_targets` and `keep_inside` apply as for the other kinds.
 
 `x.leg` (optional) is for a long robe, gown or skirt: each leg's middle, measured out from the body's middle (0..1 of

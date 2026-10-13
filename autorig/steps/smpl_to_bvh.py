@@ -2,7 +2,7 @@
 # Autorig Workbench: SMPL motion (EDGE and other music-to-dance or mocap models) -> a BVH the retargeter maps by name.
 #
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl|.npz> <out.bvh> [--fps 30] [--up z|y] [--arms-out DEG]
-#                                         [--feet-keep 0..1] [--leg-twist-keep 0..1]
+#                                         [--feet-keep 0..1] [--leg-twist-keep 0..1] [--finger-curl DEG]
 #   blender -b --python autorig/steps/smpl_to_bvh.py -- <same arguments>
 #
 # The input holds smpl_poses (T, 72 axis-angle: 24 joints, root first) and smpl_trans (T, 3), and may hold full_pose
@@ -15,7 +15,9 @@
 #     character's own hip height relative to it, so an OFFSET of 0 doubles her height;
 #   - --arms-out lifts both upper arms out from the sides (SMPL dancers wear tight clothes; a robe needs room);
 #   - --feet-keep keeps that share of the ankle rotation and holds the toes straight; --leg-twist-keep keeps that
-#     share of the turn along the thigh and shin (the swing stays), for boots under a robe.
+#     share of the turn along the thigh and shin (the swing stays), for boots under a robe;
+#   - --finger-curl adds five fingers per hand (SMPL has none) held in a relaxed curl of about DEG per joint, so a
+#     rig with digits does not dance with its hands flat and spread as in its T-pose.
 # Runs in Blender's Python (mathutils): nothing to install.
 import sys, os, pickle
 import numpy as np
@@ -23,7 +25,7 @@ from mathutils import Matrix, Quaternion, Vector
 
 NAMES = ["Hips", "LeftUpLeg", "RightUpLeg", "Spine", "LeftLeg", "RightLeg", "Spine1", "LeftFoot", "RightFoot",
          "Spine2", "LeftToeBase", "RightToeBase", "Neck", "LeftShoulder", "RightShoulder", "Head", "LeftArm",
-         "RightArm", "LeftForeArm", "RightForeArm", "LeftHand", "RightHand", "LeftHandIndex1", "RightHandIndex1"]
+         "RightArm", "LeftForeArm", "RightForeArm", "LeftHand", "RightHand", "LeftHandEnd", "RightHandEnd"]
 PARENTS = [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19, 20, 21]
 OFFSETS = np.array([   # SMPL's neutral rest, metres, Y up, facing +Z, its left = +X
     [0.0, 0.0, 0.0], [0.05858135, -0.08228004, -0.01766408], [-0.06030973, -0.09051332, -0.01354254],
@@ -36,6 +38,11 @@ OFFSETS = np.array([   # SMPL's neutral rest, metres, Y up, facing +Z, its left 
     [-0.26910836, 0.00679372, -0.00602676], [0.08669055, -0.01063603, -0.01559429], [-0.0887537, -0.00865157, -0.01010708]])
 END = {10: [0, 0, 0.05], 11: [0, 0, 0.05], 15: [0, 0.15, 0.02], 22: [0.08, 0, 0], 23: [-0.08, 0, 0]}
 REST_PELVIS = -(OFFSETS[1][1] + OFFSETS[4][1] + OFFSETS[7][1] + OFFSETS[10][1])
+# --finger-curl: five fingers per hand (the workbench's digits names), SMPL frame (palm down, thumb forward +Z), each
+# finger held in a relaxed curl. (knuckle across the palm, segment lengths, share of the curl)
+FINGERS = [("Thumb", 0.035, 0.032, (0.030, 0.025, 0.020), 0.45), ("Index", 0.095, 0.020, (0.035, 0.025, 0.020), 0.75),
+           ("Middle", 0.098, 0.000, (0.040, 0.028, 0.022), 0.9), ("Ring", 0.093, -0.018, (0.036, 0.026, 0.020), 1.0),
+           ("Pinky", 0.085, -0.034, (0.028, 0.020, 0.017), 1.15)]
 CM = 100.0
 
 
@@ -63,7 +70,7 @@ def load(path):
     return q, t, fp
 
 
-def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_keep=1.0):
+def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_keep=1.0, finger_curl=0.0):
     q, trans, fp = load(src)
     if fp is not None:
         ax = 2 if up == "z" else 1
@@ -88,19 +95,36 @@ def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_kee
     if feet_keep < 1:
         q[:, [7, 8]] *= feet_keep
         q[:, [10, 11]] = 0
-    kids = {i: [j for j in range(24) if PARENTS[j] == i] for i in range(24)}
+    names, parents, offsets = list(NAMES), list(PARENTS), [np.array(o) for o in OFFSETS]
+    finger_rot = {}
+    if finger_curl:
+        for side, hand, sx in (("Left", 20, 1.0), ("Right", 21, -1.0)):
+            for fname, along, across, segs, share in FINGERS:
+                parent = hand
+                for k in range(3):
+                    names.append("%sHand%s%d" % (side, fname, k + 1)); parents.append(parent)
+                    offsets.append(np.array([sx * along, -0.01, across]) if k == 0 else np.array([sx * segs[k - 1], 0.0, 0.0]))
+                    j = len(names) - 1
+                    ang = np.radians(finger_curl * share * (0.6 if k == 0 else 1.0))
+                    if fname == "Thumb":   # the thumb tucks in toward the palm, across it
+                        finger_rot[j] = Quaternion((0, 1, 0), sx * ang * 0.8) @ Quaternion((0, 0, 1), -sx * ang * 0.5)
+                    else:                  # fingers curl down toward the palm (-Y): about +Z, mirrored for the right
+                        finger_rot[j] = Quaternion((0, 0, 1), -sx * ang)
+                    parent = j
+    NJ = len(names)
+    kids = {i: [j for j in range(NJ) if parents[j] == i] for i in range(NJ)}
     lines = ["HIERARCHY"]
 
     def write(j, depth):
         pad = "  " * depth
-        o = (OFFSETS[j] if j else np.array([0.0, REST_PELVIS, 0.0])) * CM
-        lines.append("%s%s %s" % (pad, "ROOT" if j == 0 else "JOINT", NAMES[j])); lines.append(pad + "{")
+        o = (offsets[j] if j else np.array([0.0, REST_PELVIS, 0.0])) * CM
+        lines.append("%s%s %s" % (pad, "ROOT" if j == 0 else "JOINT", names[j])); lines.append(pad + "{")
         lines.append("%s  OFFSET %.5f %.5f %.5f" % (pad, *o))
         lines.append(pad + ("  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation" if j == 0
                             else "  CHANNELS 3 Zrotation Xrotation Yrotation"))
         for k in kids[j]: write(k, depth + 1)
         if not kids[j]:
-            e = np.array(END.get(j, [0, 0.05, 0])) * CM
+            e = np.array(END.get(j, [0.02 * (1 if "Left" in names[j] else -1), 0, 0] if j >= 24 else [0, 0.05, 0])) * CM
             lines.append("%s  End Site\n%s  {\n%s    OFFSET %.5f %.5f %.5f\n%s  }" % (pad, pad, pad, *e, pad))
         lines.append(pad + "}")
 
@@ -115,7 +139,7 @@ def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_kee
         pos = to_yup @ Vector(trans[t])
         row = [pos.x * CM, pos.y * CM, pos.z * CM]
         for j in order:
-            rot = (to_yup @ q_of(q[t, 0])) if j == 0 else q_of(q[t, j])
+            rot = (to_yup @ q_of(q[t, 0])) if j == 0 else (finger_rot[j] if j >= 24 else q_of(q[t, j]))
             e = rot.to_matrix().to_euler("YXZ")       # BVH "Z X Y" (M = Rz Rx Ry) is Blender's YXZ order
             row += [np.degrees(e.z), np.degrees(e.x), np.degrees(e.y)]
         lines.append(" ".join("%.4f" % v for v in row))
@@ -131,7 +155,8 @@ def main(argv):
                             "[--feet-keep F] [--leg-twist-keep F]")
     opt = lambda n, d: type(d)(a[a.index(n) + 1]) if n in a else d
     return convert(a[0], a[1], fps=opt("--fps", 30), up=opt("--up", "z"), arms_out=opt("--arms-out", 0.0),
-                   feet_keep=opt("--feet-keep", 1.0), leg_twist_keep=opt("--leg-twist-keep", 1.0))
+                   feet_keep=opt("--feet-keep", 1.0), leg_twist_keep=opt("--leg-twist-keep", 1.0),
+                   finger_curl=opt("--finger-curl", 0.0))
 
 
 if __name__ == "__main__":
