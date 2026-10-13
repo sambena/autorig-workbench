@@ -2,7 +2,7 @@
 # Autorig Workbench: SMPL motion (EDGE and other music-to-dance or mocap models) -> a BVH the retargeter maps by name.
 #
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl|.npz> <out.bvh> [--fps 30] [--up z|y] [--arms-out DEG]
-#                                         [--feet-keep 0..1] [--leg-twist-keep 0..1] [--finger-curl DEG]
+#                                         [--feet-level 0..1] [--feet-keep 0..1] [--leg-twist-keep 0..1] [--finger-curl DEG]
 #   blender -b --python autorig/steps/smpl_to_bvh.py -- <same arguments>
 #
 # The input holds smpl_poses (T, 72 axis-angle: 24 joints, root first) and smpl_trans (T, 3), and may hold full_pose
@@ -14,7 +14,9 @@
 #   - the root's rest OFFSET is SMPL's standing pelvis height: the retargeter adds the root's motion to the
 #     character's own hip height relative to it, so an OFFSET of 0 doubles her height;
 #   - --arms-out lifts both upper arms out from the sides (SMPL dancers wear tight clothes; a robe needs room);
-#   - --feet-keep keeps that share of the ankle rotation and holds the toes straight; --leg-twist-keep keeps that
+#   - --feet-level 1 keeps a foot that is down level on the floor and turned the way the pelvis faces (a lifted foot
+#     follows its shin partway), toes straight: what boots under a robe want. --feet-keep only scales the ankle's
+#     own turn, so a foot holds the shin's angle (toes stab down as the leg swings); --leg-twist-keep keeps that
 #     share of the turn along the thigh and shin (the swing stays), for boots under a robe;
 #   - --finger-curl adds five fingers per hand (SMPL has none) held in a relaxed curl of about DEG per joint, so a
 #     rig with digits does not dance with its hands flat and spread as in its T-pose.
@@ -70,7 +72,38 @@ def load(path):
     return q, t, fp
 
 
-def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_keep=1.0, finger_curl=0.0):
+def level_feet(q, trans, to_yup, strength):
+    """Feet that stand on the floor: while a foot is down, its turn is set so it lies as level as SMPL's rest foot
+    and points the way the pelvis faces; lifted, it follows the shin more (at 25 cm up, 40% level). `strength` (0..1)
+    scales how far toward level it goes. In place on q (T, 24, 3 axis-angle). --feet-keep only scales the ankle's own
+    turn down, so a foot keeps the shin's angle (a robed dancer's boots tipped toes-down 84 deg and splayed 22 deg)."""
+    T = len(q)
+    G = [[None] * 24 for _ in range(T)]
+    ankle = np.zeros((T, 2))
+    for t in range(T):
+        pos = [None] * 24
+        for j in range(24):
+            r = q_of(q[t, j])
+            if j == 0:
+                G[t][0] = to_yup @ r; pos[0] = Vector(to_yup @ Vector(trans[t]))
+            else:
+                p = PARENTS[j]; G[t][j] = G[t][p] @ r; pos[j] = pos[p] + G[t][p] @ Vector(OFFSETS[j])
+        ankle[t] = (pos[7].y, pos[8].y)
+    down = np.percentile(ankle, 5, axis=0)   # each ankle's height when its foot is planted
+    # SMPL's rest feet turn out (the toes 18.6 deg left, 15 deg right of straight ahead), and the retargeter carries
+    # a bone's direction across, so a character whose rest feet point ahead would dance splayed: level means straight.
+    splay = [np.arctan2(OFFSETS[toe][0], OFFSETS[toe][2]) for toe in (10, 11)]
+    for t in range(T):
+        f = G[t][0] @ Vector((0, 0, 1)); yaw = np.arctan2(f.x, f.z)
+        for k, (j, leg) in enumerate(((7, 4), (8, 5))):
+            flat = Quaternion((0, 1, 0), yaw - splay[k])
+            lift = ankle[t, k] - down[k]
+            w = strength * (1.0 if lift < 0.04 else max(0.4, 1 - 0.6 * (lift - 0.04) / 0.21))
+            target = G[t][j].slerp(flat, w)
+            q[t, j] = rv_of(G[t][leg].inverted() @ target)
+
+
+def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_keep=1.0, finger_curl=0.0, feet_level=0.0):
     q, trans, fp = load(src)
     if fp is not None:
         ax = 2 if up == "z" else 1
@@ -94,6 +127,9 @@ def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_kee
                 q[t, j] = rv_of(swing @ Quaternion(tw_ax, tw_an * leg_twist_keep))
     if feet_keep < 1:
         q[:, [7, 8]] *= feet_keep
+        q[:, [10, 11]] = 0
+    if feet_level > 0:
+        level_feet(q, trans, to_yup, feet_level)
         q[:, [10, 11]] = 0
     names, parents, offsets = list(NAMES), list(PARENTS), [np.array(o) for o in OFFSETS]
     finger_rot = {}
@@ -152,11 +188,11 @@ def convert(src, dst, fps=30, up="z", arms_out=0.0, feet_keep=1.0, leg_twist_kee
 def main(argv):
     a = argv
     if len(a) < 2: sys.exit("usage: smpl_to_bvh.py <motion.pkl|.npz> <out.bvh> [--fps N] [--up z|y] [--arms-out DEG] "
-                            "[--feet-keep F] [--leg-twist-keep F]")
+                            "[--feet-level F] [--feet-keep F] [--leg-twist-keep F] [--finger-curl DEG]")
     opt = lambda n, d: type(d)(a[a.index(n) + 1]) if n in a else d
     return convert(a[0], a[1], fps=opt("--fps", 30), up=opt("--up", "z"), arms_out=opt("--arms-out", 0.0),
                    feet_keep=opt("--feet-keep", 1.0), leg_twist_keep=opt("--leg-twist-keep", 1.0),
-                   finger_curl=opt("--finger-curl", 0.0))
+                   finger_curl=opt("--finger-curl", 0.0), feet_level=opt("--feet-level", 0.0))
 
 
 if __name__ == "__main__":

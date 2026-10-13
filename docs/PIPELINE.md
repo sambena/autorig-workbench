@@ -173,8 +173,10 @@ The GUI's `/api/audit?name=<model>` serves the whole JSON.
   joined. `load` welds vertices that sit on top of each other (within 1e-5, `AUTORIG_WELD=0` turns it off); without it
   decimation and skinning crack such a model open everywhere when it moves.
 - Dances: `run.py smpl-to-bvh` turns an SMPL motion (EDGE's `--save_motions` pickle and the like) into a BVH with the
-  humanoid's bone names, the feet on the floor and the root's rest height right; `--arms-out`, `--feet-keep` and
-  `--leg-twist-keep` adapt a dance learned on dancers in tight clothes to a robe. SMPL has no fingers, so a rig with `digits` dances
+  humanoid's bone names, the feet on the floor and the root's rest height right; `--arms-out`, `--feet-level` and
+  `--leg-twist-keep` adapt a dance learned on dancers in tight clothes to a robe. `--feet-level 1` keeps a planted foot
+  level and turned with the pelvis (a lifted one follows its shin partway); the older `--feet-keep` only scales the ankle's
+  own turn, which at 0.3 froze a dancer's boots at the shin's angle (toes down to 84 deg, splayed 22 deg), so prefer the first. SMPL has no fingers, so a rig with `digits` dances
   with its hands flat as in its T-pose; `--finger-curl 25` holds five fingers per hand in a relaxed curl. Then `run.py retarget`, then
   `run.py clip-check <model>`: does every clip move, do the seams stay closed, how often is a hand inside the body.
   Retarget refuses to save a clip that does not move.

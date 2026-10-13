@@ -161,6 +161,32 @@ def mesh_islands(mesh):
     return [list(part) for part in _ISLANDS[key]]
 
 
+def floating_pieces(co, islands, gap):
+    """The loose pieces that float: every piece but the largest (the body) whose nearest vertex is more than `gap`
+    from the body, as (vertex indices, that distance), farthest first. A trimmed generated model leaves these behind
+    (a sleeve cut short left two scraps 15-17 cm off a robe, and they rode on the hips); a rosary, a buckle or a
+    cross sewn on lies on the body (under a centimetre) and is kept."""
+    co = np.asarray(co, dtype=np.float64)
+    if len(islands) < 2:
+        return []
+    body_i = max(range(len(islands)), key=lambda k: len(islands[k]))
+    body = co[islands[body_i]]
+    out = []
+    for k, piece in enumerate(islands):
+        if k == body_i:
+            continue
+        pts = co[piece]
+        near = np.inf
+        for s in range(0, len(pts), 256):   # a block of the piece against the whole body at a time
+            d2 = ((pts[s:s + 256, None, :] - body[None, ::max(1, len(body) // 20000), :]) ** 2).sum(-1)
+            near = min(near, float(np.sqrt(d2.min())))
+            if near <= gap:
+                break
+        if near > gap:
+            out.append((list(piece), near))
+    return sorted(out, key=lambda p: -p[1])
+
+
 def limb_groups(chains):
     """(front_bones, hind_bones): the bones of each leg or arm chain, sorted by where the limb leaves the body (its
     first point against the middle of the body chain; arms are front, and on an upright body legs are hind)."""

@@ -460,6 +460,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         log["error"] = f"no source model file found for {key}"
         return log
     mesh, joints = rerig.load(src_path)
+    rerig.floating(mesh, spec, log)
     mesh.name = key
     log["turned_deg"] = rerig.normalise(mesh, joints, spec)
     lo, hi = rerig.bounds(mesh); size = hi - lo

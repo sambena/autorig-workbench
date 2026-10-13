@@ -1195,6 +1195,35 @@ def islands_of(mesh):
     """The mesh's loose pieces (placed_rules.mesh_islands: vectorised, and remembered while the topology holds)."""
     return placed_rules.mesh_islands(mesh)
 
+FLOAT_REPORT = 0.015  # of the model's size: a loose piece this far off the body is named in the log, dropped or not
+
+def floating(mesh, spec, log):
+    """Loose pieces floating off the body (placed_rules.floating_pieces). Every one more than FLOAT_REPORT off is
+    named in the log ("floating": size, distance, where); with `drop_floating` (a fraction of the model's size, e.g.
+    0.03) in the spec, the ones farther
+    than that are deleted before rigging, since bone heat hands such a scrap to whatever bone is nearest and it
+    then hangs in the air beside the moving part it was cut from."""
+    me = mesh.data
+    n = len(me.vertices)
+    co = np.empty(n * 3, dtype=np.float64); me.vertices.foreach_get("co", co); co = co.reshape(n, 3)
+    size = float((co.max(axis=0) - co.min(axis=0)).max()) if n else 1.0
+    gap = spec.get("drop_floating")
+    gap = float(gap) * size if gap else None
+    found = placed_rules.floating_pieces(co, islands_of(mesh), min(FLOAT_REPORT * size, gap) if gap else FLOAT_REPORT * size)
+    if not found:
+        return 0
+    log["floating"] = [{"verts": len(p), "off_cm": round(d * 100, 1), "at": [round(c, 3) for c in co[p].mean(axis=0)],
+                        "dropped": bool(gap and d > gap)} for p, d in found]
+    drop = sorted({i for p, d in found if gap and d > gap for i in p})
+    for f in log["floating"]:
+        print("FLOATING %d verts %.1f cm off the body at %s%s" % (f["verts"], f["off_cm"], f["at"], ": dropped" if f["dropped"] else ""))
+    if drop:
+        import bmesh
+        bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[bm.verts[i] for i in drop], context='VERTS')
+        bm.to_mesh(me); bm.free(); me.update()
+    return len(drop)
+
 def _lo_span(mesh):
     """The mesh's lowest corner and its extent per axis (at least 1e-9), as Vectors."""
     n = len(mesh.data.vertices)
@@ -1631,6 +1660,7 @@ def rerig(key, spec, qa_dir, export):
     path = find_fbx(key, spec)
     if not path: log["error"] = "no fbx"; return log
     mesh, joints = load(path)
+    floating(mesh, spec, log)
     mesh.name = key
     log["turned_deg"] = normalise(mesh, joints, spec)
     lo, hi = bounds(mesh); size = hi - lo
