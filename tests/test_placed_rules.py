@@ -18,6 +18,21 @@ except ImportError:
 
 @unittest.skipUnless(HAVE_NUMPY, "numpy not installed in system Python (available in Blender)")
 class TestPlacedRulesMath(unittest.TestCase):
+    def test_floating_pieces_finds_scraps_and_keeps_what_lies_on_the_body(self):
+        # a body: a 1 m column of points; a rosary lying on it (5 mm off); two scraps 16 cm and 30 cm out
+        body = [(0.1 * np.cos(a), 0.1 * np.sin(a), z) for z in np.linspace(0, 1, 41) for a in np.linspace(0, 6.2, 24)]
+        rosary = [(0.105, 0.0, z) for z in np.linspace(0.4, 0.6, 9)]
+        scrap = [(0.26 + 0.01 * k, 0.0, 0.7) for k in range(5)]
+        far = [(-0.40, 0.0, 0.5 + 0.01 * k) for k in range(3)]
+        co = body + rosary + scrap + far
+        n0, n1, n2 = len(body), len(body) + len(rosary), len(body) + len(rosary) + len(scrap)
+        islands = [list(range(n0)), list(range(n0, n1)), list(range(n1, n2)), list(range(n2, len(co)))]
+        got = placed_rules.floating_pieces(co, islands, 0.05)
+        self.assertEqual([sorted(p) for p, _ in got], [islands[3], islands[2]])   # farthest first; the rosary stays
+        self.assertAlmostEqual(got[0][1], 0.30, delta=0.01)
+        self.assertAlmostEqual(got[1][1], 0.16, delta=0.01)
+        self.assertEqual(placed_rules.floating_pieces(co, islands[:2], 0.05), [])
+        self.assertEqual(placed_rules.floating_pieces(co[:n0], islands[:1], 0.05), [])
     def test_compute_membrane_weights_gradient_and_normalization(self):
         # Two parallel spar bones: spar 0 along X=0, spar 1 along X=1
         spars = [
