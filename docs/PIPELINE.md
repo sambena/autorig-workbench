@@ -174,7 +174,8 @@ The GUI's `/api/audit?name=<model>` serves the whole JSON.
   decimation and skinning crack such a model open everywhere when it moves.
 - Dances: `run.py smpl-to-bvh` turns an SMPL motion (EDGE's `--save_motions` pickle and the like) into a BVH with the
   humanoid's bone names, the feet on the floor and the root's rest height right; `--arms-out`, `--feet-keep` and
-  `--leg-twist-keep` adapt a dance learned on dancers in tight clothes to a robe. Then `run.py retarget`, then
+  `--leg-twist-keep` adapt a dance learned on dancers in tight clothes to a robe. SMPL has no fingers, so a rig with `digits` dances
+  with its hands flat as in its T-pose; `--finger-curl 25` holds five fingers per hand in a relaxed curl. Then `run.py retarget`, then
   `run.py clip-check <model>`: does every clip move, do the seams stay closed, how often is a hand inside the body.
   Retarget refuses to save a clip that does not move.
 - Bend tests are stills of one strong pose. They catch tearing and wrong ownership, not everything an animation will.

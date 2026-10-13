@@ -280,6 +280,28 @@ def measure(co, lo, size, h, main=None):
     return out
 
 
+def find_fingertips(co, wrist, sgn, height):
+    """The hand's five fingertips on the mesh, or None: past the wrist along the arm (a T-pose's X), the points
+    farthest from the wrist that are each the farthest within 1% of the height around them, at least 1.2% apart. A
+    mitten, a fist or a hand with fewer than five clear tips gives None and the template fingers are used."""
+    w = np.array(wrist[:])
+    hand = co[(co[:, 0] - w[0]) * sgn > 0.005 * height]
+    hand = hand[np.abs(hand[:, 2] - w[2]) < 0.08 * height]
+    if len(hand) < 50: return None
+    d = np.linalg.norm(hand - w, axis=1)
+    order = np.argsort(-d)
+    cand = order[: max(50, len(order) // 3)]
+    tips = []
+    for i in cand:
+        p = hand[i]
+        if any(np.linalg.norm(p - t) < 0.012 * height for t in tips): continue
+        near = np.linalg.norm(hand - p, axis=1) < 0.01 * height
+        if d[i] >= d[near].max() - 1e-9:
+            tips.append(p)
+        if len(tips) == 5: break
+    return [Vector(t) for t in tips] if len(tips) == 5 else None
+
+
 def chains_for(J, digits=False):
     """The standard humanoid chains, in the form rerig.build_chains returns. digits: five fingers per hand
     (core/digits.py, three bones each, Mixamo names) in place of the single index-finger chain."""
@@ -299,7 +321,10 @@ def chains_for(J, digits=False):
                        "bones": [side + n for n in ("Shoulder", "Arm", "ForeArm", "Hand")],
                        "base": side + "Arm", "fade": 0.15})
             hand = (len(ch) - 1, 3)                 # the Hand bone of the chain just added
-            for f in digits_mod.generate_humanoid_digits(tuple(J[side + "wrist"]), tuple(k1), tuple(tip), side=side):
+            tips = J.get(side + "fingertips")
+            fingers = (digits_mod.humanoid_digits_from_tips(tuple(J[side + "wrist"]), tips, side=side) if tips else
+                       digits_mod.generate_humanoid_digits(tuple(J[side + "wrist"]), tuple(k1), tuple(tip), side=side))
+            for f in fingers:
                 ch.append({"role": "finger", "joints": [], "parent": hand, "ik": False, "side": "",
                            "points": [Vector(p) for p in f["points"]], "bones": list(f["bones"]),
                            "base": f["name"], "fade": 0.1})
@@ -445,6 +470,12 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         if len(idx) >= 0.1 * len(isl[0]): main[idx] = True
     J = measure(co, np.array(lo[:]), np.array(size[:]), h, main)
     log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items()}
+    if spec.get("digits"):
+        for side in ("Left", "Right"):
+            tips = find_fingertips(co, J[side + "wrist"], 1 if side == "Left" else -1, float(size[2]))
+            if tips:
+                J[side + "fingertips"] = tips
+                log[side + "_fingertips"] = [[round(c, 4) for c in t] for t in tips]
     chains = chains_for(J, bool(spec.get("digits")))
     if spec.get("keep_inside", True):              # a measured shoulder or knuckle outside the skin comes back in
         me = mesh.data
