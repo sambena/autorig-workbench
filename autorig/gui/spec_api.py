@@ -201,7 +201,7 @@ HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "join
                   "hinges", "hinge_radius_scale", "twist_pairs", "twist_radius_scale", "heal_max_gradient",
                   "heal_passes", "heal_blend", "rigid_island_max_share", "rigid_island_max_extent", "mesh_heal",
                   "jaw", "parts", "blends", "membranes", "rigid_to", "hard_split", "soft", "spike_reach",
-                  "envelope_skip", "girdle_reach"}
+                  "envelope_skip", "girdle_reach", "skirt"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [
@@ -627,7 +627,10 @@ def _check_humanoid(spec, E, W):
             elif x[k] < 0.0 or x[k] > 0.55:
                 E("humanoid.x." + k, "spans must be between 0.0 (outer tip) and 0.5 (center)")
         for k in x:
-            if k not in HUMANOID_X_KEYS:
+            if k == "leg":                       # optional: legs under a robe (docs/SPEC.md, "humanoid")
+                if not _num(x[k]) or not 0.0 < x[k] < 0.5:
+                    E("humanoid.x.leg", "a number: each leg's middle out from the body's middle (0 .. 0.5)")
+            elif k not in HUMANOID_X_KEYS:
                 W("humanoid.x." + k, "not a standard humanoid span")
         if all(k in x and _num(x[k]) for k in ("tip", "knuckle", "wrist", "elbow", "shoulder")):
             if not (x["tip"] <= x["knuckle"] <= x["wrist"] <= x["elbow"] <= x["shoulder"]):

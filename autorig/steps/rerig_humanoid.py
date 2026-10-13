@@ -131,6 +131,12 @@ def measure(co, lo, size, h, main=None):
     for side, sgn in (("Left", 1), ("Right", -1)):
         X = (lambda f: 1.0 - f) if sgn > 0 else (lambda f: f)   # 0..1 x on this side (x 0 = its right)
         xs = (cx + 0.02, 0.95) if sgn > 0 else (0.05, cx - 0.02)
+        # x.leg: each leg's middle this far out from the body's middle. A long robe or skirt fills the whole half
+        # below the hips, so the median of everything on a side lands out at the hem and splays the legs; with it,
+        # the hips, knees, ankles and feet are only read in a band around the leg (the boots under the hem).
+        if "leg" in x:
+            leg, band = float(x["leg"]), max(0.02, 0.5 * float(x["leg"]))
+            xs = (cx + leg - band, cx + leg + band) if sgn > 0 else (cx - leg - band, cx - leg + band)
         # Anatomical crease refinement for knee via cross-section pinch analysis
         knee_z = z["knee"]
         leg_m = M[(M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1]) & (M[:, 2] >= z["ankle"]) & (M[:, 2] <= z["hip"])]
