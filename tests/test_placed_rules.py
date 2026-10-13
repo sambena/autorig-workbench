@@ -32,9 +32,11 @@ class TestPlacedRulesMath(unittest.TestCase):
     def test_follow_weights_copies_the_surface_under_each_vertex(self):
         P = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [0.1, 0.01, 0], [1.9, 0.01, 0]], float)
         W = np.array([[1, 0], [0.5, 0.5], [0, 1], [0.3, 0.7], [0.3, 0.7]], float)
-        got = placed_rules.follow_weights(P, W, np.array([3, 4]), np.array([0, 1, 2]))
+        got = placed_rules.follow_weights(P, W, np.array([3, 4]), np.array([0, 1, 2]), k=1)
         np.testing.assert_allclose(got[3], [1, 0]); np.testing.assert_allclose(got[4], [0, 1])
         np.testing.assert_allclose(got[:3], W[:3])   # the body itself is untouched
+        got = placed_rules.follow_weights(P, W, np.array([3]), np.array([0, 1, 2]), k=2)   # the mean of the 2 nearest
+        np.testing.assert_allclose(got[3], [0.75, 0.25])
 
     def test_floating_pieces_finds_scraps_and_keeps_what_lies_on_the_body(self):
         # a body: a 1 m column of points; a rosary lying on it (5 mm off); two scraps 16 cm and 30 cm out

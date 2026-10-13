@@ -2350,23 +2350,26 @@ def limb_pieces_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     return sum(len(p) for p in pieces)
 
 
-def follow_weights(P, W, targets, body):
-    """Each target vertex takes the weights of the nearest body vertex: a piece laid over the body (a hood over the
-    back of a head, a plate on a chest) then moves exactly as the surface under it. P (n, 3), W (n, bones); targets
-    and body are index arrays. Returns the new W."""
+def follow_weights(P, W, targets, body, k=8):
+    """Each target vertex takes the mean weights of the k nearest body vertices: a piece laid over the body (a panel
+    down a robe's front, a hood over the back of a head) then moves as the surface under it. The mean, not the single
+    nearest: one vertex can be the robe's inside or the other leg's hem, and the panel tore 15x. P (n, 3), W (n,
+    bones); targets and body are index arrays. Returns the new W."""
     W = W.copy()
     B = P[body]
+    k = max(1, min(k, len(body)))
     for s in range(0, len(targets), 256):
         t = targets[s:s + 256]
         d2 = ((P[t][:, None, :] - B[None, :, :]) ** 2).sum(-1)
-        W[t] = W[body[d2.argmin(1)]]
+        near = np.argpartition(d2, k - 1, axis=1)[:, :k] if k < len(body) else np.tile(np.arange(len(body)), (len(t), 1))
+        W[t] = W[body[near]].mean(1)
     return W
 
 
 def follow_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
-    """`follow`: [[[x0,y0,z0], [x1,y1,z1]], ...] boxes (0..1 of the model's bounds). Loose pieces' vertices inside a
-    box copy the weights of the nearest vertex of the body (the largest piece), after every other pass, so a piece
-    laid over the body never parts from it (a rigid piece on one bone parted 12 cm from the neck-weighted surface
+    """`follow`: [[[x0,y0,z0], [x1,y1,z1]], ...] boxes (0..1 of the model's bounds). Loose pieces whose middle is in a
+    box take the weights of the body (the largest piece) under them, after every other pass, so a piece laid over the
+    body never parts from it (a rigid piece on one bone parted 12 cm from the neck-weighted surface
     it covered)."""
     if spec is None: spec = {}
     if log is None: log = {}
@@ -2384,14 +2387,24 @@ def follow_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
     N = (P - lo) / span
     done = 0
     for a0, a1 in boxes:
-        box = np.all((N >= np.array(a0)) & (N < np.array(a1)), axis=1)
-        targets = np.where(box & ~in_body)[0]
+        # whole pieces whose middle is in the box (half a piece following would tear it at the box's edge)
+        feet = spec.get("_feet") or set()   # a boot standing in the box stays on its leg
+        inside = lambda c: bool(np.all((c >= np.array(a0)) & (c < np.array(a1))))
+        targets = np.array([i for k, piece in enumerate(isl) if k != body_k and inside(N[piece].mean(0))
+                            for i in piece if int(i) not in feet], dtype=np.int64)
         if not len(targets): continue
         pad = 0.05 * float(span.max())
         tlo, thi = P[targets].min(0) - pad, P[targets].max(0) + pad
         body = np.where(in_body & np.all((P >= tlo) & (P <= thi), axis=1))[0]
         if not len(body): continue
         W = follow_weights(P, W, targets, body)
+        # a small piece (a cross, a buckle) keeps its shape: one set of weights for all of it, the mean of its own,
+        # so it rides the surface under it whole instead of being pulled apart by it
+        tset = set(int(i) for i in targets)
+        for piece in isl:
+            mine = [i for i in piece if i in tset]
+            if mine and float((P[mine].max(0) - P[mine].min(0)).max()) < 0.1 * float(span.max()):
+                W[mine] = W[mine].mean(0)
         spec.setdefault("_locked", set()).update(int(i) for i in targets)
         done += len(targets)
     write_weights(mesh, bone_names, W0, W)
@@ -2497,8 +2510,9 @@ def body_parts_pass(mesh, arm, chains=None, spec=None, size=None, log=None):
             to_toe = np.clip((df[idx] - dt[idx]) / (0.015 * height) + 0.5, 0, 1) * (1 - up)
             W[idx] = 0
             W[idx, col[shin]] = up; W[idx, col[foot]] = (1 - up) * (1 - to_toe); W[idx, col[toe]] = (1 - up) * to_toe
-            # the passes after this one (rigid islands, the healer) leave a boot as it is set here
+            # the passes after this one (rigid islands, the healer, follow) leave a boot as it is set here
             spec.setdefault("_locked", set()).update(int(i) for i in idx)
+            spec.setdefault("_feet", set()).update(int(i) for i in idx)
             log["feet_on_legs_" + side] = int(len(idx)); done += int(len(idx))
     for b, a0, a1 in pins:
         if b not in col: continue
