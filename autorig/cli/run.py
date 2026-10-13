@@ -11,6 +11,8 @@
 #   python autorig/cli/run.py batch [models|all] [--group <g>] [--steps ...] [--export ...]
 #   python autorig/cli/run.py watch <dir> [--group <g>] [--once] [--export ...]
 #   python autorig/cli/run.py retarget <model> <clip>  retarget external mocap / BVH / FBX clip onto character
+#   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
+#   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #
@@ -84,6 +86,10 @@ def main(argv):
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "batch.py")] + rest)
     if cmd == "watch" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "watch.py")] + rest)
+    if cmd == "smpl-to-bvh" and rest:                         # EDGE / SMPL dance -> BVH for retarget
+        return blender_step("smpl_to_bvh.py", *rest)
+    if cmd == "clip-check" and rest:                          # does it move, do seams hold, where are the hands
+        return blender_step("clip_check.py", *rest)
     if cmd == "retarget" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "retarget.py")] + rest)
     if cmd == "rig" and rest:
