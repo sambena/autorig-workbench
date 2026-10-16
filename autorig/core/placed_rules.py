@@ -349,6 +349,7 @@ def rip_welds_pass(mesh, arm, chains, spec, size, log):
 
     max_dim = max(size)
     total_ripped = 0
+    cut_layer = bm.verts.layers.float.get("_AUTORIG_CUT") or bm.verts.layers.float.new("_AUTORIG_CUT")
 
     for rule in rules:
         if isinstance(rule, (list, tuple)) and len(rule) >= 2:
@@ -388,6 +389,8 @@ def rip_welds_pass(mesh, arm, chains, spec, size, log):
             if near[i] and near[j] and side_b[i] != side_b[j]:
                 seam.append(e)
         if seam:
+            for edge in seam:
+                for vertex in edge.verts: vertex[cut_layer] = 1.0
             bmesh.ops.split_edges(bm, edges=seam)
             total_ripped += len(seam)
 
@@ -2766,7 +2769,20 @@ def closed_loop_healing_pass(mesh, arm, spec=None, size=None, log=None):
     healed_W, modified_count = compute_closed_loop_laplacian_healing(
         W, P, edges, max_gradient=max_gradient, passes=passes, blend_factor=blend_factor, locked=locked
     )
+    # A weight gradient is a candidate, not proof of a better bend.
+    before = None
+    if modified_count and spec.get("heal_validate", True):
+        from rig_quality import sample_skin
+        before = sample_skin(mesh, arm)
     corrected_count = write_weights(mesh, bone_names, W, healed_W, locked=locked)
+    if before is not None:
+        from deformation import no_regression
+        after = sample_skin(mesh, arm)
+        accepted = no_regression(before, after)
+        log["heal_validation"] = {"accepted": accepted, "poses": len(before), "before": before, "after": after}
+        if not accepted:
+            write_weights(mesh, bone_names, healed_W, W, locked=locked)
+            corrected_count = 0
     log["closed_loop_healed_verts"] = corrected_count
     return corrected_count
 

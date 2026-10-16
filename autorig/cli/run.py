@@ -13,6 +13,7 @@
 #   python autorig/cli/run.py retarget <model> <clip>  retarget external mocap / BVH / FBX clip onto character
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
 #   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
+#   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #
@@ -43,6 +44,8 @@ def main(argv):
         server.main(argv[1:] if argv and argv[0] == "gui" else argv)
         return 0
     cmd, rest = argv[0], argv[1:]
+    if cmd == "studio":
+        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "publish.py")] + rest)
     if cmd in ("survey", "trim", "facing") and rest:

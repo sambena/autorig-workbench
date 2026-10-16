@@ -22,7 +22,7 @@ WORK = os.path.abspath(os.environ.get("AUTORIG_WORK") or os.path.join(ROOT, "_au
 # Source formats, in order of preference when a folder holds more than one kind.
 SOURCE_EXTS = (".fbx", ".glb", ".gltf", ".obj")
 # Folders the tool writes inside a model folder; nothing under them is ever a source.
-OUTPUT_DIRS = ("clips",)
+OUTPUT_DIRS = ("clips", "_studio")
 
 
 def work_dir(*parts):

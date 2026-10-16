@@ -41,10 +41,13 @@ def weld_same_weights(mesh, threshold, tol=0.05):
     me = mesh.data
     n = len(me.vertices)
     W = [{g.group: g.weight for g in v.groups} for v in me.vertices]
+    cut = me.attributes.get('_AUTORIG_CUT')
+    protected = {i for i,v in enumerate(cut.data) if v.value > .5} if cut else set()
     kd = kdtree.KDTree(n)
     for v in me.vertices: kd.insert(v.co, v.index)
     kd.balance()
     def same(a, b):
+        if a in protected or b in protected: return False
         keys = set(W[a]) | set(W[b])
         return all(abs(W[a].get(k, 0.0) - W[b].get(k, 0.0)) <= tol for k in keys)
     target = {}
@@ -99,7 +102,14 @@ def reduce(mesh, target, planar=True):
         mod.decimate_type = 'COLLAPSE'
         mod.use_collapse_triangulate = True
         mod.ratio = target / float(now)
+        from rig_quality import protect_joints
+        protected = protect_joints(mesh)
+        protected_name = protected.name if protected else None
+        if protected:
+            mod.vertex_group = protected.name
+            mod.vertex_group_factor = 10
         bpy.ops.object.modifier_apply(modifier=mod.name)
+        if protected_name and mesh.vertex_groups.get(protected_name): mesh.vertex_groups.remove(mesh.vertex_groups[protected_name])
 
 
 def limit_influences(mesh, most=4):

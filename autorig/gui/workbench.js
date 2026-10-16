@@ -412,6 +412,9 @@ function setWorkbenchMode(mode) {
 
 async function handleAction(action) {
   switch (action) {
+    case "model-studio":
+      window.open("./studio.html?t=" + encodeURIComponent(TOKEN) + (currentModel ? "&model=" + encodeURIComponent(currentModel) : ""), "_blank");
+      break;
     // File
     case "import-model":
       openModal("#importModal");

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Model Studio · Autorig</title>
+<style>
+:root{color-scheme:dark;font:15px system-ui;background:#141820;color:#e8edf5}*{box-sizing:border-box}body{margin:0}header{padding:24px 32px;border-bottom:1px solid #354154;display:flex;gap:24px;align-items:center}h1{font-size:24px;margin:0}a{color:#a8caff}main{max-width:1200px;margin:30px auto;padding:0 24px}.layout{display:grid;grid-template-columns:210px 1fr;gap:28px}nav{display:flex;flex-direction:column;gap:8px}button,select,input,textarea{font:inherit;color:inherit;background:#222c3b;border:1px solid #485973;border-radius:7px;padding:10px}button{cursor:pointer}button.active,button.primary{background:#285b8b;border-color:#66adf1}button:disabled{opacity:.5;cursor:default}section{background:#1b2230;border:1px solid #354154;padding:24px;border-radius:12px}h2{margin-top:0}p{line-height:1.6;color:#b8c5d8}label{display:grid;grid-template-columns:210px 1fr;gap:16px;align-items:center;margin:16px 0}input[type=checkbox]{justify-self:start}textarea{min-height:85px}#actions{display:flex;gap:12px;margin-top:24px}#status{white-space:pre-wrap;color:#b8dcff}pre{white-space:pre-wrap;max-height:320px;overflow:auto;font:12px ui-monospace,monospace;background:#10151d;padding:14px}#artifacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:20px}.artifact{padding:12px;background:#222c3b;border-radius:8px;overflow-wrap:anywhere}.artifact img{width:100%;max-height:260px;object-fit:contain;background:#fff}small{color:#aab9cd}.preview{width:100%;height:340px;border:0;background:#10151d}canvas{width:100%;height:340px;display:block}@media(max-width:700px){.layout{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap}label{grid-template-columns:1fr}header{flex-wrap:wrap}}
+</style></head><body>
+<header><h1>Model Studio</h1><a id="home" href="/">Workbench</a><select id="model" aria-label="Model"></select></header>
+<main><div class="layout"><nav id="tools" aria-label="Studio tools"></nav><section>
+<h2 id="title"></h2><p id="description"></p><form id="settings"></form>
+<div id="actions"><button id="save">Save settings</button><button id="run" class="primary">Run tool</button><button id="cancel" disabled>Cancel job</button></div>
+<p id="status" role="status"></p><pre id="log" hidden></pre>
+</section></div><h2 style="margin-top:32px">Outputs</h2><p>Derived files stay with the selected model. Click a GLB to inspect it in 3D; vehicle previews include wheel spin.</p>
+<div id="preview"></div><div id="artifacts"></div></main>
+<script>window.AUTORIG_TOKEN="__AUTORIG_TOKEN__";</script><script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
+<script type="module" src="./studio.js"></script></body></html>

@@ -15,7 +15,7 @@ from mathutils import Vector, Matrix, kdtree
 from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
+sys.path[:0] = [os.path.join(os.path.dirname(HERE), "core"), HERE]
 from spec_store import SPECS
 from layout import ROOT, source_fbx, rigged_dir, leaf, work_dir
 import source_io
@@ -1235,9 +1235,6 @@ def skin(mesh, arm, chains, spec, size, log):
     height = size.z
     verts = mesh.data.vertices
     jmap = {j: b for c in chains for j, b in zip(c["joints"], c["bones"])} if spec.get("kind") == "tripo" else {}
-    if spec.get("rip_welds"):
-        placed_rules.rip_welds_pass(mesh, arm, chains, spec, size, log)
-        verts = mesh.data.vertices
     select_only(mesh, arm)
     mesh.vertex_groups.clear()
     t_heat = time.time()
@@ -1249,6 +1246,10 @@ def skin(mesh, arm, chains, spec, size, log):
             verts = mesh.data.vertices
         except Exception as e:
             log["mesh_heal_err"] = str(e)
+    # Geometry repair must finish before deliberately disconnecting articulation seams.
+    if spec.get("rip_welds"):
+        placed_rules.rip_welds_pass(mesh, arm, chains, spec, size, log)
+        verts = mesh.data.vertices
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
     bare = [v.index for v in verts if not skinned(v)]
     log["unreached"] = len(bare)
@@ -1258,7 +1259,7 @@ def skin(mesh, arm, chains, spec, size, log):
         if not spec.get("mesh_heal") and not spec.get("heal"):
             try:
                 import mesh_doctor
-                h_rep = mesh_doctor.heal_mesh_object(mesh)
+                h_rep = mesh_doctor.heal_mesh_object(mesh, {"preserve_seams": bool(spec.get("rip_welds"))})
                 log["mesh_heal_recovery"] = h_rep.get("actions", {})
                 verts = mesh.data.vertices
                 mesh.vertex_groups.clear()
