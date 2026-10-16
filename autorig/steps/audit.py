@@ -36,6 +36,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 # a gap far under a pixel at any normal camera distance; tear_edges_raw keeps the plain 2x count.
 from grades import GAP, THRESHOLDS, grade_audit
 import placed_rules
+from deformation import metrics as deformation_metrics, seam_pairs
 SITE_CAP = 12        # tear clusters kept per pose
 POINT_CAP = 40       # tear edges kept per pose (the widest), for a viewer to mark one by one
 CLUSTER_R = 0.05     # tear edges closer than this x the model's size are one site
@@ -44,6 +45,7 @@ A = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 def arg(n, d=None): return A[A.index(n) + 1] if n in A else d
 MODEL = arg("-model")
 SPEC_AUDIT = {}
+POSE_RANGES = {}
 if MODEL:
     from layout import rigged_dir, leaf
     FBX = os.path.join(rigged_dir(MODEL), leaf(MODEL) + ".fbx")
@@ -54,6 +56,7 @@ if MODEL:
             decimate.run(MODEL)
     try:
         from spec_store import SPECS, model as spec_of
+        POSE_RANGES = (spec_of(MODEL).get("rig") or {}).get("audit_motion_ranges", {})
         # rig.audit; or, for a model with no rig section of its own (one lifted from another pack, rigged there and
         # cut to this one's budget here), a top-level "audit" in its rig.json
         SPEC_AUDIT = dict(SPECS.get(MODEL, {}).get("audit") or spec_of(MODEL).get("audit", {}))
@@ -312,6 +315,8 @@ if arm is not None:
     bpy.ops.object.mode_set(mode='POSE')
     for pb in arm.pose.bones: pb.rotation_mode = 'XYZ'
 rest_len = np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1) if len(E) else np.empty(0)
+SEAM_PAIRS = seam_pairs(P) if NV else np.empty((0, 2), dtype=int)
+TRIANGLES = np.array([(p[0], p[i], p[i+1]) for p in POLYS for i in range(1, len(p)-1)], dtype=int).reshape(-1, 3)
 valid = rest_len > 1e-7
 def posed_coords():
     dg = bpy.context.evaluated_depsgraph_get()
@@ -375,7 +380,12 @@ if arm is not None:
     for c in deform:
         if parent[c] < 0: continue
         sub = subtree(c)
-        for mode, ang in (("bend", 40), ("twist", 60)):
+        ranges = POSE_RANGES.get(BN[c], {})
+        probes = [(mode, angle) for mode, default in (("bend", [40]), ("twist", [60]))
+                  for angle in ranges.get(mode, default)]
+        if any(not isinstance(angle, (int, float)) or not math.isfinite(angle) or abs(angle) > 180 for _, angle in probes):
+            raise ValueError("audit motion angles must be finite degrees between -180 and 180")
+        for mode, ang in probes:
             clear_pose()
             pb = arm.pose.bones[BN[c]]
             pb.rotation_euler = (math.radians(ang), 0, 0) if mode == "bend" else (0, math.radians(ang), 0)
@@ -392,7 +402,10 @@ if arm is not None:
             coll = moved & outside & near_out & (disp > 0.03 * S)
             worst = int(np.where(tear, ratio, 0).argmax()) if tear.any() else int(ratio.argmax())
             mid = (P[E[worst, 0]] + P[E[worst, 1]]) * 0.5
-            bends.append(dict(bone=BN[c], mode=mode, max_stretch=round(float(ratio.max()), 2),
+            detail = deformation_metrics(P, Q, E, TRIANGLES, SEAM_PAIRS, S)
+            bends.append(dict(bone=BN[c], mode=mode, rotation_deg=ang,
+                              seam_gap=detail["seam_gap"], collapsed_triangles=detail.get("collapsed_triangles", 0),
+                              max_stretch=round(float(ratio.max()), 2),
                               worst_at=[round(float((mid[k] - lo[k]) / max(size[k], 1e-9)), 2) for k in range(3)],
                               worst_edge_owners=sorted({BN[dom[E[worst, 0]]], BN[dom[E[worst, 1]]]}),
                               tear_edges=int(tear.sum()), tear_edges_raw=int((ratio > 2.0).sum()), worst_gap_pct=gap_pct(tear, gap),
@@ -438,6 +451,9 @@ def pose_combined():
                                    tear_edges_raw=int((ratio > 2).sum()), worst_gap_pct=worst_g,
                                    stretch_edges=s_edges, crush_edges=c_edges,
                                    angles_deg=COMBINED)
+    if NV and len(E):
+        detail = deformation_metrics(P, Q, E, TRIANGLES, SEAM_PAIRS, S)
+        result["combined_pose"].update(seam_gap=detail["seam_gap"], collapsed_triangles=detail.get("collapsed_triangles", 0))
     site = tear_site(tear, gap, "combined")
     if site: tear_sites.insert(0, site)
     return ratio
@@ -627,7 +643,8 @@ by_bone = {}
 for b in bends:
     if not b["tear_edges"]: continue
     r = by_bone.setdefault(b["bone"], dict(bone=b["bone"], bend=0, bend_gap_pct=0.0, twist=0, twist_gap_pct=0.0))
-    r[b["mode"]] = b["tear_edges"]; r[b["mode"] + "_gap_pct"] = b["worst_gap_pct"]
+    r[b["mode"]] = max(r[b["mode"]], b["tear_edges"])
+    r[b["mode"] + "_gap_pct"] = max(r[b["mode"] + "_gap_pct"], b["worst_gap_pct"])
 by_bone = sorted(by_bone.values(), key=lambda r: (-r["bend"], -r["bend_gap_pct"], -r["twist"], r["bone"]))
 comb_site = next((t for t in tear_sites if t["pose"] == "combined"), None)
 if by_bone and by_bone[0]["bend"]: worst_bone = by_bone[0]["bone"]

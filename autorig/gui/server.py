@@ -17,9 +17,11 @@ from urllib.parse import urlparse, parse_qs, unquote
 try:
     from . import viewer_api                      # the results viewer's routes (gui/viewer_api.py)
     from . import spec_api                        # the spec editor's routes (gui/spec_api.py)
+    from . import studio_api
 except ImportError:
     import viewer_api
     import spec_api
+    import studio_api
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.dirname(HERE)
@@ -949,6 +951,11 @@ def make_handler(app):
                 if not self._guard(q): return
                 return self._send(200, spec_api.page(app.token), "text/html; charset=utf-8",
                                   {"Content-Security-Policy": spec_api.CSP})
+            if path == "/studio.html":
+                if not self._guard(q): return
+                with open(os.path.join(HERE,"studio.html"),encoding="utf-8") as fh:
+                    page=fh.read().replace("__AUTORIG_TOKEN__",app.token)
+                return self._send(200,page,"text/html; charset=utf-8",{"Content-Security-Policy":viewer_api.CSP})
             if path == "/viewer.html":
                 if not self._guard(q): return
                 return self._send(200, viewer_api.page(app.token), "text/html; charset=utf-8",
@@ -964,6 +971,7 @@ def make_handler(app):
                 return self._send(404, {"error": "help page not found"})
             if not self._guard(q): return
             try:
+                if studio_api.get(self,app,sys.modules[__name__],path,q): return
                 if path == "/api/previews":
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
@@ -1161,6 +1169,7 @@ def make_handler(app):
                     meta = _ret.inspect_mocap_file(dest)
                     return self._send(200, {"stored": True, "file": dest, "meta": meta})
                 body = self._json_body()
+                if studio_api.post(self,app,sys.modules[__name__],path,body): return
                 if path == "/api/upload/done":
                     r = app.uploads.finish(body.get("batch", ""), body.get("group", ""), clean_name(body.get("name", "")))
                     return self._send(200, r)

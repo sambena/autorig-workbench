@@ -153,3 +153,15 @@ re-rig twice, the second run carrying the first one's audit as "before".
 
 GPL-3.0-or-later (LICENSE). The steps run inside Blender and import `bpy`, which is GPL; one licence keeps it simple.
 three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERSION.txt says where it came from).
+
+## Model Studio
+
+Open **Model â†’ Model Studio** for static/skinned LOD exports, vehicle wheel pivots and a spin preview,
+reference comparison sheets, Poly Haven materials, seeded foliage/card generation, resumable Hyper3D
+jobs and per-clip animation quality checks. Settings stay with the model in `studio.json`; derived files
+stay in `_studio/`, outside source discovery. Image tools optionally need Pillow; paid generation is
+only submitted when explicitly started. See [Model Studio](docs/MODEL-STUDIO.md) for setup and limits.
+
+    python autorig/cli/run.py studio lods wolf
+    python autorig/cli/run.py studio reference wolf
+    python autorig/cli/run.py studio validate wolf

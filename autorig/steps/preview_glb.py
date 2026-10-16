@@ -130,7 +130,7 @@ def export(arm, meshes, out):
         bpy.context.scene.frame_set(0)
     bpy.ops.export_scene.gltf(
         filepath=out, export_format='GLB', use_selection=True, export_yup=True, export_apply=False,
-        export_texcoords=True, export_materials='EXPORT', export_image_format='AUTO',
+        export_texcoords=True, export_materials='EXPORT', export_image_format='AUTO', export_attributes=True,
         export_skins=True, export_def_bones=False, export_leaf_bone=False,
         export_animations=bool(arm), export_animation_mode='ACTIONS', export_force_sampling=True,
         export_frame_range=False, export_frame_step=1, export_anim_single_armature=True,

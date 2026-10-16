@@ -269,14 +269,18 @@ def heal_bmesh(bm, options=None):
 
     # 3. Dissolve degenerate edges / geometry if any
     try:
-        bmesh.ops.dissolve_degenerate(bm, dist=opts.get("degenerate_dist", 1e-5), edges=bm.edges)
+        if not opts.get("preserve_seams"):
+            bmesh.ops.dissolve_degenerate(bm, dist=opts.get("degenerate_dist", 1e-5), edges=bm.edges)
     except Exception:
         pass
 
     # 4. Remove doubles (weld coincident vertices)
     dist = opts.get("weld_dist", 1e-5)
-    res_doubles = bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=dist)
-    report["welded_doubles"] = len(res_doubles.get("verts", []))
+    # Blender 5.2 returns None here; count the actual topology change across versions.
+    before_weld = len(bm.verts)
+    if not opts.get("preserve_seams"):
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=dist)
+    report["welded_doubles"] = before_weld - len(bm.verts)
 
     # 5. Recalculate consistent outward normals
     try:

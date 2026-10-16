@@ -49,7 +49,7 @@ jobs:
         run: |
           # the tool itself needs nothing from pip; numpy lets the skinning-math tests run outside Blender, and
           # jsonschema lets test_samples validate the sample specs against docs/rig.schema.json
-          python3 -m pip install --quiet numpy jsonschema
+          python3 -m pip install --quiet numpy jsonschema Pillow
 
       - name: Configure Blender PATH
         run: |

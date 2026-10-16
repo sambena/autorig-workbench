@@ -35,11 +35,13 @@ DEFAULT_TIMEOUTS = {
     "retarget_worker": 1800.0,
     "retarget": 0.0,
     "auto_tune": 0.0,
+    "studio": 2100.0,
     "default": 600.0,
 }
 
 # script stem -> step name (a builder run through run_builder.py is a rig)
 SCRIPT_STEPS = {
+    "studio_job": "studio", "studio_blender": "studio", "clip_check": "studio",
     "rerig": "rig", "rerig_humanoid": "rig", "run_builder": "rig",
     "decimate": "trim", "make_clips": "clips", "preview_glb": "preview", "mesh_doctor": "doctor",
 }

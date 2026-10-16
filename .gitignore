@@ -19,6 +19,7 @@ _autorig/
 rigged/
 rigged_v2/
 clips/
+_studio/
 *.blend
 *.blend1
 *.fbx
