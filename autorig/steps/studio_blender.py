@@ -32,7 +32,9 @@ def load(model, rig=False):
         if ext in (".glb", ".gltf"): bpy.ops.import_scene.gltf(filepath=source, merge_vertices=False)
         elif ext == ".fbx": bpy.ops.import_scene.fbx(filepath=source, automatic_bone_orientation=False)
         else: bpy.ops.wm.obj_import(filepath=source)
-    return [o for o in bpy.context.scene.objects if o.type == 'MESH' and not o.name.startswith('qa_')]
+    helpers={b.custom_shape for a in bpy.context.scene.objects if a.type=='ARMATURE' for b in a.pose.bones if b.custom_shape}
+    for helper in helpers: helper.hide_render=True; helper.hide_set(True)
+    return [o for o in bpy.context.scene.objects if o.type == 'MESH' and o not in helpers and not o.name.startswith('qa_')]
 
 
 def export(objects, path):
@@ -166,7 +168,7 @@ def lods(model, s, out):
 def vehicle(model,s,out):
     from studio_ports import vehicle as port
     meshes=load(model)
-    if any(m.find_armature() for m in meshes): raise ValueError('Vehicle preparation needs a static source; skeletal models use LOD export')
+    if any(o.type=='ARMATURE' for o in bpy.context.scene.objects): raise ValueError('Vehicle preparation needs a static source; skeletal models use LOD export')
     meshes=port.all_meshes(); port.face_minus_y(meshes,s['front'])
     port.size_to(meshes,s['length'],s['height'] or None); port.stand_on_ground(meshes)
     source_names=[m.name for m in meshes]

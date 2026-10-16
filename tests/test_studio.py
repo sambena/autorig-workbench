@@ -135,11 +135,12 @@ class BlenderPorts(unittest.TestCase):
         return self.root/model/'_studio'/tool
 
     def test_static_and_skinned_lods(self):
-        for model in ('prop','skin'):
+        for model in ('prop','skin','skin_glb'):
             with self.subTest(model=model):
                 out=self.run_tool('lods',model,{'ratios':[1,.4]})
                 report=json.loads((out/'lods.json').read_text())
                 self.assertEqual(len(report['levels']),2)
+                self.assertEqual(len(report['levels'][0]['meshes']),1)
                 self.assertTrue((out/(model+'_LOD1.glb')).is_file())
                 self.assertLessEqual(report['levels'][1]['meshes'][0]['surface_error'],.02+1e-6)
 
@@ -207,6 +208,9 @@ for name in ('prop','truck','skin'):
    t=max(0,min(1,(v.co.z+.5)));g0.add([v.index],1-t,'REPLACE');g1.add([v.index],t,'REPLACE')
   rd=folder/'rigged';rd.mkdir();bpy.ops.wm.save_as_mainfile(filepath=str(rd/'skin.blend'))
  bpy.ops.export_scene.gltf(filepath=str(folder/(name+'.glb')),export_format='GLB',export_animations=False)
+# A source-only skeletal GLB also exercises the importer's bone-shape helper exclusion.
+import shutil
+folder=root/'skin_glb';folder.mkdir();shutil.copyfile(root/'skin'/'skin.glb',folder/'skin_glb.glb')
 # Two independent takes; only a secondary mesh cracks in the second take.
 for v in mesh.data.vertices:g0.add([v.index],1,'REPLACE');g1.add([v.index],0,'REPLACE')
 data=bpy.data.meshes.new('SmallSeam');data.from_pydata([(0,.3,0),(1,.3,0),(0,.6,0),(0,.3,0),(1,.3,0),(0,.6,0)],[],[(0,1,2),(3,4,5)])
