@@ -24,7 +24,7 @@ Every clip in the report has `foot_skate`:
 - **Score.** MoMask's `compute_foot_sliding` in the ground's frame: each frame step, a foot's horizontal slip `d`
   while its height above the floor `h` is under `H` (3% of the model's size, MoMask's 5 cm on a person) counts
   `d x (2 - 2^(h/H))`. The sum over feet and frames, divided by the frames, in thousandths of the model's size a frame.
-  0 is planted. A well-planted walk keeps about 1 from its liftoff and touchdown frames; a foot sliding a tenth of a
+  0 is planted. A well-planted walk keeps about 1 per foot from its liftoff and touchdown frames; a foot sliding a tenth of a
   stride a step is several. `ratio` is the share of low foot frames slipping more than 0.25% of the size a frame.
 
 `--max-skate S` fails a clip scoring above S. Without it the score is a diagnostic, like floor penetration.
@@ -51,18 +51,7 @@ thigh and shin (its foot keeps its orientation). Legs driven by a live IK target
 alone. `--no-anti-slide` skips the pass. The manifest's `footSkate` lists each clip's score before and after
 (in-Blender, measured at the bone tails).
 
-On the samples (clip-check scores; `--no-anti-slide` build first, then the pass):
-
-| Clip | canine | beetle |
-|---|---|---|
-| idle | 3.00 -> 0.30 | 3.61 -> 3.38 |
-| hit | 5.31 -> 0.55 | 3.32 (kept) |
-| attack_windup | 2.84 -> 0.23 | 2.65 (kept) |
-| walk | 32.5 -> 24.3 | 44.5 (kept) |
-
-The wyvern's clips are all in the air (the feet never come within 3% of the rest floor): 0 before and after. A clip
-whose body lifts out of the legs' reach (a rear, a jump, a dodge) cannot hold its feet with the legs alone; the pass
-leaves it as authored rather than worse.
+The numbers on the samples are at the end.
 
 ## Stepping legs: planting each foot in turn
 
@@ -105,8 +94,9 @@ location divided by the model's size. The seed is `S + 1000 x take`, so a rebake
   tearing the mesh is dropped, not published sliding.
 - **Then the passes.** Anti-slide runs on the takes as on any clip, at their clip's ground speed.
 
-On the canine (`--variants 2`): `idle_v1`/`idle_v2` skate 0.04, `walk_v1`/`walk_v2` 3.2/2.9 (the walk 3.9),
-`trot_v1`/`trot_v2` 3.2/3.2 (the trot 2.6). Its gallop takes bound further than its legs can step and are dropped.
+On the canine (`--variants 2`): `idle_v1`/`idle_v2` skate 0.04 (the idle 0.09), `walk_v1`/`walk_v2` 2.31/2.31 (the
+walk 2.71), `trot_v1`/`trot_v2` 3.15/3.00 (the trot 2.63); all loop exactly, none tears. Its gallop takes bound
+further than its legs can step and are dropped.
 
 ## Secondary motion: springs on tails, ears, antennae, membranes
 
@@ -134,3 +124,27 @@ manifest lists the chains under `secondary`.
 On the samples, opted in on a copy (canine `tail`; wyvern `tail` and `wing`): every clip of both still loops
 exactly (`clip-check --loop`), the canine's tail tip trails by up to 0.15 of the model's size in its idle and walk,
 and its `attack` and `death` (a tail whipped by a fall would tear) keep their authored tails.
+
+## On the samples
+
+`clip-check` foot-skate scores, `main` before these passes against now (default specs, no variants, no springs).
+Neither adds a torn edge, and every `--loop` clip loops exactly.
+
+| Clip | canine | beetle | wyvern |
+|---|---|---|---|
+| idle | 3.10 -> 0.09 | 3.73 (kept) | 0 |
+| walk | 36.25 -> 2.71 (steps) | 50.97 -> 16.19 (still legs) | - |
+| trot | new: 2.63 | - | - |
+| gallop | new: 10.79 | - | - |
+| hit | 9.28 -> 1.19 | 7.44 (kept) | 0 |
+| attack_windup | 3.23 -> 0.38 | 3.08 (kept) | 0 |
+| attack, block, strike, jumps, dodge, death | as authored | as authored | 0 |
+
+- **Canine** steps a lateral-sequence walk, a trot and a gallop, and its idle and hits hold their feet.
+- **Beetle**: stepping tears its hips even at half its stride (its rig fails the bend audit), so its walk keeps still
+  legs with a gentle roll (the old legless heave is gone, hence the lower score). Its foot vertices are blended
+  across bones, so a rigid pin cannot hold them and anti-slide keeps every clip as authored. A better-weighted beetle
+  steps.
+- **Wyvern**: every clip is in the air, so 0 throughout. Its `attack_rise` tears 4 edges with or without these passes.
+- Clips whose body rises out of the legs' reach (attack, block, jumps, dodge) cannot hold their feet with the legs
+  alone, and the pass leaves them as authored.

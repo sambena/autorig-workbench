@@ -1097,7 +1097,9 @@ def creature_walker(rig, style, spec=None):
     # nobody mistakes for resting. The root lifts as it rolls so the shell ends on the ground
     # rather than half under it.
     def die(f, n):
-        if legless:
+        # the flip curls IK feet into the air; FK legs (planted after keying) have nothing to curl them, so a placed
+        # rig topples as it did before its legs stepped
+        if legless or not rig.feet:
             return topple(f, n)
 
         p = Pose()
