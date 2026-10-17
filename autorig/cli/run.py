@@ -14,6 +14,7 @@
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
 #   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
+#   python autorig/cli/run.py gpu                     which GPU Blender draws (Workbench) and bakes (Cycles) with
 #   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages for Blender's Python
 #   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
@@ -63,6 +64,8 @@ def main(argv):
                  if l.startswith("#   python autorig/cli/run.py %s " % cmd)]
         print("usage:\n" + "\n".join(lines or ["  python autorig/cli/run.py %s <model>[,<model>...]" % cmd]))
         return 2
+    if cmd == "gpu":                                  # which GPU Blender uses (core/gpu_setup.py)
+        return blender_step("gpu_report.py")
     if cmd == "extras":                               # optional pip packages for Blender's Python (core/extras.py)
         import extras
         return extras.main(rest)

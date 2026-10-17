@@ -30,3 +30,15 @@ elsewhere. Set `AUTORIG_EXTRAS` to use a different one. Deleting the folder unin
 - **Outside Blender:** `extras.run_python([...])` runs Blender's Python (no bpy) with the extras on its path.
 - **New extras:** add the extra to `EXTRAS` in `core/extras.py`. Its licence must fit the tool's GPL-3.0; the
   tests check the list.
+
+## The GPU
+
+    python autorig/cli/run.py gpu      which GPU Blender draws with (Workbench, EEVEE) and bakes with (Cycles)
+
+- **Workbench renders** (QA shots, facing views, audits) go through OpenGL. Headless, Blender's EGL uses the
+  NVIDIA driver when it is installed, and Mesa's software renderer otherwise. There is nothing to switch.
+- **Cycles** forgets its device under `--factory-startup`. A step that renders or bakes with Cycles calls
+  `gpu_setup.use_cycles_gpu(scene)` first. It picks OptiX, then CUDA, HIP or oneAPI, and falls back to the CPU.
+- `AUTORIG_GPU=0` keeps everything on the CPU.
+
+The helper is `core/gpu_setup.py`, not `gpu.py`, because `gpu` is Blender's own module.
