@@ -394,6 +394,37 @@ one pull request each, code first; models are run through the tool only in R6.
   - Next: make those passes blend instead of cut. That is a separate change; proxy-transfer stays as an option.
   - Cost: on the rooster (44k vertices, an 8.2k-vertex copy) the transfer takes about 47 s on top of bone heat.
 
+## Tears from the skin passes (October 2026)
+
+Plain bone heat gives zero bend tears on the beetle, biped and wyvern samples. The passes that ran after it cut
+the tears in. Each cut was a hard line between two owners. Fixed:
+
+| model | before (combined / bend) | after |
+|---|---|---|
+| beetle | 6 / 28 FAIL | 0 / 0 PASS |
+| biped | 4 / 4 FAIL | 0 / 0 PASS |
+| wyvern | 1 / 6 FAIL | 1 / 1 |
+| canine, pedestal | 0 / 0 | 0 / 0 |
+| armoured_guard (Heartroot, scratch copy) | 58 / 55, bleed 1.64% | 46 / 20, bleed 0.68% |
+
+- **Root mask (rerig.root_mask):** a vertex a limb owned outright went wholly to the *nearest* torso bone, a hard
+  seam where two torso bones meet (the beetle's flank over its middle legs). It is now shared between the near
+  torso bones by distance (`placed_rules.soft_nearest`).
+- **Barrier rule 4 (shoulders off the neck and the lower spine):** a hard box, 12% of the height either side of the
+  middle, reached the collarbones on a broad model. It now fades in over a band, in both width and height.
+- **Barrier rule 5 (chest off the legs):** "below hip height" took in the underside of a horizontal torso's chest
+  (the wyvern). It now runs only on an upright torso.
+- **Crotch band cap:** it also measures the leg joints themselves, because a placed biped's legs have no "leg" role.
+- **Centerline armour, placed rigs:** the pelvis band ran down to the ankles and left a few per cent of the hips on
+  each shin, which tore the bent knee. It now stops halfway down the thigh. Humanoids keep the long band: there it
+  holds armour faulds and skirts together, and the guard tore more without it.
+
+Tried and dropped: handing a rule's freed weight back to the vertex's own bones instead of to the rule's target.
+It made the guard and the wyvern worse.
+
+The guard's other tears are at the crotch faulds and on the lower back. No single pass explains them.
+`AUTORIG_DEBUG_BARRIER=<file.npz>` saves the barrier's input and output, to replay it outside Blender.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

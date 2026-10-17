@@ -13,6 +13,7 @@
 import fnmatch
 import math
 import re
+import os
 import numpy as np
 
 
@@ -1672,6 +1673,20 @@ def compute_closed_loop_laplacian_healing(weights, coords, edges, max_gradient=0
     return W, int(np.sum(modified_mask))
 
 
+def soft_nearest(D, soft):
+    """Rows of weights from rows of distances: the nearest gets the most, and any within about `soft` of it share,
+    falling off smoothly (exp(-(d - d_min) / soft)). soft 0: all to the nearest."""
+    D = np.asarray(D, dtype=float)
+    out = np.zeros_like(D)
+    if not D.size: return out
+    if soft <= 0:
+        out[np.arange(len(D)), D.argmin(1)] = 1.0
+        return out
+    E = np.exp(-(D - D.min(1, keepdims=True)) / soft)
+    E[E < 1e-3] = 0.0
+    return E / E.sum(1, keepdims=True)
+
+
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None,
                                 flank_barrier=True, tail_barrier=True, radial_barrier=True,
@@ -1917,39 +1932,52 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
                         best_arm = all_arm_cols[int(np.argmax(W[idx, all_arm_cols]))] if float(W[idx, all_arm_cols].sum()) > 0 else all_arm_cols[0]
                         W[idx, best_arm] += w_legs
 
-    # 4. Shoulder Clavicle Containment: Shoulders cannot own neck or mid/lower spine
+    # 4. Shoulder Clavicle Containment: Shoulders cannot own neck or mid/lower spine. Both limits fade in over a
+    # band instead of cutting at a line: the hard box (12% of the height either side of the middle, from just
+    # under the neck up) reached the collarbones themselves on a broad-shouldered model, and a shrug tore the
+    # armoured guard's neck and shoulders open along its edges (55 of its 55 bend tears came from 4b).
+    def ramp(t):
+        t = np.clip(t, 0.0, 1.0)
+        return t * t * (3.0 - 2.0 * t)
+
     shoulder_cols = [col[b] for b in bone_names if is_shoulder(b)]
     if biped and shoulder_cols:
+        w_sh_all = W[:, shoulder_cols].sum(axis=1)
         if z_shoulder is not None:
             z_sh_low = z_shoulder - 0.12 * h
-            too_low_sh = Z < z_sh_low
-            if np.any(too_low_sh):
-                tl_indices = np.where(too_low_sh)[0]
-                spine_cand_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine2", "spine1", "chest", "spine"))]
+            k = 1.0 - ramp((Z - (z_sh_low - 0.04 * h)) / (0.08 * h))      # all of it 4% below the line, none 4% above
+            rows = np.where((k > 1e-3) & (w_sh_all > 1e-5))[0]
+            if len(rows):
+                spine_cand_cols = [col[b] for b in bone_names if is_torso(b) and any(k_ in b.lower() for k_ in ("spine2", "spine1", "chest", "spine"))]
                 torso_target = spine_cand_cols[0] if spine_cand_cols else hips_target
-                for idx in tl_indices:
-                    w_sh = float(W[idx, shoulder_cols].sum())
-                    if w_sh > 1e-5:
-                        W[idx, shoulder_cols] = 0.0
-                        if torso_target is not None:
-                            W[idx, torso_target] += w_sh
+                moved = W[rows][:, shoulder_cols].sum(axis=1) * k[rows]
+                W[np.ix_(rows, shoulder_cols)] *= (1.0 - k[rows])[:, None]
+                if torso_target is not None:
+                    W[rows, torso_target] += moved
 
         if neck_target is not None or head_target is not None:
-            neck_zone = (Z >= z_neck - 0.03 * h) & (np.abs(X - sym_plane) < 0.12 * h)
-            if np.any(neck_zone):
-                nz_indices = np.where(neck_zone)[0]
+            dx = np.abs(X - sym_plane)
+            kx = 1.0 - ramp((dx - 0.06 * h) / (0.06 * h))                    # all of it within 6%, none past 12%
+            kz = ramp((Z - (z_neck - 0.06 * h)) / (0.06 * h))                 # none 6% under the neck, all at it
+            k = kx * kz
+            w_sh_all = W[:, shoulder_cols].sum(axis=1)
+            rows = np.where((k > 1e-3) & (w_sh_all > 1e-5))[0]
+            if len(rows):
                 z_head_cut = (z_head - 0.01 * h) if z_head is not None else (z_neck + 0.04 * h)
-                for idx in nz_indices:
-                    w_sh = float(W[idx, shoulder_cols].sum())
-                    if w_sh > 1e-5:
-                        W[idx, shoulder_cols] = 0.0
-                        target = head_target if (Z[idx] >= z_head_cut and head_target is not None) else neck_target
-                        if target is not None:
-                            W[idx, target] += w_sh
+                moved = w_sh_all[rows] * k[rows]
+                W[np.ix_(rows, shoulder_cols)] *= (1.0 - k[rows])[:, None]
+                for idx, m in zip(rows.tolist(), moved.tolist()):
+                    target = head_target if (Z[idx] >= z_head_cut and head_target is not None) else neck_target
+                    if target is not None:
+                        W[idx, target] += m
 
     # 5. Upper Torso (Spine1, Spine2, Chest) to Leg Barrier
     upper_torso_cols = [col[b] for b in bone_names if is_torso(b) and any(k in b.lower() for k in ("spine1", "spine2", "spine_2", "spine_3", "chest"))]
-    if biped and upper_torso_cols and hips_target is not None:
+    # Only on an upright torso: a horizontal one (a wyvern's two-legged body) starts its chest at the hips'
+    # height, so "below the hips" took in the underside of its chest and handed patches of it to the hips.
+    up_heads = [bone_heads[b][2] for b in bone_names if b in (bone_heads or {}) and col[b] in upper_torso_cols]
+    upright = not up_heads or max(up_heads) - z_hips > 0.05 * h
+    if biped and upright and upper_torso_cols and hips_target is not None:
         z_leg_zone = z_hips + 0.04 * h
         in_leg_zone = (Z < z_leg_zone) & (np.abs(X - sym_plane) > crotch_threshold)
         if np.any(in_leg_zone):
@@ -2123,6 +2151,12 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
         # boots too, at every height) to the hips. Legs close together (a robe's) got swallowed by 3% of the size.
         roots = [abs(c["points"][0][0] - float(spec.get("sym_plane", 0.0))) for c in (chains or [])
                  if c.get("role") == "leg" and c.get("points")]
+        # and the leg joints themselves (hip, knee, ankle), by name: a placed biped's legs are chains named leg.L
+        # with no "leg" role, and its knees can stand closer together than its hips
+        legs = ("leg", "thigh", "shin", "calf", "upleg", "knee", "foot", "ankle")
+        roots += [abs(b.head_local[0] - float(spec.get("sym_plane", 0.0))) for b in arm.data.bones
+                  if b.use_deform and bone_side(b.name) in ("L", "R") and any(k in b.name.lower() for k in legs)]
+        roots = [r for r in roots if r > 1e-6]
         if roots:
             crotch_thresh = min(crotch_thresh, 0.5 * min(roots))
             log["crotch_barrier_auto"] = round(crotch_thresh, 4)
@@ -2144,6 +2178,10 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
         plan=spec.get("_plan") or body_plan(chains),
         front_bones=front or None, hind_bones=hind or None,
     )
+    if os.environ.get("AUTORIG_DEBUG_BARRIER"):          # the barrier's input and output, to replay it outside Blender
+        np.savez(os.environ["AUTORIG_DEBUG_BARRIER"], W=W, P=P, names=np.array(bone_names), out=cleaned_W,
+                 heads=np.array([bone_heads[b] for b in bone_names]), crotch=crotch_thresh, sym=sym_plane, h=h_span,
+                 plan=str(spec.get("_plan") or body_plan(chains)))
     log["geodesic_barrier_fixed_verts"] = write_weights(mesh, bone_names, W, cleaned_W, locked=spec.get("_locked"))
 
 
@@ -2592,6 +2630,17 @@ def centerline_armor_pass(mesh, arm, chains=None, spec=None, size=None, log=None
 
     z_hips = float(hips_bone.head_local[2]) if hips_bone else min_z + 0.55 * height
     z_bot = max(min_z, z_ankle + 0.05 * height)
+    # The crotch is between the thighs: the band stops halfway down to the knee. Down to the ankle it laid a few per
+    # cent of the hips on each shin, and a bent thigh left that share behind at the knee (the biped sample tore
+    # there). The knee is where the thigh's child starts; the name guess above finds the thigh itself on
+    # leg.L_1/leg.L_2 rigs. Not on a humanoid (a re-rigged Mixamo skeleton): there the long band holds armour
+    # faulds and skirts together (the armoured guard tore more without it).
+    thighs = [b for b in arm.data.bones if is_left_leg_name(b.name) and b.parent is not None
+              and not is_left_leg_name(b.parent.name) and b.children]
+    if thighs and spec.get("kind") != "humanoid" and spec.get("skeleton") != "humanoid":
+        z_real_knee = float(thighs[0].children[0].head_local[2])
+        if z_real_knee < z_hips:
+            z_bot = max(z_bot, z_hips - 0.5 * (z_hips - z_real_knee))
     z_mid = z_hips
     z_top = min(max_z, z_hips + 0.15 * height)
     z_pelvis_min = z_bot
