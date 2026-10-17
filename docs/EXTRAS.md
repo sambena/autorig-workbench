@@ -31,3 +31,33 @@ elsewhere. Set `AUTORIG_EXTRAS` to use a different one. Deleting the folder unin
 - **More than one package:** an extra's pip field may list several, space-separated (`"trimesh scipy"`).
 - **New extras:** add the extra to `EXTRAS` in `core/extras.py`. Its licence must fit the tool's GPL-3.0; the
   tests check the list.
+
+## Tools: programs for the export passes
+
+Two optional programs are installed the same way. They are the projects' own release binaries, downloaded from
+their GitHub releases into a `tools` folder beside the extras (`%LOCALAPPDATA%\autorig\extras\tools`, or
+`AUTORIG_TOOLS`). Nothing is installed system-wide and no Node is needed. A program of the same name on `PATH` is
+used too.
+
+    python autorig/cli/run.py extras install gltfpack gltf-validator
+
+| Tool | Version | Licence | For |
+|---|---|---|---|
+| gltfpack ([meshoptimizer](https://github.com/zeux/meshoptimizer)) | 1.3 | MIT | optimises Web and Godot GLBs in export packages |
+| gltf-validator ([Khronos](https://github.com/KhronosGroup/glTF-Validator)) | 2.0.0-dev.3.10 | Apache-2.0 | the pass/fail gate on every GLB in an export package |
+
+`run.py extras` lists them with the extras. Without them, export works as before and each package says the pass
+was skipped. See [EXPORT.md](EXPORT.md). Versions and download links are pinned in `TOOLS` in
+`core/export_passes.py`.
+
+## The GPU
+
+    python autorig/cli/run.py gpu      which GPU Blender draws with (Workbench, EEVEE) and bakes with (Cycles)
+
+- **Workbench renders** (QA shots, facing views, audits) go through OpenGL. Headless, Blender's EGL uses the
+  NVIDIA driver when it is installed, and Mesa's software renderer otherwise. There is nothing to switch.
+- **Cycles** forgets its device under `--factory-startup`. A step that renders or bakes with Cycles calls
+  `gpu_setup.use_cycles_gpu(scene)` first. It picks OptiX, then CUDA, HIP or oneAPI, and falls back to the CPU.
+- `AUTORIG_GPU=0` keeps everything on the CPU.
+
+The helper is `core/gpu_setup.py`, not `gpu.py`, because `gpu` is Blender's own module.

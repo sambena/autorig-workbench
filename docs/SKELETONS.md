@@ -251,6 +251,20 @@ When importing pre-rigged models, Autorig Workbench's semantic bone engine (`aut
 | **Reallusion AccuRig / CC** | `CC_Base_Pelvis`, `CC_Base_L_Upperarm`, `CC_Base_L_Thigh` | `accurig` |
 | **Source Engine / Valve** | `ValveBiped.Bip01_Pelvis`, `ValveBiped.Bip01_L_UpperArm` | `valve` |
 | **Tripo AI** | `bone_0`, `bone_1`, `bone_2`... | `tripo` |
+| **SMPL / SMPL-X** (AMASS, EDGE) | `Pelvis`, `L_Hip`, `L_Collar`, `L_Shoulder` (or `left_hip` ...) | `smpl` |
+| **VRoid / VRM** | `J_Bip_C_Hips`, `J_Bip_L_UpperArm`, `J_Bip_L_UpperLeg` | `vrm` |
+| **Daz Genesis 8/9** | `hip`, `abdomenLower`, `lShldrBend`, `lThighBend` | `daz` |
+| **Unreal Engine 5 Mannequin** | `pelvis`, `spine_01` ... `spine_05`, `upperarm_l` | `unreal5` |
+
+For SMPL, VRM, Daz and UE5, the name guesser alone gets roles wrong. `CONVENTION_ROLES` therefore lists their
+exact names, and `canonical_roles()` uses that table first, for the retargeter and for imported rigs:
+
+- SMPL's `L_Shoulder` is the upper arm, and its `L_Collar` is the clavicle.
+- Daz's `...Bend` bones bend, but its `...Twist` bones play no role.
+- UE5's five spine bones map to three roles (`spine_01`, `spine_03`, `spine_05`), and its `root` stays root.
+- In autorig's own rigs, a bone named `root` gives the hips role to a `hips` or `pelvis` bone.
+
+The tables were checked against Rokoko Studio Live's retargeter (LGPL-3.0) and Expy Kit (GPL-3.0).
 
 When detected, the auto-rigger preserves existing joint coordinates directly from the source export, retaining fingers, toes, and limb hinge locations with 100% fidelity without discarding bones.
 

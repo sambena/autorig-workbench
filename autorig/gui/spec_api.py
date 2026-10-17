@@ -110,6 +110,10 @@ RIG_FIELDS = [
     F("envelope", "Skin style", "enum", "full: the torso belongs to the spine and each limb to a capsule round it "
       "(creatures). root: bone heat kept, but no limb weight behind where the limb starts (people). false: plain "
       "bone heat.", options=["", "full", "root", False], group="Skin"),
+    F("skinning", "Skinning", "enum", "bone-heat (the default): bone heat on the mesh, a voxel copy only when it "
+      "fails. proxy-transfer: bone heat on a watertight voxel copy, its weights carried back by robust transfer "
+      "(matched where the surfaces agree, inpainted smoothly elsewhere).", options=["", "bone-heat", "proxy-transfer"],
+      group="Skin"),
     F("rigid_pieces", "Rigid piece size", "number", "Loose pieces up to this share of the largest ride one bone "
       "whole (default 0.12).", min=0, max=1, group="Skin"),
     F("rigid_single", "Every loose piece on one bone", "bool", "Each loose piece rides a single bone, never two.",
@@ -202,7 +206,8 @@ HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "join
                   "heal_passes", "heal_blend", "rigid_island_max_share", "rigid_island_max_extent", "mesh_heal",
                   "jaw", "parts", "blends", "membranes", "rigid_to", "hard_split", "soft", "spike_reach",
                   "envelope_skip", "girdle_reach", "skirt", "straight_arms",
-                  "arm_reach", "feet_on_legs", "pin", "drop_floating", "follow", "joints", "limb_pieces"}
+                  "arm_reach", "feet_on_legs", "pin", "drop_floating", "follow", "joints", "limb_pieces",
+                  "skinning", "proxy_voxel", "transfer_distance", "transfer_angle"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [

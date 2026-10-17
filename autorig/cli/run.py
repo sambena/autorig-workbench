@@ -14,7 +14,8 @@
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
 #   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
-#   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages for Blender's Python
+#   python autorig/cli/run.py gpu                     which GPU Blender draws (Workbench) and bakes (Cycles) with
+#   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages, export-pass programs
 #   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
@@ -26,6 +27,8 @@
 #                                                   a game prop's moving parts cut out of LOD0, each its own mesh at its pivot
 #   python autorig/cli/run.py crop-cards --out <folder> --card <name>=<plant.glb>[:<view>[:<wide>]] ...
 #                                                   flat picture cards of plants, for a foliage atlas
+#   python autorig/cli/run.py smoke-flipbook --out dust_puff.png [--grid 4] [--size 256] [--res 64]
+#                                                   a puff of smoke simulated and rendered as a flipbook sheet
 #   python autorig/cli/run.py fbx-maps --fbx rigged/Ice.fbx --source Ice.glb --name IceTeen --out <folder>
 #                                                   a rigged FBX given its GLB source's colour and normal maps
 #
@@ -63,6 +66,8 @@ def main(argv):
                  if l.startswith("#   python autorig/cli/run.py %s " % cmd)]
         print("usage:\n" + "\n".join(lines or ["  python autorig/cli/run.py %s <model>[,<model>...]" % cmd]))
         return 2
+    if cmd == "gpu":                                  # which GPU Blender uses (core/gpu_setup.py)
+        return blender_step("gpu_report.py")
     if cmd == "extras":                               # optional pip packages for Blender's Python (core/extras.py)
         import extras
         return extras.main(rest)
@@ -75,9 +80,9 @@ def main(argv):
         arch = watch_daemon.suggest_spec(name)
         print("SUGGEST %s: %s" % (name, ("rig.json written (%s)" % arch) if arch else "no spec could be suggested"))
         return 0 if arch else 1
-    if cmd in ("game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps"):
+    if cmd in ("game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "smoke-flipbook"):
         script = {"game-prop": "game_prop.py", "game-parts": "game_parts.py", "tripo-clips": "tripo_clips.py",
-                  "crop-cards": "crop_cards.py", "fbx-maps": "fbx_maps.py"}[cmd]
+                  "crop-cards": "crop_cards.py", "fbx-maps": "fbx_maps.py", "smoke-flipbook": "smoke_flipbook.py"}[cmd]
         return blender_step(script, *rest)
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
@@ -153,7 +158,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("suggest", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "smoke-flipbook", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 

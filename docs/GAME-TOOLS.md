@@ -11,6 +11,7 @@ every engine can use them: they write FBX in metres, foot on the ground, facing 
 | `run.py tripo-clips` | `steps/tripo_clips.py` | an animal Tripo rigged: its own skeleton and skin, with clips |
 | `run.py crop-cards` | `steps/crop_cards.py` | plants a field draws by the thousand: flat picture cards |
 | `run.py fbx-maps` | `steps/fbx_maps.py` | a rigged FBX from a GLB source: its colour and normal maps saved and wired in |
+| `run.py smoke-flipbook` | `steps/smoke_flipbook.py` | a puff of smoke or dust: simulated, rendered as a flipbook sheet for sprites |
 
 ## game-prop
 
@@ -118,3 +119,16 @@ The rig and decimate steps export the FBX without embedding textures, and a GLB 
 `rerig_humanoid.py`). This saves the source's base colour and normal maps as `<Name>.fbm/<Name>_basecolor.png` and
 `_normal.png` (`game_prop.save_maps`), wires them into the rigged FBX's materials and exports it again as
 `<out>/<Name>.fbx` with decimate's settings. The armature, weights and mesh are not touched.
+
+## smoke-flipbook
+
+```
+python autorig/cli/run.py smoke-flipbook --out dust_puff.png [--grid 4] [--size 256] [--res 96] [--frames 72] [--swirl 1.5] [--samples 64] [--seed 3]
+```
+
+A puff of smoke made from nothing but Blender's gas solver (Mantaflow) and Cycles, so the picture is your own: a burst
+from a small sphere, pushed up and out, stirred by turbulence and a vortex so it billows and rolls; `grid x grid`
+frames spread over its life (from once the burst has lost the sphere's shape to when it has nearly thinned away),
+rendered from the side on a transparent film, denoised, laid out left to right and top to bottom (Unity's
+texture-sheet order). The colour is the grey shading; the alpha its coverage, faded over the outer eighth of each
+frame so a sprite shows no seam. The game tints it (Tornado Titans' dust is brown). `--seed` gives another puff.

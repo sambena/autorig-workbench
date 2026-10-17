@@ -369,6 +369,31 @@ one pull request each, code first; models are run through the tool only in R6.
     back to FAIL.
   - docs/AI-ASSIST.md lists the eleven tasks to add next.
 
+- **Skinning: proxy transfer, and where the bend tears come from** (October 2026, prototype).
+  - Idea: generated meshes are non-manifold and made of many shells, so bone heat might tear at the joints. Skin a
+    watertight voxel copy instead and carry its weights back with Robust Skin Weights Transfer (Abdrashitov et al.
+    2023, the authors' MIT code reimplemented in numpy in core/weight_transfer.py). Blender 5.2's Python has numpy
+    but neither scipy nor libigl, so the solver is a Jacobi-preconditioned conjugate gradient on numpy alone; nothing
+    is installed into Blender.
+  - Built as `skinning: "proxy-transfer"` (docs/SPEC.md). The default (`"bone-heat"`) is unchanged.
+  - Measured on 2026-10-17 (combined / single-bend tear edges, the full pipeline with decimation):
+
+    | model | bone-heat | proxy-transfer | bone-heat, skin passes off |
+    |---|---|---|---|
+    | beetle | 6 / 28 FAIL | 8 / 28 FAIL | 0 / 0 PASS |
+    | biped | 4 / 4 FAIL | 4 / 3 FAIL | 0 / 0 PASS |
+    | wyvern | 1 / 6 FAIL | 6 / 7 FAIL | 0 / 0 PASS |
+    | Chicken_Rooster_Tripo (suggested spec, rig + audit) | 2345 / 1141 FAIL | 2274 / 1110 FAIL | 1086 / 243 FAIL |
+
+  - So the transfer is not where the tears come from: bone heat on these meshes tears nothing, and the tears are cut
+    in by the skin passes after it. On the samples, one pass off makes each one PASS: `envelope` (the root mask) on the
+    beetle, `barrier` on the wyvern, `barrier` or `centerline_armor` on the biped. On the rooster, bone heat on the
+    mesh itself reaches none of its 44k vertices, so the default already skins the voxel copy. There the root mask
+    frees 11.9k vertices and is the main source; `barrier` off takes bend tears from 1110 to 803. With every pass off,
+    proxy-transfer and the default are about the same (235 vs 243 bend tears).
+  - Next: make those passes blend instead of cut. That is a separate change; proxy-transfer stays as an option.
+  - Cost: on the rooster (44k vertices, an 8.2k-vertex copy) the transfer takes about 47 s on top of bone heat.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and
