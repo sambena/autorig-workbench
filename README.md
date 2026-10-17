@@ -161,6 +161,11 @@ Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
 conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
 
+## Optional extras
+
+Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases). These install
+for Blender's own Python with `python autorig/cli/run.py extras install <name|all>`. See [docs/EXTRAS.md](docs/EXTRAS.md).
+
 ## Tests
 
     python -m unittest discover -s tests -v
