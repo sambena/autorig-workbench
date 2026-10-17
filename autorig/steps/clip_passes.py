@@ -8,6 +8,8 @@
 #
 # Both work on any keyed action (an authored clip, a GenMM variant), so they run after the clip is made rather than
 # inside each clip's pose function. Legs driven by a live IK constraint are left to their IK.
+import math
+
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
@@ -152,26 +154,36 @@ def _solve_frame(arm, chains, joints, targets, tolerance, max_turn=MAX_TURN):
         if tgt is None: continue
         cur = joints[c["name"]]
         if (Vector(cur[-1]) - Vector(tgt)).length < tolerance: continue
-        held = {b: pbs[b].matrix.copy() for b in c["keep"]}
-        new = limb_ik.swing_then_fabrik(cur, tgt, pole=tuple(FORWARD))
-        for i, bone in enumerate(c["bones"]):
-            pb = pbs[bone]
-            m = pb.matrix.copy()
-            head = m.to_translation()
-            nxt = pbs[c["bones"][i + 1]].head if i + 1 < len(c["bones"]) else                 (pb.matrix @ c["foot"] if c.get("foot") is not None else pb.tail)
-            old_dir = Vector(nxt) - head                   # to the next joint, as FABRIK measured the bone
-            new_dir = Vector(new[i + 1]) - head
-            if old_dir.length < 1e-9 or new_dir.length < 1e-9: continue
-            r = old_dir.rotation_difference(new_dir)
-            if r.angle > max_turn: r = Quaternion().slerp(r, max_turn / r.angle)
-            pb.matrix = Matrix.Translation(head) @ (r.to_matrix() @ m.to_3x3()).to_4x4()
-            layer.update()
-            turned[bone] = pb.rotation_quaternion.copy()
-        for b, m in held.items():
-            pb = pbs[b]
-            pb.matrix = Matrix.Translation(pb.matrix.to_translation()) @ m.to_3x3().to_4x4()
-            layer.update()
-            turned[b] = pb.rotation_quaternion.copy()
+        turned.update(aim_chain(arm, c, limb_ik.swing_then_fabrik(cur, tgt, pole=tuple(FORWARD)), max_turn))
+    return turned
+
+
+def aim_chain(arm, c, new, max_turn=math.pi):
+    """Turns a chain's bones, root first, so each points at the next of `new` (its joints: heads, then the end).
+    Bones in c["keep"] hold their orientation. Returns {bone: quaternion}."""
+    pbs = arm.pose.bones
+    layer = bpy.context.view_layer
+    turned = {}
+    held = {b: pbs[b].matrix.copy() for b in c.get("keep", [])}
+    for i, bone in enumerate(c["bones"]):
+        pb = pbs[bone]
+        m = pb.matrix.copy()
+        head = m.to_translation()
+        if i + 1 < len(c["bones"]): nxt = pbs[c["bones"][i + 1]].head
+        else: nxt = pb.matrix @ c["foot"] if c.get("foot") is not None else pb.tail
+        old_dir = Vector(nxt) - head                       # to the next joint, as the solver measured the bone
+        new_dir = Vector(new[i + 1]) - head
+        if old_dir.length < 1e-9 or new_dir.length < 1e-9: continue
+        r = old_dir.rotation_difference(new_dir)
+        if r.angle > max_turn: r = Quaternion().slerp(r, max_turn / r.angle)
+        pb.matrix = Matrix.Translation(head) @ (r.to_matrix() @ m.to_3x3()).to_4x4()
+        layer.update()
+        turned[bone] = pb.rotation_quaternion.copy()
+    for b, m in held.items():
+        pb = pbs[b]
+        pb.matrix = Matrix.Translation(pb.matrix.to_translation()) @ m.to_3x3().to_4x4()
+        layer.update()
+        turned[b] = pb.rotation_quaternion.copy()
     return turned
 
 
@@ -192,9 +204,29 @@ def place_feet(arm, action, last, loops, chains, targets, size, max_turn=MAX_TUR
                     moved = max(moved, (Vector(joints[c["name"]][-1]) - Vector(tg[c["name"]])).length)
             for bone, q in _solve_frame(arm, chains, joints, tg, tol, max_turn).items():
                 rows.setdefault(bone, {})[f] = q
+    return moved, (posed.curves, write_rotations(posed.curves, rows, last))
+
+
+def aim_chains(arm, action, last, loops, chains, joints):
+    """Turns each chain onto joints[frame][chain] (a loop's last key takes frame 0's). Rewrites the chain bones'
+    rotation keys; returns what restore() needs to undo it."""
+    rows = {}
+    with Posed(arm, action) as posed:
+        for f in range(last + 1):
+            src = 0 if (loops and f == last) else f
+            posed.at(src)
+            for c in chains:
+                for bone, q in aim_chain(arm, c, joints[src][c["name"]]).items():
+                    rows.setdefault(bone, {})[f] = q
+    return posed.curves, write_rotations(posed.curves, rows, last)
+
+
+def write_rotations(curves_by_key, rows, last):
+    """Writes {bone: {frame: quaternion}} into the action's rotation keys (each key the same side of the sphere as
+    the one before). Returns the keys as they were, for restore()."""
     original = {}
     for bone, by_frame in rows.items():
-        curves = posed.curves.get((bone, "rotation_quaternion"), {})
+        curves = curves_by_key.get((bone, "rotation_quaternion"), {})
         if len(curves) == 4:
             original[bone] = [[tuple(kp.co) + tuple(kp.handle_left) + tuple(kp.handle_right)
                                for kp in curves[i].keyframe_points] for i in range(4)]
@@ -216,7 +248,7 @@ def place_feet(arm, action, last, loops, chains, targets, size, max_turn=MAX_TUR
                 kp.co[1] = q[i]; kp.handle_left[1] += d; kp.handle_right[1] += d
             prev = q
         for i in range(4): curves[i].update()
-    return moved, (posed.curves, original)
+    return original
 
 
 def restore(saved):

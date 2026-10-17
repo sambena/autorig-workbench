@@ -355,7 +355,23 @@
         "hit_rear": { "type": "number" },
         "beats": { "type": "number" },
         "flap": { "type": "number" },
-        "loop": { "type": "integer" }
+        "loop": { "type": "integer" },
+        "secondary": {
+          "type": "array",
+          "description": "Springs baked into the clips for these chains: tails, ears, antennae, wing membranes (docs/CLIP-MOTION.md).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bones": { "type": "array", "items": { "type": "string" }, "description": "The chain's bones, root first, each the parent of the next." },
+              "chain": { "type": "string", "description": "A stem: every chain of that name (tail_1.., ear_1.L.., wing.L_1.L..), each side its own." },
+              "stiffness": { "type": "number", "description": "Spring stiffness (default 400)." },
+              "damping": { "type": "number", "description": "Velocity damping a second (default 1)." },
+              "gravity": { "type": "number", "description": "Share of gravity (default 1)." },
+              "iterations": { "type": "integer", "description": "Spring iterations a frame (default 2)." },
+              "clips": { "type": "array", "items": { "type": "string" }, "description": "Only these clips and their variants (default every clip)." }
+            }
+          }
+        }
       },
       "required": ["archetype"]
     },

@@ -42,6 +42,7 @@ import layout
 import gait
 import clip_passes
 import leg_planting
+import spring_bones
 import digits
 import morph_generator
 # Per-model clip settings (archetype, display name, category, attack...): rig.json "clips"; the licence line:
@@ -2515,6 +2516,7 @@ def author(key, spec, argv):
     planted = plant_feet(rig, made, arche.facts, argv)
     made = drop_unplanted(rig.arm, made, arche.facts, planted)
     skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid, mesh), rig.size, argv, mesh)
+    springs = spring_pass(arm, made, spec, (card.get("metres") or 0) and rig.size / float(card["metres"]), argv, mesh)
 
     out = os.path.join(pack, "clips")
     os.makedirs(out, exist_ok=True)
@@ -2558,6 +2560,7 @@ def author(key, spec, argv):
         "walkSpeed": round(facts["stride"] * metres / (duty_f * walk_s), 4) if facts.get("stride") else 1.0,
         "decimation": dec,
         **({"footSkate": skate} if skate else {}),
+        **({"secondary": springs} if springs else {}),
         "licence": LICENCE,
     }
     with open(os.path.join(out, key + "_clips.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -2620,6 +2623,78 @@ def plant_feet(rig, made, facts, argv):
     if "walk" in done: facts["stride"] = done["walk"]           # the speed the manifest publishes
     elif "walk" in plan: facts.pop("plant", None)                # the walk stayed as authored: no footfalls to publish
     return done
+
+
+def spring_chains(arm, entries):
+    """rig.json clips.secondary, resolved: [(chain, settings)]. An entry names its bones root first ("bones", each the
+    parent of the next) or a stem ("chain": "ear" takes every ear_1.L, ear_2.L... chain the rig has, each side its
+    own)."""
+    out = []
+    names = arm.data.bones
+    for i, e in enumerate(entries if isinstance(entries, list) else []):
+        if not isinstance(e, dict): continue
+        settings = {k: float(e[k]) for k in ("stiffness", "damping", "gravity") if isinstance(e.get(k), (int, float))}
+        settings["iterations"] = int(e.get("iterations", spring_bones.DEFAULTS["iterations"]))
+        settings["clips"] = e.get("clips")
+        groups = []
+        if isinstance(e.get("bones"), list):
+            groups.append([b for b in e["bones"] if b in names])
+        elif isinstance(e.get("chain"), str):
+            by = {}
+            for b in names:
+                # tail_2, ear_1.L, and the placed rigs' wing.L_1.L
+                m = re.match(r"^(?P<base>.+?)(?:_(?P<i>\d+))?(?:\.(?P<side>[LR]))?$", b.name)
+                if m and re.sub(r"\.[LR]$", "", m.group("base")) == e["chain"]:
+                    by.setdefault(m.group("side") or "", []).append((int(m.group("i") or 0), b.name))
+            groups += [[n for _, n in sorted(links)] for _, links in sorted(by.items())]
+        for g, bones in enumerate(groups):
+            if not bones: continue
+            # joined head to tail, each bone the child of the last
+            if any(names[bones[k + 1]].parent is None or names[bones[k + 1]].parent.name != bones[k]
+                   for k in range(len(bones) - 1)):
+                print("SECONDARY note: %s is not one chain, skipped" % bones); continue
+            out.append(({"name": "spring%d.%d" % (i, g), "bones": bones, "keep": []}, settings))
+    return out
+
+
+def spring_pass(arm, made, spec, per_metre, argv, mesh=None):
+    """Secondary motion (spring_bones.py, after Wiggle 2) on the bones rig.json clips.secondary opts in: each bone's
+    tail lags on a spring behind where the clip puts it, baked into the clip. Loops are run until they settle and
+    still loop. A clip the springs make tear (a tail whipped by a fall) keeps its authored motion. --no-secondary
+    skips it. Returns {chain: [bones]} for the manifest."""
+    entries = spec.get("secondary")
+    if not entries or "--no-secondary" in argv: return {}
+    pairs = spring_chains(arm, entries)
+    if not pairs: return {}
+    fps = bpy.context.scene.render.fps
+    for name, last, loops in made:
+        action = bpy.data.actions.get(name)
+        if action is None or action.get("autorig_retarget"): continue
+        use = [(c, st) for c, st in pairs if not st.get("clips") or re.sub(r"_v\d+$", "", name) in st["clips"]]
+        if not use: continue
+        frames = clip_passes.sample(arm, action, last, [c for c, _ in use])
+        n = last if loops else last + 1
+        joints = [dict() for _ in range(last + 1)]
+        lag = 0.0
+        for c, st in use:
+            anim = [frames[f][c["name"]] for f in range(n)]
+            sim = spring_bones.simulate(anim, fps=fps, loop=loops, scale=per_metre or 1.0,
+                                        **{k: st[k] for k in ("stiffness", "damping", "gravity", "iterations") if k in st})
+            for f in range(n): joints[f][c["name"]] = sim[f]
+            lag = max(lag, max(math.dist(sim[f][-1], anim[f][-1]) for f in range(n)))
+        if loops:
+            joints[last] = joints[0]
+        strain = clip_passes.mesh_strain(arm, action, last, mesh) if mesh is not None else None
+        saved = clip_passes.aim_chains(arm, action, last, loops, [c for c, _ in use], joints)
+        kept = True
+        if strain is not None:
+            torn, stretch = clip_passes.mesh_strain(arm, action, last, mesh)
+            kept = torn <= strain[0] and stretch <= strain[1] + 0.25
+            if not kept: clip_passes.restore(saved)
+        print("SECONDARY " + json.dumps({"clip": name, "chains": len(use), "tip_lag": round(lag, 5), "kept": kept}),
+              flush=True)
+    arm.animation_data.action = None
+    return {c["name"]: c["bones"] for c, _ in pairs}
 
 
 def drop_unplanted(arm, made, facts, planted):
@@ -3008,6 +3083,8 @@ def main():
     legs = {b for c in clip_passes.leg_chains(arm, skeleton) for b in c["bones"]}
     made = add_variants(arm, made, rig.size, argv, legs)
     settle_feet(arm, made, clip_passes.leg_chains(arm, skeleton, mesh=mesh), rig.size, argv, mesh)
+    spring_pass(arm, made, spec, (card.get("metres") or 0) and float(max(rig.hi - rig.lo)) / float(card["metres"]), argv,
+                mesh)
 
     # 1. the source: the rig with every clip as an action
     bpy.context.preferences.filepaths.save_version = 0

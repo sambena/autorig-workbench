@@ -107,3 +107,30 @@ location divided by the model's size. The seed is `S + 1000 x take`, so a rebake
 
 On the canine (`--variants 2`): `idle_v1`/`idle_v2` skate 0.04, `walk_v1`/`walk_v2` 3.2/2.9 (the walk 3.9),
 `trot_v1`/`trot_v2` 3.2/3.2 (the trot 2.6). Its gallop takes bound further than its legs can step and are dropped.
+
+## Secondary motion: springs on tails, ears, antennae, membranes
+
+Bones are opted in through rig.json:
+
+```json
+"clips": {"archetype": "walker",
+          "secondary": [{"chain": "tail", "stiffness": 150, "damping": 2},
+                        {"chain": "wing", "stiffness": 300, "damping": 3, "gravity": 0.3, "clips": ["fly", "idle"]}]}
+```
+
+An entry names a chain's `bones` (root first) or a `chain` stem (every chain of that name, each side its own:
+`tail_1`.., `ear_1.L`.. and `ear_1.R`.., the placed rigs' `wing.L_1.L`..). Settings (SPEC.md): `stiffness`, `damping`,
+`gravity`, `iterations`, and `clips` to limit it to some clips (their variants follow). Gravity is scaled by the
+card's `metres`.
+
+The pass (`core/spring_bones.py`, after Wiggle 2's move / constrain / velocity update) runs last, on every clip and
+variant: each bone's tail is a point with a velocity, damped and pulled by gravity, then sprung toward where the clip
+puts it, carried by its parent's simulated turn, so the chain lags link by link; each bone keeps its length. A loop is
+run four times so it settles, the last cycle is kept and the gap left at its seam is spread back across it, so the
+clip still loops exactly. A one-shot starts at rest. The bones' rotation keys are rewritten. A clip the springs make
+tear (more torn edges, or stretch up by more than 0.25) keeps its authored motion. `--no-secondary` skips it; the
+manifest lists the chains under `secondary`.
+
+On the samples, opted in on a copy (canine `tail`; wyvern `tail` and `wing`): every clip of both still loops
+exactly (`clip-check --loop`), the canine's tail tip trails by up to 0.15 of the model's size in its idle and walk,
+and its `attack` and `death` (a tail whipped by a fall would tear) keep their authored tails.
