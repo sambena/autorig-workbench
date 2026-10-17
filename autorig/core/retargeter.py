@@ -224,9 +224,12 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
     unmapped_target = list(target_bones)
 
     # 1. Map target bones to canonical roles
+    # each side's roles from its whole skeleton: its convention's exact names first (SMPL, VRM, Daz, UE5)
+    tgt_roles = skeletons.canonical_roles(list(target_bones))
+    src_roles = skeletons.canonical_roles(list(source_bones))
     tgt_role_to_bone = {}
     for tb in target_bones:
-        role = skeletons.map_bone_to_canonical(tb)
+        role = tgt_roles.get(tb)
         if role:
             if role == "hips" and "hips" in tgt_role_to_bone:
                 if tb.lower() in ("hips", "pelvis") and tgt_role_to_bone["hips"].lower() == "root":
@@ -250,14 +253,14 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
         exact_match = next((tb for tb in target_bones if tb.lower() == sb.lower()), None)
         if exact_match:
             mapping[sb] = exact_match
-            role = skeletons.map_bone_to_canonical(sb) or exact_match
+            role = src_roles.get(sb) or exact_match
             roles_map[sb] = (exact_match, role)
             if exact_match in unmapped_target:
                 unmapped_target.remove(exact_match)
             continue
 
         # Semantic canonical role match
-        src_role = skeletons.map_bone_to_canonical(sb)
+        src_role = src_roles.get(sb)
         if src_role and src_role in tgt_role_to_bone:
             matched_tb = tgt_role_to_bone[src_role]
             mapping[sb] = matched_tb
@@ -276,7 +279,7 @@ def build_retarget_mapping(source_bones, target_bones, overrides=None):
     # Identify root bones for translation transfer
     root_pair = None
     for sb, tb in mapping.items():
-        if skeletons.map_bone_to_canonical(sb) == "hips" or skeletons.map_bone_to_canonical(tb) == "hips":
+        if src_roles.get(sb) == "hips" or tgt_roles.get(tb) == "hips":
             root_pair = (sb, tb)
             break
     if not root_pair and "root" in target_bones:

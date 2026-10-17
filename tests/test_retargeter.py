@@ -358,6 +358,25 @@ print("__ACTIONS__" + str(action_names))
         self.assertIn("ACTIONS IN", r_list.stdout)
         self.assertIn("sample_walk", r_list.stdout)
 
+    def test_smpl_motion_onto_a_mixamo_skeleton(self):
+        smpl = ["Pelvis", "L_Hip", "R_Hip", "Spine1", "L_Knee", "Spine2", "L_Ankle", "Spine3", "Neck", "L_Collar",
+                "Head", "L_Shoulder", "L_Elbow", "L_Wrist"]
+        mixamo = ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftShoulder", "LeftArm", "LeftForeArm",
+                  "LeftHand", "LeftUpLeg", "RightUpLeg", "LeftLeg", "LeftFoot"]
+        m = retargeter.build_retarget_mapping(smpl, mixamo)["mapping"]
+        self.assertEqual(m["L_Hip"], "LeftUpLeg")
+        self.assertEqual(m["L_Collar"], "LeftShoulder")
+        self.assertEqual(m["L_Shoulder"], "LeftArm")          # SMPL's shoulder is the upper arm
+        self.assertEqual(m["L_Elbow"], "LeftForeArm")
+        self.assertEqual(m["Spine3"], "Spine2")
+
+    def test_ue5_onto_autorig_root_and_hips(self):
+        ue5 = ["root", "pelvis", "spine_01", "spine_03", "spine_04", "spine_05", "thigh_l"]
+        r = retargeter.build_retarget_mapping(ue5, ["root", "Hips", "Spine", "Spine1", "Spine2", "LeftUpLeg"])
+        self.assertEqual(r["mapping"]["pelvis"], "Hips")
+        self.assertEqual(r["root_pair"], ("pelvis", "Hips"))
+        self.assertNotIn("spine_04", r["mapping"])
+
     def test_clean_action_name(self):
         self.assertEqual(retargeter.clean_action_name("Armature|Armature|Dance_Loop"), "dance_loop")
         self.assertEqual(retargeter.clean_action_name("mixamo.com/Run_Fwd_Loop"), "run_fwd_loop")
