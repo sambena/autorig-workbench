@@ -13,6 +13,10 @@ descriptions.package='Zip the rigged model for an engine (web, Unity, Unreal or 
 Object.assign(labels,{target:'Engine',include_lods:'Include Studio LODs'});choices.target=['web','unity','unreal','godot'];
 Object.assign(labels,{every:'Frame sampling interval',loops:'Looping clip names (JSON)',seam_mm:'Maximum seam gap (mm)'});
 Object.assign(labels,{triangles:'Base triangle budget (0 = full)',normalize:'Normalize facing, ground & size'});
+names.engine='Engine LOD FBX';
+descriptions.engine='Merge the lods tool's GLB levels (run it in glb format first) into one FBX for Unity or Unreal: <Name>_LOD0..n under one root, maps in <Name>.fbm. Skinned levels share one armature and carry the chosen clips; vehicles keep Body and Wheel_FL/FR/RL/RR pivots. Add it to an export with export --engine-lods.';
+Object.assign(labels,{kind:'Layout (auto detects)',name:'Resource name (blank = model)',roughness:'Flattened roughness',wind:'Wind colour channel',wind_alpha:'Wind alpha below',animation:'Animation GLB (blank = preview)',clips:'Clips to keep (JSON; [] = all)',clip:'Rename a single clip to',fps:'Frames per second',parts:'parts.json (blank = vehicle output or wheel origins)',recentre_wheels:'Re-centre wheel levels on hubs'});
+Object.assign(choices,{kind:['auto','static','skinned','vehicle'],wind:['auto','require','off']});
 const url=p=>p+(p.includes('?')?'&':'?')+'t='+encodeURIComponent(token);
 async function api(path,body){const r=await fetch(path,{headers:{'X-Autorig-Token':token,'Content-Type':'application/json'},...(body===undefined?{}:{method:'POST',body:JSON.stringify(body)})});const j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);return j;}
 function busy(value){for(const e of document.querySelectorAll('#tools button,#settings input,#settings select,#settings textarea,#save,#run,#model'))e.disabled=value;$('#cancel').disabled=!value;}

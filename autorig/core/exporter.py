@@ -717,9 +717,11 @@ def zip_directory(src_dir, zip_dest):
                 zf.write(p, rel)
 
 
-def create_export_package(model_name, target="unreal", out_dir=None, include_lods=False):
+def create_export_package(model_name, target="unreal", out_dir=None, include_lods=False, engine_lods=False):
     """Builds and archives an export package for the specified target preset.
     target: 'unreal', 'unity', 'godot', 'web', or 'all'.
+    engine_lods: add the Studio engine tool's merged LOD FBX (and its maps) under LODs/ in the
+    Unity and Unreal packages; Godot and Web packages are unchanged.
     Returns: dict with package summary and archive path."""
     target = target.lower()
     valid_targets = list(PRESETS.keys()) + ["all"]
@@ -742,6 +744,8 @@ def create_export_package(model_name, target="unreal", out_dir=None, include_lod
         if not assets[key]:
             assets = dict(assets, **{key: primary, 'studio_primary': True})
             if key == 'glb': assets['clips_json'] = None
+    if engine_lods and target in ("godot", "web"):
+        raise ValueError("the engine LOD FBX is for Unity and Unreal packages")
     base_export_dir = out_dir or layout.work_dir("export", model_name)
     os.makedirs(base_export_dir, exist_ok=True)
 
@@ -749,7 +753,8 @@ def create_export_package(model_name, target="unreal", out_dir=None, include_lod
         results = {}
         for t in PRESETS.keys():
             t_dir = os.path.join(base_export_dir, t)
-            res = create_export_package(model_name, target=t, out_dir=t_dir, include_lods=include_lods)
+            res = create_export_package(model_name, target=t, out_dir=t_dir, include_lods=include_lods,
+                                         engine_lods=engine_lods and t in ("unity", "unreal"))
             results[t] = res
 
         # Also create combined archive
@@ -800,6 +805,9 @@ def create_export_package(model_name, target="unreal", out_dir=None, include_lod
             manifest['lods'] = [{'level': l['level'], 'file': 'lods/' + l['file'],
                                  'triangles': sum(m['triangles'] for m in l['meshes']), 'animations': False} for l in lod_report['levels']]
             with open(path, 'w', encoding='utf-8') as fh: json.dump(manifest, fh, indent=2)
+    if engine_lods and target in ("unity", "unreal"):
+        from engine_lods import package_files
+        files += package_files(model_name, target_dir)
 
     zip_path = os.path.join(layout.work_dir("export"), f"{model_name}_{target}.zip")
     if os.path.exists(zip_path):

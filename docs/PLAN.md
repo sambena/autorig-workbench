@@ -314,6 +314,13 @@ one pull request each, code first; models are run through the tool only in R6.
   suggester reads the biped sample as rigid and the pedestal as winged, and beetle, biped and wyvern audit FAIL on bend
   tears with their bundled specs.
 
+- **Engine LOD FBX** (October 2026): storm-chaser's three one-off Blender packagers (Unity LOD FBX, skinned LODs
+  with the clip moved onto the prepared rig, vehicle parts on wheel pivots) are now the Studio `engine` tool
+  (steps/engine_package.py, core/engine_lods.py), with the clip name, frame rate, wind channel and resource name as
+  settings; `export --engine-lods` adds the result to Unity and Unreal packages. Tested by tests/test_studio.py
+  (EngineSettings, EnginePackage: each layout re-imported from the FBX) and on the canine sample and a test truck;
+  not yet imported into Unity itself.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

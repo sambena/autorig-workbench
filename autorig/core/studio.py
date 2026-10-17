@@ -8,7 +8,7 @@ import re
 import tempfile
 from pathlib import Path
 
-TOOLS = ("lods", "vehicle", "reference", "materials", "foliage", "generate", "validate", "package")
+TOOLS = ("lods", "vehicle", "reference", "materials", "foliage", "generate", "validate", "package", "engine")
 DEFAULTS = {
     "package": {"target": "web", "include_lods": True},
     "validate": {"every": 1, "loops": [], "seam_mm": 1.0},
@@ -21,6 +21,10 @@ DEFAULTS = {
     "foliage": {"seed": 2718, "cell": 256, "height": 9.0, "wind_base": 0.0,
                 "wind_tip": 1.0, "apply_wind": False},
     "generate": {"folder": "", "candidates": 1, "tier": "Gen-2.5-High", "quality": "30000"},
+    # One engine FBX from the lods tool's GLBs. Game-specific choices (resource name, clip
+    # name, frame rate, wind channel) are settings here, never constants in the packager.
+    "engine": {"kind": "auto", "name": "", "roughness": 0.75, "wind": "auto", "wind_alpha": 0.99,
+               "animation": "", "clips": [], "clip": "", "fps": 24, "parts": "", "recentre_wheels": True},
 }
 
 
@@ -92,6 +96,13 @@ def validate(tool, values):
     elif tool == "foliage":
         number("seed", 0, 2147483647, True); number("cell", 64, 1024, True)
         number("height", 0.001, 1000); number("wind_base", 0, 1); number("wind_tip", 0, 1)
+    elif tool == "engine":
+        if out["kind"] not in ("auto", "static", "skinned", "vehicle"): raise ValueError("kind must be auto, static, skinned or vehicle")
+        if out["wind"] not in ("auto", "require", "off"): raise ValueError("wind must be auto, require or off")
+        for k in ("name", "clip"):
+            if out[k] and not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", out[k]): raise ValueError("invalid " + k)
+        number("roughness", 0, 1); number("wind_alpha", 0.001, 1); number("fps", 1, 240, True)
+        if not isinstance(out["clips"], list) or any(not isinstance(v, str) or not v for v in out["clips"]): raise ValueError("clips must be a list of clip names")
     elif tool == "generate":
         number("candidates", 1, 8, True)
         for k in ("tier", "quality"):
