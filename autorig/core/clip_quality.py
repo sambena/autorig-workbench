@@ -128,8 +128,10 @@ def check(argv):
             if len(track.strips)!=1:raise ValueError('expected one imported glTF strip per clip owner')
             strip=track.strips[0];owner.animation_data.action=strip.action
             if strip.action_slot:owner.animation_data.action_slot=strip.action_slot
-        start=int(math.floor(min(st.frame_start for _,tr in bindings for st in tr.strips)))
-        end=int(math.ceil(max(st.frame_end for _,tr in bindings for st in tr.strips)))
+        # the action's own keyed range: the importer lays a strip at 1..N+1 over an action keyed 0..N, and the action is
+        # what is evaluated (sampling the strip's range read key 1 against a held last key: every loop mismatched)
+        start=int(math.floor(min(st.action_frame_start for _,tr in bindings for st in tr.strips)))
+        end=int(math.ceil(max(st.action_frame_end for _,tr in bindings for st in tr.strips)))
         frames=sorted(set(range(start,end+1,a.every))|{start,end})
         worst={};previous=None;first=None;last=None;foot_previous={};foot_slide={};ground=float(rest[:,2].min());movement=0.0;penetration=0.0
         root_ends=[];hand_inside={arm.name+':'+b.name:0 for arm,b,_ in hands};end_tracks={k:[] for k in ends}
