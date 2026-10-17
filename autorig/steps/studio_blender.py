@@ -15,6 +15,9 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent / "core"), str(HERE)]
 import layout
 import studio
+import extras
+extras.activate()
+import mesh_bridge
 from rig_quality import coords, probe_pose, protect_joints
 
 
@@ -131,7 +134,9 @@ def lods(model, s, out):
                 note = None
                 if used < 1 and candidate.data.shape_keys:
                     used = 1.0; note = 'shape keys preserved at full resolution'
-                if used < 1:
+                if used < 1 and not candidate.vertex_groups and mesh_bridge.decimate(candidate, max(4, int(before*used)), textured_ok=level > 0) is not None:
+                    note = 'PyMeshLab collapse'
+                elif used < 1:
                     from decimate import weld_same_weights
                     weld_same_weights(candidate, max(max(candidate.dimensions),1)*1e-6)
                     bpy.ops.object.select_all(action='DESELECT'); candidate.select_set(True)

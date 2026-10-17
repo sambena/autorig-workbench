@@ -1805,7 +1805,14 @@ async function openMeshDoctor() {
       `<tr><td>Duplicate coincident vertices</td><td class="num"><b>${cell(diag.duplicate_verts)}</b></td></tr>` +
       `</table>` +
       (diag.note ? `<div class="why" style="margin-top:8px">${esc(diag.note)}</div>` : "") +
-      `<div class="why" style="margin-top:14px">${verdict}</div>`;
+      `<div class="why" style="margin-top:14px">${verdict}</div>` +
+      `<div class="row" style="margin-top:14px;gap:8px">` +
+      `<button type="button" id="btnDoctorRepair" title="PyMeshLab: duplicates, non-manifold edges and vertices, small holes; UVs kept">Repair a copy</button>` +
+      `<button type="button" id="btnDoctorWatertight" title="PyMeshFix closes every shell, manifold3d joins them; the colour is baked back">Make a watertight copy</button>` +
+      `</div><div class="meta" style="margin-top:6px">Both write a copy to work/doctor and leave the source as it is. They need the optional extras (pymeshlab, pymeshfix, manifold3d, xatlas).</div>`;
+    const go = (step) => { $("#doctorModal").close(); runStep(step); };
+    $("#btnDoctorRepair").onclick = () => go("doctor-repair");
+    $("#btnDoctorWatertight").onclick = () => go("doctor-watertight");
   } catch (e) {
     body.innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
   }

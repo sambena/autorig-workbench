@@ -170,10 +170,12 @@ Clips are keyed, then planted feet are held where they land; `clip-check` scores
 
 ## Optional extras
 
-Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases, the suggester's body
-plan and picture vote). These install for Blender's own Python with `python autorig/cli/run.py extras install
-<name|all>`. The export passes' two programs (gltfpack, glTF-Validator) install the same way. See
-[docs/EXTRAS.md](docs/EXTRAS.md).
+Some steps do better with a pip library (the suggester's body plan and picture vote, and the mesh prep below).
+These install for Blender's own Python with `python autorig/cli/run.py extras install <name|all>`. The export
+passes' two programs (gltfpack, glTF-Validator) install the same way. See [docs/EXTRAS.md](docs/EXTRAS.md). Mesh prep
+in use: PyMeshLab decimation for LODs and untextured meshes, game-prop `--atlas` (xatlas re-unwrap and bake) and
+`--colliders` (CoACD), Mesh Doctor repair and watertight copies (PyMeshLab, PyMeshFix, manifold3d), and manifold3d
+cuts in game-parts and wheel carving ([docs/GAME-TOOLS.md](docs/GAME-TOOLS.md), with before/after numbers).
 
 ## Tests
 

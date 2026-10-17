@@ -18,6 +18,7 @@ every engine can use them: they write FBX in metres, foot on the ground, facing 
 ```
 python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out <folder>
         [--height 9] [--front -y|+y|+x|-x] [--triangles 30000] [--lods 0.4,0.15] [--wind] [--carve-wheels | --wheels]
+        [--atlas 2048] [--colliders 12 [--collider-detail 0.08]]
 ```
 
 - `--front` is the way the model faces as it comes; it is turned to face -Y. (Before 2026-10-17 the turn was silently
@@ -33,6 +34,16 @@ python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out 
   told from the body (the Peanut's tyres sit up under its bumper) the FBX carries an empty `Wheels_Baked` instead, so
   a game can hide its own wheels rather than show two sets. `--wheels` takes a truck already split into parts.
 - `--wind`: height-based vertex alpha for a wind shader (trees, bushes).
+- `--atlas N`: re-texture the base mesh. It is cut to `--triangles` with PyMeshLab, given a fresh xatlas UV atlas, and
+  the full-resolution model is baked onto it (Cycles on the CPU, selected to active): `<Name>.fbm/<Name>_basecolor.png`
+  and a tangent-space `_normal.png` that carries the dense surface's detail, N x N, one material. See "Mesh prep with
+  the extras" below for why.
+- `--colliders N`: up to N convex pieces (CoACD) as `<Name>_Collider_00`, `_01`... under the root beside the LODs,
+  without materials, each under Unity's 255-triangle limit for a convex MeshCollider. The importer is the game's: it
+  should give each a `MeshCollider` with `convex = true` and turn its renderer off. `--collider-detail` is CoACD's
+  concavity threshold (lower follows the shape closer, with more pieces). About 50 s for a barn, 20 s for a truck.
+- With the manifold3d extra, `--carve-wheels` cuts each tyre out with a cylinder rather than taking whole faces, when
+  the body is a closed surface; a Tripo truck's body is not (see below), so its tyres still go by face centres.
 
 ## game-parts
 
@@ -65,7 +76,14 @@ Blender's: metres, Z up, front -Y.
 - `max_size: [dx, dy, dz]` leaves out a fragment bigger than that (a tower's legs run up behind a fan: long where
   its blades are short);
 - `pivot` is a point, or `"centre"`: the middle of what the part took (for a disc, across its axis only, unless
-  `"recentre_axis": true`). A lopsided generated fan is best given its hub as a point.
+  `"recentre_axis": true`). A lopsided generated fan is best given its hub as a point;
+- `"cut": true` carves the part instead of taking whole fragments: everything inside its one region (no `exclude`
+  or `max_size`), and a fragment the region crosses is cut through along the region's surface and closed where it
+  is cut (manifold3d; UVs and materials carried, the cap faces textured from the nearest surface). That is for a
+  part fused into the body in one piece. A fragment that is not a closed surface once its UV seams are welded falls
+  back to its faces' centres, and so does everything without the manifold3d extra. Cut parts are cut first, in order.
+  On Rodin's windpump (one closed surface once welded) the fan cut as a disc left the fan and the body each with 0
+  open edges where whole fragments had left 129.
 
 `--survey` writes every fragment's centre, bounds and face count to `<renders>/<Name>_fragments.json`, for finding
 the numbers; `--renders` draws the model before (textured) and after (each part its own colour), the model left
@@ -76,6 +94,74 @@ those before shipping a cut: everything of the part in it, and nothing that shou
 windpumps): pumpjack Beam (walking beam and horse head, pivot at the bearing), Rod (bridle and polished rod under the
 head), Link (Rodin's slanted rear frame, pivot at its foot so the game can stretch it to follow the tail) or Pitman
 (Tripo's arms, pivot at the tail), and windpump Fan (pivot at the hub; the tail vane, gearbox and tower stay).
+
+## Mesh prep with the extras
+
+The optional mesh libraries ([EXTRAS.md](EXTRAS.md)) are used through `core/mesh_prep.py` (plain numpy arrays, no
+bpy, so Blender's Python tests it on its own) and `core/mesh_bridge.py` (a Blender mesh in and out). Every use checks
+that its extra is installed and keeps the plain path otherwise.
+
+| Where | Extra | What |
+|---|---|---|
+| trim, game-prop LODs, Studio LODs | pymeshlab | quadric collapse: untextured meshes, and LOD1 and down |
+| game-prop `--atlas` | pymeshlab, xatlas | collapse, fresh UV atlas, the full model baked onto it |
+| game-prop `--colliders` | coacd | convex collider pieces |
+| game-prop `--carve-wheels`, game-parts `"cut"` | manifold3d | exact cuts of closed fragments |
+| doctor `--repair` | pymeshlab | duplicates, non-manifold edges and vertices, small holes; UVs kept |
+| doctor `--watertight [--bake N]` | pymeshfix, manifold3d (xatlas) | one closed surface; the colour baked back |
+
+### Decimation compared
+
+Four Tripo models, each cut from about 90,000 triangles to the same budget by Blender's Decimate and by PyMeshLab's
+texture-aware quadric collapse, then PyMeshLab plus a 2048 xatlas bake. Shape: the largest and the mean distance
+between the two surfaces (both ways, 20,000 area-weighted samples), as a percentage of the model's diagonal. Picture:
+the mean per-pixel difference (0-255) from the original in a textured render from the same camera.
+
+| Model (budget) | Max dev. Blender | Max dev. PyMeshLab | Mean dev. Blender | Mean dev. PyMeshLab | Render diff. Blender | PyMeshLab | PyMeshLab + bake |
+|---|---|---|---|---|---|---|---|
+| Boulder (5,000) | 1.19% | **0.44%** | 0.097% | **0.046%** | 2.76 | 2.04 | **1.96** |
+| Church (10,000) | 0.63% | **0.38%** | 0.028% | **0.025%** | 1.76 | **1.59** | 2.47 |
+| Car, vintage (10,000) | 0.53% | **0.40%** | 0.035% | **0.034%** | **1.52** | 1.68 | 2.19 |
+| Barn (10,000) | 0.81% | **0.50%** | **0.026%** | 0.037% | **2.29** | 3.66 | 4.65 |
+
+![Boulder](img/mesh-prep/decimate_boulder.jpg)
+![Car](img/mesh-prep/decimate_car.jpg)
+![Barn](img/mesh-prep/decimate_barn.jpg)
+
+What it shows (each sheet: original, Blender, PyMeshLab, PyMeshLab + bake; wireframes below):
+
+- **Shape:** PyMeshLab is better everywhere: its largest error is 25-63% smaller, and it leaves no shards, slivers or
+  spikes (Blender's boulder is splintered, its car has a spike off the back).
+- **Texture:** even the texture-aware variant smears Tripo's atlases at UV seams and across big flat areas (the barn's
+  roof swirls, the car's grille and windows smear), because those atlases are not linear across such areas and its
+  collapse covers them with big triangles. Its settings (UV weight, optimal placement, planar quadric) made no
+  difference.
+- **The bake** removes the smearing (the barn's roof, the car's grille). Its render difference is higher mostly
+  because the bake applies the material's colour factor (a little darker; Workbench shows the raw image) and
+  resamples fine detail.
+
+So the library collapse is used where the silhouette is what shows or there is no texture: untextured static meshes
+in trim, game-prop's LOD1 and LOD2, Studio LOD1 and down, and the base mesh when `--atlas` re-bakes it. A textured
+mesh seen close stays on Blender's Decimate. `AUTORIG_COLLAPSE=blender` turns the library off, `pymeshlab` uses it
+for everything. When PyMeshLab stops well short of its budget (it will not collapse across seams, and on a mesh
+Blender had already cut it stalled at 9,934 of 4,000), the LOD goes to Blender's Decimate.
+
+![Barn with a 2048 atlas: LOD0 10k, LOD1 4k, LOD2 1.5k](img/mesh-prep/atlas_barn_lods.jpg)
+
+### Colliders
+
+![CoACD colliders for a barn and a truck](img/mesh-prep/colliders.jpg)
+
+CoACD's defaults took nearly three minutes on the barn; game-prop uses a lighter search (30 MCTS iterations, 8 nodes,
+depth 2) and a coarser remesh (30), about 50 s, after cutting a dense input to 4,000 triangles.
+
+### Cuts
+
+![Windpump fan: whole fragments (left two: the fan) and a manifold3d cut (right two: what stays)](img/mesh-prep/cut_windpump.jpg)
+
+manifold3d only cuts a closed 2-manifold. Rodin's models usually are, once their UV seams are welded. Tripo's are
+often not: the Ranger truck's body has 21 non-manifold edges and 910 open ones, and still 9 open edges after a
+PyMeshLab repair that closes holes up to 300 edges, so it falls back to face centres.
 
 ## tripo-clips
 

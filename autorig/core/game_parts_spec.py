@@ -19,6 +19,11 @@
 # legs run up behind a windpump's fan, long and thin where the fan's blades are short). Every coordinate is in metres
 # in Blender's frame: Z up, the model's front towards -Y.
 #
+# "cut": true carves a part instead: it takes everything inside its one region (a box or a disc, no "exclude"), and a
+# fragment the region crosses is cut through along the region's surface, closed where it is cut (manifold3d, when the
+# fragment is a closed surface; its faces sorted by their centres otherwise). For a part fused into the body in one
+# piece, as Tripo makes them. Cut parts are cut first, in order; the fragment parts then share what is left.
+#
 #   load(path) -> {model name: [part dict, ...]} (validated; keys starting "_" are comments)
 #   components(vertex count, faces) -> a component label per vertex
 #   assign(parts, centres[, sizes]) -> a part index (or -1) per component (its centre, and its bounds' size)
@@ -86,8 +91,11 @@ def part(p, what):
     if piv != "centre":
         piv = _vec(piv, what + " pivot")
     most = _vec(p["max_size"], what + " max_size") if "max_size" in p else None
+    cut = bool(p.get("cut", False))
+    if cut and (len(regions) != 1 or exclude or most is not None):
+        raise SpecError("%s: a \"cut\" part has one region and no \"exclude\" or \"max_size\"" % what)
     return {"name": p["name"], "regions": regions, "exclude": exclude, "pivot": piv, "max_size": most,
-            "recentre_axis": bool(p.get("recentre_axis", False))}
+            "recentre_axis": bool(p.get("recentre_axis", False)), "cut": cut}
 
 
 def parse(spec):
@@ -126,6 +134,14 @@ def inside(r, p):
     return across <= d["radius"]
 
 
+def solid_args(r):
+    """A region as core/mesh_prep.Solid's arguments: ("box", lo, hi) or ("disc", centre, axis, radius, slab)."""
+    if "box" in r:
+        return ("box", r["box"]["min"], r["box"]["max"])
+    d = r["disc"]
+    return ("disc", d["centre"], d["axis"], d["radius"], d["slab"])
+
+
 def takes(prt, p, size=None):
     if size is not None and prt["max_size"] is not None and any(size[i] > prt["max_size"][i] for i in range(3)):
         return False
@@ -138,7 +154,7 @@ def assign(parts, centres, sizes=None):
     out = []
     for k, c in enumerate(centres):
         size = sizes[k] if sizes is not None else None
-        out.append(next((i for i, prt in enumerate(parts) if takes(prt, c, size)), -1))
+        out.append(next((i for i, prt in enumerate(parts) if not prt.get("cut") and takes(prt, c, size)), -1))
     return out
 
 

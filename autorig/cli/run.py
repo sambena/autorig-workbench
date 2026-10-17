@@ -126,7 +126,7 @@ def main(argv):
         args = rest if rest[0].startswith("-") else ["-only", rest[0]] + rest[1:]
         return blender_step("prepare.py", *args)
     if cmd == "doctor" and rest:
-        if "--heal" in rest:                                  # healing needs Blender's mesh tools
+        if {"--heal", "--repair", "--watertight"} & set(rest):  # these need Blender's mesh tools
             return blender_step("mesh_doctor.py", *rest)
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "mesh_doctor.py")] + rest)
     if cmd == "batch":

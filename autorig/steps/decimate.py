@@ -18,6 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 from layout import ROOT, rigged_dir, leaf, source_fbx, budget, models_in, group_of, work_dir
 import source_io
+import extras
+extras.activate()
 
 # Budgets: rig.json "budget", then the collection's autorig.json ("full_resolution_groups", "budget"), read through
 # layout.budget().
@@ -76,7 +78,14 @@ def reduce(mesh, target, planar=True):
     needs its vertices where it bends, so a skinned model gets the collapse alone.
 
     A mesh with shape keys (morph_targets) is left as it is: Blender cannot apply a modifier to it, and the step used
-    to fail there. Returns False when it did not reduce for that reason."""
+    to fail there. Returns False when it did not reduce for that reason, else "pymeshlab" or "blender": the collapse
+    that ran.
+
+    A static mesh with no UVs is collapsed by PyMeshLab when that extra is installed (core/mesh_bridge.py): it holds
+    the shape far better than Blender's Decimate at the same budget. A textured one stays on Blender's collapse, which
+    smeared the texture less on Tripo's atlases (docs/GAME-TOOLS.md, "Decimation compared"; AUTORIG_COLLAPSE=pymeshlab
+    forces the library). A skinned mesh stays on Blender's collapse, which interpolates the vertex groups and honours
+    protect_joints."""
     if getattr(mesh.data, "shape_keys", None):
         print("DECIMATE note: %s has shape keys (morph targets): kept at full resolution" % mesh.name)
         return False
@@ -97,6 +106,10 @@ def reduce(mesh, target, planar=True):
         mod = mesh.modifiers.new("step", kind); setup(mod)
         bpy.ops.object.modifier_apply(modifier=mod.name)
     now = tri_count(mesh)
+    if now > target and not mesh.vertex_groups:
+        import mesh_bridge
+        if mesh_bridge.decimate(mesh, target) is not None:
+            return "pymeshlab"
     if now > target:
         mod = mesh.modifiers.new("Collapse", 'DECIMATE')
         mod.decimate_type = 'COLLAPSE'
@@ -110,6 +123,7 @@ def reduce(mesh, target, planar=True):
             mod.vertex_group_factor = 10
         bpy.ops.object.modifier_apply(modifier=mod.name)
         if protected_name and mesh.vertex_groups.get(protected_name): mesh.vertex_groups.remove(mesh.vertex_groups[protected_name])
+    return "blender"
 
 
 def limit_influences(mesh, most=4):
@@ -169,13 +183,15 @@ def run(key):
     mesh = meshes[0]
     before = tri_count(mesh)
     note = None
+    method = None
 
     if target is not None and before > target:
         # A rig of rigid parts (a machine: every vertex on one bone) bends nowhere, so the flat-panel dissolve is as
         # safe on it as on a static prop, and it is what keeps a machine's plates from turning to spikes.
         rigid = bool(arms) and all(sum(1 for g in v.groups if g.weight > 1e-4) <= 1 for v in mesh.data.vertices)
-        if reduce(mesh, target, planar=not arms or rigid) is False:
-            note = "shape keys (morph targets): kept at full resolution"
+        method = reduce(mesh, target, planar=not arms or rigid)
+        if method is False:
+            method, note = None, "shape keys (morph targets): kept at full resolution"
 
     after = tri_count(mesh)
     influences = limit_influences(mesh)
@@ -215,7 +231,8 @@ def run(key):
             "static": not rigged,
             "bones": len(arms[0].data.bones) if arms else 0,
             "bones_left_empty": lost, "max_influences": influences,
-            "fbx": os.path.relpath(out, ROOT), **({"note": note} if note else {})}
+            "fbx": os.path.relpath(out, ROOT), **({"note": note} if note else {}),
+            **({"method": method} if method else {})}
 
 
 def main():

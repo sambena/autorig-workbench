@@ -124,8 +124,42 @@ def separate(obj, tag):
     return [o for o in bpy.context.scene.objects if o not in before][0]
 
 
+def solid(region):
+    import mesh_prep
+    kind, *a = spec.solid_args(region)
+    return mesh_prep.Solid.box(*a) if kind == "box" else mesh_prep.Solid.disc(*a)
+
+
+def carve(lod0, prt, name):
+    """A "cut" part: lod0 split by the part's region (core/mesh_prep.split). A fragment the region crosses is cut
+    through and closed where it is cut when it is a closed surface (manifold3d), else its faces go by their centres.
+    Returns the new object (lod0 keeps the rest), or None when the region takes nothing."""
+    import mesh_bridge, mesh_prep
+    V, F, UV, FD, smooth = mesh_bridge.read(lod0)
+    (iV, iF, iUV, iFD), (oV, oF, oUV, oFD), rep = mesh_prep.split(V, F, UV, FD, solid(prt["regions"][0]))
+    if not len(iF):
+        return None
+    obj = lod0.copy()
+    obj.data = lod0.data.copy()
+    bpy.context.scene.collection.objects.link(obj)
+    mesh_bridge.write(obj, iV, iF, iUV, iFD, smooth)
+    mesh_bridge.write(lod0, oV, oF, oUV, oFD, smooth)
+    print("game_parts.py: %s_%s carved: %d fragments cut exactly (manifold3d), %d split by face centres, %d taken whole"
+          % (name, prt["name"], rep["cut_exactly"], rep["sorted_by_faces"], rep["whole_inside"]))
+    return obj
+
+
 def cut(lod0, name, parts, survey_path=None):
-    """Cuts the spec's parts out of lod0. Returns [(part dict, object)] for the parts that took anything."""
+    """Cuts the spec's parts out of lod0. Returns [(part dict, object)] for the parts that took anything. "cut" parts
+    are carved first (carve), the fragment parts then share what is left."""
+    carved = {}
+    for i, prt in enumerate(parts):
+        if prt.get("cut"):
+            obj = carve(lod0, prt, name)
+            if obj is None:
+                print("game_parts.py: %s_%s took nothing; check its region" % (name, prt["name"]))
+            else:
+                carved[i] = obj
     frags = fragments(lod0)
     if survey_path:
         with open(survey_path, "w", encoding="utf-8") as f:
@@ -142,6 +176,17 @@ def cut(lod0, name, parts, survey_path=None):
     attr.data.foreach_set("value", tags)
     taken = []
     for i, prt in enumerate(parts):
+        if prt.get("cut"):
+            if i in carved:
+                obj = carved[i]
+                co = [v.co for v in obj.data.vertices]
+                lo = tuple(min(c[a] for c in co) for a in range(3)); hi = tuple(max(c[a] for c in co) for a in range(3))
+                piv = Vector(spec.pivot(prt, lo, hi))
+                obj.name = obj.data.name = "%s_%s" % (name, prt["name"])
+                obj.data.transform(Matrix.Translation(-piv))
+                obj.location = piv
+                taken.append((prt, obj))
+            continue
         mine = [frags[k] for k in range(len(frags)) if owner[k] == i]
         face_count = sum(len(fs) for fs, _, _, _ in mine)
         if not face_count:
