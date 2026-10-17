@@ -943,6 +943,55 @@ else:
             self.assertGreater(healed, 0)
 
 
+@unittest.skipUnless(HAVE_NUMPY, "numpy not installed in system Python (available in Blender)")
+class TestBarrierFadesNotCuts(unittest.TestCase):
+    """The skin barrier's limits fade over a band: a hard line between two owners tears when the joint bends."""
+    NAMES = ["Hips", "Spine", "Spine2", "Neck", "Head", "LeftShoulder", "RightShoulder", "LeftArm", "RightArm",
+             "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg"]
+    HEADS = {"Hips": [0, 0, 1.0], "Spine": [0, 0, 1.1], "Spine2": [0, 0, 1.3], "Neck": [0, 0, 1.5],
+             "Head": [0, 0, 1.6], "LeftShoulder": [0.05, 0, 1.45], "RightShoulder": [-0.05, 0, 1.45],
+             "LeftArm": [0.2, 0, 1.45], "RightArm": [-0.2, 0, 1.45], "LeftUpLeg": [0.1, 0, 0.95],
+             "RightUpLeg": [-0.1, 0, 0.95], "LeftLeg": [0.1, 0, 0.5], "RightLeg": [-0.1, 0, 0.5]}
+
+    def barrier(self, P, W, heads=None):
+        return placed_rules.apply_geodesic_skin_barrier(W, P, self.NAMES, bone_heads=heads or self.HEADS,
+                                                        height_span=1.8, plan="biped")
+
+    def test_shoulder_leaves_the_neck_column_gradually(self):
+        # a row of vertices at the neck's height, from the middle out to the shoulder, all the left shoulder's
+        xs = np.linspace(0.0, 0.3, 61)
+        P = np.stack([xs, np.zeros_like(xs), np.full_like(xs, 1.5)], axis=1)
+        W = np.zeros((len(xs), len(self.NAMES))); W[:, self.NAMES.index("LeftShoulder")] = 1.0
+        sh = self.barrier(P, W)[:, self.NAMES.index("LeftShoulder")]
+        self.assertLess(sh[0], 0.05)                      # the neck column's middle is the neck's
+        self.assertGreater(sh[-1], 0.95)                  # the shoulder keeps its own
+        self.assertTrue(np.all(np.diff(sh) >= -1e-9))     # rising outwards, never back
+        self.assertLess(np.abs(np.diff(sh)).max(), 0.1)   # no step anywhere: 5 mm apart, under a tenth
+
+    def test_a_horizontal_torso_keeps_its_chest_below_hip_height(self):
+        # a wyvern-like body: the chest starts at the hips' height and runs forward, level
+        heads = dict(self.HEADS, Spine2=[0, -0.3, 1.0], Spine=[0, -0.1, 1.0])
+        P = np.array([[0.15, -0.4, 1.02], [0.15, -0.4, 0.98]])
+        W = np.zeros((2, len(self.NAMES))); W[:, self.NAMES.index("Spine2")] = 1.0
+        out = self.barrier(P, W, heads)
+        self.assertTrue(np.allclose(out[:, self.NAMES.index("Spine2")], 1.0))
+        self.assertTrue(np.allclose(out[:, self.NAMES.index("Hips")], 0.0))
+
+    def test_an_upright_torso_still_gives_its_chest_up_below_the_hips(self):
+        P = np.array([[0.15, 0.0, 0.9]])
+        W = np.zeros((1, len(self.NAMES))); W[0, self.NAMES.index("Spine2")] = 1.0
+        out = self.barrier(P, W)
+        self.assertAlmostEqual(out[0, self.NAMES.index("Spine2")], 0.0)
+
+    def test_soft_nearest_shares_near_ties_and_keeps_clear_winners(self):
+        w = placed_rules.soft_nearest(np.array([[0.10, 0.10], [0.10, 0.50], [0.10, 0.12]]), 0.05)
+        self.assertTrue(np.allclose(w.sum(1), 1.0))
+        self.assertTrue(np.allclose(w[0], [0.5, 0.5]))
+        self.assertTrue(np.allclose(w[1], [1.0, 0.0]))
+        self.assertTrue(0.5 < w[2, 0] < 0.8)
+        self.assertTrue(np.allclose(placed_rules.soft_nearest(np.array([[0.2, 0.1]]), 0.0), [[0.0, 1.0]]))
+
+
 if __name__ == "__main__":
     clean_argv = [sys.argv[0]]
     if "--" in sys.argv:

@@ -248,6 +248,13 @@
           "description": "After bone heat: \"root\" (the default: no limb weight behind where the limb starts), \"full\" (the torso to the spine, each limb to a capsule round it; joint_blend and limb_radius tune it), false (plain bone heat).",
           "enum": ["root", "full", false]
         },
+        "skinning": {
+          "description": "\"bone-heat\" (the default: bone heat on the mesh, a voxel copy only when it fails) or \"proxy-transfer\" (bone heat on a watertight voxel copy, its weights carried back by robust transfer).",
+          "enum": ["bone-heat", "proxy-transfer"]
+        },
+        "proxy_voxel": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.2, "description": "proxy-transfer: the voxel size tried first, a fraction of the longest side (then 0.016, 0.022, 0.012, 0.03)." },
+        "transfer_distance": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "proxy-transfer: how far a vertex may be from the voxel copy's surface and still copy its weights, a fraction of the longest side (default 2.5 voxels)." },
+        "transfer_angle": { "type": "number", "minimum": 0, "maximum": 180, "description": "proxy-transfer: the most the normals may disagree, in degrees, either way round (default 30)." },
         "smooth": { "type": "integer", "minimum": 0, "description": "Weight smoothing passes (run before the barrier)." },
         "barrier": { "type": "boolean", "description": "Air-gap barriers between limbs (default true); the standing-body rules in it run for bipeds only." },
         "armpit_barrier": { "type": "boolean" },
@@ -355,7 +362,23 @@
         "hit_rear": { "type": "number" },
         "beats": { "type": "number" },
         "flap": { "type": "number" },
-        "loop": { "type": "integer" }
+        "loop": { "type": "integer" },
+        "secondary": {
+          "type": "array",
+          "description": "Springs baked into the clips for these chains: tails, ears, antennae, wing membranes (docs/CLIP-MOTION.md).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bones": { "type": "array", "items": { "type": "string" }, "description": "The chain's bones, root first, each the parent of the next." },
+              "chain": { "type": "string", "description": "A stem: every chain of that name (tail_1.., ear_1.L.., wing.L_1.L..), each side its own." },
+              "stiffness": { "type": "number", "description": "Spring stiffness (default 400)." },
+              "damping": { "type": "number", "description": "Velocity damping a second (default 1)." },
+              "gravity": { "type": "number", "description": "Share of gravity (default 1)." },
+              "iterations": { "type": "integer", "description": "Spring iterations a frame (default 2)." },
+              "clips": { "type": "array", "items": { "type": "string" }, "description": "Only these clips and their variants (default every clip)." }
+            }
+          }
+        }
       },
       "required": ["archetype"]
     },

@@ -110,6 +110,10 @@ RIG_FIELDS = [
     F("envelope", "Skin style", "enum", "full: the torso belongs to the spine and each limb to a capsule round it "
       "(creatures). root: bone heat kept, but no limb weight behind where the limb starts (people). false: plain "
       "bone heat.", options=["", "full", "root", False], group="Skin"),
+    F("skinning", "Skinning", "enum", "bone-heat (the default): bone heat on the mesh, a voxel copy only when it "
+      "fails. proxy-transfer: bone heat on a watertight voxel copy, its weights carried back by robust transfer "
+      "(matched where the surfaces agree, inpainted smoothly elsewhere).", options=["", "bone-heat", "proxy-transfer"],
+      group="Skin"),
     F("rigid_pieces", "Rigid piece size", "number", "Loose pieces up to this share of the largest ride one bone "
       "whole (default 0.12).", min=0, max=1, group="Skin"),
     F("rigid_single", "Every loose piece on one bone", "bool", "Each loose piece rides a single bone, never two.",
@@ -202,7 +206,8 @@ HUMANOID_EXTRA = {"digits", "twist_bones", "morph_targets", "keep_inside", "join
                   "heal_passes", "heal_blend", "rigid_island_max_share", "rigid_island_max_extent", "mesh_heal",
                   "jaw", "parts", "blends", "membranes", "rigid_to", "hard_split", "soft", "spike_reach",
                   "envelope_skip", "girdle_reach", "skirt", "straight_arms",
-                  "arm_reach", "feet_on_legs", "pin", "drop_floating", "follow", "joints", "limb_pieces"}
+                  "arm_reach", "feet_on_legs", "pin", "drop_floating", "follow", "joints", "limb_pieces",
+                  "skinning", "proxy_voxel", "transfer_distance", "transfer_angle"}
 HUMANOID_X_KEYS = ("tip", "knuckle", "wrist", "elbow", "shoulder")
 
 HUMANOID_FIELDS = [
@@ -649,6 +654,25 @@ def _load(path):
         return None
 
 
+_VOTE_EXTRAS = []
+
+
+def vote_extras_installed():
+    """Whether Blender's Python has an extra the suggester weighs (trimesh, open-clip): asked once (it starts
+    Blender's Python to learn its version), then remembered."""
+    if not _VOTE_EXTRAS:
+        try:
+            try:
+                import extras
+            except ImportError:
+                from autorig.core import extras
+            st = extras.status()
+            _VOTE_EXTRAS.append(any(e["installed"] for e in st["extras"] if e["name"] in ("trimesh", "open-clip")))
+        except Exception:
+            _VOTE_EXTRAS.append(False)
+    return _VOTE_EXTRAS[0]
+
+
 def editor_dir(layout, name):
     return os.path.join(layout.WORK, "spec_editor", name)
 
@@ -970,6 +994,8 @@ def post(h, app, srv, path, body):
             fresh = (os.path.exists(measured_file) and src_model and
                      os.path.getmtime(measured_file) >= os.path.getmtime(src_model))
             measured = _load(measured_file) if fresh and not given else None
+            if measured and "opinions" not in measured and vote_extras_installed():
+                measured = None             # measured before the step weighed a body plan and pictures: again
             if measured and measured.get("spec"):
                 h._send(200, dict(measured, measured=True)); return True
             if not given and body.get("measure", True) and src_model and srv.blender.find(required=False):

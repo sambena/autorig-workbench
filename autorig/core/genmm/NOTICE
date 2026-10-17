@@ -1,0 +1,19 @@
+GenMM: Example-based Motion Synthesis via Generative Motion Matching (ACM SIGGRAPH 2023)
+Copyright the GenMM authors: Weiyu Li, Xuelin Chen, Peizhuo Li, Olga Sorkine-Hornung, Baoquan Chen.
+https://github.com/liyuuuu98/GenMM (project page https://wyysf-98.github.io/GenMM), licensed under the Apache
+License, Version 2.0 (LICENSE in this folder).
+
+Parts of nearest_neighbor/utils.py were borrowed upstream from Efficient-GPNN by Ariel Elnekave
+(https://github.com/ariel415el/Efficient-GPNN); their notes are kept on the functions.
+
+Modified for Autorig Workbench (2026):
+- GenMM.py (the pyramid and match_and_blend), nearest_neighbor/losses.py (PatchCoherentLoss) and
+  nearest_neighbor/utils.py (patch extraction and combination, distances, nearest neighbours) are ported from
+  PyTorch and unfoldNd to NumPy, so they run on the CPU inside Blender's own Python with nothing installed.
+- The CUDA device, tensorboard logging, progress bar and the upstream fork's keyframe pinning (it reads an
+  undefined KEYFRAME_INDICES) are removed.
+- The initial noise is Gaussian, scaled by each channel's spread and seeded; upstream adds unit noise times
+  noise_sigma and wraps it with fmod(1).
+- An example that loops also gives patches across its own seam.
+- Motion data loading (BVH, Blender tracks) is not part of this port: autorig/core/motion_variants.py feeds it
+  frames.

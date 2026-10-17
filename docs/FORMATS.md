@@ -53,13 +53,15 @@ In the model's `clips/` folder:
   "windUpEnd": 0.5833,                                   // a fraction of "attack": the wind-up ends here
   "walkSpeed": 1.2,                                      // twice the stride per walk cycle, times metres (an older unit)
   "decimation": {"triangles_before": 19000, "triangles": 2000, "max_influences": 4},
+  "footSkate": {"idle": {"before": 3.13, "after": 0.06}, ...},   // the anti-slide pass's scores (CLIP-MOTION.md)
   "licence": "..."                                       // the collection's licence line
 }
 ```
 
 Clip names: `idle`, `walk` (or a swimmer's swim), `attack`, `hit`, `death`, plus `attack_windup` (the wind-up to full,
 held) and `strike` (from the release on) cut from `attack`; flyers have `fly`, exploders `arm` and `explode`. Events:
-`footfall`, `windup_full`, `strike_release`, `strike_impact`, `hit`, `death_rest`, `armed`.
+`footfall`, `windup_full`, `strike_release`, `strike_impact`, `hit`, `death_rest`, `armed`. With `--variants N`, each idle and gait
+also has takes `<clip>_v1`..`<clip>_vN` (loops, twice the clip's length; CLIP-MOTION.md).
 
 ## Winged export: `autorig-export/1` (make_clips.py, archetype winged)
 

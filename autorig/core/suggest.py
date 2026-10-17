@@ -5,8 +5,12 @@
 #   1. Survey / existing skeleton: Tripo-style (bone_0, bone_1...) or Mixamo/Humanoid bones.
 #   2. Geodesic tips (probe_tips): extremity vertices identifying limbs, wings, tails, head.
 #   3. Symmetry plane (X = 0.5 in 0..1 bounds) and body proportions (bounding box aspect ratios).
+# and, when the suggest step could take them (optional extras, core/extras.py), two more opinions:
+#   4. The body plan (core/body_plan.py, trimesh): feet on the ground, thin flat wings, height, symmetry, rest pose.
+#   5. A picture vote (core/picture_vote.py, OpenCLIP): renders scored against plain descriptions.
+# combine() weighs the three and says why it picked what it picked. Without either extra the tips decide alone.
 #
-# Pure heuristics: deterministic, fast, offline (no ML or network).
+# Deterministic and offline once the extras are installed (no paid service is ever called).
 import math
 try:
     import geo
@@ -315,9 +319,10 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
 
     # 4. Arms (for humanoids / bipedal creatures); the base, the shoulder, is measured at rig time
     for idx, p in enumerate(arms):
+        a_suffix = f"_{idx + 1}" if idx else ""        # a second pair is arm_2, as wings are numbered: never two arm.L
         l_tip = [round(c, 3) for c in p["left"]]
         l_arm = {
-            "name": "arm.L",
+            "name": f"arm{a_suffix}.L",
             "role": "arm",
             "tip": l_tip,
             "bones": 3,
@@ -326,7 +331,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         }
         r_tip = [round(c, 3) for c in p["right"]]
         r_arm = {
-            "name": "arm.R",
+            "name": f"arm{a_suffix}.R",
             "role": "arm",
             "tip": r_tip,
             "bones": 3,
@@ -338,7 +343,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         chains.append(r_arm)
 
     # 5. Tail (from where it leaves the rump, measured at rig time, to its tip)
-    if tail_pt and tail_pt[1] > slice_end and archetype != "humanoid":
+    if tail_pt and tail_pt[1] > slice_end and archetype not in ("humanoid", "rigid"):
         chains.append({
             "name": "tail",
             "role": "tail",
@@ -351,7 +356,7 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
 
     # 6. Head (for humanoid or models with head tip): the head chain is the head (the spine then ends in the chest,
     # rerig.name_chains), hanging from the front of the body, or the top of an upright one
-    if archetype == "humanoid" or head_pt:
+    if archetype == "humanoid" or (head_pt and archetype != "rigid"):    # a prop has no head or tail
         h_tip = [0.5, 0.5, 0.97] if head_pt is None else [round(c, 3) for c in head_pt]
         chains.append({
             "name": "head",
@@ -363,6 +368,122 @@ def build_suggested_chains(classified_limbs, centerline_info, archetype, vertice
         })
 
     return chains
+
+
+# How much each opinion counts. The tips' pick counts by its confidence; the body plan's evidence by the weights in
+# plan_votes; the picture vote by PICTURE x its chance (a picture vote of 95% is nearly a "high" tips pick: on real
+# textured models it was right far more often than the tips). Archetypes within TIE of the best are a tie, and a
+# tie goes to the one the pictures liked best; with no picture vote the best score wins (the tips' pick if equal).
+HEURISTIC = {"high": 3.0, "medium": 2.0, "low": 1.0}
+PICTURE = 3.0
+TIE = 0.75
+# feet on the ground each legged archetype stands on (winged: a bird's two, or a dragon's four)
+FEET = {"humanoid": (2,), "quadruped": (4,), "hexapod": (6,), "octopod": (8, 9, 10), "winged": (2, 4)}
+
+
+def plan_votes(plan, tips=None):
+    """Points for each archetype from the body plan's measures (core/body_plan.py), with a reason for each.
+    tips: the archetype the tips picked, marked down when the feet on the ground do not match its legs."""
+    pts, why = {}, []
+
+    def add(arch, n, reason):
+        pts[arch] = round(pts.get(arch, 0.0) + n, 3)
+        why.append("%s %+g: %s" % (arch, n, reason))
+
+    stand = plan.get("stand")
+    wings = plan.get("wings")
+    feet = plan.get("feet") or {}
+    n = feet.get("count")
+    if n is not None:
+        if n >= 8:
+            add("octopod", 2, "%d feet on the ground" % n)
+        elif n >= 5:
+            add("hexapod", 2, "%d feet on the ground" % n)
+        elif n == 4:
+            add("quadruped", 2, "4 feet on the ground")
+        elif n == 2 and stand is not None:
+            if stand >= 1.6 and not (wings or {}).get("both"):
+                add("humanoid", 2, "2 feet under an upright body (%.1fx as tall as it is deep)" % stand)
+            elif stand < 1.2:
+                add("winged", 1.5, "2 feet under a long low body (a bird's or a wyvern's stance)")
+                add("humanoid", -1.5, "a person stands taller than deep (this is %.1fx)" % stand)
+        elif n == 1 and feet.get("fill", 0) >= 0.3:
+            add("rigid", 2, "stands on one solid base filling %d%% of its footprint" % round(100 * feet["fill"]))
+        if tips in FEET and n and n not in FEET[tips] and n < 8:
+            add(tips, -1.5, "the tips' %s legs, but %d feet touch the ground" % (tips, n))
+    if wings:
+        if wings.get("both"):
+            add("winged", 2, "thin flat sheets out to both sides")
+        else:
+            add("winged", -1, "no thin flat sheets out to the sides")
+    rest = plan.get("rest") or {}
+    if rest.get("best"):
+        r = rest.get("upright", 0.0) / rest["best"]
+        if r >= 0.6 and (n is None or n <= 1):
+            add("rigid", 1, "rests stably standing as it is, like an object set down")
+    mirror = plan.get("mirror") or {}
+    if mirror and max(mirror.get("x", 1), mirror.get("y", 1)) < 0.7:
+        add("rigid", 1, "not mirror-symmetric either way")
+    height = plan.get("height")
+    if height is not None and height < 0.35 and plan.get("length", 1) > 2.0 and (n is None or n <= 1):
+        add("serpent", 2, "long, low and footless")
+    return pts, why
+
+
+def combine(archetype, confidence, plan=None, picture=None):
+    """Weighs the tips' pick (archetype, confidence) with the body plan and the picture vote.
+    Returns {"picked", "confidence", "scores", "why", ...}: why lists each opinion and what decided."""
+    scores = {archetype: HEURISTIC.get(confidence, 1.0)}
+    why = ["tips: %s (%s confidence)" % (archetype, confidence)]
+    plan_why = []
+    if plan:
+        pts, plan_why = plan_votes(plan, archetype)
+        for a, v in pts.items():
+            scores[a] = round(scores.get(a, 0.0) + v, 3)
+        if plan_why:
+            why.append("body plan: " + ", ".join(plan_why))
+    chances = (picture or {}).get("archetypes") or {}
+    if chances:
+        for a, c in chances.items():
+            if c >= 0.01:
+                scores[a] = round(scores.get(a, 0.0) + PICTURE * c, 3)
+        top = sorted(chances.items(), key=lambda kv: -kv[1])[:3]
+        why.append("pictures: " + ", ".join("%s %d%%" % (a, round(100 * c)) for a, c in top))
+    ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0] != archetype))
+    best, best_score = ranked[0]
+    tied = [a for a, v in ranked if v >= best_score - TIE]
+    picked = best
+    if len(tied) > 1 and chances:
+        picked = max(tied, key=lambda a: chances.get(a, 0.0))
+        why.append("tie between %s (within %g): the pictures break it for %s" % (", ".join(tied), TIE, picked))
+    elif len(tied) > 1:                     # no pictures to break it: the best score (the tips' pick when equal)
+        why.append("close between %s (within %g), no picture vote to break it: %s scores best" % (
+            ", ".join(tied), TIE, best))
+    margin = scores[picked] - max([v for a, v in scores.items() if a != picked] or [0.0])
+    conf = "high" if margin >= 2.0 else "medium" if margin >= 0.5 else "low"
+    if picked == archetype and HEURISTIC.get(confidence, 1.0) > HEURISTIC[conf]:
+        conf = confidence                       # opinions that agree never lower the tips' own confidence
+    if picked != archetype:
+        why.append("%s overrides the tips' %s" % (picked, archetype))
+    return {"picked": picked, "confidence": conf, "scores": scores, "why": why, "tips": archetype,
+            "body_plan": plan, "picture": picture}
+
+
+def reassign_limbs(classified_limbs, archetype):
+    """Sorts the paired tips into legs, arms and wings again for an archetype the tips themselves did not pick
+    (combine() overrode them): the lowest pairs are the legs, the widest upper pair the arms or wings."""
+    pool = [p for k in ("legs", "arms", "wings") for p in classified_limbs.get(k, [])]
+    pool.sort(key=lambda p: p.get("z", 0.0))
+    out = {"legs": [], "arms": [], "wings": [], "accessories": classified_limbs.get("accessories", [])}
+    want_legs = {"humanoid": 1, "winged": 1, "quadruped": 2, "hexapod": 3, "octopod": 4}.get(archetype, 0)
+    if archetype == "winged" and sum(1 for p in pool if p.get("z", 1.0) < 0.3) >= 2:
+        want_legs = 2                           # a dragon: four feet down as well as the wings
+    out["legs"] = sorted(pool[:want_legs], key=lambda p: p.get("y", 0.0))
+    rest = pool[want_legs:]
+    if rest and archetype in ("humanoid", "winged"):
+        widest = max(rest, key=lambda p: p.get("span", 0.0))
+        out["arms" if archetype == "humanoid" else "wings"].append(widest)
+    return out
 
 
 def suggest_from_tripo(source_joints, lo, hi):
@@ -437,7 +558,7 @@ def suggest_from_tripo(source_joints, lo, hi):
 
 
 def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, proportions=None, vertices=None,
-                     forward=None):
+                     forward=None, body_plan=None, picture=None):
     """Main heuristic suggestion entry point. forward: the facing the tips were measured in ("auto" when the caller
     turned the mesh with rerig.normalise's auto facing), written into the spec so the rig is built in that frame.
     Returns: dict with 'rig' spec, 'archetype', 'confidence', 'reasons'."""
@@ -557,6 +678,18 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
     reasons.extend(arch_reasons)
     if templated:
         confidence = "low"                      # a template is a starting point, not a reading of this model
+    votes = None
+    if body_plan or picture:
+        votes = combine(archetype, confidence, body_plan, picture)
+        if votes["picked"] != archetype:
+            classified_limbs = reassign_limbs(classified_limbs, votes["picked"])
+            archetype = votes["picked"]
+        confidence = votes["confidence"]
+        reasons[:0] = ["picked %s: %s" % (archetype, "; ".join(votes["why"]))]
+    if archetype == "humanoid" and (len(classified_limbs.get("arms", [])) > 1 or classified_limbs.get("wings")):
+        # one pair of arms: every arm pair was written as arm.L / arm.R, so two pairs (hands and elbows both
+        # reaching out) made two chains of each name, and a humanoid's wide pair still went in as wings
+        classified_limbs = reassign_limbs(classified_limbs, "humanoid")
 
     verts = vertices or (source_data or {}).get("vertices") or (survey_data or {}).get("vertices")
     chains = build_suggested_chains(classified_limbs, centerline_info, archetype, vertices=verts)
@@ -594,7 +727,7 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
             reasons.append("added wing membrane rule with flank cutoff")
 
     clip_arch = "winged" if archetype == "winged" else "swimmer" if archetype == "serpent" else "flyer" if archetype == "floater" else "turret" if archetype == "rigid" else "walker"
-    return {
+    out = {
         "archetype": archetype,
         "confidence": confidence,
         "reasons": reasons,
@@ -605,6 +738,45 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
             "clips": {"archetype": clip_arch}
         }
     }
+    if votes:
+        out["votes"] = votes
+    return out
+
+
+def mirror_scores(pts, cells=20):
+    """How well a point cloud matches its mirror image across the plane halfway along x, and along y: the share of
+    occupied cells (cells along the longest side) whose mirror cell, or a neighbour of it, is occupied too."""
+    lo = [min(p[i] for p in pts) for i in range(3)]
+    hi = [max(p[i] for p in pts) for i in range(3)]
+    step = max(1e-9, max(hi[i] - lo[i] for i in range(3)) / cells)
+    dims = [max(1, int(math.ceil((hi[i] - lo[i]) / step))) for i in range(3)]
+    occ = {tuple(min(dims[i] - 1, int((p[i] - lo[i]) / step)) for i in range(3)) for p in pts}
+    out = []
+    for axis in (0, 1):
+        hit = 0
+        for c in occ:
+            m = list(c)
+            m[axis] = dims[axis] - 1 - c[axis]
+            if any((m[0] + a, m[1] + b, m[2] + d) in occ for a in (-1, 0, 1) for b in (-1, 0, 1) for d in (-1, 0, 1)):
+                hit += 1
+        out.append(hit / float(len(occ)))
+    return out
+
+
+def lateral_axis(pts):
+    """0 when left to right runs along x, 1 along y, None when the mesh does not say. More mirror-symmetric across
+    one axis: that one (even a little: a T-posed figure is nearly as symmetric front to back, but not quite, and a
+    hen or a dog is less so). Symmetric both ways alike (a stick figure) and standing upright: the wider way across
+    (arms out, shoulders wider than the chest is deep)."""
+    mx, my = mirror_scores(pts)
+    if abs(mx - my) >= 0.03:
+        return 0 if mx > my else 1
+    size = [max(p[i] for p in pts) - min(p[i] for p in pts) for i in range(3)]
+    if min(mx, my) < 0.9 or max(size[0], size[1]) < 1.5 * min(size[0], size[1]):
+        return None
+    if size[2] > 1.2 * max(size[0], size[1]):
+        return 0 if size[0] > size[1] else 1
+    return None
 
 
 def detect_mesh_forward(coords, joints=None):
@@ -727,6 +899,14 @@ def detect_mesh_forward(coords, joints=None):
             if mag > 1e-4:
                 for name, d in candidates:
                     scores[name] += (vec[0] * d[0] + vec[1] * d[1]) / mag * 5.0
+
+    # 6. Which way across is left to right: the protrusion scores above pick a side well but can pick the wrong axis
+    #    (a stick figure's arms held out read as toes). A body is a mirror image of itself left to right, so with no
+    #    joints to go by and a mesh big enough to judge, the forward axis is the one across the mirror plane.
+    across = lateral_axis(pts) if not joints and n >= 200 else None
+    if across is not None:
+        for name in (("pX", "mX") if across == 0 else ("mY", "pY")):
+            scores[name] = float("-inf")
 
     best_name = max(scores, key=scores.get)
     dir_map = {

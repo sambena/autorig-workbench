@@ -120,6 +120,7 @@ Skinning options (both kinds):
 | `rigid_parts` | a machine of parts: the main piece rides the body, every other piece its nearest bone. `"listed"`: only the pieces in `parts` ride their bones, everything else the body |
 | `parts` | `[{"bone", "at": [x, y, z], "verts": n}, ...]`: the loose piece of `n` vertices (within 2%) whose bounds centre is nearest `at` rides `bone` whole. For a moving part inside another (a fan's rotor in its duct), where nearest-bone cannot tell them apart. Give each part its own chain, head at its hub and length along its axle, so turning the bone about its own Y spins the part in place |
 | `hard_split` | `{"bone", "else", "above"}`: everything above a height on one bone, the rest on another (a lid) |
+| `skinning` | `"bone-heat"` (the default: bone heat on the mesh itself; a watertight voxel copy is skinned instead only when bone heat leaves over 5% of the mesh bare, its weights copied back by nearest point) or `"proxy-transfer"`: always skin the voxel copy, and carry its weights back by robust transfer (core/weight_transfer.py, after Abdrashitov et al. 2023): a vertex within `transfer_distance` (a fraction of the longest side; default 2.5 voxels) of the copy's surface whose normal agrees within `transfer_angle` (30 degrees, either way round) interpolates the closest point's weights; the rest (inner shells, folds, pieces dipping inside the body) are inpainted smoothly from those. `proxy_voxel` sets the voxel size tried first. The skin passes below run after it as usual. Measured 2026-10-17: it does not fix the bend-test tears of the samples or a Tripo rooster, because those come from the passes below, not from bone heat (see docs/PLAN.md, "Skinning: where the bend tears come from") |
 | `smooth` | weight smoothing passes (a thick body's patchy bone heat); run before the barrier, so its cuts stay cuts |
 | tuning | `joint_blend`, `girdle_blend`, `limb_radius` (these three: the full envelope only), `spike_reach`, `envelope_skip`, `head_to_snout` (false to keep the head where it is), `centre` |
 
@@ -202,6 +203,7 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 | `beats`, `flap` | flyer: wingbeats per loop, the wing root's swing in degrees |
 | `loop`, `ripple`, `flicker`, `pulse` | flyer: loop length in frames, rippling wings, flickering flames, the bone that pulses (a bell) |
 | `body` | the body bone, when it is not the one the card names |
+| `secondary` | springs baked into the clips (CLIP-MOTION.md): a list of `{bones: [root first] or chain: "stem", stiffness, damping, gravity, iterations, clips}`, e.g. `[{"chain": "tail", "stiffness": 150, "damping": 2}, {"chain": "ear"}]`. Defaults are Wiggle 2's: stiffness 400, damping 1, gravity 1, 2 iterations; every clip |
 | `rig`, `triangles`, `flySpeed`, `splitWalkSpeed` | winged: the rig folder (default the model's rig folder), the export's triangle budget (default the model's budget, else full resolution), the fly loop's speed in metres a second (left out of the manifest when not given), and the `walkSpeed` written with `--split-clips` |
 
 ### Suggesting a skeleton
@@ -209,7 +211,25 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 The tool can propose a full `rig` spec and archetype automatically:
 - **From an existing bone hierarchy**: Tripo skeletons (`bone_0`...) or Mixamo humanoids are recognized and mapped into `tripo` or `humanoid` specs.
 - **From mesh heuristics**: For boneless models, survey's `probe_tips` (geodesic tips from the mesh extremities) are grouped across the symmetry plane $X=0.5$ into centerline features (snout, jaw, tail) and paired limbs. Proportions and tip positions propose an archetype (`quadruped`, `hexapod`, `octopod`, `serpent`, `winged`, `floater`, `rigid`, `humanoid`) and placed chains with tip/base coordinates, jaw rules, and wing membranes.
-- **Access**: Via CLI (`blender -b --python autorig/steps/suggest_step.py -- <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton** button in the spec editor.
+- **Body plan** (with the `trimesh` extra, docs/EXTRAS.md): `core/body_plan.py` measures the whole shape: connected
+  parts, how mirror-symmetric it is left to right and front to back, how many separate feet touch the ground and how
+  much of the footprint they fill (a base fills it), thin flat wing sheets out to both sides, height against length
+  and depth, and whether it rests stably standing as it is (trimesh's stable poses).
+- **Picture vote** (with the `open-clip` extra): the step renders the model from four sides and OpenCLIP scores the
+  pictures, on the CPU and with no training for this tool, against plain descriptions ("a four-legged animal", "a
+  winged dragon", "a statue on a pedestal", ...), each voting for an archetype (`core/picture_vote.py`).
+- **Combining them** (`suggest.combine`): the tips' pick counts 3, 2 or 1 by its confidence; the body plan adds or
+  takes points (4 feet on the ground: quadruped +2; 2 feet under a body much taller than it is deep: humanoid +2; one
+  solid base: rigid +2; the tips' legs not matching the feet on the ground: -1.5 ...); the picture vote adds 3 times
+  its chance. Archetypes within 0.75 of the best are a tie, which the pictures break. The suggestion's `reasons`
+  start with `picked <archetype>: ...` listing every opinion and what decided, and `votes` holds the scores, the
+  measures and the picture chances. With neither extra the tips decide alone, as before.
+- **Facing**: the suggester measures the tips in the frame `forward: "auto"` turns the model to. That facing now
+  also asks which way the model is a mirror image of itself, so a T-posed figure (as wide as it is tall) or a stick
+  figure is not turned side-on, which used to pair its front with its back.
+- **Access**: Via CLI (`blender -b --python autorig/steps/suggest_step.py -- <model> [-no-vote]`, or
+  `python autorig/cli/run.py suggest <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton**
+  button in the spec editor. The watch folder logs each suggestion's reasons (`WATCH_SUGGEST <model>: why: ...`).
 
 ### `card`
 
