@@ -3,6 +3,7 @@
 #
 #   python autorig/cli/run.py extras                     what is installed, and what each extra is for
 #   python autorig/cli/run.py extras install pymeshlab trimesh     (or: install all)
+#   python autorig/cli/run.py extras install gltfpack gltf-validator   programs for the export passes
 #
 # The tool itself needs nothing from pip. Some steps do better with a library (texture-safe decimation, mesh
 # repair, UV atlases, a picture classifier); those are extras. They are installed with Blender's bundled Python
@@ -143,12 +144,25 @@ def run_python(args, **kw):
     return subprocess.run([py] + list(args), env=env, **kw)
 
 
+def _passes():
+    sys.path.insert(0, HERE)
+    import export_passes
+    return export_passes
+
+
 def main(argv):
     if argv[:1] == ["install"]:
         if len(argv) < 2: sys.exit("usage: run.py extras install <name ...|all>")
+        # programs (core/export_passes.py TOOLS: release binaries into the tools folder) and pip extras
+        tools = _passes().TOOLS
+        names = argv[1:]
+        progs = list(tools) if names == ["all"] else [n for n in names if n in tools]
+        pips = ["all"] if names == ["all"] else [n for n in names if n not in tools]
         try:
-            return install(argv[1:])
-        except (RuntimeError, ValueError) as e:
+            for n in progs:
+                print("installed %s -> %s" % (n, _passes().install_tool(n)))
+            return install(pips) if pips else 0
+        except (RuntimeError, ValueError, OSError) as e:
             sys.exit(str(e))
     if argv:
         sys.exit("usage: run.py extras [install <name ...|all>]")
@@ -157,6 +171,10 @@ def main(argv):
     print("Extras folder:    %s" % (st["folder"] or "-"))
     for e in st["extras"]:
         print("  [%s] %-17s %-10s %s" % ("x" if e["installed"] else " ", e["name"], e["licence"], e["use"]))
+    p = _passes()
+    print("Tools folder:     %s" % p.tools_dir())
+    for t in p.tool_status():
+        print("  [%s] %-17s %-10s %s" % ("x" if t["path"] else " ", t["name"], t["licence"], t["use"]))
     return 0
 
 

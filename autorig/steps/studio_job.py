@@ -32,13 +32,19 @@ def main(argv=None):
         import shutil
         try:
             result = exporter.create_export_package(a.model, target=settings['target'], out_dir=str(out), include_lods=settings['include_lods'])
+        except exporter.export_passes.GateError as e:        # a GLB the glTF-Validator rejects, an FBX Unity misreads
+            print("STUDIO_ERROR package: %s" % e, file=sys.stderr)
+            return 2
         except ValueError as e:                              # no LODs yet, or LODs in the wrong format
             print("STUDIO_ERROR package: %s (or untick Include Studio LODs)" % e, file=sys.stderr)
             return 2
+        for p in result.get('passes', []):
+            print("PASS %s %s %s: %s" % (p['pass'], p['status'], p['file'], p.get('detail', '')))
         archive = out / Path(result['zip_path']).name
         shutil.copy2(result['zip_path'], archive)
         studio.atomic_json(out / 'package.json', {'target': settings['target'], 'archive': archive.name,
-                           'files': result.get('files', []), 'includes_lods': settings['include_lods']})
+                           'files': result.get('files', []), 'includes_lods': settings['include_lods'],
+                           'passes': result.get('passes', [])})
     if a.tool == "validate":
         import blender
         args = [a.model, "--every", str(settings["every"]), "--seam-mm", str(settings["seam_mm"]), "--report", str(out / "quality.json")]
