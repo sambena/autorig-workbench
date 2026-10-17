@@ -134,6 +134,25 @@ CONVENTIONS = {
         "thigh.l", "thigh.r", "shin.l", "shin.r",
         "foot.l", "foot.r", "toe.l", "toe.r"
     },
+    # SMPL / SMPL-X (AMASS, EDGE, most motion-generation models): both of its joint-name styles
+    "smpl": {
+        "pelvis", "l_hip", "r_hip", "l_knee", "r_knee", "l_ankle", "r_ankle", "spine1", "spine2", "spine3",
+        "l_collar", "r_collar", "l_shoulder", "r_shoulder", "l_elbow", "r_elbow", "l_wrist", "r_wrist",
+        "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_collar",
+        "right_collar", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"
+    },
+    # Daz Genesis 8/9
+    "daz": {
+        "hip", "abdomenlower", "abdomenupper", "chestlower", "chestupper", "necklower", "neckupper",
+        "lcollar", "rcollar", "lshldrbend", "rshldrbend", "lforearmbend", "rforearmbend",
+        "lthighbend", "rthighbend", "lshin", "rshin", "lfoot", "rfoot", "ltoe", "rtoe"
+    },
+    # Unreal Engine 5's mannequin: five spine bones where UE4 has three
+    "unreal5": {
+        "root", "pelvis", "spine_01", "spine_02", "spine_03", "spine_04", "spine_05", "neck_01", "neck_02", "head",
+        "clavicle_l", "clavicle_r", "upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r",
+        "hand_l", "hand_r", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r"
+    },
     "valve": {
         "bip01_pelvis", "bip01_spine", "bip01_spine1", "bip01_spine2", "bip01_neck1", "bip01_head1",
         "bip01_l_clavicle", "bip01_r_clavicle", "bip01_l_upperarm", "bip01_r_upperarm",
@@ -169,6 +188,83 @@ CORE_ROLES = {
 }
 
 
+def _sided(table):
+    """{"l_hip": "thigh"} -> {"l_hip": "thigh.L", "r_hip": "thigh.R"}: the right side's names from the left's
+    (l_x, left_x, lX as Daz writes it, x_l as Unreal does). Names with no side are kept as they are."""
+    out = {}
+    for k, v in table.items():
+        if k.endswith("_l"): r = k[:-2] + "_r"
+        elif k.startswith("left_"): r = "right_" + k[5:]
+        elif k.startswith("l_"): r = "r_" + k[2:]
+        elif re.match(r"^l(collar|shldr|forearm|hand|thigh|shin|foot|toe)", k): r = "r" + k[1:]
+        else:
+            out[k] = v
+            continue
+        out[k] = v + ".L" if v else None
+        out[r] = v + ".R" if v else None
+    return out
+
+
+# Exact names for conventions the name guesser gets wrong, as a convention spells them (lowercase, after the
+# namespace prefixes are stripped). A bone listed as None plays no role (twist and end bones). Written from each
+# convention's published joint list; the mapping tables of Rokoko Studio Live's retargeter (LGPL-3.0) and Expy Kit
+# (GPL-3.0) were the cross-check.
+CONVENTION_ROLES = {
+    # SMPL's "shoulder" is the upper arm and its "collar" the clavicle; spine1..3 are its three spine joints
+    "smpl": _sided({
+        "pelvis": "hips", "spine1": "spine", "spine2": "spine1", "spine3": "spine2", "neck": "neck", "head": "head",
+        "jaw": "jaw", "l_hip": "thigh", "l_knee": "shin", "l_ankle": "foot", "l_foot": "toe",
+        "l_collar": "shoulder", "l_shoulder": "arm", "l_elbow": "forearm", "l_wrist": "hand", "l_hand": None,
+        "left_hip": "thigh", "left_knee": "shin", "left_ankle": "foot", "left_foot": "toe",
+        "left_collar": "shoulder", "left_shoulder": "arm", "left_elbow": "forearm", "left_wrist": "hand",
+    }),
+    # VRoid / VRM: J_Bip_<C|L|R>_<Unity humanoid name>
+    "vrm": _sided({
+        "c_hips": "hips", "c_spine": "spine", "c_chest": "spine1", "c_upperchest": "spine2", "c_neck": "neck",
+        "c_head": "head", "l_shoulder": "shoulder", "l_upperarm": "arm", "l_lowerarm": "forearm", "l_hand": "hand",
+        "l_upperleg": "thigh", "l_lowerleg": "shin", "l_foot": "foot", "l_toebase": "toe",
+    }),
+    # Daz Genesis: "hip" is the body root (its child "pelvis" carries the thighs); ...Bend bones bend, ...Twist
+    # bones only twist
+    "daz": _sided({
+        "hip": "hips", "pelvis": None, "abdomenlower": "spine", "abdomenupper": "spine1", "chestlower": "spine2",
+        "chestupper": None, "necklower": "neck", "neckupper": None, "head": "head",
+        "lcollar": "shoulder", "lshldrbend": "arm", "lshldrtwist": None, "lforearmbend": "forearm",
+        "lforearmtwist": None, "lhand": "hand", "lthighbend": "thigh", "lthightwist": None, "lshin": "shin",
+        "lfoot": "foot", "ltoe": "toe",
+    }),
+    # UE5: root stays root; five spine bones onto three roles, as the UE5-to-Mixamo retargeters pair them
+    "unreal5": _sided({
+        "root": None, "pelvis": "hips", "spine_01": "spine", "spine_02": None, "spine_03": "spine1",
+        "spine_04": None, "spine_05": "spine2", "neck_01": "neck", "neck_02": None, "head": "head",
+        "clavicle_l": "shoulder", "upperarm_l": "arm", "lowerarm_l": "forearm", "hand_l": "hand",
+        "thigh_l": "thigh", "calf_l": "shin", "foot_l": "foot", "ball_l": "toe",
+    }),
+}
+
+
+def _clean(name, convention=None):
+    n = PREFIX_RE.sub("", name.strip()).lower()
+    if convention == "vrm": n = re.sub(r"^j_(bip|sec|adj)_", "", n)
+    return n
+
+
+def canonical_roles(bone_names):
+    """{bone: canonical role or None} for a whole skeleton: its convention's exact names first (SMPL, VRM, Daz,
+    UE5), the name guesser (map_bone_to_canonical) for the rest. A role two bones would share goes to the first."""
+    conv, _ = detect_convention(bone_names)
+    table = CONVENTION_ROLES.get(conv, {})
+    out, taken = {}, set()
+    # a bone named root takes the hips role only when no hips or pelvis bone does (autorig's rigs have both)
+    for b in sorted(bone_names, key=lambda n: _clean(n, conv) == "root"):
+        key = _clean(b, conv)
+        role = table[key] if key in table else map_bone_to_canonical(b)
+        if role in taken: role = None
+        if role: taken.add(role)
+        out[b] = role
+    return {b: out[b] for b in bone_names}
+
+
 def detect_convention(bone_names):
     """Identifies the armature naming convention from a collection of bone names.
     Returns: (convention_name, confidence)
@@ -181,6 +277,11 @@ def detect_convention(bone_names):
         return "mixamo", 1.0
     if any("valvebiped" in n.lower() for n in bone_names):
         return "valve", 1.0
+    if sum(1 for n in bone_names if n.lower().startswith("j_bip_")) >= 4:
+        return "vrm", 1.0
+    low = {n.lower() for n in bone_names}
+    if {"spine_04", "spine_05", "pelvis"} <= low:
+        return "unreal5", 1.0
 
     scores = {}
     total = len(bone_names)
@@ -316,8 +417,9 @@ def extract_chains_from_joints(joints, lo=None, hi=None, size=None):
         return [round((pt[i] - lo[i]) / size[i], 3) for i in range(3)]
 
     role_to_joint = {}
+    roles = canonical_roles([j["name"] for j in joints])
     for j in joints:
-        c_name = map_bone_to_canonical(j["name"])
+        c_name = roles.get(j["name"])
         if c_name and c_name not in role_to_joint:
             role_to_joint[c_name] = j
 
