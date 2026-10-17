@@ -41,6 +41,15 @@ class ExtrasTest(unittest.TestCase):
             self.assertIn(licence, ("MIT", "BSD-2", "BSD-3", "Apache-2.0", "LGPL-3.0", "GPL-3.0", "MPL-2.0"), name)
             self.assertTrue(use, name)
 
+    def test_open_clip_installs_the_cpu_build_of_pytorch(self):
+        calls = []
+        with mock.patch.object(extras.subprocess, "call", lambda cmd: calls.append(cmd) or 0):
+            extras.install(["open-clip"], python=sys.executable)
+        cmd = calls[0]
+        self.assertIn("https://download.pytorch.org/whl/cpu", cmd)
+        self.assertIn("open_clip_torch", cmd)
+        self.assertIn("torch", cmd)
+
     def test_unknown_extra(self):
         with self.assertRaises(ValueError):
             extras.install(["not-a-thing"], python=sys.executable)
