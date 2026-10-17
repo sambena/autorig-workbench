@@ -553,6 +553,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <button type="button" data-action="open-root">📂 Open Models Root Folder</button>
           <button type="button" data-action="refresh">🔄 Refresh State</button>
           <hr>
+          <button type="button" data-action="clean-generated">🧹 Clean Up Generated Files…</button>
           <button type="button" data-action="git-commit">⬆️ Commit to Git Repo…</button>
         </div>
       </div>
@@ -970,6 +971,15 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 </dialog>
 
 <!-- Mesh Doctor Modal -->
+<!-- File > Clean Up Generated Files… -->
+<dialog id="cleanModal" style="width:640px">
+  <div class="dialog-header">
+    <h3>Clean Up Generated Files</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="cleanModalBody"></div>
+</dialog>
+
 <!-- File > Commit to Git Repo… -->
 <dialog id="gitModal" style="width:640px">
   <div class="dialog-header">

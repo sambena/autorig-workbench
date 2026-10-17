@@ -1136,6 +1136,9 @@ def make_handler(app):
                 if path == "/api/git/status":                       # File > Commit to Git Repo… (core/git_commit.py)
                     import git_commit
                     return self._send(200, git_commit.status(layout.ROOT, {n for _, n in layout.all_models()}))
+                if path == "/api/clean/scan":                       # File > Clean Up Generated Files… (core/clean_generated.py)
+                    import clean_generated
+                    return self._send(200, {"work": layout.WORK, "kinds": clean_generated.scan(layout.ROOT, layout.WORK)})
                 if path == "/api/workspace/roots":
                     return self._send(200, {"root": layout.ROOT, "work": layout.WORK, "roots": layout.discover_roots()})
                 if path == "/api/samples":
@@ -1378,6 +1381,10 @@ def make_handler(app):
                     return self._send(200, {"opened": model_dir(g, body["model"])})
                 if path in ORGANISE:
                     return self._send(200, organise(app, path, body))
+                if path == "/api/clean":
+                    if app.runner.current: return self._send(409, {"error": "a step is running: clean up when it is done"})
+                    import clean_generated
+                    return self._send(200, clean_generated.clean(layout.ROOT, layout.WORK, list(body.get("kinds") or [])))
                 if path == "/api/git/commit":
                     return self._send(200, app.runner.submit(git_commit_job(body)).info())
                 if path == "/api/samples/load":
