@@ -552,6 +552,8 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
           <button type="button" data-action="open-output">📂 Open Output Folder</button>
           <button type="button" data-action="open-root">📂 Open Models Root Folder</button>
           <button type="button" data-action="refresh">🔄 Refresh State</button>
+          <hr>
+          <button type="button" data-action="git-commit">⬆️ Commit to Git Repo…</button>
         </div>
       </div>
 
@@ -968,6 +970,15 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 </dialog>
 
 <!-- Mesh Doctor Modal -->
+<!-- File > Commit to Git Repo… -->
+<dialog id="gitModal" style="width:640px">
+  <div class="dialog-header">
+    <h3>Commit to Git Repo</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" id="gitModalBody"></div>
+</dialog>
+
 <dialog id="doctorModal">
   <div class="dialog-header">
     <h3>Mesh Doctor (Geometry Health)</h3>
