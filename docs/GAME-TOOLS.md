@@ -1,12 +1,13 @@
 # Game tools: generated models made ready for a game
 
-Three headless Blender steps that take a generator's model (Rodin, Tripo, Meshy) to what a game imports. They came
+Four headless Blender steps that take a generator's model (Rodin, Tripo, Meshy) to what a game imports. They came
 from importing Tornado Titans' Tripo batch (Sam, 2026-10-17: the tools live here, not in the game's repository), and
 every engine can use them: they write FBX in metres, foot on the ground, facing -Y in Blender (+Z in Unity).
 
 | Command | Step | For |
 |---|---|---|
 | `run.py game-prop` | `steps/game_prop.py` | a prop, building or vehicle: one FBX with LOD0-2 |
+| `run.py game-parts` | `steps/game_parts.py` | a game-prop FBX whose moving parts a game animates: each its own mesh |
 | `run.py tripo-clips` | `steps/tripo_clips.py` | an animal Tripo rigged: its own skeleton and skin, with clips |
 | `run.py crop-cards` | `steps/crop_cards.py` | plants a field draws by the thousand: flat picture cards |
 
@@ -30,6 +31,49 @@ python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out 
   told from the body (the Peanut's tyres sit up under its bumper) the FBX carries an empty `Wheels_Baked` instead, so
   a game can hide its own wheels rather than show two sets. `--wheels` takes a truck already split into parts.
 - `--wind`: height-based vertex alpha for a wind shader (trees, bushes).
+
+## game-parts
+
+```
+python autorig/cli/run.py game-parts --in Pumpjack.fbx --spec autorig/specs/tornado_titans_parts.json --out <folder>
+        [--name Pumpjack] [--renders <folder>] [--survey]
+```
+
+A generated model is one mesh, often thousands of loose fragments, so nothing on it can move. This takes the FBX
+game-prop wrote and a JSON spec of named parts, and writes the FBX again with each part cut out of `<Name>_LOD0` as
+its own mesh object, `<Name>_<Part>` (`Pumpjack_Beam`, `Windpump_Fan`), beside the LODs under the root, its origin
+at the part's pivot. LOD1 and LOD2 stay whole (far off, nothing needs to move), so an engine adds the parts to its
+LOD0 renderers itself. Export is game-prop's (-Z forward, Y up, unit scale applied, no leaf bones); the maps stay in
+`<Name>.fbm` beside the FBX (copied there when `--out` is another folder) and the FBX names them there. Run on its
+own output, the parts are joined back into LOD0 first, so a spec can be tuned and run again.
+
+A part takes whole fragments (connected components; a face is never split) whose centre lies in one of its regions
+and in none of its `exclude` regions; the first part listed that takes a fragment keeps it. Coordinates are
+Blender's: metres, Z up, front -Y.
+
+```json
+{"Windpump": {"parts": [
+  {"name": "Fan", "disc": {"centre": [0.02, -1.4, 7.645], "axis": "y", "radius": 2.7, "slab": [-0.48, 0.36]},
+   "exclude": [{"box": {"min": [-3, -2, 0], "max": [3, -0.9, 5.5]}}],
+   "max_size": [9, 9, 1.6], "pivot": [0.02, -1.4, 7.645]}]}}
+```
+
+- a region is `"box": {"min", "max"}` or `"disc": {"centre", "axis" (x, y, z or a vector), "radius", "slab": [from,
+  to] along the axis}`; several go in `"regions": [...]`;
+- `max_size: [dx, dy, dz]` leaves out a fragment bigger than that (a tower's legs run up behind a fan: long where
+  its blades are short);
+- `pivot` is a point, or `"centre"`: the middle of what the part took (for a disc, across its axis only, unless
+  `"recentre_axis": true`). A lopsided generated fan is best given its hub as a point.
+
+`--survey` writes every fragment's centre, bounds and face count to `<renders>/<Name>_fragments.json`, for finding
+the numbers; `--renders` draws the model before (textured) and after (each part its own colour), the model left
+behind, and each part alone, from the side and the front over a metre grid whose axes are drawn thicker. Check
+those before shipping a cut: everything of the part in it, and nothing that should stay.
+
+`autorig/specs/tornado_titans_parts.json` holds Tornado Titans' five (Rodin's and Tripo's pumpjacks and three
+windpumps): pumpjack Beam (walking beam and horse head, pivot at the bearing), Rod (bridle and polished rod under the
+head), Link (Rodin's slanted rear frame, pivot at its foot so the game can stretch it to follow the tail) or Pitman
+(Tripo's arms, pivot at the tail), and windpump Fan (pivot at the hub; the tail vane, gearbox and tower stay).
 
 ## tripo-clips
 
