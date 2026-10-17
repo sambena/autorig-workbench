@@ -19,7 +19,7 @@ elsewhere. Set `AUTORIG_EXTRAS` to use a different one. Deleting the folder unin
 | coacd | MIT | convex pieces for game colliders and rough part splits |
 | manifold3d | Apache-2.0 | robust booleans: carving parts, merging shells |
 | robust-laplacian | MIT | weight smoothing that copes with non-manifold meshes |
-| open-clip | MIT | a picture classifier, on the CPU, for the suggest step's picture vote (pulls in PyTorch, about 1 GB; its weights, about 600 MB, download free from Hugging Face on first use into the extras folder's `models/`) |
+| open-clip | MIT | a picture classifier, on the CPU, for the suggest step's picture vote (pulls in the CPU build of PyTorch, about 1 GB with its dependencies; its weights, about 600 MB, download free from Hugging Face on first use into the extras folder's `models/`) |
 
 ## Which steps use them
 

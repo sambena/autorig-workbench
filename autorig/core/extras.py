@@ -29,8 +29,15 @@ EXTRAS = {
     "manifold3d": ("manifold3d", "manifold3d", "Apache-2.0", "robust booleans: carving parts, merging shells"),
     "robust-laplacian": ("robust-laplacian", "robust_laplacian", "MIT",
                          "weight smoothing that copes with non-manifold meshes"),
-    "open-clip": ("open_clip_torch", "open_clip", "MIT",
+    "open-clip": ("open_clip_torch torch torchvision", "open_clip", "MIT",
                   "a picture classifier (CPU) for telling a dog from a winged creature in the suggest step"),
+}
+
+
+# Extra pip options per extra. open-clip runs on the CPU: PyTorch's CPU build is about 200 MB, where PyPI's default
+# (CUDA) build pulls several GB of NVIDIA libraries, and on VM 207 that download broke off part way.
+PIP_OPTIONS = {
+    "open-clip": ["--index-url", "https://download.pytorch.org/whl/cpu", "--extra-index-url", "https://pypi.org/simple"],
 }
 
 
@@ -130,7 +137,9 @@ def install(names, python=None):
     if bad: raise ValueError("unknown extras: %s (known: %s)" % (", ".join(bad), ", ".join(EXTRAS)))
     where = folder(py)
     os.makedirs(where, exist_ok=True)
-    cmd = [py, "-m", "pip", "install", "--upgrade", "--target", where, "--no-warn-script-location"] + \
+    cmd = [py, "-m", "pip", "install", "--upgrade", "--target", where, "--no-warn-script-location",
+           "--retries", "10", "--timeout", "120"] + \
+          [opt for n in names for opt in PIP_OPTIONS.get(n, [])] + \
           [req for n in names for req in EXTRAS[n][0].split()]
     print("$ " + " ".join(cmd), flush=True)
     return subprocess.call(cmd)
