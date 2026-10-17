@@ -31,7 +31,8 @@ def scene(size_px):
     s.display.shading.show_shadows = False
 
 
-def shoot(mesh, out_dir, key):
+def shoot(mesh, out_dir, key, views=VIEWS):
+    """Renders the mesh looking along each view's direction; returns the picture paths (key__<label>.png)."""
     lo = Vector((min((mesh.matrix_world @ v.co)[i] for v in mesh.data.vertices) for i in range(3)))
     hi = Vector((max((mesh.matrix_world @ v.co)[i] for v in mesh.data.vertices) for i in range(3)))
     mid = (lo + hi) / 2
@@ -45,7 +46,7 @@ def shoot(mesh, out_dir, key):
     bpy.context.scene.camera = cam
 
     paths = []
-    for label, d in VIEWS:
+    for label, d in views:
         dv = Vector(d)
         cam.location = mid - dv * span * 3
         # Point the camera down its -Z at the model, keeping +Z up.
@@ -83,4 +84,5 @@ def main():
     print("FACING_DONE %d" % len(keys))
 
 
-main()
+if __name__ == "__main__":     # Blender runs a --python script as __main__; the suggest step imports shoot()
+    main()

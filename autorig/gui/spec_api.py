@@ -654,6 +654,25 @@ def _load(path):
         return None
 
 
+_VOTE_EXTRAS = []
+
+
+def vote_extras_installed():
+    """Whether Blender's Python has an extra the suggester weighs (trimesh, open-clip): asked once (it starts
+    Blender's Python to learn its version), then remembered."""
+    if not _VOTE_EXTRAS:
+        try:
+            try:
+                import extras
+            except ImportError:
+                from autorig.core import extras
+            st = extras.status()
+            _VOTE_EXTRAS.append(any(e["installed"] for e in st["extras"] if e["name"] in ("trimesh", "open-clip")))
+        except Exception:
+            _VOTE_EXTRAS.append(False)
+    return _VOTE_EXTRAS[0]
+
+
 def editor_dir(layout, name):
     return os.path.join(layout.WORK, "spec_editor", name)
 
@@ -975,6 +994,8 @@ def post(h, app, srv, path, body):
             fresh = (os.path.exists(measured_file) and src_model and
                      os.path.getmtime(measured_file) >= os.path.getmtime(src_model))
             measured = _load(measured_file) if fresh and not given else None
+            if measured and "opinions" not in measured and vote_extras_installed():
+                measured = None             # measured before the step weighed a body plan and pictures: again
             if measured and measured.get("spec"):
                 h._send(200, dict(measured, measured=True)); return True
             if not given and body.get("measure", True) and src_model and srv.blender.find(required=False):

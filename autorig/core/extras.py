@@ -17,12 +17,13 @@ import glob, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# name: (pip requirement, import name, licence, what it is for). Steps add their own extras here.
+# name: (pip requirement(s), space-separated, import name, licence, what it is for). Steps add their own extras here.
 EXTRAS = {
     "pymeshlab": ("pymeshlab", "pymeshlab", "GPL-3.0",
                   "texture-safe decimation, mesh repair, isotropic remesh, connected parts"),
     "pymeshfix": ("pymeshfix", "pymeshfix", "GPL-3.0", "makes a messy multi-shell mesh one watertight surface"),
-    "trimesh": ("trimesh", "trimesh", "MIT", "mesh measures: parts, stable poses, symmetry, convex hulls"),
+    # scipy (BSD-3-Clause): trimesh's convex hulls (stable poses) and connected parts need it
+    "trimesh": ("trimesh scipy", "trimesh", "MIT", "mesh measures: parts, stable poses, symmetry, convex hulls"),
     "xatlas": ("xatlas", "xatlas", "MIT", "automatic UV unwrap and atlas packing"),
     "coacd": ("coacd", "coacd", "MIT", "convex pieces for game colliders and rough part splits"),
     "manifold3d": ("manifold3d", "manifold3d", "Apache-2.0", "robust booleans: carving parts, merging shells"),
@@ -130,7 +131,7 @@ def install(names, python=None):
     where = folder(py)
     os.makedirs(where, exist_ok=True)
     cmd = [py, "-m", "pip", "install", "--upgrade", "--target", where, "--no-warn-script-location"] + \
-          [EXTRAS[n][0] for n in names]
+          [req for n in names for req in EXTRAS[n][0].split()]
     print("$ " + " ".join(cmd), flush=True)
     return subprocess.call(cmd)
 

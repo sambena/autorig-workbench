@@ -314,6 +314,42 @@ one pull request each, code first; models are run through the tool only in R6.
   suggester reads the biped sample as rigid and the pedestal as winged, and beetle, biped and wyvern audit FAIL on bend
   tears with their bundled specs.
 
+- **Suggester: body plan and picture vote** (October 2026): the suggester weighs two more opinions with its tips: the
+  mesh's body plan (`core/body_plan.py`, trimesh: feet on the ground, wing sheets, height, symmetry, stable rest) and
+  a picture vote (`core/picture_vote.py`, OpenCLIP ViT-B/32 on the CPU over four renders), which breaks ties
+  (`suggest.combine`, docs/SPEC.md). The auto facing now asks which way the mesh is mirror-symmetric, which turned the
+  biped sample (and a T-posed asset-packs figure) side-on before. The trimesh extra now brings scipy, which its hulls
+  and connected parts need. Checked on the 5 samples and 16 asset-packs models stripped to bare meshes (wrong in bold):
+
+  | Model | Is | Before | Tips + body plan | Tips + body plan + pictures |
+  |---|---|---|---|---|
+  | beetle (sample) | hexapod | hexapod | hexapod | hexapod |
+  | biped (sample) | humanoid | **rigid** | humanoid | humanoid |
+  | canine (sample) | quadruped | quadruped | quadruped | quadruped |
+  | pedestal (sample) | prop | **winged** | rigid | rigid |
+  | wyvern (sample) | winged | winged | **humanoid** | winged |
+  | Dog_BlackTan | quadruped | quadruped | quadruped | quadruped |
+  | Horse_Bay | quadruped | **hexapod** | quadruped | quadruped |
+  | Chicken_Hen | bird | **hexapod** | **hexapod** | winged |
+  | Cat_Tabby | quadruped | **humanoid** | quadruped | quadruped |
+  | Goat_Alpine | quadruped | **hexapod** | quadruped | quadruped |
+  | Leon_Age10 | humanoid | **floater** | humanoid | humanoid |
+  | Car_Vintage | prop | **octopod** | **quadruped** | rigid |
+  | Junk_Refrigerator | prop | **hexapod** | rigid | rigid |
+  | dragon (Smeltdown) | winged | **octopod** | **octopod** | winged |
+  | candle_moth | winged | **rigid** | winged | winged |
+  | crawler | hexapod | **octopod** | hexapod | hexapod |
+  | gloomcrawler | many-legged | octopod | **quadruped** | hexapod |
+  | heartstone | prop | **octopod** | rigid | rigid |
+  | glass_eel | serpent | **humanoid** | **humanoid** | serpent |
+  | the_human | humanoid | **hexapod** | humanoid | humanoid |
+  | sentry_turret | prop | **octopod** | rigid | rigid |
+
+  Before: 5 of 21 right; with the body plan 15; with both 21. Without the extras this branch gives the "before"
+  column except the biped, now humanoid (the facing fix). Not yet checked: models that come with a Tripo or Mixamo
+  skeleton (they take the skeleton's path and never reach the vote), and rarer shapes (fish, jellyfish, plants).
+  Tested by tests/test_suggest_votes.py (made-up picture scores; the body-plan test runs where trimesh is installed).
+
 - **Engine LOD FBX** (October 2026): storm-chaser's three one-off Blender packagers (Unity LOD FBX, skinned LODs
   with the clip moved onto the prepared rig, vehicle parts on wheel pivots) are now the Studio `engine` tool
   (steps/engine_package.py, core/engine_lods.py), with the clip name, frame rate, wind channel and resource name as
