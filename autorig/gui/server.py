@@ -1399,7 +1399,10 @@ def make_handler(app):
                         import exporter as _exp
                     except ImportError:
                         from autorig.core import exporter as _exp
-                    res = _exp.create_export_package(name, target=target)
+                    try:
+                        res = _exp.create_export_package(name, target=target)
+                    except ValueError as e:              # a failed gate (export_passes.GateError), a bad target
+                        return self._send(422, {"error": str(e)})
                     return self._send(200, res)
                 if path == "/api/retarget/inspect":
                     mocap_file = body.get("file", "").strip()

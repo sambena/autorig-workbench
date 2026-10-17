@@ -30,3 +30,21 @@ elsewhere. Set `AUTORIG_EXTRAS` to use a different one. Deleting the folder unin
 - **Outside Blender:** `extras.run_python([...])` runs Blender's Python (no bpy) with the extras on its path.
 - **New extras:** add the extra to `EXTRAS` in `core/extras.py`. Its licence must fit the tool's GPL-3.0; the
   tests check the list.
+
+## Tools: programs for the export passes
+
+Two optional programs are installed the same way. They are the projects' own release binaries, downloaded from
+their GitHub releases into a `tools` folder beside the extras (`%LOCALAPPDATA%\autorig\extras\tools`, or
+`AUTORIG_TOOLS`). Nothing is installed system-wide and no Node is needed. A program of the same name on `PATH` is
+used too.
+
+    python autorig/cli/run.py extras install gltfpack gltf-validator
+
+| Tool | Version | Licence | For |
+|---|---|---|---|
+| gltfpack ([meshoptimizer](https://github.com/zeux/meshoptimizer)) | 1.3 | MIT | optimises Web and Godot GLBs in export packages |
+| gltf-validator ([Khronos](https://github.com/KhronosGroup/glTF-Validator)) | 2.0.0-dev.3.10 | Apache-2.0 | the pass/fail gate on every GLB in an export package |
+
+`run.py extras` lists them with the extras. Without them, export works as before and each package says the pass
+was skipped. See [EXPORT.md](EXPORT.md). Versions and download links are pinned in `TOOLS` in
+`core/export_passes.py`.
