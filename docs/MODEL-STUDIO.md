@@ -19,6 +19,7 @@ Each queued job captures its own settings snapshot, so subsequent form edits do 
 | `materials` | Poly Haven maps, lossless packed PNG and provenance | Requires network and Pillow. ORM = AO / roughness / metallic (zero); RAH = roughness / AO / height. Normal maps use OpenGL convention. Assign maps in your DCC/engine; downloading does not replace baked textures on a model. |
 | `foliage` | Seeded 12-cell alpha atlas, rectangles, crossed-card OBJ/MTL | Includes tree sprays, litter, twigs, flowers, weeds, corn and green/dry grass. Optional `wind.glb` stores a configurable height curve in vertex alpha. A compatible shader must consume the mask. |
 | `generate` | Downloaded candidate models and durable `generation.json` | Requires configured Hyper3D CLI. Front/Side/Back references required, Face optional. New submissions use provider credits; no paid generation is part of tests. Existing IDs are polled/downloaded again without resubmission. |
+| `engine` | One engine-ready FBX, maps in `<Name>.fbm/`, `engine.json` | Reads the `lods` tool's GLB levels (run it with format `glb`). `auto` picks the layout from LOD0. Materials are flattened to Principled + images so the FBX keeps its textures. Add to Unity/Unreal export packages with `--engine-lods`. See below. |
 | `validate` | `quality.json` from the current Preview GLB | Evaluates every imported take separately, including all model meshes and morph owners. Default sampling every frame. Reports motion, seam gaps, stretching, triangle collapse, floor penetration and near-ground foot speed. Explicitly list looping clip names to check endpoints with root travel removed. |
 
 Pillow is optional and needed only for image tools (`python -m pip install Pillow` in the
@@ -33,6 +34,35 @@ remain under `_studio` until explicitly imported as a source/model; this avoids 
 a rig's input. Interrupted submissions with no saved generation ID stop for recovery rather
 than automatically spending again. A changed reference set/tier/quality requires archiving the
 old candidate directory. Recover the provider ID into its `generation.json` before resuming.
+
+## Engine LOD FBX
+
+The `lods` tool writes one GLB per level, and the export packages copy them loose. The `engine`
+tool merges them into the one FBX an engine imports, in one of three layouts:
+
+| Layout | Hierarchy | Notes |
+| --- | --- | --- |
+| `static` | `<Name>` root, `<Name>_LOD0..n` children | Each level's meshes are joined. The space transform is baked, so Unity builds its LOD Group from the names on import. |
+| `skinned` | `<Name>` root, the armature, `<Name>_LOD0..n` skinned to it | Every level must have the same bone set. Clips are taken from `animation` (default: the model's `rigged/preview.glb`, every clip the workbench made) and baked one take per clip. A clip that animates a bone the prepared rig lacks is refused. |
+| `vehicle` | `<Name>` root, `Body` and `Wheel_FL/FR/RL/RR` empties at the pivots, `<Part>_LOD0..n` under each | For a model whose source is the `vehicle` tool's output. Pivots come from `parts` (a `parts.json`), else this model's `_studio/vehicle/parts.json`, else the wheel origins in LOD0. Wheel levels are re-centred on the hub (X is the axle); a level finer than the one before reuses the coarser mesh. |
+
+Game-specific choices are settings, never constants: `name` (the resource name; blank = model),
+`clips` (which source clips to keep; empty = all), `clip` (rename a single kept clip, e.g. `walk`),
+`fps` (scene rate for import and bake; default 24), `wind` (`auto` keeps the one colour channel whose
+alpha falls below `wind_alpha` as COLOR0 when there is exactly one, `require` fails without it, `off`
+leaves colours alone) and `roughness` (the flattened materials' roughness, default 0.75). Paths in
+`animation` and `parts` are relative to the model folder and must stay under the models or work folder.
+
+    python autorig/cli/run.py studio engine canine --settings engine.json
+    python autorig/steps/export.py canine --target unity --engine-lods     # adds LODs/<Name>.fbx, .fbm, engine.json
+
+`--engine-lods` applies to the Unity and Unreal packages (with `--target all`, only those two); Godot
+and Web packages are unchanged. The FBX uses Unity's axes (-Z forward, Y up); Unreal's importer
+converts them. FBX takes are named `<armature>|<clip>` by Blender's exporter.
+
+Adapted from storm-chaser `Tools/blender/package_autorig_lods.py`, `package_skinned_lods.py` and
+`package_vehicle_lods.py` (written 2026-10-16 for the farm model pilots). Those scripts hard-coded
+the clip name `walk`, 24 fps and a required wind channel; here they are the settings above.
 
 ## Deformation improvements
 
