@@ -35,7 +35,7 @@ python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out 
   a game can hide its own wheels rather than show two sets. `--wheels` takes a truck already split into parts.
 - `--wind`: height-based vertex alpha for a wind shader (trees, bushes).
 - `--atlas N`: re-texture the base mesh. It is cut to `--triangles` with PyMeshLab, given a fresh xatlas UV atlas, and
-  the full-resolution model is baked onto it (Cycles on the CPU, selected to active): `<Name>.fbm/<Name>_basecolor.png`
+  the full-resolution model is baked onto it (Cycles, selected to active, on the GPU when there is one: core/gpu_setup.py): `<Name>.fbm/<Name>_basecolor.png`
   and a tangent-space `_normal.png` that carries the dense surface's detail, N x N, one material. See "Mesh prep with
   the extras" below for why.
 - `--colliders N`: up to N convex pieces (CoACD) as `<Name>_Collider_00`, `_01`... under the root beside the LODs,

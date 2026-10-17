@@ -717,8 +717,8 @@ def main():
                   "kept the generated texture")
             decimate_to_triangles(obj, a.triangles)
         else:
-            print("game_prop.py: baked a %d px atlas onto %d triangles (from %d): %s" % (
-                a.atlas, report["triangles"], report["triangles_before"],
+            print("game_prop.py: baked a %d px atlas on %s onto %d triangles (from %d): %s" % (
+                a.atlas, report.get("device", "?"), report["triangles"], report["triangles_before"],
                 ", ".join(os.path.basename(p) for p in (report["basecolor"], report["normal"]) if p)))
     else:
         decimate_to_triangles(obj, a.triangles)
