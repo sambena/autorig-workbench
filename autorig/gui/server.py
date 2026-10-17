@@ -705,6 +705,17 @@ def failed_models():
     return out
 
 
+def git_commit_job(body):
+    """File > Commit to Git Repo…: commit the models folder's changes, push them and open a pull request. It is a
+    job, so it waits for a running step to finish and its git output shows in the log."""
+    message = " ".join(str(body.get("message") or "").split())
+    if not message: raise ValueError("a commit message is needed")
+    argv = [sys.executable, "-u", os.path.join(CORE, "git_commit.py"), "--root", layout.ROOT, "--message", message]
+    title = " ".join(str(body.get("title") or "").split())
+    if title: argv += ["--title", title]
+    return Job("(git)", "", "commit", [("commit, push and open a pull request", argv, None, None)])
+
+
 def audit_failed_job():
     work = os.path.join(layout.WORK, "audit")
     os.makedirs(work, exist_ok=True)
@@ -1122,6 +1133,9 @@ def make_handler(app):
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
                 if path == "/api/state": return self._send(200, self.state())
+                if path == "/api/git/status":                       # File > Commit to Git Repo… (core/git_commit.py)
+                    import git_commit
+                    return self._send(200, git_commit.status(layout.ROOT, {n for _, n in layout.all_models()}))
                 if path == "/api/workspace/roots":
                     return self._send(200, {"root": layout.ROOT, "work": layout.WORK, "roots": layout.discover_roots()})
                 if path == "/api/samples":
@@ -1364,6 +1378,8 @@ def make_handler(app):
                     return self._send(200, {"opened": model_dir(g, body["model"])})
                 if path in ORGANISE:
                     return self._send(200, organise(app, path, body))
+                if path == "/api/git/commit":
+                    return self._send(200, app.runner.submit(git_commit_job(body)).info())
                 if path == "/api/samples/load":
                     slug = clean_name(body.get("name", ""))
                     return self._send(200, load_sample_model(slug))

@@ -545,6 +545,9 @@ async function handleAction(action) {
     case "open-root":
       api("/api/open-root", {}).catch((e) => alert(e.message));
       break;
+    case "git-commit":
+      openGitCommit();
+      break;
     case "import-model":
       openModal("#importModal");
       break;
@@ -1605,6 +1608,94 @@ function openExportModal(targetPreset = "all") {
       }
     };
   });
+}
+
+// ---- File > Commit to Git Repo… (core/git_commit.py): commit the models folder, push, open a pull request
+async function openGitCommit() {
+  openModal("#gitModal");
+  const body = $("#gitModalBody");
+  if (!body) return;
+  body.innerHTML = `<div class="empty">Looking at the models folder's git repo…</div>`;
+  let st;
+  try {
+    st = await api("/api/git/status");
+  } catch (e) {
+    body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!st.repo) {
+    body.innerHTML = `<div class="empty">${esc(st.error || "The models folder is not in a git repo.")}</div>`;
+    return;
+  }
+  const where = st.restart
+    ? `a new branch from the latest <b>${esc(st.base)}</b> (the pull request for <b>${esc(st.branch)}</b> is ${esc(String(st.pr.state).toLowerCase())})`
+    : st.new_branch
+      ? `a new branch from <b>${esc(st.branch || "HEAD")}</b>, then a pull request into <b>${esc(st.base)}</b>`
+      : `branch <b>${esc(st.branch)}</b>` + (st.pr && st.pr.state === "OPEN"
+        ? `, whose open <a href="${esc(st.pr.url)}" target="_blank" rel="noopener">pull request</a> picks it up`
+        : `, then a pull request into <b>${esc(st.base)}</b>`);
+  const models = st.models || [];
+  const named = models.slice(0, 3).join(", ") + (models.length > 3 ? ` and ${models.length - 3} more` : "");
+  const suggested = models.length ? `Update ${named}` : (st.count ? `Update ${st.count} file${st.count === 1 ? "" : "s"}` : "");
+  const files = (st.changes || []).slice(0, 40).map((c) =>
+    `<tr><td class="num" style="width:2.5em"><code>${esc(c.code)}</code></td><td style="word-break:break-all">${esc(c.path)}</td></tr>`).join("");
+  const more = st.count > 40 ? `<div class="meta">…and ${st.count - 40} more</div>` : "";
+  const canRun = st.count > 0 || (!st.new_branch && st.unpushed > 0);
+  body.innerHTML = `
+    <div class="meta" style="margin-bottom:6px">Repo <code>${esc(st.repo)}</code>${st.github ? ` (${esc(st.github)})` : ""}</div>
+    <div class="meta" style="margin-bottom:10px">Commits everything changed under <code>${esc(st.root)}</code> to ${where}.
+      ${st.gh ? "" : "The GitHub CLI (gh) isn't installed here, so you'll get a link to open the pull request yourself."}</div>
+    ${st.count
+      ? `<div style="margin-bottom:6px"><b>${st.count}</b> changed file${st.count === 1 ? "" : "s"}${models.length ? ` in ${models.length} model${models.length === 1 ? "" : "s"}` : ""}</div>
+         <div style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-bottom:12px"><table>${files}</table></div>${more}`
+      : `<div class="empty" style="margin-bottom:12px">Nothing has changed under the models folder${st.unpushed ? `, but ${st.unpushed} commit${st.unpushed === 1 ? " isn't" : "s aren't"} pushed yet` : ""}.</div>`}
+    <label class="meta" for="gitMessage">Commit message (also the pull request's title)</label>
+    <input id="gitMessage" type="text" style="width:100%;margin:4px 0 12px" value="${esc(suggested)}">
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <span id="gitResult" class="meta" style="margin-right:auto"></span>
+      <button type="button" class="small close-git">Cancel</button>
+      <button type="button" class="small primary" id="gitGo" ${canRun ? "" : "disabled"}>Commit, push &amp; open PR</button>
+    </div>`;
+  body.querySelector(".close-git").onclick = () => $("#gitModal").close();
+  const go = $("#gitGo");
+  go.onclick = async () => {
+    const message = $("#gitMessage").value.trim();
+    if (!message) { $("#gitMessage").focus(); return; }
+    go.disabled = true;
+    const result = $("#gitResult");
+    result.textContent = "Committing and pushing… (the log shows each git step)";
+    try {
+      const j = await api("/api/git/commit", { message });
+      followJob(j);
+      watchGitJob(j.id, result);
+    } catch (e) {
+      result.textContent = e.message;
+      go.disabled = false;
+    }
+  };
+}
+
+async function watchGitJob(id, result) {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 2000));
+    let d;
+    try { d = await api(`/api/jobs/${id}`); } catch (e) { continue; }
+    if (d.state === "queued" || d.state === "running") {
+      result.textContent = d.state === "queued" ? "Waiting for the running step to finish…" : "Committing and pushing…";
+      continue;
+    }
+    const log = d.log || [];
+    const pr = log.map((l) => (l.match(/^PR: (\S+)/) || [])[1]).filter(Boolean).pop();
+    const nothing = log.some((l) => l.startsWith("Nothing to commit"));
+    if (d.state === "done" && pr) {
+      result.innerHTML = `Done: <a href="${esc(pr)}" target="_blank" rel="noopener">${esc(pr)}</a>`;
+    } else if (d.state === "done") {
+      result.textContent = nothing ? "Nothing to commit." : "Done.";
+    } else {
+      result.textContent = `It ${d.state === "cancelled" ? "was cancelled" : "failed"}: the log says why.`;
+    }
+    return;
+  }
 }
 
 // ---- Mesh Doctor Modal
