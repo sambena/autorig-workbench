@@ -596,8 +596,8 @@ details[open] summary {
       <p>Every action is in the menu bar. An action that cannot run yet says why (e.g. <i>"no rig yet: run Rig"</i>).
         Every job runs one at a time, streams its log to the console drawer, and can be cancelled.</p>
       <table>
-        <tr><td><b>File</b></td><td>Import / Add Model, Sample Models Gallery, Open Output Folder, Refresh State.</td></tr>
-        <tr><td><b>Model</b></td><td>Model Details &amp; Notes, Mesh Doctor (geometry check of the source file), Survey Facing Views, Re-bake Clips.</td></tr>
+        <tr><td><b>File</b></td><td>Choose Working Folder (the models root the list shows: a collection, one pack, or one group), Import / Add Model, Sample Models Gallery, Open Output Folder, Open Models Root Folder, Refresh State.</td></tr>
+        <tr><td><b>Model</b></td><td>Model Details &amp; Notes, Mesh Doctor (geometry check of the source file), Survey Facing Views, Re-bake Clips, then the organiser: Model Manager (Ctrl+M; every model in the working folder as a table, with filters, a sort and batch rig / audit / move), Move to Group, Rename, Duplicate (source and spec only), New Group Folder, Delete Model (the model folder and its work files, after a confirm; refused while a step is running on it).</td></tr>
         <tr><td><b>Rig &amp; Fix</b></td><td>Suggest Skeleton, Auto-Tune Optimizer (re-rigs with small spec changes and keeps the best; <code>rig.json</code> only ever holds an accepted spec), the Rig Inspector, Undo, Revert to Disk, Save rig.json, Save &amp; Re-Rig.</td></tr>
         <tr><td><b>Pipeline</b></td><td>The steps one at a time (Survey, Rig, Trim, Audit, Clips, Re-bake Clips, Publish, Preview), Run All, and the batch jobs over the whole collection (source views, rig all, audit all, audit failed only, re-bake all clips).</td></tr>
         <tr><td><b>QA &amp; Test</b></td><td>Run QA Audit, View QA Audit Report, the Collection Audit Table, the live limb bend test and the extreme-pose tears overlay.</td></tr>

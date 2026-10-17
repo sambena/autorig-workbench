@@ -68,6 +68,7 @@ async function init() {
   setupShortcuts();
   setupModals();
   setupDragAndDrop();
+  setupModelManagement();
 
   try {
     await refreshState();
@@ -114,8 +115,30 @@ async function refreshState() {
 }
 
 let currentModelFilter = "all";
+let currentGroupFilter = "all";
+let currentModelSearch = "";
+let selectedModelNames = new Set();
+let mgrCurrentSort = "name_asc";
+let mgrStatusFilter = "all";
 
-function matchesFilter(m, filter) {
+function matchesFilter(m, filter, group = currentGroupFilter, search = currentModelSearch) {
+  // 1. Group filter
+  if (group && group !== "all") {
+    const mg = m.group || "";
+    if (group === "(root)" ? mg !== "" : mg !== group) return false;
+  }
+
+  // 2. Text search
+  if (search) {
+    const term = search.toLowerCase();
+    const matchName = (m.name || "").toLowerCase().includes(term);
+    const matchGroup = (m.group || "").toLowerCase().includes(term);
+    const matchArch = (m.clips_spec || "").toLowerCase().includes(term);
+    const matchExt = (m.source_ext || "").toLowerCase().includes(term);
+    if (!matchName && !matchGroup && !matchArch && !matchExt) return false;
+  }
+
+  // 3. Status filter
   if (!filter || filter === "all") return true;
   const audit = (m.audit || "").toUpperCase();
   if (filter === "pass") return audit === "PASS";
@@ -129,17 +152,36 @@ function matchesFilter(m, filter) {
 
 function setModelFilter(filter) {
   currentModelFilter = filter;
+  applyModelFilters();
+}
+
+// After the status, group or search filter changes: redraw the list, and open the first model that still shows
+// when the open one no longer does.
+function applyModelFilters() {
   renderModelSelector();
   const allModels = (state && state.models) || [];
-  const filtered = allModels.filter((m) => matchesFilter(m, currentModelFilter));
+  const filtered = allModels.filter((m) => matchesFilter(m, currentModelFilter, currentGroupFilter, currentModelSearch));
   if (filtered.length > 0 && !filtered.some((m) => m.name === currentModel)) {
     selectModel(filtered[0].name);
+  }
+  if ($("#modelManagerModal")?.open) renderModelManager();
+}
+
+function renderRootBadge() {
+  const rootBtn = $("#btnSwitchRoot");
+  const rootNameEl = $("#activeRootName");
+  if (!rootNameEl || !state) return;
+  rootNameEl.textContent = state.root_name || "Root";
+  if (rootBtn) {
+    rootBtn.title = `Working folder (models root):\n${state.root || ""}\n\nWork folder:\n${state.work || ""}\n\nClick to choose another`;
   }
 }
 
 function renderModelSelector() {
   const sel = $("#modelSelect");
   if (!sel) return;
+
+  renderRootBadge();
 
   const allModels = (state && state.models) || [];
 
@@ -179,13 +221,39 @@ function renderModelSelector() {
     filterBtn.classList.toggle("on", currentModelFilter !== "all");
   }
 
-  // Filter models according to current active filter
-  const filteredModels = allModels.filter((m) => matchesFilter(m, currentModelFilter));
+  // Update group select dropdown
+  const grpSel = $("#groupSelect");
+  if (grpSel) {
+    const groupCounts = {};
+    for (const m of allModels) {
+      const g = m.group || "";
+      groupCounts[g] = (groupCounts[g] || 0) + 1;
+    }
+    const prevGrp = currentGroupFilter;
+    let grpHtml = `<option value="all">📂 All Groups (${allModels.length})</option>`;
+    for (const g of Object.keys(groupCounts).sort()) {
+      const label = g ? g : "Root / Direct";
+      const val = g ? g : "(root)";
+      grpHtml += `<option value="${esc(val)}" ${val === prevGrp ? "selected" : ""}>📁 ${esc(label)} (${groupCounts[g]})</option>`;
+    }
+    grpSel.innerHTML = grpHtml;
+    const shown = currentGroupFilter === "(root)" ? "" : currentGroupFilter;
+    grpSel.value = currentGroupFilter !== "all" && groupCounts[shown] ? currentGroupFilter : "all";
+    currentGroupFilter = grpSel.value;
+  }
+
+  const searchInput = $("#modelSearchInput");
+  if (searchInput && searchInput.value.trim() !== currentModelSearch) searchInput.value = currentModelSearch;
+  const clearBtn = $("#clearModelSearch");
+  if (clearBtn) clearBtn.style.display = currentModelSearch ? "block" : "none";
+
+  // Filter models according to active criteria
+  const filteredModels = allModels.filter((m) => matchesFilter(m, currentModelFilter, currentGroupFilter, currentModelSearch));
 
   const prev = currentModel;
   const byGroup = {};
   for (const m of filteredModels) {
-    (byGroup[m.group || "Default"] ||= []).push(m);
+    (byGroup[m.group || "Root / Direct"] ||= []).push(m);
   }
 
   let html = "";
@@ -230,10 +298,54 @@ function updateModelBadge() {
   }
 }
 
+async function deleteSpecificModel(name) {
+  if (!name) return;
+  const m = state && state.models && state.models.find((x) => x.name === name);
+  const where = m && m.group ? m.group + "/" + name : name;
+  const running = state && state.running;
+  if (running && (running.model === name || running.current_model === name)) {
+    alert("A step is running on " + name + ". Cancel it before deleting the model.");
+    return;
+  }
+  const ok = confirm(
+    'Delete "' + name + '"?\n\nThis removes the model folder (' + where +
+    ") and the work files for it: the source, the spec, the rig, audits and clips. It cannot be undone."
+  );
+  if (!ok) return;
+  try {
+    await api("/api/model/delete", { model: name });
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+  await refreshState();
+  if (currentModel === name) {
+    const rest = ((state && state.models) || []).map((x) => x.name).filter((n) => n !== name);
+    if (rest.length) {
+      await selectModel(rest[0], { force: true });
+    } else {
+      currentModel = "";
+      try { history.replaceState(null, "", location.pathname); } catch (e) {}
+      updateModelBadge();
+    }
+  }
+  if ($("#modelManagerModal") && $("#modelManagerModal").open) {
+    renderModelManager();
+  }
+}
+
+async function deleteCurrentModel() {
+  if (!currentModel) {
+    alert("No model selected.");
+    return;
+  }
+  await deleteSpecificModel(currentModel);
+}
+
 async function selectModel(name, opts = {}) {
   if (!name) return false;
   const se = window.specEditor;
-  if (name !== currentModel && se && typeof se.hasUnsavedEdits === "function" && se.hasUnsavedEdits()) {
+  if (!opts.force && name !== currentModel && se && typeof se.hasUnsavedEdits === "function" && se.hasUnsavedEdits()) {
     // unsaved spec edits are never dropped by something the user did not ask for (a job's log naming another
     // model); a switch they did ask for asks first
     const sel = $("#modelSelect");
@@ -325,6 +437,7 @@ function setupMenus() {
   // Wire menu actions
   $$("[data-action]").forEach((el) => {
     el.onclick = (e) => {
+      e.stopPropagation();
       closeMenus();
       handleAction(el.dataset.action);
     };
@@ -416,6 +529,15 @@ async function handleAction(action) {
       window.open("./studio.html?t=" + encodeURIComponent(TOKEN) + (currentModel ? "&model=" + encodeURIComponent(currentModel) : ""), "_blank");
       break;
     // File
+    case "switch-root":
+      openRootModal();
+      break;
+    case "model-manager":
+      openModelManagerModal();
+      break;
+    case "open-root":
+      api("/api/open-root", {}).catch((e) => alert(e.message));
+      break;
     case "import-model":
       openModal("#importModal");
       break;
@@ -436,6 +558,21 @@ async function handleAction(action) {
       break;
 
     // Model
+    case "move-model":
+      if (currentModel) promptMoveModel(currentModel);
+      else alert("Select a model first.");
+      break;
+    case "rename-model":
+      if (currentModel) promptRenameModel(currentModel);
+      else alert("Select a model first.");
+      break;
+    case "duplicate-model":
+      if (currentModel) promptDuplicateModel(currentModel);
+      else alert("Select a model first.");
+      break;
+    case "new-group":
+      promptNewGroup();
+      break;
     case "model-details":
       openModelDetails();
       break;
@@ -444,6 +581,9 @@ async function handleAction(action) {
       break;
     case "facing-views":
       openFacingViews();
+      break;
+    case "delete-model":
+      deleteCurrentModel();
       break;
 
     // Rig & Fix
@@ -1199,9 +1339,12 @@ function setupModals() {
 
 function openModal(sel) {
   const dlg = $(sel);
-  if (dlg && typeof dlg.showModal === "function") {
-    dlg.showModal();
-  }
+  if (!dlg || typeof dlg.showModal !== "function") return;
+  // The menu click is still in flight. showModal during that click lands on the
+  // backdrop, and the dialog's own click listener closes it before it paints.
+  setTimeout(() => {
+    if (!dlg.open) dlg.showModal();
+  }, 0);
 }
 
 // ---- Sample Models Gallery Modal
@@ -1551,6 +1694,659 @@ async function openModelDetails() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Root Working Folder & Model Management
+// ---------------------------------------------------------------------------------------------------------------
+
+let rootsData = null;
+
+async function openRootModal() {
+  openModal("#rootModal");
+  const activeRootDisplay = $("#activeRootDisplay");
+  const activeWorkDisplay = $("#activeWorkDisplay");
+  const activeRootStats = $("#activeRootStats");
+  const suggestedRootsList = $("#suggestedRootsList");
+  const msgEl = $("#rootSwitchMsg");
+  if (msgEl) { msgEl.className = "msg"; msgEl.textContent = ""; }
+
+  if (activeRootDisplay && state) {
+    activeRootDisplay.textContent = state.root || "None";
+  }
+  if (activeWorkDisplay && state) {
+    activeWorkDisplay.textContent = `Work Folder: ${state.work || "Default (_autorig)"}`;
+  }
+  if (activeRootStats && state && state.models) {
+    activeRootStats.textContent = `Active Root contains ${state.models.length} model(s)`;
+  }
+
+  if (suggestedRootsList) {
+    suggestedRootsList.innerHTML = `<div class="empty">Scanning available roots & packs…</div>`;
+  }
+
+  try {
+    rootsData = await api("/api/workspace/roots");
+    if (!suggestedRootsList) return;
+    const roots = (rootsData && rootsData.roots) || [];
+    const kinds = { group: "group", collection: "collection", pack: "pack", recent: "recent", samples: "samples" };
+    if (!roots.length) {
+      suggestedRootsList.innerHTML = `<div class="empty">No suggested roots discovered. Enter a custom folder below.</div>`;
+      return;
+    }
+
+    let html = "";
+    for (const r of roots) {
+      const isCur = r.current;
+      const countLabel = `${r.models} model${r.models === 1 ? "" : "s"}`;
+      const kindBadge = kinds[r.kind] ? `<span class="group-chip">${esc(kinds[r.kind])}</span>` : "";
+      const curBadge = isCur ? `<span class="chip pass" style="font-size:10px;">Active</span>` : "";
+
+      html += `
+        <div class="suggested-root-card ${isCur ? "current" : ""}">
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+              <span style="font-weight:600; font-size:13px; color:var(--ink);">${esc(r.name)}</span>
+              ${curBadge}
+              ${kindBadge}
+              <span style="font-size:11.5px; color:var(--muted);">${countLabel}</span>
+            </div>
+            <div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.path)}">${esc(r.path)}</div>
+          </div>
+          <div>
+            ${isCur 
+              ? `<button type="button" class="small" disabled style="opacity:0.6;">Current</button>`
+              : `<button type="button" class="small primary" data-switch-root="${esc(r.path)}">Select</button>`
+            }
+          </div>
+        </div>
+      `;
+    }
+    suggestedRootsList.innerHTML = html;
+
+    suggestedRootsList.querySelectorAll("button[data-switch-root]").forEach((btn) => {
+      btn.onclick = () => {
+        const p = btn.dataset.switchRoot;
+        switchRoot(p);
+      };
+    });
+  } catch (err) {
+    if (suggestedRootsList) {
+      suggestedRootsList.innerHTML = `<div class="msg err">${esc(err.message)}</div>`;
+    }
+  }
+}
+
+async function switchRoot(newRoot, newWork = null) {
+  if (!newRoot) return;
+  const msgEl = $("#rootSwitchMsg");
+  if (msgEl) {
+    msgEl.className = "msg";
+    msgEl.textContent = `Switching root to "${newRoot}"…`;
+  }
+  try {
+    const payload = { root: newRoot };
+    if (newWork) payload.work = newWork;
+    const res = await api("/api/workspace/set-root", payload);
+    if (msgEl) {
+      msgEl.className = "msg ok";
+      msgEl.textContent = `Switched to ${res.name} (${res.models} model${res.models === 1 ? "" : "s"}).`;
+    }
+    currentGroupFilter = "all";
+    currentModelSearch = "";
+    selectedModelNames.clear();
+    await refreshState();
+    const allModels = (state && state.models) || [];
+    if (allModels.length > 0) {
+      await selectModel(allModels[0].name, { force: true });
+    } else {
+      currentModel = "";
+      updateModelBadge();
+    }
+    setTimeout(() => {
+      const dlg = $("#rootModal");
+      if (dlg && dlg.open) dlg.close();
+    }, 450);
+  } catch (e) {
+    if (msgEl) {
+      msgEl.className = "msg err";
+      msgEl.textContent = e.message;
+    } else {
+      alert("Failed to switch root: " + e.message);
+    }
+  }
+}
+
+function openModelManagerModal() {
+  selectedModelNames.clear();
+  openModal("#modelManagerModal");
+  renderModelManager();
+}
+
+function getFilteredMgrModels() {
+  const allModels = (state && state.models) || [];
+  const searchInput = $("#mgrSearchInput");
+  const search = searchInput ? searchInput.value.trim() : "";
+  const groupSel = $("#mgrGroupFilter");
+  const group = groupSel ? groupSel.value : "all";
+  const statusSel = $("#mgrStatusFilter");
+  const status = statusSel ? statusSel.value : "all";
+
+  let filtered = allModels.filter((m) => matchesFilter(m, status, group, search));
+
+  const sort = mgrCurrentSort;
+  const gradeRank = { FAIL: 0, CHECK: 1, NOSPEC: 2, UNRIGGED: 3, RIGGED: 4, PASS: 5 };
+
+  filtered.sort((a, b) => {
+    if (sort === "name_desc") return b.name.localeCompare(a.name);
+    if (sort === "group") {
+      const ga = a.group || "";
+      const gb = b.group || "";
+      const c = ga.localeCompare(gb);
+      return c !== 0 ? c : a.name.localeCompare(b.name);
+    }
+    if (sort === "audit_worst" || sort === "audit_best") {
+      const getRank = (m) => {
+        const aud = (m.audit || "").toUpperCase();
+        if (aud === "FAIL") return gradeRank.FAIL;
+        if (aud === "CHECK") return gradeRank.CHECK;
+        if (aud === "PASS") return gradeRank.PASS;
+        if (m.rigged) return gradeRank.RIGGED;
+        if (m.spec) return gradeRank.UNRIGGED;
+        return gradeRank.NOSPEC;
+      };
+      const ra = getRank(a);
+      const rb = getRank(b);
+      if (ra !== rb) {
+        return sort === "audit_worst" ? ra - rb : rb - ra;
+      }
+      return a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return filtered;
+}
+
+function updateMgrBatchBar(filtered = null) {
+  if (!filtered) filtered = getFilteredMgrModels();
+  const batchBar = $("#mgrBatchBar");
+  const selectedCountEl = $("#mgrSelectedCount");
+  const selectAllChk = $("#mgrSelectAll");
+
+  const count = selectedModelNames.size;
+  if (batchBar) {
+    batchBar.style.display = count > 0 ? "flex" : "none";
+  }
+  if (selectedCountEl) {
+    selectedCountEl.textContent = `${count} model${count === 1 ? "" : "s"} selected`;
+  }
+  if (selectAllChk) {
+    selectAllChk.checked = filtered.length > 0 && filtered.every((m) => selectedModelNames.has(m.name));
+    selectAllChk.indeterminate = count > 0 && !selectAllChk.checked && filtered.some((m) => selectedModelNames.has(m.name));
+  }
+}
+
+function renderMgrTableRows(filtered) {
+  const tbody = $("#mgrTableBody");
+  if (!tbody) return;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--muted);">No models match the filter criteria.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  for (const m of filtered) {
+    const isSelected = selectedModelNames.has(m.name);
+    const isCurrent = m.name === currentModel;
+    const audit = (m.audit || "").toUpperCase();
+    const statusLabel = audit || (m.rigged ? "RIGGED" : (m.spec ? "SPEC" : "NEW"));
+    const statusClass = gradeClass(audit) || (m.rigged ? "on" : "");
+
+    const trisStr = m.budget ? `${esc(m.budget)} tris` : "—";
+    const ext = (m.source_ext || "").replace(".", "").toUpperCase() || "—";
+    const hasTex = m.has_textures;
+
+    html += `
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.06); ${isCurrent ? "background:rgba(67,120,255,0.08);" : ""}" data-model="${esc(m.name)}">
+        <td style="text-align:center; padding:8px 4px;">
+          <input type="checkbox" class="mgr-row-chk" data-model="${esc(m.name)}" ${isSelected ? "checked" : ""}>
+        </td>
+        <td style="padding:8px 6px;">
+          <span class="chip ${statusClass}" style="font-size:10.5px;">${esc(statusLabel)}</span>
+        </td>
+        <td style="padding:8px 6px;">
+          <span class="mgr-model-title" data-open-model="${esc(m.name)}" style="font-weight:600; cursor:pointer; color:${isCurrent ? "var(--accent)" : "var(--ink)"};" title="Click to open in 3D Viewport">
+            ${esc(m.name)} ${isCurrent ? '<span style="font-size:10px; opacity:0.75;">(Active)</span>' : ""}
+          </span>
+        </td>
+        <td style="padding:8px 6px;">
+          <span class="group-chip" title="Group folder">${esc(m.group || "Root")}</span>
+        </td>
+        <td style="padding:8px 6px;">
+          <span class="format-chip">${esc(ext)}</span>
+          ${hasTex ? '<span class="chip" style="font-size:10px; padding:1px 4px; margin-left:3px;" title="Contains texture image maps">Tex</span>' : ""}
+        </td>
+        <td style="padding:8px 6px; font-size:12px; color:var(--muted);">${trisStr}</td>
+        <td style="padding:8px 6px; text-align:right; white-space:nowrap;">
+          <button type="button" class="small" data-mgr-open="${esc(m.name)}" title="Open in 3D Viewport">Open</button>
+          <button type="button" class="small" data-mgr-move="${esc(m.name)}" title="Move to another group">Move</button>
+          <button type="button" class="small" data-mgr-rename="${esc(m.name)}" title="Rename model">Rename</button>
+          <button type="button" class="small" data-mgr-dup="${esc(m.name)}" title="Duplicate model">Duplicate</button>
+          <button type="button" class="small" data-mgr-del="${esc(m.name)}" title="Delete model" style="color:var(--fail);">🗑️</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  tbody.innerHTML = html;
+
+  // Wire row checkboxes
+  tbody.querySelectorAll(".mgr-row-chk").forEach((chk) => {
+    chk.onchange = (e) => {
+      const name = chk.dataset.model;
+      if (e.target.checked) selectedModelNames.add(name);
+      else selectedModelNames.delete(name);
+      updateMgrBatchBar(filtered);
+    };
+  });
+
+  // Wire row clicks
+  tbody.querySelectorAll("[data-open-model], [data-mgr-open]").forEach((el) => {
+    el.onclick = () => {
+      const name = el.dataset.openModel || el.dataset.mgrOpen;
+      selectModel(name);
+      $("#modelManagerModal").close();
+    };
+  });
+
+  tbody.querySelectorAll("[data-mgr-move]").forEach((btn) => {
+    btn.onclick = () => promptMoveModel(btn.dataset.mgrMove);
+  });
+
+  tbody.querySelectorAll("[data-mgr-rename]").forEach((btn) => {
+    btn.onclick = () => promptRenameModel(btn.dataset.mgrRename);
+  });
+
+  tbody.querySelectorAll("[data-mgr-dup]").forEach((btn) => {
+    btn.onclick = () => promptDuplicateModel(btn.dataset.mgrDup);
+  });
+
+  tbody.querySelectorAll("[data-mgr-del]").forEach((btn) => {
+    btn.onclick = () => deleteSpecificModel(btn.dataset.mgrDel);
+  });
+}
+
+function renderModelManager() {
+  const allModels = (state && state.models) || [];
+  const groups = new Set((state && state.groups) || []);       // empty groups too: a move can go there
+  for (const m of allModels) {
+    if (m.group) groups.add(m.group);
+  }
+  const groupList = Array.from(groups).sort();
+
+  // Update group filter dropdown in modal
+  const grpFilter = $("#mgrGroupFilter");
+  if (grpFilter) {
+    const curVal = grpFilter.value;
+    let html = `<option value="all">📂 All Groups (${allModels.length})</option>`;
+    html += `<option value="(root)" ${curVal === "(root)" ? "selected" : ""}>📁 (Root / Direct)</option>`;
+    for (const g of groupList) {
+      html += `<option value="${esc(g)}" ${curVal === g ? "selected" : ""}>📁 ${esc(g)}</option>`;
+    }
+    grpFilter.innerHTML = html;
+  }
+
+  // Update batch target group dropdown
+  const batchGrpTarget = $("#mgrBatchGroupTarget");
+  if (batchGrpTarget) {
+    let html = `<option value="">📁 Root Folder</option>`;
+    for (const g of groupList) {
+      html += `<option value="${esc(g)}">📁 ${esc(g)}</option>`;
+    }
+    batchGrpTarget.innerHTML = html;
+  }
+
+  const filtered = getFilteredMgrModels();
+
+  // Update badge stats
+  const statsBadge = $("#mgrStatsBadge");
+  if (statsBadge) {
+    statsBadge.textContent = `${filtered.length} of ${allModels.length} models`;
+  }
+
+  updateMgrBatchBar(filtered);
+  renderMgrTableRows(filtered);
+}
+
+function promptMoveModel(modelName) {
+  if (!modelName) return;
+  const m = state && state.models && state.models.find((x) => x.name === modelName);
+  const curGroup = m ? (m.group || "") : "";
+
+  const nameEl = $("#moveModelTargetName");
+  if (nameEl) {
+    nameEl.textContent = modelName;
+    nameEl.dataset.modelName = modelName;
+  }
+
+  const allModels = (state && state.models) || [];
+  const groups = new Set((state && state.groups) || []);
+  for (const x of allModels) {
+    if (x.group) groups.add(x.group);
+  }
+
+  const grpSel = $("#moveTargetGroupSelect");
+  if (grpSel) {
+    let html = `<option value="" ${curGroup === "" ? "selected" : ""}>📁 Root Folder (Direct)</option>`;
+    for (const g of Array.from(groups).sort()) {
+      html += `<option value="${esc(g)}" ${curGroup === g ? "selected" : ""}>📁 ${esc(g)}</option>`;
+    }
+    grpSel.innerHTML = html;
+  }
+
+  const newGrpInput = $("#moveNewGroupNameInput");
+  if (newGrpInput) newGrpInput.value = "";
+
+  openModal("#moveModelModal");
+}
+
+function promptRenameModel(modelName) {
+  if (!modelName) return;
+  const input = $("#renameModelInput");
+  if (input) {
+    input.value = modelName;
+    input.dataset.oldName = modelName;
+  }
+  openModal("#renameModelModal");
+  setTimeout(() => { if (input) { input.focus(); input.select(); } }, 50);
+}
+
+async function promptDuplicateModel(modelName) {
+  if (!modelName) return;
+  const defName = modelName + "_copy";
+  const newName = prompt(`Copy "${modelName}" (its source and spec, not its rig or clips) as:`, defName);
+  if (!newName || newName.trim() === "" || newName.trim() === modelName) return;
+  try {
+    const res = await api("/api/model/duplicate", { model: modelName, new_name: newName.trim() });
+    await refreshState();
+    await selectModel(res.name);
+    if ($("#modelManagerModal") && $("#modelManagerModal").open) {
+      renderModelManager();
+    }
+  } catch (e) {
+    alert("Error duplicating model: " + e.message);
+  }
+}
+
+function promptNewGroup() {
+  const input = $("#newGroupNameInput");
+  if (input) input.value = "";
+  openModal("#newGroupModal");
+  setTimeout(() => { if (input) input.focus(); }, 50);
+}
+
+function setupModelManagement() {
+  const grpSel = $("#groupSelect");
+  if (grpSel) {
+    grpSel.onchange = () => {
+      currentGroupFilter = grpSel.value;
+      applyModelFilters();
+    };
+  }
+  const searchInput = $("#modelSearchInput");
+  if (searchInput) {
+    searchInput.oninput = () => {
+      currentModelSearch = searchInput.value.trim();
+      applyModelFilters();
+    };
+  }
+  const clearBtn = $("#clearModelSearch");
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      currentModelSearch = "";
+      if (searchInput) searchInput.value = "";
+      applyModelFilters();
+    };
+  }
+
+  // Toolbar buttons
+  const btnSwitchRoot = $("#btnSwitchRoot");
+  if (btnSwitchRoot) {
+    btnSwitchRoot.onclick = () => openRootModal();
+  }
+
+  const btnOpenModelManager = $("#btnOpenModelManager");
+  if (btnOpenModelManager) {
+    btnOpenModelManager.onclick = () => openModelManagerModal();
+  }
+
+  // Root modal controls
+  const btnOpenRoot = $("#btnOpenRootInExplorer");
+  if (btnOpenRoot) {
+    btnOpenRoot.onclick = () => {
+      api("/api/open-root", {}).catch((e) => alert(e.message));
+    };
+  }
+
+  const btnApply = $("#btnApplyCustomRoot");
+  const customRootInput = $("#customRootInput");
+  const customWorkInput = $("#customWorkInput");
+  if (btnApply && customRootInput) {
+    const doApply = () => {
+      const r = customRootInput.value.trim();
+      const w = customWorkInput ? customWorkInput.value.trim() : null;
+      if (!r) {
+        alert("Please enter a valid path (e.g. /asset-packs, /asset-packs/Heartroot, or C:\\Users\\... )");
+        return;
+      }
+      switchRoot(r, w || null);
+    };
+    btnApply.onclick = doApply;
+    customRootInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doApply();
+      }
+    });
+  }
+
+  // Model Manager modal controls
+  const mgrSearchInput = $("#mgrSearchInput");
+  if (mgrSearchInput) {
+    mgrSearchInput.oninput = () => renderModelManager();
+  }
+
+  const mgrGroupFilter = $("#mgrGroupFilter");
+  if (mgrGroupFilter) {
+    mgrGroupFilter.onchange = () => renderModelManager();
+  }
+
+  const mgrStatusFilter = $("#mgrStatusFilter");
+  if (mgrStatusFilter) {
+    mgrStatusFilter.onchange = () => renderModelManager();
+  }
+
+  const mgrSortBy = $("#mgrSortBy");
+  if (mgrSortBy) {
+    mgrSortBy.onchange = (e) => {
+      mgrCurrentSort = e.target.value;
+      renderModelManager();
+    };
+  }
+
+  const btnMgrNewGroup = $("#btnMgrNewGroup");
+  if (btnMgrNewGroup) {
+    btnMgrNewGroup.onclick = () => promptNewGroup();
+  }
+
+  const btnMgrChangeRoot = $("#btnMgrChangeRoot");
+  if (btnMgrChangeRoot) {
+    btnMgrChangeRoot.onclick = () => {
+      $("#modelManagerModal").close();
+      openRootModal();
+    };
+  }
+
+  const mgrSelectAll = $("#mgrSelectAll");
+  if (mgrSelectAll) {
+    mgrSelectAll.onchange = (e) => {
+      const allFiltered = getFilteredMgrModels();
+      if (e.target.checked) {
+        allFiltered.forEach((m) => selectedModelNames.add(m.name));
+      } else {
+        allFiltered.forEach((m) => selectedModelNames.delete(m.name));
+      }
+      updateMgrBatchBar(allFiltered);
+      renderMgrTableRows(allFiltered);
+    };
+  }
+
+  const btnBatchRig = $("#btnBatchRig");
+  if (btnBatchRig) {
+    btnBatchRig.onclick = async () => {
+      const names = Array.from(selectedModelNames);
+      if (!names.length) return;
+      if (!confirm(`Rig & Skin ${names.length} selected model(s)?`)) return;
+      try {
+        const j = await api("/api/batch/rig-selected", { models: names });
+        followJob(j);
+        setDrawerOpen($("#logDrawer"), true);
+        $("#modelManagerModal").close();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  }
+
+  const btnBatchAudit = $("#btnBatchAudit");
+  if (btnBatchAudit) {
+    btnBatchAudit.onclick = async () => {
+      const names = Array.from(selectedModelNames);
+      if (!names.length) return;
+      if (!confirm(`Run QA Audit on ${names.length} selected model(s)?`)) return;
+      try {
+        const j = await api("/api/batch/audit-selected", { models: names });
+        followJob(j);
+        setDrawerOpen($("#logDrawer"), true);
+        $("#modelManagerModal").close();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  }
+
+  const btnBatchMove = $("#btnBatchMove");
+  const mgrBatchGroupTarget = $("#mgrBatchGroupTarget");
+  if (btnBatchMove && mgrBatchGroupTarget) {
+    btnBatchMove.onclick = async () => {
+      const names = Array.from(selectedModelNames);
+      if (!names.length) return;
+      const targetGroup = mgrBatchGroupTarget.value;
+      const groupLabel = targetGroup ? `group "${targetGroup}"` : "root folder";
+      if (!confirm(`Move ${names.length} model(s) to ${groupLabel}?`)) return;
+      try {
+        for (const name of names) {
+          await api("/api/model/move", { model: name, group: targetGroup });
+        }
+        await refreshState();
+        selectedModelNames.clear();
+        renderModelManager();
+      } catch (e) {
+        alert("Failed to move models: " + e.message);
+      }
+    };
+  }
+
+  const btnBatchDeselect = $("#btnBatchDeselect");
+  if (btnBatchDeselect) {
+    btnBatchDeselect.onclick = () => {
+      selectedModelNames.clear();
+      updateMgrBatchBar();
+      renderModelManager();
+    };
+  }
+
+  // Move Model Modal confirm
+  const btnConfirmMoveModel = $("#btnConfirmMoveModel");
+  if (btnConfirmMoveModel) {
+    btnConfirmMoveModel.onclick = async () => {
+      const targetName = $("#moveModelTargetName")?.dataset.modelName;
+      const newGroup = $("#moveNewGroupNameInput")?.value.trim();
+      const targetGroup = newGroup || $("#moveTargetGroupSelect")?.value;
+      if (!targetName) return;
+      try {
+        await api("/api/model/move", { model: targetName, group: targetGroup });
+        await refreshState();
+        $("#moveModelModal").close();
+        if ($("#modelManagerModal") && $("#modelManagerModal").open) {
+          renderModelManager();
+        }
+      } catch (e) {
+        alert("Error moving model: " + e.message);
+      }
+    };
+  }
+
+  // Rename Model Modal confirm
+  const btnConfirmRenameModel = $("#btnConfirmRenameModel");
+  const renameModelInput = $("#renameModelInput");
+  if (btnConfirmRenameModel && renameModelInput) {
+    const doRename = async () => {
+      const oldName = renameModelInput.dataset.oldName;
+      const newName = renameModelInput.value.trim();
+      if (!oldName || !newName || oldName === newName) return;
+      try {
+        await api("/api/model/rename", { model: oldName, new_name: newName });
+        selectedModelNames.delete(oldName);
+        await refreshState();
+        $("#renameModelModal").close();
+        if (currentModel === oldName) {
+          await selectModel(newName, { force: true });
+        }
+        if ($("#modelManagerModal") && $("#modelManagerModal").open) {
+          renderModelManager();
+        }
+      } catch (e) {
+        alert("Error renaming model: " + e.message);
+      }
+    };
+    btnConfirmRenameModel.onclick = doRename;
+    renameModelInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doRename();
+      }
+    });
+  }
+
+  // New Group Modal confirm
+  const btnConfirmCreateGroup = $("#btnConfirmCreateGroup");
+  const newGroupNameInput = $("#newGroupNameInput");
+  if (btnConfirmCreateGroup && newGroupNameInput) {
+    const doCreateGroup = async () => {
+      const groupName = newGroupNameInput.value.trim();
+      if (!groupName) return;
+      try {
+        await api("/api/group/create", { group: groupName });
+        await refreshState();
+        $("#newGroupModal").close();
+        if ($("#modelManagerModal") && $("#modelManagerModal").open) {
+          renderModelManager();
+        }
+      } catch (e) {
+        alert("Error creating group: " + e.message);
+      }
+    };
+    btnConfirmCreateGroup.onclick = doCreateGroup;
+    newGroupNameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doCreateGroup();
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // File Upload & Drag and Drop
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -1712,6 +2508,13 @@ function setupShortcuts() {
       return;
     }
 
+    // Ctrl+M: Open Model Manager
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m") {
+      e.preventDefault();
+      handleAction("model-manager");
+      return;
+    }
+
     // Ctrl+I: Toggle Inspector
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
       e.preventDefault();
@@ -1792,4 +2595,14 @@ window.workbench = {
   setViewbarCollapsed,
   applyLogHeight,
   getCurrentJobWorkingModel: () => currentJobWorkingModel,
+  openRootModal,
+  switchRoot,
+  openModelManagerModal,
+  renderModelManager,
+  promptMoveModel,
+  promptRenameModel,
+  promptDuplicateModel,
+  promptNewGroup,
+  deleteSpecificModel,
+  deleteCurrentModel,
 };
