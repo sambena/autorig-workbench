@@ -18,13 +18,18 @@
 #   3. scales it so its longest footprint side is --length metres (or --height for its height);
 #   4. with --carve-wheels, cuts the tyres out of a truck in one piece; with --wheels, takes a truck already split into
 #      parts (hyper3d bang) and names the four corner parts;
-#   5. makes LOD1 and LOD2 by decimation, named <Name>_LOD0, _LOD1, _LOD2 (an engine's LODGroup);
+#   5. makes LOD1 and LOD2 by decimation, named <Name>_LOD0, _LOD1, _LOD2 (an engine's LODGroup); with the pymeshlab
+#      extra the LODs' collapse is PyMeshLab's (the silhouette holds), without it Blender's Decimate;
 #   6. exports the FBX: -Z forward, Y up, unit scale applied, no leaf bones.
 # It never repairs topology: a model that is wrong gets regenerated, not fixed.
 import argparse, math, os, sys
 
 import bpy
 from mathutils import Matrix, Vector
+
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core")]
+import extras
+extras.activate()
 
 
 def args():
@@ -537,21 +542,37 @@ def carve_wheels(obj):
     return wheels
 
 
+def collapse(obj, target, textured_ok=False):
+    """obj cut to `target` triangles: PyMeshLab's collapse when that extra is installed and the mesh has no UVs, or
+    textured_ok (a distant LOD, where the silhouette is what shows), else Blender's Decimate. PyMeshLab holds the shape
+    far better; on a textured mesh seen close it smears the texture at seams unless the texture is baked afresh
+    (--atlas). docs/GAME-TOOLS.md, "Decimation compared". Returns the method."""
+    import mesh_bridge
+    if mesh_bridge.decimate(obj, target, textured_ok=textured_ok) is not None:
+        return "pymeshlab"
+    obj.data.calc_loop_triangles()
+    current = len(obj.data.loop_triangles)
+    mod = obj.modifiers.new("Decimate", "DECIMATE")
+    mod.ratio = target / float(max(current, 1))
+    mod.use_collapse_triangulate = True
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    return "blender"
+
+
 def make_lods(obj, name, ratios):
     obj.name = name + "_LOD0"
     obj.data.name = name + "_LOD0"
     lods = [obj]
+    obj.data.calc_loop_triangles()
+    base = len(obj.data.loop_triangles)
     for i, ratio in enumerate(ratios, start=1):
         copy = obj.copy()
         copy.data = obj.data.copy()
         copy.name = name + "_LOD%d" % i
         copy.data.name = copy.name
         bpy.context.scene.collection.objects.link(copy)
-        mod = copy.modifiers.new("Decimate", "DECIMATE")
-        mod.ratio = ratio
-        mod.use_collapse_triangulate = True
-        bpy.context.view_layer.objects.active = copy
-        bpy.ops.object.modifier_apply(modifier=mod.name)
+        collapse(copy, max(4, int(round(base * ratio))), textured_ok=True)
         lods.append(copy)
     # Unity wants the LODs as siblings under one root named after the model
     root = bpy.data.objects.new(name, None)
@@ -570,13 +591,9 @@ def decimate_to_triangles(obj, target):
     if current <= target:
         print("game_prop.py: %s already has %d triangles (target %d); keeping it" % (obj.name, current, target))
         return
-    mod = obj.modifiers.new("Base mesh budget", "DECIMATE")
-    mod.ratio = target / float(current)
-    mod.use_collapse_triangulate = True
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    method = collapse(obj, target)
     obj.data.calc_loop_triangles()
-    print("game_prop.py: reduced base mesh from %d to %d triangles" % (current, len(obj.data.loop_triangles)))
+    print("game_prop.py: reduced base mesh from %d to %d triangles (%s)" % (current, len(obj.data.loop_triangles), method))
 
 
 def export(root, lods, out_path, extras=(), path_mode="COPY"):
