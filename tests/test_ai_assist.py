@@ -319,6 +319,7 @@ class FixRigTools(unittest.TestCase):
             self.run_tool("propose_spec", spec=spec, summary="the same")
         new = json.loads(json.dumps(spec))
         new.setdefault("notes", {})["ai"] = "tried by a test"
+        self.assertEqual(self.run_tool("propose_spec", spec=new, summary="")["change"]["summary"], "Change notes")
         out = self.run_tool("propose_spec", spec=new, summary="add a note")
         self.assertTrue(out["replaces"])
         self.assertIn("tried by a test", out["change"]["detail"])

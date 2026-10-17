@@ -327,7 +327,10 @@ one pull request each, code first; models are run through the tool only in R6.
   - Every request shows its worst-case cost first, and the monthly limit holds every model call.
   - First task, **Fix this rig**: reads the audit and pictures, tries specs on a scratch copy, proposes a `rig.json`;
     apply re-rigs and can be undone.
-  - Tested with a scripted AI (no paid calls) and on a real trial rig. Not yet run against a paid provider.
+  - Tested with a scripted AI and on a real trial rig.
+  - First paid run (Claude Haiku 5.5, $0.009 over 8 calls) on the biped sample: it found 4 tears at the left hip and
+    added thigh-to-spine blends. Its trial went FAIL -> PASS, and applying it re-rigged the biped to PASS; Undo put it
+    back to FAIL.
   - docs/AI-ASSIST.md lists the eleven tasks to add next.
 
 ## Risks

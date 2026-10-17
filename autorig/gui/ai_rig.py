@@ -227,7 +227,7 @@ class FixRig:
                 same = False
             if same:
                 raise ValueError("that is the rig.json the model already has")
-            summary = str(args.get("summary") or "a new rig.json").strip()[:200]
+            summary = str(args.get("summary") or "").strip()[:200] or changed_fields(old, spec)
             change = {"type": "spec", "summary": summary, "spec": spec, "base": spec_api.text_hash(old),
                       "detail": spec_api.diff(old, new)[:6000]}
             note = (" Warnings: " + "; ".join(w["message"] for w in warns[:5])) if warns else ""
@@ -346,6 +346,18 @@ class FixRig:
             except ValueError as e:
                 out["error"] = "rig.json is back, but the re-rig didn't start: %s" % e
         return out
+
+
+def changed_fields(old_text, spec):
+    """A plan line when the AI gave none: which rig.json fields the proposal changes."""
+    try:
+        old = json.loads(old_text) if old_text else {}
+    except ValueError:
+        old = {}
+    names = ["rig." + k for k in sorted(set((old.get("rig") or {})) | set((spec.get("rig") or {})))
+             if (old.get("rig") or {}).get(k) != (spec.get("rig") or {}).get(k)]
+    names += [k for k in sorted(set(old) | set(spec)) if k != "rig" and old.get(k) != spec.get(k)]
+    return "Change " + ", ".join(names[:6]) + (" and more" if len(names) > 6 else "") if names else "A new rig.json"
 
 
 def spec_reference(topic):
