@@ -24,13 +24,14 @@ def main(argv=None):
     parser.add_argument("--target", default="all", choices=["unreal", "unity", "godot", "web", "all"],
                         help="Target engine or platform preset (default: all).")
     parser.add_argument("--out", default=None, help="Custom output directory.")
+    parser.add_argument("--include-lods", action="store_true", help="Include current Studio LODs; export one native target at a time.")
     parser.add_argument("--engine-lods", action="store_true",
                         help="Add the Studio engine tool's merged LOD FBX to Unity/Unreal packages.")
     args = parser.parse_args(argv)
 
     try:
         res = exporter.create_export_package(args.model, target=args.target, out_dir=args.out,
-                                             engine_lods=args.engine_lods)
+                                             include_lods=args.include_lods, engine_lods=args.engine_lods)
         print(f"EXPORT {args.model} {args.target} -> {res['zip_path']} ({res['zip_size']} bytes)")
         if "presets" in res:
             for t, p in res["presets"].items():

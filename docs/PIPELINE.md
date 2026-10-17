@@ -13,6 +13,7 @@ from the front quarter; bottom row: posed). `qa_overview.py` puts all of them on
 
 | Step | Script | Runs in | What it does |
 |---|---|---|---|
+| Prepare | `prepare.py` | Blender | optional, before the rest. A cleaned copy in `<model>/prepared/`: transforms applied, feet on z=0 (or centred, when the spec says so), facing -Y, armature turned with the mesh. Reports UV stretch and thin joint bands. Does not modify the file you dropped, and does not remesh |
 | Survey | `survey.py`, `facing.py` | Blender | what the source holds (skeleton kind, bones, size, how much is skinned) and four views to read `forward` from |
 | Measure | `measure.py`, `probe_tips.py` | Blender | orthographic sheets on the spec's 0..1 grid with the current rig drawn over them; where a boneless model's limbs end |
 | Rig | `rerig.py`, `rerig_humanoid.py`, or a custom builder | Blender | builds the armature from the spec, skins it, writes the `.blend`, the `.fbx` and the bend test |
@@ -24,7 +25,16 @@ from the front quarter; bottom row: posed). `qa_overview.py` puts all of them on
 | Source view | `source_preview.py` | Blender | `<work>/source/<model>.glb` (the source mesh as it came, no skin) and `.json` (its own joints), for the spec editor only |
 
 `cli/pipeline.py` chains rig, trim and audit for several models (`-preview` adds the preview); the GUI's Run all adds
-publish, clips and the preview.
+publish, clips and the preview. Prepare is not part of that chain. Run it on a model that needs the cleanup:
+
+    python autorig/cli/run.py prepare wolf
+    python autorig/cli/run.py prepare wolf --unwrap --loops --format glb,fbx,obj
+
+`--unwrap` runs Smart UV Project only when the UV check fails, and a baked texture will not follow the new
+islands. `--loops` cuts one extra loop through each thin band (knee, hip, elbow, shoulder) on an upright body.
+While `prepared/prepare.json` is current, every later step reads that copy instead of the raw file. Delete
+`prepared/` to go back. If the spec named a `forward` other than -Y, prepare sets it to -Y and keeps the old
+value in the report and in `rig.json.bak`.
 
 ## Conventions of a rebuilt rig
 

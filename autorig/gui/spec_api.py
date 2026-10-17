@@ -845,6 +845,8 @@ def post(h, app, srv, path, body):
             else:
                 if preset_name == "quadruped_gallop":
                     st = gait.evaluate_quadruped_gallop(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
+                elif preset_name == "quadruped_trot":
+                    st = gait.evaluate_quadruped_trot(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
                 else:
                     st = gait.evaluate_quadruped_walk(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
             frames_out.append(st)

@@ -767,16 +767,26 @@ def creature_walker(rig, style, spec=None):
     L = rig.size
     spec = spec or {}
     walk_spec = spec.get("walk") if isinstance(spec.get("walk"), dict) else {}
-    preset_name = walk_spec.get("preset") or spec.get("gait") or ("quadruped_trot" if spec.get("gait") == "trot" else "quadruped_walk")
+    # walk.preset names a GAIT_PRESETS entry. gait "trot" is the 2-beat diagonal. "walk" and "gallop" are gait
+    # names, not presets: merge_gait_params would fall back to the biped natural and the creature would walk like one.
+    named = walk_spec.get("preset")
+    if named in gait.GAIT_PRESETS:
+        preset_name = named
+    elif spec.get("gait") == "trot":
+        preset_name = "quadruped_trot"
+    else:
+        preset_name = "quadruped_walk"
     overrides = dict(walk_spec)
     for k in ("stride", "cadence", "sway", "bob", "foot_lift", "duty_factor", "tail_wave"):
         if k in spec and k not in overrides:
             overrides[k] = spec[k]
     gait_params = gait.merge_gait_params(preset_name, overrides)
+    # The trot clip merges the trot preset with what the spec actually set. Passing gait_params would stamp the
+    # walk's duty and bob onto it.
+    trot_params = gait.merge_gait_params("quadruped_trot", overrides)
 
     stride = 0.26 * L * gait_params.get("stride", 1.0)
     lift = 0.06 * L * gait_params.get("foot_lift", 1.0)
-    duty = gait_params.get("duty_factor", 0.65)
     legless = not rig.feet
     discharge = style == "discharge"
     # windup: "rear" (up on the hind legs, forelegs raised: the default bite) or "head_down" (a big beast bracing to
@@ -830,34 +840,53 @@ def creature_walker(rig, style, spec=None):
 
     clips["idle"] = (48, idle, True)
 
-    is_quad = len(rig.feet) == 4 and any("lateral_phase" in f for f in rig.feet) and spec.get("gait") != "trot" and preset_name != "quadruped_trot"
+    # Four feet with a lateral-sequence phase are a quadruped. gait "trot" (or the trot preset) makes the walk
+    # clip the 2-beat diagonal instead, and does not add a separate trot and gallop: that clip is the trot.
+    has_lateral = len(rig.feet) == 4 and any("lateral_phase" in f for f in rig.feet)
+    wants_trot = spec.get("gait") == "trot" or preset_name == "quadruped_trot"
+    is_quad = has_lateral and not wants_trot
+
+    def tail_scale(base):
+        # spec tail_wave scales the amplitude. The evaluator's tail_wave is already one sine sample; passing that
+        # sample in here would wave the tail twice.
+        scale = overrides.get("tail_wave", 1.0)
+        try:
+            scale = float(scale)
+        except (TypeError, ValueError):
+            scale = 1.0
+        return base * scale
+
+    def apply_gait(p, phase, st, sway, tail_amount):
+        """Feet, body and head from a quadruped evaluator. The abdomen is not in the gait result: each segment
+        follows the body's yaw, one beat further behind the last."""
+        feet_st = st["feet"]
+        body_st = st["body"]
+        for foot in rig.feet:
+            pos = feet_st.get(foot["name"])
+            if pos:
+                p.move(foot["name"], FORWARD * pos["along"] + UP * pos["up"])
+        p.move(rig.body, UP * body_st["pos"][2])
+        p.turn(rig.body, LATERAL, body_st["rot"][0])
+        p.turn(rig.body, FORWARD, body_st["rot"][1])
+        p.turn(rig.body, UP, body_st["rot"][2])
+        p.turn(rig.head, LATERAL, st["head"]["pitch"])
+        p.turn(rig.head, UP, st["head"]["yaw"])
+        t = 2.0 * math.pi * phase
+        for i, a in enumerate(rig.abdomen):
+            p.turn(a, UP, 3.0 * sway * math.sin(t - 0.9 * (i + 1)))
+        tail_wave(p, t, tail_amount)
+        return p
 
     # ---- walk: 4-beat lateral sequence for quadrupeds, 2-group trot/scuttle otherwise -------
     def walk(f, n):
         p = Pose()
         phase = f / float(n)
         if is_quad:
-            for foot in rig.feet:
-                offset = foot.get("lateral_phase", 0.0)
-                local = (phase - offset) % 1.0
-                if local < duty:
-                    s = local / duty
-                    along = stride * (0.5 - s)
-                    up = 0.0
-                else:
-                    s = (local - duty) / (1.0 - duty)
-                    along = stride * (-0.5 + s)
-                    up = lift * math.sin(math.pi * s)
-                p.move(foot["name"], FORWARD * along + UP * up)
-            t = 2 * math.pi * phase
-            p.move(rig.body, UP * (0.010 * L * gait_params.get("bob", 1.0) * math.cos(4 * t)))
-            p.turn(rig.body, UP, 2.5 * gait_params.get("sway", 1.0) * math.sin(t))             # horizontal S-curve spine sway
-            p.turn(rig.body, FORWARD, 1.8 * gait_params.get("sway", 1.0) * math.cos(t))         # roll with the lateral gait
-            p.turn(rig.head, UP, -2.5 * gait_params.get("sway", 1.0) * math.sin(t))
-            for i, a in enumerate(rig.abdomen):
-                p.turn(a, UP, 3.0 * gait_params.get("sway", 1.0) * math.sin(t - 0.9 * (i + 1)))
-            tail_wave(p, t, 9.0 * (gait_params.get("tail_wave", 1.0) if "tail_wave" in gait_params else 1.0))
-            return p
+            st = gait.evaluate_quadruped_walk(phase, L, L, feet_info=rig.feet, params=gait_params)
+            return apply_gait(p, phase, st, gait_params.get("sway", 1.0), tail_scale(9.0))
+        if has_lateral and wants_trot:
+            st = gait.evaluate_quadruped_trot(phase, L, L, feet_info=rig.feet, params=trot_params)
+            return apply_gait(p, phase, st, trot_params.get("sway", 1.0), tail_scale(12.0))
 
         for foot in rig.feet:
             local = (phase + 0.5 * foot["group"]) % 1.0
@@ -889,23 +918,8 @@ def creature_walker(rig, style, spec=None):
     def trot(f, n):
         p = Pose()
         phase = f / float(n)
-        for foot in rig.feet:
-            local = (phase + 0.5 * foot["group"]) % 1.0
-            if local < 0.5:
-                s = local / 0.5
-                along = stride * (0.5 - s)
-                up = 0.0
-            else:
-                s = (local - 0.5) / 0.5
-                along = stride * (-0.5 + s)
-                up = lift * math.sin(math.pi * s)
-            p.move(foot["name"], FORWARD * along + UP * up)
-        t = 2 * math.pi * phase
-        p.move(rig.body, UP * (0.018 * L * math.cos(2 * t)))
-        p.turn(rig.body, FORWARD, 3.0 * math.sin(t))
-        p.turn(rig.head, UP, -2.0 * math.sin(t))
-        tail_wave(p, t, 12.0)
-        return p
+        st = gait.evaluate_quadruped_trot(phase, L, L, feet_info=rig.feet, params=trot_params)
+        return apply_gait(p, phase, st, trot_params.get("sway", 1.0), tail_scale(12.0))
 
     def gallop(f, n):
         p = Pose()
@@ -1178,9 +1192,22 @@ def creature_walker(rig, style, spec=None):
 
     # the walk as built: a quadruped's 4-beat walk is 24 frames with each foot planted `duty` of the cycle, the
     # 2-group gait 16 frames at half and half (the facts used to say 16 frames for both, so the quad walk's speed
-    # was a third too fast for its feet)
-    return clips, {"windUpEnd": windup_end / 24.0, "stride": stride, "walkFrames": 24 if is_quad else 16,
-                   "duty": duty if is_quad else 0.5}
+    # was a third too fast for its feet). The stride is the planted foot's back-slide, which is the evaluator's
+    # stride_length once the clip uses one: the old 0.26*L figure would publish a speed the feet no longer match.
+    if is_quad:
+        fact_stride = gait.evaluate_quadruped_walk(0.0, L, L, params=gait_params)["stride_length"]
+        fact_duty = gait.merge_gait_params("quadruped_walk", gait_params)["duty_factor"]
+        fact_frames = 24
+    elif has_lateral and wants_trot:
+        fact_stride = gait.evaluate_quadruped_trot(0.0, L, L, params=trot_params)["stride_length"]
+        fact_duty = trot_params["duty_factor"]
+        fact_frames = 16
+    else:
+        fact_stride = stride
+        fact_duty = 0.5
+        fact_frames = 16
+    return clips, {"windUpEnd": windup_end / 24.0, "stride": fact_stride, "walkFrames": fact_frames,
+                   "duty": fact_duty}
 
 
 def humanoid_walker(rig, style, spec=None):

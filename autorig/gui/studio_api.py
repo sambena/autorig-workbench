@@ -32,8 +32,15 @@ def get(handler, app, server, path, q):
 
 
 def post(handler,app,server,path,body):
-    if path not in ('/api/studio/save','/api/studio/run'): return False
+    if path not in ('/api/studio/save','/api/studio/run', '/api/studio/import'): return False
     name,group,folder=model(body.get('model',''),server)
+    if path == '/api/studio/import':
+        if any(j.model == name and j.state in ('queued', 'running') for j in app.runner.jobs.values()):
+            raise ValueError('wait for this model\'s jobs to finish before importing an output')
+        from autorig.core.studio_assets import promote_output
+        result = promote_output(name, body.get('artifact', ''), body.get('name', ''), body.get('group', ''))
+        handler._send(200, result)
+        return True
     tool=body.get('tool','');settings=studio.validate(tool,body.get('settings',{}))
     if tool in ('reference','generate') and (settings['folder'] or tool=='generate'):
         studio.input_folder(settings['folder'],folder,[server.layout.ROOT,server.layout.WORK])

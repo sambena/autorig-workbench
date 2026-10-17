@@ -31,6 +31,7 @@ DEFAULT_TIMEOUTS = {
     "preview": 300.0,
     "publish": 120.0,
     "doctor": 300.0,
+    "prepare": 600.0,
     "retarget_probe": 120.0,
     "retarget_worker": 1800.0,
     "retarget": 0.0,
@@ -44,6 +45,7 @@ SCRIPT_STEPS = {
     "studio_job": "studio", "studio_blender": "studio", "clip_check": "studio",
     "rerig": "rig", "rerig_humanoid": "rig", "run_builder": "rig",
     "decimate": "trim", "make_clips": "clips", "preview_glb": "preview", "mesh_doctor": "doctor",
+    "prepare": "prepare",
 }
 
 DEFAULT_MAX_MEMORY_MB = 4096.0  # 4 GB max per step

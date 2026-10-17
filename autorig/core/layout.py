@@ -37,8 +37,9 @@ WORK = os.path.abspath(os.environ.get("AUTORIG_WORK") or detect_work_dir(ROOT))
 
 # Source formats, in order of preference when a folder holds more than one kind.
 SOURCE_EXTS = (".fbx", ".glb", ".gltf", ".obj")
-# Folders the tool writes inside a model folder; nothing under them is ever a source.
-OUTPUT_DIRS = ("clips", "_studio")
+# Folders the tool writes inside a model folder; nothing under them is ever a raw source.
+# prepared/ is read by source_model only when its prepare.json is still current.
+OUTPUT_DIRS = ("clips", "prepared", "_studio")
 # Model and group folder names the GUI will create (rename, duplicate, new group).
 FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 
@@ -279,8 +280,16 @@ def _is_output(path, key):
     return any(p.startswith("rigged") or p in OUTPUT_DIRS for p in parts)
 
 
-def source_model(key):
-    """The source export, never one of the tool's own outputs (rigged*/, clips/).
+def is_prepared(path):
+    """True when the file itself sits in a folder named prepared (the copy steps/prepare.py writes).
+
+    A group or a models root that happens to be named prepared does not count: only the parent of the file.
+    """
+    return os.path.basename(os.path.dirname(os.path.normpath(path or ""))) == "prepared"
+
+
+def raw_source(key):
+    """The source export the user dropped, never one of the tool's own outputs (rigged*/, clips/, prepared/).
 
     When a folder holds more than one, the one with its own textures wins. Generators often offer two downloads: a
     textured export (`Suit+shell.fbx` beside `Suit+shell.fbm`, with UVs the texture was baked against) and a bare
@@ -304,6 +313,50 @@ def source_model(key):
             key, len(hits), os.path.relpath(hits[0], pack_dir(key)), has_own_textures(hits[0])))
 
     return hits[0] if hits else None
+
+
+def prepared_model(key):
+    """The cleaned copy from steps/prepare.py, when it exists and the raw file has not been replaced since.
+
+    prepare.json names the file. A path that leaves prepared/ is refused. A raw file newer than the mtime
+    recorded in that report wins, so a replaced download is rigged instead of a stale cleanup.
+    """
+    report_path = os.path.join(pack_dir(key), "prepared", "prepare.json")
+    if not os.path.isfile(report_path):
+        return None
+    try:
+        with open(report_path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict):
+        return None
+    name = report.get("output")
+    # A single file name. Anything with a directory in it could leave prepared/.
+    if not isinstance(name, str) or not name or name != os.path.basename(name) or name in (".", ".."):
+        return None
+    path = os.path.join(pack_dir(key), "prepared", name)
+    if not os.path.isfile(path):
+        return None
+    raw = raw_source(key)
+    stamp = report.get("source_mtime")
+    if raw and stamp is not None:
+        try:
+            if os.path.getmtime(raw) > float(stamp) + 1.0:
+                print("LAYOUT %s: source is newer than prepared/; using the source" % key)
+                return None
+        except (OSError, TypeError, ValueError):
+            pass
+    return path
+
+
+def source_model(key):
+    """The mesh the steps read: a current prepared copy when there is one, otherwise the raw export."""
+    prep = prepared_model(key)
+    if prep:
+        print("LAYOUT %s: using %s" % (key, os.path.relpath(prep, pack_dir(key))))
+        return prep
+    return raw_source(key)
 
 
 # The older name, kept for the steps that still call it.

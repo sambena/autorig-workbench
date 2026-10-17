@@ -617,6 +617,7 @@ async function handleAction(action) {
     case "pipe-rebake-clips":
       rebakeCurrentModelClips();
       break;
+    case "pipe-prepare":
     case "pipe-survey":
     case "pipe-rig":
     case "pipe-trim":
@@ -1601,35 +1602,39 @@ function openExportModal(targetPreset = "all") {
 
 // ---- Mesh Doctor Modal
 async function openMeshDoctor() {
-  if (!currentModel) return;
   openModal("#doctorModal");
   const body = $("#doctorModalBody");
   if (!body) return;
-  body.innerHTML = `<div class="empty">Analyzing geometry for ${esc(currentModel)}…</div>`;
+  if (!currentModel) {
+    body.innerHTML = `<div class="empty">Select a model first. Mesh Doctor reports on that model's source file and does not change it.</div>`;
+    return;
+  }
+  body.innerHTML = `<div class="empty">Checking ${esc(currentModel)}… An OBJ is read here. FBX and glTF open in Blender, which can take a minute.</div>`;
 
   try {
     const diag = await api("/api/doctor?model=" + encodeURIComponent(currentModel));
-    if (diag.grade === "UNCHECKED") {               // a format the server cannot read without Blender
+    if (diag.grade === "UNCHECKED") {
       body.innerHTML = `<div class="row" style="margin-bottom:12px"><span class="chip" style="font-size:14px;padding:3px 10px">UNCHECKED</span>` +
         `<span class="meta">${esc(diag.file || "")}</span></div><div class="why">${esc(diag.note || "")}</div>`;
       return;
     }
+    const cell = (v) => (v == null || v === "" ? "—" : esc(v));
     const gClass = diag.grade === "HEALTHY" ? "pass" : (diag.grade === "WARN" ? "check" : "fail");
+    const verdict = diag.health_score === 100
+      ? `Mesh is fully manifold and clean. Automatic bone heat skinning will bind accurately.`
+      : `Defects can make the Rig step fall back to voxel-proxy skinning.`;
     body.innerHTML = `
       <div class="row" style="margin-bottom:12px"><span class="chip ${gClass}" style="font-size:14px;padding:3px 10px">${esc(diag.grade)}</span>` +
-      `<h3 style="margin:0;font-size:18px">Health Score: ${esc(diag.health_score)}/100</h3><span class="meta">${esc(diag.file || "")}</span></div>` +
-      `<div class="meta" style="margin-bottom:12px">${esc(diag.verts || 0)} vertices · ${esc(diag.faces || 0)} faces</div>` +
+      `<h3 style="margin:0;font-size:18px">Health Score: ${cell(diag.health_score)}/100</h3><span class="meta">${esc(diag.file || "")}</span></div>` +
+      `<div class="meta" style="margin-bottom:12px">${cell(diag.verts)} vertices · ${cell(diag.faces)} faces</div>` +
       `<table style="margin-top:8px">` +
-      `<tr><td>Non-manifold edges (must be 0 for voxel proxy)</td><td class="num"><b>${esc(diag.non_manifold_edges ?? 0)}</b></td></tr>` +
-      `<tr><td>Degenerate / zero-area faces</td><td class="num"><b>${esc(diag.degenerate_faces ?? 0)}</b></td></tr>` +
-      `<tr><td>Loose isolated vertices</td><td class="num"><b>${esc(diag.loose_verts ?? 0)}</b></td></tr>` +
-      `<tr><td>Duplicate coincident vertices</td><td class="num"><b>${esc(diag.duplicate_verts ?? 0)}</b></td></tr>` +
+      `<tr><td>Non-manifold edges (must be 0 for voxel proxy)</td><td class="num"><b>${cell(diag.non_manifold_edges)}</b></td></tr>` +
+      `<tr><td>Degenerate / zero-area faces</td><td class="num"><b>${cell(diag.degenerate_faces)}</b></td></tr>` +
+      `<tr><td>Loose isolated vertices</td><td class="num"><b>${cell(diag.loose_verts)}</b></td></tr>` +
+      `<tr><td>Duplicate coincident vertices</td><td class="num"><b>${cell(diag.duplicate_verts)}</b></td></tr>` +
       `</table>` +
-      `<div class="why" style="margin-top:14px">` +
-      (diag.health_score === 100
-        ? `✅ Mesh is fully manifold and clean. Automatic bone heat skinning will bind accurately.`
-        : `⚠️ Non-zero defects may trigger fallback to voxel proxy skinning during the Rig step.`) +
-      `</div>`;
+      (diag.note ? `<div class="why" style="margin-top:8px">${esc(diag.note)}</div>` : "") +
+      `<div class="why" style="margin-top:14px">${verdict}</div>`;
   } catch (e) {
     body.innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
   }
@@ -1674,6 +1679,19 @@ async function openModelDetails() {
   try {
     const d = await api("/api/model?name=" + encodeURIComponent(currentModel));
     let html = `<div class="meta" style="margin-bottom:10px"><b>Directory:</b> ${esc(d.dir)}</div>`;
+
+    if (d.prepare) {
+      const p = d.prepare;
+      const uv = (p.uv && p.uv.note) || "";
+      const joints = (p.joints && p.joints.note) || "";
+      html += `<h3>Prepare</h3><table class="kv">` +
+        `<tr><td>Copy</td><td>${esc(p.output || "")}</td></tr>` +
+        `<tr><td>Turned</td><td>${esc(p.turned_deg)}° (${esc(p.forward_how || "")})</td></tr>` +
+        `<tr><td>Origin</td><td>${esc(p.origin || "")}</td></tr>` +
+        `<tr><td>UVs</td><td>${esc(uv)}</td></tr>` +
+        `<tr><td>Joints</td><td>${esc(joints)}</td></tr>` +
+        `</table>`;
+    }
 
     if (d.survey) {
       html += `<h3>Survey Information</h3><table class="kv">${Object.entries(d.survey).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(Array.isArray(v) ? v.join(" × ") : v)}</td></tr>`).join("")}</table>`;

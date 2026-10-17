@@ -33,7 +33,8 @@ UPLOAD_EXTS = {".fbx", ".glb", ".gltf", ".bin", ".obj", ".mtl", ".png", ".jpg", 
                ".tiff", ".webp", ".zip", ".json", ".py", ".bvh"}
 SKIP_FILES = {"model.json", "pack.json"}          # outputs: publish writes them again
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
-STEP_NAMES = ("survey", "rig", "trim", "audit", "clips", "publish", "preview", "all", "rebake-clips", "rebake_clips")
+STEP_NAMES = ("prepare", "survey", "rig", "trim", "audit", "clips", "publish", "preview", "all",
+              "rebake-clips", "rebake_clips")
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
 layout = spec_store = blender = grades = exporter = None    # imported in main(), once the environment names the folders
@@ -282,6 +283,46 @@ def find_group(name):
     return None
 
 
+def doctor_report(src, name):
+    """Geometry report for one source file. The file itself is not modified.
+
+    An OBJ is read in this process. FBX and glTF need Blender, which writes
+    work/doctor/<name>.json and does not overwrite the source.
+    """
+    ext = os.path.splitext(src)[1].lower()
+    from autorig.core import mesh_doctor as _doc
+    if ext == ".obj" or _doc.HAVE_BLENDER:
+        return _doc.inspect_source_model(src)
+    if blender.find(required=False) is None:
+        return {
+            "file": os.path.basename(src),
+            "size_bytes": os.path.getsize(src),
+            "grade": "UNCHECKED",
+            "health_score": None,
+            "note": "Blender is not available, so this %s file was not checked." % ext,
+            "pass": None,
+        }
+    r = blender.run("mesh_doctor.py", name)
+    report = os.path.join(layout.work_dir("doctor"), name + ".json")
+    if r.returncode != 0 or not os.path.isfile(report):
+        text = ((r.stderr or "") + "\n" + (r.stdout or "")).strip()
+        picked = ""
+        for line in reversed(text.splitlines()):
+            if "DOCTOR_ERROR" in line or line.startswith("Error"):
+                picked = line.split("DOCTOR_ERROR:", 1)[-1].strip()
+                break
+        if not picked:
+            picked = text[-500:] if text else "mesh doctor failed"
+        if getattr(r, "timed_out", False):
+            picked = "Mesh Doctor timed out. " + picked
+        raise ValueError(picked)
+    with open(report, encoding="utf-8") as fh:
+        diag = json.load(fh)
+    if isinstance(diag, dict) and diag.get("error") and not diag.get("grade"):
+        raise ValueError(str(diag["error"]))
+    return diag
+
+
 def export_manifest(name):
     """The winged archetype's export manifest beside the rig, if any (make_clips.py)."""
     import glob
@@ -343,6 +384,7 @@ def status(group, name):
         "source": os.path.relpath(src, d).replace("\\", "/") if src else None,
         "source_ext": os.path.splitext(src)[1].lower() if src else None,
         "has_textures": bool(src and layout.has_own_textures(src)),
+        "prepared": bool(src and layout.is_prepared(src)),
         "spec": bool(spec), "kind": rig.get("kind"), "rig_folder": os.path.basename(rd),
         "rigged": os.path.exists(blend), "rigged_fbx": os.path.exists(fbx),
         "clips_spec": c_arch,
@@ -364,6 +406,7 @@ def availability(st, spec, d):
     rig = spec.get("rig") or {}
     no_src = "no source export (FBX, GLB, glTF or OBJ) in the model folder"
     why = {}
+    why["prepare"] = None if _quiet(layout.raw_source, st["name"]) else no_src
     why["survey"] = None if st["source"] else no_src
     if st["spec_error"]:
         why["rig"] = "rig.json cannot be read: " + st["spec_error"]
@@ -405,6 +448,9 @@ def commands(group, name, step, spec):
     py = [sys.executable, "-u"]
     rig = spec.get("rig") or {}
 
+    def prepare_step():
+        return [("prepare", blender_cmd("prepare.py", "-only", name), None, name)]
+
     def survey():
         return [("survey", blender_cmd("survey.py", "-only", name), None, name),
                 ("facing views", blender_cmd("facing.py", "-only", name, "-out", os.path.join(work, "facing")), None, name)]
@@ -441,6 +487,7 @@ def commands(group, name, step, spec):
     def preview():                                                # results viewer: rigged/preview.glb
         return [("preview for the viewer", blender_cmd("preview_glb.py", "-only", name), None, name)]
 
+    if step == "prepare": return prepare_step()
     if step == "survey": return survey()
     if step == "rig": return rig_step()
     if step == "trim": return trim()
@@ -751,6 +798,11 @@ def details(group, name):
         return None
 
     out = {"status": st, "dir": d, "spec": spec or None, "notes": spec.get("notes", {}) if spec else {}}
+    prep_path = os.path.join(d, "prepared", "prepare.json")
+    try:
+        out["prepare"] = json.load(open(prep_path, encoding="utf-8")) if os.path.isfile(prep_path) else None
+    except Exception:
+        out["prepare"] = None
     sp = os.path.join(work, "survey", name + ".json")
     out["survey"] = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else None
     out["facing"] = [url(p) for p in sorted(glob.glob(os.path.join(glob.escape(work), "facing", glob.escape(name) + "__*.png")))]
@@ -1083,11 +1135,7 @@ def make_handler(app):
                     if g is None: return self._send(404, {"error": "no model " + name})
                     src = _quiet(layout.source_model, name)
                     if not src: return self._send(404, {"error": "no source 3D model found"})
-                    try:
-                        import mesh_doctor as _doc
-                    except ImportError:
-                        from autorig.core import mesh_doctor as _doc
-                    return self._send(200, _doc.inspect_source_model(src))
+                    return self._send(200, doctor_report(src, name))
                 if path == "/api/retarget/plan":
                     name = clean_name((q.get("model") or q.get("name") or [""])[0])
                     mocap_file = (q.get("file") or [""])[0].strip()

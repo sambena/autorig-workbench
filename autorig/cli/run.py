@@ -4,7 +4,7 @@
 #   python autorig/cli/run.py                          the GUI (same as python -m autorig)
 #   python autorig/cli/run.py gui [--port N] ...       the GUI, with its options
 #   python autorig/cli/run.py wolf,moth [options]      rig -> trim -> audit (cli/pipeline.py and its options)
-#   python autorig/cli/run.py rig wolf,moth            one step: rig, survey, facing, trim, audit, clips, measure, probe
+#   python autorig/cli/run.py rig wolf,moth            one step: rig, prepare, survey, facing, trim, audit, clips, measure, probe
 #   python autorig/cli/run.py auto-tune wolf,moth      closed-loop auto-tuning optimizer (self-healing rigs)
 #   python autorig/cli/run.py preview wolf,moth        the 3D viewer's rigged/preview.glb (steps/preview_glb.py)
 #   python autorig/cli/run.py audit-all [-render 0] [-strict]   audit every rigged model, then a table worst first
@@ -88,6 +88,10 @@ def main(argv):
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "auto_tune.py")] + rest)
     if cmd in ("export", "package") and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "export.py")] + rest)
+    if cmd == "prepare" and rest:
+        # prepare wolf[,moth] [--unwrap] [--loops] [--format glb,fbx,obj]
+        args = rest if rest[0].startswith("-") else ["-only", rest[0]] + rest[1:]
+        return blender_step("prepare.py", *args)
     if cmd == "doctor" and rest:
         if "--heal" in rest:                                  # healing needs Blender's mesh tools
             return blender_step("mesh_doctor.py", *rest)

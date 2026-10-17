@@ -589,11 +589,13 @@ def build_web_package(model_name, dest_dir, assets):
         shutil.copy2(assets["fbx"], dst)
         files.append(model_file)
 
-    full_res = model_file.endswith(".glb")
-    res_label = "full resolution" if full_res else "budgeted"
+    full_res = model_file.endswith(".glb") and not assets.get("studio_primary")
+    res_label = "Studio LOD0 bind mesh" if assets.get("studio_primary") else "full resolution" if full_res else "budgeted"
     model_desc = ("the viewer's GLB: full-resolution mesh with textures, skeleton and every clip. "
                   "It is not cut to the engine budget." if full_res else
                   "the budgeted FBX (no GLB has been made; run the preview step for one).")
+    if assets.get("studio_primary"):
+        model_desc = "Studio LOD0 bind mesh. See lods/lods.json for actual triangle counts and sampled validation; no animation is baked into this file."
 
     # 2. Web Manifest
     clips_list = []
@@ -613,7 +615,7 @@ def build_web_package(model_name, dest_dir, assets):
         "format": "glTF 2.0 Binary (GLB)" if model_file.endswith(".glb") else "Autodesk FBX",
         "height_metres": card.get("metres", 1.8),
         "role": card.get("role", "character"),
-        "resolution": "full (the viewer's copy, not cut to budget)" if full_res else "budgeted",
+        "resolution": res_label if assets.get("studio_primary") else "full (the viewer's copy, not cut to budget)" if full_res else "budgeted",
         "clips": clips_list,
     }
     man_path = os.path.join(dest_dir, "web_manifest.json")
@@ -715,7 +717,7 @@ def zip_directory(src_dir, zip_dest):
                 zf.write(p, rel)
 
 
-def create_export_package(model_name, target="unreal", out_dir=None, engine_lods=False):
+def create_export_package(model_name, target="unreal", out_dir=None, include_lods=False, engine_lods=False):
     """Builds and archives an export package for the specified target preset.
     target: 'unreal', 'unity', 'godot', 'web', or 'all'.
     engine_lods: add the Studio engine tool's merged LOD FBX (and its maps) under LODs/ in the
@@ -727,6 +729,21 @@ def create_export_package(model_name, target="unreal", out_dir=None, engine_lods
         raise ValueError(f"unknown export target '{target}' (valid: {', '.join(valid_targets)})")
 
     assets = get_model_assets(model_name)
+    lod_report = None
+    if include_lods:
+        from studio_assets import current_lods
+        lod_root, lod_report = current_lods(model_name)
+        if target == 'all':
+            raise ValueError('package Studio LODs per target: FBX for Unity/Unreal, GLB for Web; Godot supports either')
+        formats = {os.path.splitext(l['file'])[1].lower() for l in lod_report['levels']}
+        wanted = '.fbx' if target in ('unity', 'unreal') else '.glb' if target == 'web' else None
+        if wanted and formats != {wanted}:
+            raise ValueError('rerun Studio LOD export in %s format for %s' % (wanted[1:], target))
+        primary = str(lod_root / lod_report['levels'][0]['file'])
+        key = 'glb' if primary.lower().endswith('.glb') else 'fbx'
+        if not assets[key]:
+            assets = dict(assets, **{key: primary, 'studio_primary': True})
+            if key == 'glb': assets['clips_json'] = None
     if engine_lods and target in ("godot", "web"):
         raise ValueError("the engine LOD FBX is for Unity and Unreal packages")
     base_export_dir = out_dir or layout.work_dir("export", model_name)
@@ -736,7 +753,7 @@ def create_export_package(model_name, target="unreal", out_dir=None, engine_lods
         results = {}
         for t in PRESETS.keys():
             t_dir = os.path.join(base_export_dir, t)
-            res = create_export_package(model_name, target=t, out_dir=t_dir,
+            res = create_export_package(model_name, target=t, out_dir=t_dir, include_lods=include_lods,
                                          engine_lods=engine_lods and t in ("unity", "unreal"))
             results[t] = res
 
@@ -774,6 +791,20 @@ def create_export_package(model_name, target="unreal", out_dir=None, engine_lods
         "web": build_web_package,
     }
     files = builders[target](model_name, target_dir, assets)
+    if include_lods:
+        from studio_assets import copy_lods
+        files += copy_lods(model_name, target_dir)
+        note = ('Studio LODs are separate bind meshes. They do not replace the primary animated asset or automatically configure an engine LOD group. '
+                'Use lods/lods.json for counts, sampled surface errors and input provenance. Select the desired level and associate compatible animation exports in your engine.')
+        with open(os.path.join(target_dir, 'Studio_LODs.md'), 'w', encoding='utf-8') as fh:
+            fh.write('# Studio LODs\n\n' + note + '\n')
+        files.append('Studio_LODs.md')
+        if target == 'web':
+            path = os.path.join(target_dir, 'web_manifest.json')
+            with open(path, encoding='utf-8') as fh: manifest = json.load(fh)
+            manifest['lods'] = [{'level': l['level'], 'file': 'lods/' + l['file'],
+                                 'triangles': sum(m['triangles'] for m in l['meshes']), 'animations': False} for l in lod_report['levels']]
+            with open(path, 'w', encoding='utf-8') as fh: json.dump(manifest, fh, indent=2)
     if engine_lods and target in ("unity", "unreal"):
         from engine_lods import package_files
         files += package_files(model_name, target_dir)

@@ -17,7 +17,7 @@ from mathutils.bvhtree import BVHTree
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(HERE), "core"), HERE]
 from spec_store import SPECS
-from layout import ROOT, source_fbx, rigged_dir, leaf, work_dir
+from layout import ROOT, source_fbx, rigged_dir, leaf, work_dir, is_prepared
 import source_io
 import placed_rules
 
@@ -69,6 +69,11 @@ def load(path):
     for o in list(bpy.data.objects):
         if o is not mesh: bpy.data.objects.remove(o, do_unlink=True)
     weld(mesh)
+    if is_prepared(path):
+        try:
+            mesh["autorig_prepared"] = 1
+        except Exception:
+            pass
     return mesh, joints
 
 
@@ -99,7 +104,18 @@ def bounds(mesh):
     return Vector(co.min(axis=0)), Vector(co.max(axis=0))
 
 def normalise(mesh, joints, spec):
-    """Head to -Y, body centred on x=0, feet (or the body's middle) on the origin."""
+    """Head to -Y, body centred on x=0, feet (or the body's middle) on the origin.
+
+    A mesh from prepared/ is already turned and stood up (load sets autorig_prepared). Its spec
+    forward still describes the raw file until prepare rewrites it, so it must not be turned again.
+    """
+    try:
+        already = bool(mesh.get("autorig_prepared"))
+    except Exception:
+        already = False
+    if already:
+        spec = dict(spec)
+        spec["forward"] = (0, -1, 0)
     fwd = spec.get("forward")
     if fwd in ("auto", "detect", "auto_detect") or (isinstance(fwd, str) and fwd.lower() == "auto"):
         import suggest

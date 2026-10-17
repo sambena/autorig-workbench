@@ -33,18 +33,21 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
 1. **Add a model**: drop an FBX with its `.fbm` folder, a GLB, glTF, OBJ, a zip, or a whole model folder on the page;
    or choose files or a folder; or paste paths on this computer (copied, never moved). It lands in
    `<models>/<group>/<name>/`.
-2. **Survey** shows what the source holds and renders four views to read its facing from.
-3. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
-4. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
+2. **Prepare** (Pipeline menu, optional) writes a cleaned copy before anything else: transforms applied, feet on
+   the floor, facing -Y, with a check for stretched UVs and for thin loops at the knees, hips, elbows and shoulders.
+   The file you dropped stays as it is. Later steps read the copy while it is newer than that file.
+3. **Survey** shows what the source holds and renders four views to read its facing from.
+4. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
+5. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
    time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process and the ones it started, nothing else).
-5. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
+6. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
    spec and the card. **Open output folder** shows the files. The model list's badge is the audit's grade: **PASS**
    (green) within every limit, **CHECK** (amber) past a limit but inside its warn band, so look at it in the viewer,
    **FAIL** (red) clearly broken (docs/PIPELINE.md, "Grades").
-6. **Audit all** (above the model list) audits every rigged model one after another, with the live log and Cancel,
+7. **Audit all** (above the model list) audits every rigged model one after another, with the live log and Cancel,
    then shows a table worst first: grade, tears, the widest gap, bleed, head share, the worst bone. A row opens its
    model; **Table** shows the last results again.
-7. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
+8. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
    beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), both always framed whole
    whatever the model's size; its clips with a scrub bar (drag to any frame; it pauses while you drag); a skeleton /
    bone names / weights / bleed overlay; the audit's verdict and its worst bones, tinted red (a failed check) or
@@ -78,7 +81,7 @@ together. Specs and work files are keyed on the model's name, so moving between 
 The local GUI server includes a comprehensive, interactive HTML guide with diagrams, button walkthroughs, bone placement instructions, and troubleshooting tips:
 
 - Open via the **Help & Guide ↗** button in the workbench top bar, or visit `/help.html` (served with session token).
-- **Button breakdown**: Detailed reference for every action (`Survey`, `Edit spec`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Table`, `Open output folder`, `Cancel`).
+- **Button breakdown**: Detailed reference for every action (`Prepare`, `Survey`, `Edit spec`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Table`, `Open output folder`, `Cancel`).
 - **How to place bones**: Coordinate system conventions (0..1 bounding box space facing -Y), 1-click **Suggest skeleton**, raycast click-to-place ("points in the middle"), and constructive build chains (`slice`, `tube`, `tip`, `points`).
 - **How to fix rigs & audits**: Diagnostic guide for reversed facing vectors, combined and single-bend mesh tears, weight bleed (> 2%), low head share (< 2.5%), rip welds, rigid piece assignment, and audit allowances.
 - **Visual reference gallery**: Includes rendered QA bend test sheets and skin ownership audit sheets from sample models.

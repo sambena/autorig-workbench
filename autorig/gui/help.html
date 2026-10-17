@@ -597,7 +597,7 @@ details[open] summary {
         Every job runs one at a time, streams its log to the console drawer, and can be cancelled.</p>
       <table>
         <tr><td><b>File</b></td><td>Choose Working Folder (the models root the list shows: a collection, one pack, or one group), Import / Add Model, Sample Models Gallery, Open Output Folder, Open Models Root Folder, Refresh State.</td></tr>
-        <tr><td><b>Model</b></td><td>Model Details &amp; Notes, Mesh Doctor (geometry check of the source file), Survey Facing Views, Re-bake Clips, then the organiser: Model Manager (Ctrl+M; every model in the working folder as a table, with filters, a sort and batch rig / audit / move), Move to Group, Rename, Duplicate (source and spec only), New Group Folder, Delete Model (the model folder and its work files, after a confirm; refused while a step is running on it).</td></tr>
+        <tr><td><b>Model</b></td><td>Model Details &amp; Notes, Mesh Doctor (a geometry report for the selected model's source file; it does not change the mesh. An OBJ is checked in the app. FBX and glTF are checked by Blender, which takes a little while), Survey Facing Views, Re-bake Clips, then the organiser: Model Manager (Ctrl+M; every model in the working folder as a table, with filters, a sort and batch rig / audit / move), Move to Group, Rename, Duplicate (source and spec only), New Group Folder, Delete Model (the model folder and its work files, after a confirm; refused while a step is running on it).</td></tr>
         <tr><td><b>Rig &amp; Fix</b></td><td>Suggest Skeleton, Auto-Tune Optimizer (re-rigs with small spec changes and keeps the best; <code>rig.json</code> only ever holds an accepted spec), the Rig Inspector, Undo, Revert to Disk, Save rig.json, Save &amp; Re-Rig.</td></tr>
         <tr><td><b>Pipeline</b></td><td>The steps one at a time (Survey, Rig, Trim, Audit, Clips, Re-bake Clips, Publish, Preview), Run All, and the batch jobs over the whole collection (source views, rig all, audit all, audit failed only, re-bake all clips).</td></tr>
         <tr><td><b>QA &amp; Test</b></td><td>Run QA Audit, View QA Audit Report, the Collection Audit Table, the live limb bend test and the extreme-pose tears overlay.</td></tr>
@@ -631,6 +631,25 @@ details[open] summary {
             and toggling labels and height/span guide overlays (via the <b>names</b>/<b>guides</b> toolbar checkboxes or the <b>show labels</b> checkboxes next to the Heights and Spans sections) to keep the viewport clean when picking.
           </div>
           <div class="meta-row">Prerequisite: Source model present.</div>
+        </div>
+
+        <!-- Prepare -->
+        <div class="btn-card" id="prepare-button">
+          <div class="head">
+            <span class="btn-title"><button>Prepare</button></span>
+            <span class="script">prepare.py</span>
+          </div>
+          <div class="desc">
+            Light cleanup before rigging. Imports the mesh, applies transforms, stands it on its feet
+            (or centres it, when the spec says <code>origin: center</code>) and turns it to face -Y,
+            armature included. Checks UV stretch and whether the knee, hip, elbow and shoulder of an
+            upright body are short of edge loops. Writes <code>prepared/&lt;model&gt;.glb</code> and leaves
+            the file you dropped untouched. Later steps read that copy while it is newer than the raw file.
+            The button does not re-unwrap and does not cut loops. From the command line,
+            <code>--unwrap</code> runs Smart UV Project only when the check fails (a baked texture will not
+            follow) and <code>--loops</code> cuts one loop through each thin band.
+          </div>
+          <div class="meta-row">Prerequisite: Source model file (.fbx, .glb, .gltf, .obj). Pipeline menu, or <code>run.py prepare &lt;model&gt;</code>.</div>
         </div>
 
         <!-- Survey -->
