@@ -200,5 +200,57 @@ class TestSemanticBoneDictionary(unittest.TestCase):
         self.assertTrue(0.01 <= h_z["ankle"] < h_z["knee"] < h_z["hip"] < h_z["spine"] < h_z["spine1"] < h_z["spine2"] <= h_z["arm"] < h_z["neck"] < h_z["head"] <= h_z["top"] <= 1.0)
 
 
+class TestConventionTables(unittest.TestCase):
+    """canonical_roles: the exact names of conventions the name guesser gets wrong."""
+    SMPL = ["Pelvis", "L_Hip", "R_Hip", "Spine1", "L_Knee", "R_Knee", "Spine2", "L_Ankle", "R_Ankle", "Spine3",
+            "L_Foot", "R_Foot", "Neck", "L_Collar", "R_Collar", "Head", "L_Shoulder", "R_Shoulder", "L_Elbow",
+            "R_Elbow", "L_Wrist", "R_Wrist", "L_Hand", "R_Hand"]
+
+    def test_smpl_shoulder_is_the_upper_arm(self):
+        r = skeletons.canonical_roles(self.SMPL)
+        self.assertEqual(skeletons.detect_convention(self.SMPL)[0], "smpl")
+        self.assertEqual((r["L_Hip"], r["R_Knee"], r["L_Ankle"]), ("thigh.L", "shin.R", "foot.L"))
+        self.assertEqual((r["L_Collar"], r["L_Shoulder"], r["R_Elbow"]), ("shoulder.L", "arm.L", "forearm.R"))
+        self.assertEqual((r["Spine1"], r["Spine2"], r["Spine3"]), ("spine", "spine1", "spine2"))
+        self.assertIsNone(r["L_Hand"])
+
+    def test_vrm(self):
+        bones = ["J_Bip_C_Hips", "J_Bip_C_Spine", "J_Bip_C_Chest", "J_Bip_C_Head", "J_Bip_L_UpperArm",
+                 "J_Bip_R_LowerArm", "J_Bip_L_UpperLeg", "J_Bip_R_LowerLeg", "J_Sec_Hair1_01"]
+        r = skeletons.canonical_roles(bones)
+        self.assertEqual(skeletons.detect_convention(bones)[0], "vrm")
+        self.assertEqual([r[b] for b in bones[:8]], ["hips", "spine", "spine1", "head", "arm.L", "forearm.R",
+                                                     "thigh.L", "shin.R"])
+
+    def test_daz_bend_bones_bend_and_twist_bones_do_not(self):
+        bones = ["hip", "pelvis", "abdomenLower", "abdomenUpper", "chestLower", "chestUpper", "neckLower", "head",
+                 "lCollar", "rCollar", "lShldrBend", "lShldrTwist", "rShldrBend", "lForearmBend", "lHand",
+                 "lThighBend", "rThighBend", "lShin", "rShin", "lFoot", "rFoot"]
+        r = skeletons.canonical_roles(bones)
+        self.assertEqual(skeletons.detect_convention(bones)[0], "daz")
+        self.assertEqual((r["hip"], r["pelvis"], r["lShldrBend"], r["lShldrTwist"]), ("hips", None, "arm.L", None))
+        self.assertEqual((r["rCollar"], r["rThighBend"], r["rShin"]), ("shoulder.R", "thigh.R", "shin.R"))
+
+    def test_ue5_root_is_not_the_hips_and_five_spines_fit_three(self):
+        bones = ["root", "pelvis", "spine_01", "spine_02", "spine_03", "spine_04", "spine_05", "neck_01", "head",
+                 "clavicle_l", "upperarm_r", "calf_l", "ball_r"]
+        r = skeletons.canonical_roles(bones)
+        self.assertEqual(skeletons.detect_convention(bones)[0], "unreal5")
+        self.assertEqual((r["root"], r["pelvis"]), (None, "hips"))
+        self.assertEqual([r["spine_0%d" % i] for i in range(1, 6)], ["spine", None, "spine1", None, "spine2"])
+        self.assertEqual((r["clavicle_l"], r["upperarm_r"], r["calf_l"], r["ball_r"]),
+                         ("shoulder.L", "arm.R", "shin.L", "toe.R"))
+
+    def test_a_root_bone_gives_way_to_hips(self):
+        r = skeletons.canonical_roles(["root", "hips", "spine", "LeftUpLeg"])
+        self.assertEqual((r["root"], r["hips"]), (None, "hips"))
+        self.assertEqual(skeletons.canonical_roles(["root", "spine"])["root"], "hips")
+
+    def test_mixamo_unchanged(self):
+        bones = ["mixamorig:Hips", "mixamorig:Spine", "mixamorig:LeftArm", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg"]
+        r = skeletons.canonical_roles(bones)
+        self.assertEqual(r, {b: skeletons.map_bone_to_canonical(b) for b in bones})
+
+
 if __name__ == "__main__":
     unittest.main()
