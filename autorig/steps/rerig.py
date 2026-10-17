@@ -945,6 +945,8 @@ def root_mask(mesh, arm, chains, spec, log):
         return out
     TD = np.stack([_seg(P, np.array(bones[names[k]].head_local[:]), np.array(bones[names[k]].tail_local[:]))[0]
                    for k in torso], axis=1)
+    # how far apart two torso bones' distances may be and still share a vertex: a fifth of a torso bone's length
+    torso_soft = 0.2 * float(np.median([bones[names[k]].length for k in torso])) if torso else 0.0
     freed_total = 0.0
     for ci, c in enumerate(chains):
         if ci in torso_chains or c["parent"] is None or c["parent"][0] not in torso_chains: continue
@@ -961,7 +963,10 @@ def root_mask(mesh, arm, chains, spec, log):
         W[:, sub] *= w[:, None]
         tw = W[:, torso].copy(); tsum = tw.sum(1)
         none = tsum < 1e-6
-        tw[none, TD[none].argmin(1)] = 1.0; tsum[none] = 1.0
+        # a vertex the limb owned outright goes to the torso bones near it, shared by distance: all to the nearest
+        # one cut a hard seam where two torso bones meet (the beetle's flank, over its middle legs' roots)
+        tw[none] = placed_rules.soft_nearest(TD[none], torso_soft)
+        tsum[none] = 1.0
         W[:, torso] += tw / tsum[:, None] * freed[:, None]
         freed_total += float(freed.sum())
     for g in vg:
