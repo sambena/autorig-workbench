@@ -84,5 +84,23 @@ class TestGameParts(unittest.TestCase):
             self.assertEqual(list(spec.load(path)), ["M"])
 
 
+    def test_cut_parts(self):
+        fan = spec.part({"name": "Fan", "cut": True, "disc": {"centre": [0, 0, 5], "axis": "y", "radius": 2,
+                                                               "slab": [-0.5, 0.5]}}, "t")
+        self.assertTrue(fan["cut"])
+        self.assertEqual(spec.solid_args(fan["regions"][0]), ("disc", (0.0, 0.0, 5.0), (0.0, 1.0, 0.0), 2.0, (-0.5, 0.5)))
+        box = spec.part({"name": "Lid", "cut": True, "box": {"min": [0, 0, 0], "max": [1, 1, 1]}}, "t")
+        self.assertEqual(spec.solid_args(box["regions"][0]), ("box", (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)))
+        # a cut part never takes whole fragments: the fragment parts after it do
+        rest = spec.part({"name": "Rest", "box": {"min": [-9, -9, -9], "max": [9, 9, 9]}}, "t")
+        self.assertEqual(spec.assign([fan, rest], [(0, 0, 5)]), [1])
+        for bad in ({"name": "X", "cut": True, "regions": [{"box": {"min": [0, 0, 0], "max": [1, 1, 1]}},
+                                                           {"box": {"min": [2, 2, 2], "max": [3, 3, 3]}}]},
+                    {"name": "X", "cut": True, "box": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                     "exclude": [{"box": {"min": [0, 0, 0], "max": [1, 1, 1]}}]}):
+            with self.assertRaises(spec.SpecError):
+                spec.part(bad, "t")
+
+
 if __name__ == "__main__":
     unittest.main()

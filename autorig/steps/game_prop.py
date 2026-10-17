@@ -530,6 +530,11 @@ def carve_wheels(obj):
         if n < 20:
             print("game_prop.py: only %d faces at %s; keeping the code wheels" % (n, corner))
             return {}
+        w = cut_cylinder(obj, ((lo + hi) * 0.5, yc, r), r * 1.02, (hi - lo) * 0.5 + 0.02)
+        if w is not None:
+            wheels[corner] = w
+            print("game_prop.py: %s tyre r %.2f m at y %.2f, x %.2f..%.2f, cut with manifold3d" % (corner, r, yc, lo, hi))
+            continue
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
@@ -569,6 +574,30 @@ def collapse(obj, target, textured_ok=False):
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.modifier_apply(modifier=mod.name)
     return "blender"
+
+
+def cut_cylinder(obj, centre, radius, half_width):
+    """The part of obj inside a cylinder across X (a tyre) as a new object, obj keeping the rest; a fragment the
+    cylinder crosses is cut through and closed where it is cut (manifold3d via core/mesh_prep.split), so the body is
+    not left with a ragged hole of whole faces. None without the manifold3d extra (the caller separates faces by their
+    centres, as before)."""
+    import extras
+    if not extras.have("manifold3d"):
+        return None
+    import mesh_bridge, mesh_prep
+    V, F, UV, FD, smooth = mesh_bridge.read(obj)
+    (iV, iF, iUV, iFD), (oV, oF, oUV, oFD), rep = mesh_prep.split(
+        V, F, UV, FD, mesh_prep.Solid.disc(centre, (1.0, 0.0, 0.0), radius, (-half_width, half_width)))
+    if not len(iF):
+        return None
+    w = obj.copy()
+    w.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(w)
+    mesh_bridge.write(w, iV, iF, iUV, iFD, smooth)
+    mesh_bridge.write(obj, oV, oF, oUV, oFD, smooth)
+    print("game_prop.py: cylinder cut: %d fragments cut exactly, %d by face centres, %d whole" % (
+        rep["cut_exactly"], rep["sorted_by_faces"], rep["whole_inside"]))
+    return w
 
 
 def make_lods(obj, name, ratios):

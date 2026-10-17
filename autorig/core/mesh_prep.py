@@ -260,9 +260,14 @@ def repair(V, F, UV=None, FD=None, weld_tol=None, max_hole=30):
     V = np.asarray(V, dtype=np.float64)
     if weld_tol is None:
         weld_tol = max(float(np.linalg.norm(V.max(0) - V.min(0))) * 1e-6, 1e-9) if len(V) else 1e-9
+    # measured on its own copy, after the weld (split UV seams are not defects): measuring the MeshSet being repaired
+    # left it in a state where meshing_close_holes crashed the process (an access violation on a Tripo truck)
+    probe = _meshlab(V, F)
+    probe.meshing_merge_close_vertices(threshold=pymeshlab.PureValue(weld_tol))
+    before = probe.get_topological_measures()
+    del probe
     ms = _meshlab(V, F, UV, FD)
     ms.meshing_merge_close_vertices(threshold=pymeshlab.PureValue(weld_tol))
-    before = ms.get_topological_measures()      # after the weld: split UV seams are not defects
     ms.meshing_remove_duplicate_faces()
     ms.meshing_remove_null_faces()
     ms.meshing_repair_non_manifold_edges(method="Remove Faces")
@@ -561,9 +566,14 @@ def split(V, F, UV, FD, solid, segments=64):
     """Cuts the mesh by `solid` into (inside, outside), each (V, F, UV, FD), with a report. Shell by shell: a shell the
     solid does not touch goes whole to the side its faces lie on; a shell it crosses is cut exactly with manifold3d
     (closed where it is cut, the caps textured from the nearest surface) when it is a closed 2-manifold once its
-    seams are merged, and otherwise its faces are sorted by their centres, as the plain path does."""
-    import manifold3d as m3
+    seams are merged, and otherwise its faces are sorted by their centres, as the plain path does. Without the
+    manifold3d extra every crossing shell is sorted by its faces."""
     np = _np()
+    try:
+        import manifold3d  # noqa: F401
+        exact = True
+    except ImportError:
+        exact = False
     V = np.asarray(V, dtype=np.float64); F = np.asarray(F, dtype=np.int64)
     size = float(np.linalg.norm(np.ptp(V, axis=0))) if len(V) else 1.0
     tol = size * 1e-6
@@ -584,7 +594,7 @@ def split(V, F, UV, FD, solid, segments=64):
             report["whole_inside" if flags.all() else "whole_outside"] += 1
             continue
         sV, sF, sUV, sFD = _subset(V, F, UV, FD, faces)
-        M = _manifold_of(sV, sF, sUV, tol)
+        M = _manifold_of(sV, sF, sUV, tol) if exact else None
         if M is not None:
             if cutter is None:
                 cutter = solid.manifold(nprop=5 if UV is not None else 3, segments=segments)

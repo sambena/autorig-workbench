@@ -91,6 +91,19 @@ class Repair(unittest.TestCase):
         self.assertEqual(len(F2), 12)
 
 
+class RepairCrash(unittest.TestCase):
+    def test_close_holes_after_non_manifold_repair(self):
+        # measuring the MeshSet before repairing it made meshing_close_holes crash on a Tripo truck; repair() measures
+        # a copy. A fin and an open sphere exercise the same path.
+        V, F, UV = sphere(32)
+        V = np.vstack([V, [[0, 0, 3.0]]])
+        F = np.vstack([F[:-20], [[F[0, 0], F[0, 1], len(V) - 1]]])
+        UV = np.vstack([UV[:-60], [[0, 0], [0, 0], [0, 0]]])
+        V2, F2, UV2, _, rep = mp.repair(V, F, UV, None, max_hole=300)
+        self.assertEqual(rep["non_manifold_edges"][1], 0)
+        self.assertEqual(UV2.shape, (len(F2) * 3, 2))
+
+
 class Watertight(unittest.TestCase):
     def test_open_multi_shell_mesh_becomes_closed_and_keeps_both(self):
         a, fa, _ = sphere(32)
