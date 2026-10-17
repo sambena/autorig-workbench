@@ -237,8 +237,12 @@ def decimate(V, F, UV, FD, target, weld_tol=None, preserve_boundary=True, qualit
         shutil.rmtree(folder, ignore_errors=True)
 
 
-def topology(V, F):
-    """PyMeshLab's topological measures, the counts Mesh Doctor reports."""
+def topology(V, F, weld_first=True):
+    """PyMeshLab's topological measures, the counts Mesh Doctor reports; with weld_first, split UV seams merged first
+    (a GLB imported as it is has every seam split, which would count as open border)."""
+    np = _np()
+    if weld_first and len(V):
+        V, F, _ = weld(V, F, max(float(np.linalg.norm(np.ptp(np.asarray(V), axis=0))) * 1e-6, 1e-9))
     ms = _meshlab(V, F)
     t = ms.get_topological_measures()
     return {"verts": t["vertices_number"], "faces": t["faces_number"], "components": t["connected_components_number"],
@@ -257,8 +261,8 @@ def repair(V, F, UV=None, FD=None, weld_tol=None, max_hole=30):
     if weld_tol is None:
         weld_tol = max(float(np.linalg.norm(V.max(0) - V.min(0))) * 1e-6, 1e-9) if len(V) else 1e-9
     ms = _meshlab(V, F, UV, FD)
-    before = ms.get_topological_measures()
     ms.meshing_merge_close_vertices(threshold=pymeshlab.PureValue(weld_tol))
+    before = ms.get_topological_measures()      # after the weld: split UV seams are not defects
     ms.meshing_remove_duplicate_faces()
     ms.meshing_remove_null_faces()
     ms.meshing_repair_non_manifold_edges(method="Remove Faces")
@@ -319,9 +323,9 @@ def watertight(V, F, union=True):
                     solids.append(M)
             if len(solids) == len(closed):
                 out = m3.Manifold.batch_boolean(solids, m3.OpType.Add).to_mesh()
-                V2, F2, _ = weld(np.asarray(out.vert_properties, dtype=np.float64)[:, :3], out.tri_verts, size * 1e-7)
+                V2, F2 = _merged(out)
                 report["joined"] = True
-                return V2, np.asarray(F2, dtype=np.int64), report
+                return V2, F2, report
         except ImportError:
             pass
     out = _concat([(v, f, None, None) for v, f in closed])
@@ -458,6 +462,20 @@ def _manifold_of(V, F, UV, tol):
     return M
 
 
+def _merged(mesh):
+    """A manifold3d output mesh as (V, F) with one vertex per position: its merge vectors join the copies it made where
+    properties differ (a position-only weld would also join vertices it kept apart on purpose, where two parts touch)."""
+    np = _np()
+    vp = np.asarray(mesh.vert_properties, dtype=np.float64)
+    tri = np.asarray(mesh.tri_verts, dtype=np.int64)
+    to = np.arange(len(vp))
+    mf, mt = mesh.merge_from_vert, mesh.merge_to_vert
+    if mf is not None and len(mf):
+        to[np.asarray(mf, dtype=np.int64)] = np.asarray(mt, dtype=np.int64)
+    used, inv = np.unique(to[tri].reshape(-1), return_inverse=True)
+    return vp[used, :3], inv.reshape(-1, 3)
+
+
 def _from_manifold(M, orig_id, UV, FD_shell, V_shell):
     """Back to (V, F, UV, FD): faces from the shell keep their material; the new cap faces take the shell's most
     common material and the UV of the nearest shell vertex (a cut through a tyre shows the tyre's colour inside)."""
@@ -474,7 +492,7 @@ def _from_manifold(M, orig_id, UV, FD_shell, V_shell):
             mine[run_index[k] // 3:run_index[k + 1] // 3] = True
     V = vp[:, :3]
     uv = None
-    V_w, tri_w, _ = weld(V, tri, 1e-7 * (float(np.linalg.norm(np.ptp(V, axis=0))) or 1.0))
+    V_w, tri_w = _merged(m)
     if UV is not None and vp.shape[1] >= 5:
         uv = vp[tri.reshape(-1), 3:5].copy()
         cap = np.repeat(~mine, 3)

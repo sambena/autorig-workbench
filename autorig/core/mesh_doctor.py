@@ -343,3 +343,79 @@ def diagnose_blender_file(filepath):
     diag["file"] = os.path.basename(filepath)
     bm.free()
     return diag
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Library repairs (optional extras, core/extras.py): PyMeshLab repair and a PyMeshFix watertight surface
+# ---------------------------------------------------------------------------------------------------------------
+
+def _joined_mesh():
+    """Every mesh in the scene joined into one, transforms applied (a GLB's parent nodes kept as they stand)."""
+    meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+    if not meshes:
+        return None
+    for o in meshes:
+        world = o.matrix_world.copy()
+        o.parent = None
+        o.matrix_world = world
+    for o in list(bpy.context.scene.objects):
+        if o.type != 'MESH':
+            bpy.data.objects.remove(o, do_unlink=True)
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    if len(meshes) > 1:
+        bpy.ops.object.join()
+    return bpy.context.view_layer.objects.active
+
+
+def _drop_skin(obj):
+    """A source GLB may carry the generator's own skin (Tripo's do); the copy Mesh Doctor writes is a rig input, so its
+    vertex groups, shape keys and armature modifiers go. Returns what was dropped."""
+    dropped = []
+    if obj.vertex_groups:
+        dropped.append("%d vertex groups" % len(obj.vertex_groups))
+        obj.vertex_groups.clear()
+    if obj.data.shape_keys:
+        dropped.append("%d shape keys" % len(obj.data.shape_keys.key_blocks))
+        obj.shape_key_clear()
+    for m in [m for m in obj.modifiers if m.type == 'ARMATURE']:
+        obj.modifiers.remove(m)
+    return dropped
+
+
+def repair_object(obj, max_hole=30):
+    """PyMeshLab repair of a Blender mesh, UVs and materials kept on the faces that stay: split seams welded,
+    duplicate and zero-area faces removed, non-manifold edges and vertices fixed, holes up to max_hole edges closed.
+    Returns the report, or {"error"} without the pymeshlab extra or on a skinned mesh."""
+    import extras, mesh_bridge, mesh_prep
+    if not extras.have("pymeshlab"):
+        return {"error": "needs the pymeshlab extra: python autorig/cli/run.py extras install pymeshlab"}
+    dropped = _drop_skin(obj)
+    V, F, UV, FD, smooth = mesh_bridge.read(obj)
+    V2, F2, UV2, FD2, report = mesh_prep.repair(V, F, UV, FD, max_hole=max_hole)
+    if dropped:
+        report["dropped"] = dropped
+    mesh_bridge.write(obj, V2, F2, UV2, FD2, smooth)
+    return report
+
+
+def watertight_object(obj, union=True):
+    """obj made one closed, manifold surface: PyMeshFix closes each shell, manifold3d joins them. UVs and materials
+    do not survive (bake_atlas brings the texture back). Returns the report with PyMeshLab's counts before and after,
+    or {"error"} without the pymeshfix extra."""
+    import extras, mesh_bridge, mesh_prep
+    if not extras.have("pymeshfix"):
+        return {"error": "needs the pymeshfix extra: python autorig/cli/run.py extras install pymeshfix"}
+    V, F, _, _, _ = mesh_bridge.read(obj)
+    measure = extras.have("pymeshlab")
+    before = mesh_prep.topology(V, F) if measure else None
+    V2, F2, report = mesh_prep.watertight(V, F, union=union and extras.have("manifold3d"))
+    mesh_bridge.write(obj, V2, F2, None, None, True)
+    obj.data.materials.clear()
+    if measure:
+        report["before"], report["after"] = before, mesh_prep.topology(V2, F2)
+    report["faces"] = [int(len(F)), int(len(F2))]
+    return report

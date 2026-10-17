@@ -36,7 +36,7 @@ UPLOAD_EXTS = {".fbx", ".glb", ".gltf", ".bin", ".obj", ".mtl", ".png", ".jpg", 
 SKIP_FILES = {"model.json", "pack.json"}          # outputs: publish writes them again
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 STEP_NAMES = ("prepare", "survey", "rig", "trim", "audit", "clips", "publish", "preview", "all",
-              "rebake-clips", "rebake_clips")
+              "rebake-clips", "rebake_clips", "doctor-repair", "doctor-watertight")
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
 layout = spec_store = blender = grades = exporter = None    # imported in main(), once the environment names the folders
@@ -498,6 +498,11 @@ def commands(group, name, step, spec):
     if step in ("rebake-clips", "rebake_clips"): return rebake_clips()
     if step == "publish": return publish()
     if step == "preview": return preview()
+    if step == "doctor-repair":                                   # Mesh Doctor's library fixes: copies in work/doctor
+        return [("mesh doctor: repair (PyMeshLab)", blender_cmd("mesh_doctor.py", name, "--repair"), None, name)]
+    if step == "doctor-watertight":
+        return [("mesh doctor: watertight (PyMeshFix), baked", blender_cmd("mesh_doctor.py", name, "--watertight",
+                                                                           "--bake", "1024"), None, name)]
     if step == "all":
         # the card goes before the clips (they read its size) and again after (it lists them)
         out = rig_step() + trim() + audit() + publish()
