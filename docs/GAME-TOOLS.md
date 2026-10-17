@@ -9,6 +9,7 @@ every engine can use them: they write FBX in metres, foot on the ground, facing 
 | `run.py game-prop` | `steps/game_prop.py` | a prop, building or vehicle: one FBX with LOD0-2 |
 | `run.py tripo-clips` | `steps/tripo_clips.py` | an animal Tripo rigged: its own skeleton and skin, with clips |
 | `run.py crop-cards` | `steps/crop_cards.py` | plants a field draws by the thousand: flat picture cards |
+| `run.py fbx-maps` | `steps/fbx_maps.py` | a rigged FBX from a GLB source: its colour and normal maps saved and wired in |
 
 ## game-prop
 
@@ -61,3 +62,15 @@ python autorig/cli/run.py crop-cards --out <folder> --card corn_green_front=Corn
 light; the game lights the card) on transparency, its foot at the bottom middle, 1024 px tall and `wide` times as wide.
 A card a game draws on a quad narrower than it is tall but keeps in a square atlas cell is rendered that narrow, so the
 atlas stretches it square and the quad squeezes it back.
+
+## fbx-maps
+
+```
+python autorig/cli/run.py fbx-maps --fbx <model>/rigged/<model>.fbx --source <model>/<model>.glb --name IceTeen --out <folder>
+```
+
+The rig and decimate steps export the FBX without embedding textures, and a GLB keeps its images packed inside the
+.glb, so a rigged Tripo person reached Unity untextured (Tornado Titans' story characters, 2026-10-17, through
+`rerig_humanoid.py`). This saves the source's base colour and normal maps as `<Name>.fbm/<Name>_basecolor.png` and
+`_normal.png` (`game_prop.save_maps`), wires them into the rigged FBX's materials and exports it again as
+`<out>/<Name>.fbx` with decimate's settings. The armature, weights and mesh are not touched.
