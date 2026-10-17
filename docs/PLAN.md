@@ -425,6 +425,43 @@ It made the guard and the wyvern worse.
 The guard's other tears are at the crotch faulds and on the lower back. No single pass explains them.
 `AUTORIG_DEBUG_BARRIER=<file.npz>` saves the barrier's input and output, to replay it outside Blender.
 
+### Second round: where the freed weight goes, and the flank barrier (October 2026)
+
+Two cuts were left after the first round. The suggested Chicken_Rooster_Tripo spec found both: it got *worse* after
+the first round (bend tears 1141 → 2120).
+
+- **Root mask, where the freed weight goes:** the limb's weight went to the torso bones in the vertex's own ratio,
+  even when that ratio was only a trace (0.01 of spine_1 against 0.002 of spine_2). It flipped from vertex to vertex,
+  and the first round's distance share switched on only below 1e-6 of torso weight. Now the vertex's own torso
+  weights count in proportion to how much of them it has, and the rest goes by distance
+  (`placed_rules.share_freed`). This alone took the wyvern's last tear away.
+- **Root mask, fade length:** the fade ran over a third of the limb's first bone. On the rooster, whose first leg
+  bones are 2 to 4 cm on a 1 m body, that was a cut. It is now never shorter than a torso bone
+  (`placed_rules.root_fade`).
+- **Flank barrier (rule 12):** a dead band 8% of the front-to-hind spacing, then a hard zero, and the freed weight
+  always went to one bone (front weight to the "hips", hind weight to the "chest"). It now fades over the middle half
+  between the limb groups and hands the weight to the torso bones beside each vertex.
+
+Measured 2026-10-17 (combined / bend tear edges, bleed %; full pipeline):
+
+| model | main after the first round | now |
+|---|---|---|
+| beetle, biped, canine, pedestal | 0 / 0 PASS | 0 / 0 PASS |
+| wyvern | 1 / 1 CHECK | **0 / 0 PASS** |
+| Chicken_Rooster_Tripo (scratch copy, suggested spec) | 2530 / 2120, bleed 2.98 | 875 / 713, bleed 4.63 |
+| armoured_guard (Heartroot) | 46 / 20, bleed 0.68 | 46 / 20, bleed 0.68 |
+| sky_boss (Smeltdown, quadruped) | 218 / 56, bleed 0.23 | 239 / 52, bleed 0.17 |
+| voltray (Smeltdown, four legs) | 0 / 0, bleed 10.99 | 0 / 0, bleed 2.68 |
+| crawler (hexapod) | 38 / 38 | 38 / 38 |
+| drake | 0 / 0, bleed 3.38 | 0 / 0, bleed 3.53 |
+| slime_boss | 0 / 0, bleed 20.01 | 0 / 0, bleed 20.01 |
+
+- The rooster's higher bleed is almost all one pair: spine_2 owning flank feathers whose nearest bone is the tip of a
+  "front leg" 15 cm away. The suggested spec puts its legs' roots at the toes and its "front legs" on the flanks, so
+  the audit's nearest-bone test misreads the body there. With every pass off it has 1085 / 243 and 0.2% bleed. A
+  better spec, not more pass tuning, is the next step for it.
+- Tried and dropped: soft thresholds for the armpit rule (rule 9). The rooster went from 1013 to 1670 bend tears.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

@@ -1226,7 +1226,7 @@ def rigid_islands_pass(mesh, arm, chains, spec, size, log):
 
 
 def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=None, y_mid=None, blend_width=0.08,
-                                     front_bones=None, hind_bones=None, min_sep=0.05):
+                                     front_bones=None, hind_bones=None, min_sep=0.05, bone_tails=None):
     """Enforces longitudinal separation between front limbs and hindquarters on quadrupeds/creatures.
     Prevents distal front leg/shoulder bones from stealing weights from the rear flank/pelvis,
     and hind leg bones from stealing weights from the chest/ribcage.
@@ -1291,42 +1291,29 @@ def apply_longitudinal_flank_barrier(weights, coords, bone_names, bone_heads=Non
     chest_targets = [col[b] for b in bone_names if any(k in b.lower() for k in ("spine_2", "spine2", "chest", "spine_1"))]
     chest_target = chest_targets[0] if chest_targets else torso_cols[-1]
 
-    if front_is_negative_y:
-        in_rear = Y > (mid_y + bw)
-        if np.any(in_rear):
-            rear_indices = np.where(in_rear)[0]
-            for idx in rear_indices:
-                w_front = float(W[idx, front_cols].sum())
-                if w_front > 1e-4:
-                    W[idx, front_cols] = 0.0
-                    W[idx, hips_target] += w_front
-
-        in_front = Y < (mid_y - bw)
-        if np.any(in_front):
-            front_indices = np.where(in_front)[0]
-            for idx in front_indices:
-                w_hind = float(W[idx, hind_cols].sum())
-                if w_hind > 1e-4:
-                    W[idx, hind_cols] = 0.0
-                    W[idx, chest_target] += w_hind
+    # Faded over the middle half between the two limb groups, not cut: the old rule left a dead band 8% of the
+    # spacing wide and zeroed everything past it, a line across the flank that tore when the spine bent (on the
+    # suggested rooster, a third of its tears). What the limbs give up goes to the torso bones beside the vertex
+    # (share_freed) when the bones' tails are known: always to the hips or always to the chest sent a rump's weight
+    # to a hips bone at the far end of the body on a rig whose "hips" is not at the back.
+    B = max(bw, 0.25 * half_span)
+    r = (Y - mid_y) if front_is_negative_y else (mid_y - Y)          # how far toward the hind limbs
+    k_front = _smooth(-B, B, r)              # the share of the front limbs' weight taken: none at -B, all at +B
+    k_hind = _smooth(-B, B, -r)
+    from_front = W[:, front_cols].sum(1) * k_front
+    from_hind = W[:, hind_cols].sum(1) * k_hind
+    W[:, front_cols] *= (1.0 - k_front)[:, None]
+    W[:, hind_cols] *= (1.0 - k_hind)[:, None]
+    tc = [c for c in torso_cols if bone_names[c] in bone_heads and bone_names[c] in (bone_tails or {})]
+    if tc:
+        D = np.stack([_seg_dist(coords, np.asarray(bone_heads[bone_names[c]], float),
+                                np.asarray(bone_tails[bone_names[c]], float))[0] for c in tc], 1)
+        L = float(np.median([np.linalg.norm(np.subtract(bone_tails[bone_names[c]], bone_heads[bone_names[c]]))
+                             for c in tc]))
+        W[:, tc] += share_freed(W[:, tc], from_front + from_hind, D, 0.2 * L)
     else:
-        in_rear = Y < (mid_y - bw)
-        if np.any(in_rear):
-            rear_indices = np.where(in_rear)[0]
-            for idx in rear_indices:
-                w_front = float(W[idx, front_cols].sum())
-                if w_front > 1e-4:
-                    W[idx, front_cols] = 0.0
-                    W[idx, hips_target] += w_front
-
-        in_front = Y > (mid_y + bw)
-        if np.any(in_front):
-            front_indices = np.where(in_front)[0]
-            for idx in front_indices:
-                w_hind = float(W[idx, hind_cols].sum())
-                if w_hind > 1e-4:
-                    W[idx, hind_cols] = 0.0
-                    W[idx, chest_target] += w_hind
+        W[:, hips_target] += from_front
+        W[:, chest_target] += from_hind
 
     row_sums = W.sum(axis=1, keepdims=True)
     valid = (row_sums > 1e-6).ravel()
@@ -1687,10 +1674,34 @@ def soft_nearest(D, soft):
     return E / E.sum(1, keepdims=True)
 
 
+def root_fade(s, L1, torso_len, fade=1 / 3.0):
+    """The root mask's fade-in of a limb's weight by s, the signed distance in front of its root plane: none from a
+    tenth of the span behind the plane, all from `fade` of it in front. The span is the first bone's length, but
+    never shorter than a torso bone's: a 2 cm first bone on a 1 m body (the suggested rooster's legs) made the fade a
+    cut (half of its 2120 bend tears)."""
+    Lb = max(float(L1), float(torso_len))
+    return _smooth(-0.1 * Lb, Lb * fade, np.asarray(s, dtype=float))
+
+
+def share_freed(T, freed, D, soft):
+    """How weight a pass takes off a vertex goes to a group of bones (the torso): rows of weights to add, (N, k).
+    T: the vertex's own weights on those bones, (N, k); freed: the weight to hand over, (N,); D: the vertex's distance
+    to each of them, (N, k); soft: soft_nearest's band. The vertex's own bones keep their say in proportion to how
+    much of them it already has, and the rest goes by distance: (T + freed * nearest) / (sum T + freed). Handing it
+    all over in the vertex's own ratio cut a seam wherever that ratio flipped on a trace of weight (0.01 of one spine
+    bone against 0.002 of the next), and all to the nearest bone only where it had none at all switched at 1e-6."""
+    T = np.asarray(T, dtype=float)
+    freed = np.asarray(freed, dtype=float)
+    if not T.size:
+        return np.zeros_like(T)
+    share = (T + freed[:, None] * soft_nearest(D, soft)) / np.maximum(T.sum(1) + freed, 1e-12)[:, None]
+    return share * freed[:, None]
+
+
 def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sym_plane=0.0,
                                 crotch_threshold=0.04, armpit_barrier=True, height_span=None,
                                 flank_barrier=True, tail_barrier=True, radial_barrier=True,
-                                plan=None, front_bones=None, hind_bones=None):
+                                plan=None, front_bones=None, hind_bones=None, bone_tails=None):
     """Enforces geodesic, vertical, and air-gap anatomical barriers on skin weights:
     1. Crotch / Bilateral barrier: eliminates opposite-leg cross-bleed across the air gap between legs.
     2. Arm & Shoulder vertical isolation: strictly prevents arms, hands, shoulders, and clavicles
@@ -2108,7 +2119,7 @@ def apply_geodesic_skin_barrier(weights, coords, bone_names, bone_heads=None, sy
     if flank_barrier and bone_heads and plan in (None, "quadruped", "multi"):
         W = apply_longitudinal_flank_barrier(W, coords, bone_names, bone_heads=bone_heads,
                                              front_bones=front_bones, hind_bones=hind_bones,
-                                             min_sep=0.05 * max(h, 1e-6))
+                                             min_sep=0.05 * max(h, 1e-6), bone_tails=bone_tails)
 
     # 13. Tail-to-Hindquarters / Buttocks isolation
     if tail_barrier:
@@ -2177,6 +2188,7 @@ def geodesic_barrier_pass(mesh, arm, chains, spec, size, log):
         radial_barrier=spec.get("radial_barrier", True),
         plan=spec.get("_plan") or body_plan(chains),
         front_bones=front or None, hind_bones=hind or None,
+        bone_tails={b.name: list(b.tail_local) for b in arm.data.bones},
     )
     if os.environ.get("AUTORIG_DEBUG_BARRIER"):          # the barrier's input and output, to replay it outside Blender
         np.savez(os.environ["AUTORIG_DEBUG_BARRIER"], W=W, P=P, names=np.array(bone_names), out=cleaned_W,

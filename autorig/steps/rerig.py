@@ -920,8 +920,8 @@ def root_mask(mesh, arm, chains, spec, log):
     On a person bone heat is the smooth diffusion an armpit or a hip needs, and the envelope's capsules only add seams
     there; what bone heat does get wrong is the arm reaching across the back (one humanoid's LeftArm held 19% at the
     middle of its back). So only the root rule: each limb's weights fade in over the first `fade` of its first bone
-    from its root plane, and what it gives up goes to the torso bones the vertex already had (the nearest torso bone
-    when it had none)."""
+    (never a shorter span than a torso bone's length: placed_rules.root_fade) from its root plane, and what it gives
+    up goes to the torso bones, shared by what the vertex already had and by distance (placed_rules.share_freed)."""
     if spec.get("envelope", "root") != "root": return
     bones = {b.name: b for b in arm.data.bones if b.use_deform}
     vg = mesh.vertex_groups
@@ -946,7 +946,8 @@ def root_mask(mesh, arm, chains, spec, log):
     TD = np.stack([_seg(P, np.array(bones[names[k]].head_local[:]), np.array(bones[names[k]].tail_local[:]))[0]
                    for k in torso], axis=1)
     # how far apart two torso bones' distances may be and still share a vertex: a fifth of a torso bone's length
-    torso_soft = 0.2 * float(np.median([bones[names[k]].length for k in torso])) if torso else 0.0
+    torso_len = float(np.median([bones[names[k]].length for k in torso])) if torso else 0.0
+    torso_soft = 0.2 * torso_len
     freed_total = 0.0
     for ci, c in enumerate(chains):
         if ci in torso_chains or c["parent"] is None or c["parent"][0] not in torso_chains: continue
@@ -954,20 +955,18 @@ def root_mask(mesh, arm, chains, spec, log):
         if len(pts) < 2: continue
         L1 = max(1e-9, float(np.linalg.norm(pts[1] - pts[0])))
         s = (P - pts[0]) @ ((pts[1] - pts[0]) / L1)
-        w = _smooth(-0.1 * L1, L1 * c.get("fade", 1 / 3.0), s)
+        w = placed_rules.root_fade(s, L1, torso_len, c.get("fade", 1 / 3.0))
         sub = [col[b] for b in subtree(ci)]
         if not sub: continue
         limb = W[:, sub].sum(1)
         freed = limb * (1 - w)
         if not (freed > 1e-4).any(): continue
         W[:, sub] *= w[:, None]
-        tw = W[:, torso].copy(); tsum = tw.sum(1)
-        none = tsum < 1e-6
-        # a vertex the limb owned outright goes to the torso bones near it, shared by distance: all to the nearest
-        # one cut a hard seam where two torso bones meet (the beetle's flank, over its middle legs' roots)
-        tw[none] = placed_rules.soft_nearest(TD[none], torso_soft)
-        tsum[none] = 1.0
-        W[:, torso] += tw / tsum[:, None] * freed[:, None]
+        # what the limb gives up goes to the torso bones the vertex already has, in proportion to how much of them it
+        # has, and the rest to the torso bones near it by distance (placed_rules.share_freed): all to the nearest one
+        # cut a seam where two torso bones meet (the beetle's flank), and the vertex's own ratio alone cut one wherever
+        # that ratio flipped on a trace of weight (the wyvern's leg, the rooster's flanks)
+        W[:, torso] += placed_rules.share_freed(W[:, torso], freed, TD, torso_soft)
         freed_total += float(freed.sum())
     for g in vg:
         g.remove(list(range(n)))
