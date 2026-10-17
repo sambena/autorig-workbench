@@ -248,6 +248,13 @@
           "description": "After bone heat: \"root\" (the default: no limb weight behind where the limb starts), \"full\" (the torso to the spine, each limb to a capsule round it; joint_blend and limb_radius tune it), false (plain bone heat).",
           "enum": ["root", "full", false]
         },
+        "skinning": {
+          "description": "\"bone-heat\" (the default: bone heat on the mesh, a voxel copy only when it fails) or \"proxy-transfer\" (bone heat on a watertight voxel copy, its weights carried back by robust transfer).",
+          "enum": ["bone-heat", "proxy-transfer"]
+        },
+        "proxy_voxel": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.2, "description": "proxy-transfer: the voxel size tried first, a fraction of the longest side (then 0.016, 0.022, 0.012, 0.03)." },
+        "transfer_distance": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "proxy-transfer: how far a vertex may be from the voxel copy's surface and still copy its weights, a fraction of the longest side (default 2.5 voxels)." },
+        "transfer_angle": { "type": "number", "minimum": 0, "maximum": 180, "description": "proxy-transfer: the most the normals may disagree, in degrees, either way round (default 30)." },
         "smooth": { "type": "integer", "minimum": 0, "description": "Weight smoothing passes (run before the barrier)." },
         "barrier": { "type": "boolean", "description": "Air-gap barriers between limbs (default true); the standing-body rules in it run for bipeds only." },
         "armpit_barrier": { "type": "boolean" },
