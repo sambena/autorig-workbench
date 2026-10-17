@@ -8,8 +8,9 @@ import re
 import tempfile
 from pathlib import Path
 
-TOOLS = ("lods", "vehicle", "reference", "materials", "foliage", "generate", "validate")
+TOOLS = ("lods", "vehicle", "reference", "materials", "foliage", "generate", "validate", "package")
 DEFAULTS = {
+    "package": {"target": "web", "include_lods": True},
     "validate": {"every": 1, "loops": [], "seam_mm": 1.0},
     "lods": {"ratios": [1.0, 0.4, 0.15], "format": "glb", "protect_joints": True,
              "max_error": 0.02, "triangles": 0, "normalize": False, "length": 0.0, "height": 0.0, "front": "-y"},
@@ -55,7 +56,9 @@ def validate(tool, values):
     for k, default in DEFAULTS[tool].items():
         if isinstance(default, bool) and not isinstance(out[k], bool): raise ValueError(k + " must be a boolean")
         if isinstance(default, str) and not isinstance(out[k], str): raise ValueError(k + " must be text")
-    if tool == "validate":
+    if tool == "package":
+        if out['target'] not in ('web', 'unity', 'unreal', 'godot'): raise ValueError('invalid package target')
+    elif tool == "validate":
         number("every", 1, 120, True); number("seam_mm", 0.01, 100)
         if not isinstance(out["loops"], list) or any(not isinstance(v, str) or not v for v in out["loops"]): raise ValueError("loops must be a list of clip names")
     elif tool == "lods":

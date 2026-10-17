@@ -141,6 +141,10 @@ class TestGaitEngine(unittest.TestCase):
             self.assertAlmostEqual(s0["feet"][fname]["along"], s1["feet"][fname]["along"], places=5)
             self.assertAlmostEqual(s0["feet"][fname]["up"], s1["feet"][fname]["up"], places=5)
 
+        # The planted foot slides this far. make_clips publishes the walk speed from it.
+        self.assertAlmostEqual(s0["stride_length"], 0.28 * 1.4 * 1.0, places=5)
+        self.assertAlmostEqual(s0["feet"]["ik_leg_hind.L"]["along"] * 2.0, s0["stride_length"], places=5)
+
     def test_preset_kinematic_characteristics(self):
         natural = gait.GAIT_PRESETS["natural"]
         soldier = gait.GAIT_PRESETS["soldier"]
@@ -173,6 +177,74 @@ class TestGaitEngine(unittest.TestCase):
         self.assertEqual(walk_p["duty_factor"], 0.65)
         self.assertGreater(trot_p["stride"], walk_p["stride"])
         self.assertGreater(trot_p["cadence"], walk_p["cadence"])
+
+    def test_quadruped_trot_diagonal_pairs(self):
+        feet = [
+            {"name": "ik_leg_front.L", "side": 1.0, "is_front": True},
+            {"name": "ik_leg_hind.L", "side": 1.0, "is_front": False},
+            {"name": "ik_leg_front.R", "side": -1.0, "is_front": True},
+            {"name": "ik_leg_hind.R", "side": -1.0, "is_front": False},
+        ]
+        lf, lh, rf, rh = "ik_leg_front.L", "ik_leg_hind.L", "ik_leg_front.R", "ik_leg_hind.R"
+
+        def grounded(st):
+            return {name for name, foot in st["feet"].items() if foot["grounded"]}
+
+        # Phase 0: LF and RH plant together. The walk's lateral sequence has three feet down here, including RF.
+        s0 = gait.evaluate_quadruped_trot(0.0, length=1.4, height=1.0, feet_info=feet)
+        self.assertEqual(grounded(s0), {lf, rh})
+        self.assertAlmostEqual(s0["feet"][lf]["along"], s0["feet"][rh]["along"], places=5)
+        self.assertAlmostEqual(s0["feet"][rf]["along"], s0["feet"][lh]["along"], places=5)
+        self.assertGreater(s0["feet"][lf]["along"], 0.0)
+        self.assertLess(s0["feet"][rf]["along"], 0.0)
+        walk0 = gait.evaluate_quadruped_walk(0.0, length=1.4, height=1.0, feet_info=feet)
+        self.assertIn(rf, grounded(walk0))
+        self.assertEqual(len(grounded(walk0)), 3)
+
+        # Mid-beat: the swinging diagonal is at the top of its arc, and the two feet of a pair match.
+        s_mid = gait.evaluate_quadruped_trot(0.25, length=1.4, height=1.0, feet_info=feet)
+        self.assertEqual(grounded(s_mid), {lf, rh})
+        self.assertAlmostEqual(s_mid["feet"][lf]["up"], 0.0, places=5)
+        self.assertGreater(s_mid["feet"][rf]["up"], 0.0)
+        self.assertAlmostEqual(s_mid["feet"][rf]["up"], s_mid["feet"][lh]["up"], places=5)
+        self.assertAlmostEqual(s_mid["feet"][lf]["along"], s_mid["feet"][rh]["along"], places=5)
+
+        # The other pair plants at the half cycle.
+        s_half = gait.evaluate_quadruped_trot(0.5, length=1.4, height=1.0, feet_info=feet)
+        self.assertEqual(grounded(s_half), {rf, lh})
+
+        # Two bobs a cycle, not the walk's four: the height at a quarter turn is the opposite of the height at 0,
+        # and the half cycle is back where 0 was.
+        self.assertAlmostEqual(s0["body"]["pos"][2], -s_mid["body"]["pos"][2], places=5)
+        self.assertAlmostEqual(s0["body"]["pos"][2], s_half["body"]["pos"][2], places=5)
+        self.assertGreater(s0["body"]["pos"][2], 0.0)
+
+        # sway scales the roll. A zero sway is a straight trot, not the walk's fixed roll.
+        self.assertAlmostEqual(s0["body"]["rot"][1], 6.0 * 0.50, places=5)
+        quiet = gait.evaluate_quadruped_trot(0.0, length=1.4, height=1.0, feet_info=feet, params={"sway": 0.0})
+        self.assertAlmostEqual(quiet["body"]["rot"][1], 0.0, places=5)
+
+        # A stride override lengthens the step and does not change which feet are paired.
+        longer = gait.evaluate_quadruped_trot(0.0, length=1.4, height=1.0, feet_info=feet, params={"stride": 1.8})
+        self.assertEqual(grounded(longer), {lf, rh})
+        self.assertGreater(longer["stride_length"], s0["stride_length"])
+
+        # The step is longer than the walk's at the same body length.
+        self.assertGreater(s0["stride_length"], walk0["stride_length"])
+        self.assertAlmostEqual(s0["stride_length"], 0.34 * 1.4 * 1.30, places=5)
+        self.assertAlmostEqual(s0["feet"][lf]["along"] * 2.0, s0["stride_length"], places=5)
+
+        # Duty under 0.50 opens a suspension: at 0.45 neither pair is down.
+        flying = gait.evaluate_quadruped_trot(0.45, length=1.4, height=1.0, feet_info=feet,
+                                               params={"duty_factor": 0.40})
+        self.assertEqual(grounded(flying), set())
+
+        # The cycle closes.
+        s1 = gait.evaluate_quadruped_trot(1.0, length=1.4, height=1.0, feet_info=feet)
+        for fname in s0["feet"]:
+            self.assertAlmostEqual(s0["feet"][fname]["along"], s1["feet"][fname]["along"], places=5)
+            self.assertAlmostEqual(s0["feet"][fname]["up"], s1["feet"][fname]["up"], places=5)
+        self.assertAlmostEqual(s0["body"]["pos"][2], s1["body"]["pos"][2], places=5)
 
     def test_biped_run_ballistic_flight_phase(self):
         # Duty factor 0.38 means:

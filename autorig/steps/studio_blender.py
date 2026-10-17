@@ -85,6 +85,8 @@ def lod_error(original, candidate):
 
 
 def lods(model, s, out):
+    from studio_assets import lod_inputs, finish_lod_report
+    inputs = lod_inputs(model)
     meshes = load(model,rig=True)
     if not meshes: raise ValueError("no meshes")
     # Bake no animation into bind meshes. Derived files retain the skeleton and shape keys.
@@ -162,7 +164,7 @@ def lods(model, s, out):
             data=c.data; bpy.data.objects.remove(c,do_unlink=True)
             if data.users == 0: bpy.data.meshes.remove(data)
     points=np.concatenate([coords(m) for m in meshes])
-    studio.atomic_json(out/'lods.json',{'levels':report,'error_limit':s['max_error'],'bounds_metres':[points.min(0).tolist(),points.max(0).tolist()], 'animations':'bind meshes; use the existing animation exports'})
+    finish_lod_report(model, {'levels':report,'error_limit':s['max_error'],'bounds_metres':[points.min(0).tolist(),points.max(0).tolist()], 'animations':'bind meshes; use the existing animation exports'}, out, inputs=inputs)
 
 
 def vehicle(model,s,out):

@@ -441,15 +441,52 @@ def evaluate_biped_walk(phase, hip_height, leg_length, params=None, is_shooter=F
 # Quadruped Locomotion Synthesis
 # ---------------------------------------------------------------------------------------------------------------
 
+def _foot_cycle(foot_u, duty, stride, lift):
+    """Stance slides the foot back one stride; swing brings it forward and up.
+
+    foot_u is this foot's phase in [0, 1). Returns along, up, grounded.
+    """
+    if foot_u < duty:
+        s = foot_u / duty
+        return stride * (0.5 - s), 0.0, True
+    s = (foot_u - duty) / (1.0 - duty)
+    return stride * (-0.5 + s), lift * math.sin(math.pi * s), False
+
+
+def _quadruped_feet(phase, feet_info, phase_map, stride, lift, duty):
+    """Place each foot by side and is_front.
+
+    A foot with no side is treated as the left, and one with no is_front as a hind foot. Callers (CreatureRig)
+    set both; without is_front every foot is a hind foot and the left pair move together.
+    """
+    feet_out = {}
+    if not feet_info:
+        return feet_out
+    u = phase % 1.0
+    for f in feet_info:
+        name = f["name"]
+        side = f.get("side", 1.0)
+        is_front = f.get("is_front", False)
+        if side > 0:
+            ftype = "LF" if is_front else "LH"
+        else:
+            ftype = "RF" if is_front else "RH"
+        foot_u = (u - phase_map.get(ftype, 0.0)) % 1.0
+        along, up, grounded = _foot_cycle(foot_u, duty, stride, lift)
+        feet_out[name] = {"along": along, "up": up, "lateral": 0.0, "grounded": grounded}
+    return feet_out
+
+
 def evaluate_quadruped_walk(phase, length, height, feet_info=None, params=None):
     """Synthesizes a 4-beat lateral sequence quadruped walk state ($LH \to LF \to RH \to RF$)
     at normalized cycle phase [0, 1).
 
     Returns:
-      feet: dict mapping foot names to translation offset Vector (along, lateral, up)
+      feet: name -> {along, up, lateral, grounded}
       body: { pos: (x, y, z), rot: (pitch, roll, yaw) }
       head: { yaw, pitch }
-      tail: { wave_amount }
+      tail_wave: one sample of the tail sine (an angle, not an amplitude to wave by again)
+      stride_length: how far a planted foot slides back over its stance
     """
     p = merge_gait_params("quadruped_walk", params)
     L = float(length)
@@ -471,39 +508,7 @@ def evaluate_quadruped_walk(phase, length, height, feet_info=None, params=None):
         "RF": 0.75,
     }
 
-    # Evaluate feet positions
-    feet_out = {}
-    if feet_info:
-        for f in feet_info:
-            name = f["name"]
-            side = f.get("side", 1.0)
-            is_front = f.get("is_front", False)
-
-            if side > 0:
-                ftype = "LF" if is_front else "LH"
-            else:
-                ftype = "RF" if is_front else "RH"
-
-            offset = phase_map.get(ftype, 0.0)
-            foot_u = (u - offset) % 1.0
-
-            if foot_u < duty:
-                # Stance
-                s = foot_u / duty
-                along = stride * (0.5 - s)
-                up = 0.0
-            else:
-                # Swing
-                s = (foot_u - duty) / (1.0 - duty)
-                along = stride * (-0.5 + s)
-                up = lift * math.sin(math.pi * s)
-
-            feet_out[name] = {
-                "along": along,
-                "up": up,
-                "lateral": 0.0,
-                "grounded": foot_u < duty,
-            }
+    feet_out = _quadruped_feet(u, feet_info, phase_map, stride, lift, duty)
 
     # Body 6-DoF Motion:
     # 4 bobs per cycle corresponding to the landing of each of the 4 paws
@@ -526,6 +531,55 @@ def evaluate_quadruped_walk(phase, length, height, feet_info=None, params=None):
             "pitch": -body_pitch * 0.4,
         },
         "tail_wave": 9.0 * math.sin(w),
+        "stride_length": stride,
+    }
+
+
+def evaluate_quadruped_trot(phase, length, height, feet_info=None, params=None):
+    """Synthesizes a 2-beat diagonal trot (LF with RH, then RF with LH) at phase [0, 1).
+
+    Same return shape as evaluate_quadruped_walk. The quadruped_trot preset's duty is 0.50, so the two pairs
+    exchange with no overlap. A lower duty opens a suspension between them, with all four feet off the ground.
+    """
+    p = merge_gait_params("quadruped_trot", params)
+    L = float(length)
+    H = float(height)
+
+    u = phase % 1.0
+    w = 2.0 * math.pi * u
+
+    # Longer and higher than the walk (0.28 / 0.065), shorter than the gallop (0.45 / 0.12). The preset scales both.
+    stride = 0.34 * L * p["stride"]
+    lift = 0.09 * H * p["foot_lift"]
+    duty = p["duty_factor"]
+
+    # Diagonal pairs. CreatureRig's groups put LF with RH and RF with LH; the offsets match that pairing.
+    phase_map = {
+        "LF": 0.00,
+        "RH": 0.00,
+        "RF": 0.50,
+        "LH": 0.50,
+    }
+    feet_out = _quadruped_feet(u, feet_info, phase_map, stride, lift, duty)
+
+    # Two landings a cycle, so the body bobs twice. sway and yaw are the preset's: a trot is straighter than the walk.
+    body_z = 0.012 * H * p["bob"] * math.cos(2.0 * w)
+    body_yaw = 2.0 * p["yaw"] * math.sin(w)
+    body_roll = 6.0 * p["sway"] * math.cos(w)
+    body_pitch = 1.8 * math.cos(2.0 * w)
+
+    return {
+        "feet": feet_out,
+        "body": {
+            "pos": (0.0, 0.0, body_z),
+            "rot": (body_pitch, body_roll, body_yaw),
+        },
+        "head": {
+            "yaw": -body_yaw * 0.9,
+            "pitch": -body_pitch * 0.4,
+        },
+        "tail_wave": 12.0 * math.sin(w),
+        "stride_length": stride,
     }
 
 
@@ -700,36 +754,7 @@ def evaluate_quadruped_gallop(phase, length, height, feet_info=None, params=None
         "RF": 0.62,
     }
 
-    feet_out = {}
-    if feet_info:
-        for f in feet_info:
-            name = f["name"]
-            side = f.get("side", 1.0)
-            is_front = f.get("is_front", False)
-
-            if side > 0:
-                ftype = "LF" if is_front else "LH"
-            else:
-                ftype = "RF" if is_front else "RH"
-
-            offset = phase_map.get(ftype, 0.0)
-            foot_u = (u - offset) % 1.0
-
-            if foot_u < duty:
-                s = foot_u / duty
-                along = stride * (0.5 - s)
-                up = 0.0
-            else:
-                s = (foot_u - duty) / (1.0 - duty)
-                along = stride * (-0.5 + s)
-                up = lift * math.sin(math.pi * s)
-
-            feet_out[name] = {
-                "along": along,
-                "up": up,
-                "lateral": 0.0,
-                "grounded": foot_u < duty,
-            }
+    feet_out = _quadruped_feet(u, feet_info, phase_map, stride, lift, duty)
 
     # Gathered flight (0.38..0.52): spine arches up (+Z, back curls)
     # Extended flight (0.90..1.00): spine sags (-Z, body reaches)

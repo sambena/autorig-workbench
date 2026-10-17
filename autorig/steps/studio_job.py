@@ -26,6 +26,18 @@ def main(argv=None):
     import uuid
     snap = Path(layout.work_dir("studio_jobs")) / (uuid.uuid4().hex + ".json")
     studio.atomic_json(snap, settings)
+    if a.tool == 'package':
+        import exporter
+        import shutil
+        try:
+            result = exporter.create_export_package(a.model, target=settings['target'], out_dir=str(out), include_lods=settings['include_lods'])
+        except ValueError as e:                              # no LODs yet, or LODs in the wrong format
+            print("STUDIO_ERROR package: %s (or untick Include Studio LODs)" % e, file=sys.stderr)
+            return 2
+        archive = out / Path(result['zip_path']).name
+        shutil.copy2(result['zip_path'], archive)
+        studio.atomic_json(out / 'package.json', {'target': settings['target'], 'archive': archive.name,
+                           'files': result.get('files', []), 'includes_lods': settings['include_lods']})
     if a.tool == "validate":
         import blender
         args = [a.model, "--every", str(settings["every"]), "--seam-mm", str(settings["seam_mm"]), "--report", str(out / "quality.json")]

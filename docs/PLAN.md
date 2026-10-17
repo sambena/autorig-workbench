@@ -255,6 +255,8 @@ one pull request each, code first; models are run through the tool only in R6.
     2 strides a cycle at a duty of 0.62, so its feet slid), and clips.json's walk speed says the same.
   - Creature clips: the gallop knows its front feet (every foot was a hind foot: a bound). Quadruped walk frames and
     speed are corrected, the tail wave's phase is radians throughout, and each impulse starts at its own onset.
+    The quadruped walk and the trot call the gait engine (a 4-beat lateral walk, a 2-beat diagonal trot). The many-leg
+    scuttle and the legless rock stay as they were.
   - Fingers curl about the right axis and are found on prefixed (mixamorig:) names.
   - Morphs: each clip gets its own shape-key action and NLA track in the clips .blend. The FBX exporter cannot solo a
     mesh's shape-key tracks per take, so the clips FBX is written with them muted and zeroed: a neutral face in every
@@ -270,8 +272,7 @@ one pull request each, code first; models are run through the tool only in R6.
     the FBX (4.3+) with no made-up uid. The web package says its GLB is the viewer's full-resolution copy. The Unreal
     and Unity JSON files are labelled as notes. The Unreal FBX is not re-exported Z-up: it is written Y-up, and Unreal's
     Convert Scene turns it on import, as docs/SKELETONS.md says.
-  - Not done: the creature walk and trot do not call gait's quadruped walk (the humanoid clips and the creature
-    gallop do), there is no budgeted GLB for the web package, and the viewer's preview.glb may list the per-clip face
+  - Not done: there is no budgeted GLB for the web package, and the viewer's preview.glb may list the per-clip face
     actions as clips of their own (<clip>_morph): to check in R6.
 - **R5: speed** (done; the results must not change, and tests/test_speed.py checks each new helper number for number
   against the loop it replaced). On the five bundled samples, the whole run (rig, trim, audit, clips) took 23.3 s against
