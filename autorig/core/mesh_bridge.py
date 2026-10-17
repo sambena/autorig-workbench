@@ -150,13 +150,14 @@ def _bake_image(name, size, colour):
 
 def bake_to_atlas(sources, target, size, folder, name, normal=True, margin=None, samples=1):
     """Bakes `sources` (their own materials and UVs: the full-resolution model) onto `target`'s active UV map, selected
-    to active, with Cycles on the CPU: base colour (no lighting) and, with normal, a tangent-space normal map that
+    to active, with Cycles on the GPU when there is one (core/gpu_setup.py): base colour (no lighting) and, with normal, a tangent-space normal map that
     carries the full-resolution surface's detail onto the reduced mesh. Saves <folder>/<name>_basecolor.png (and
     _normal.png) and gives target one material using them. Returns {"basecolor": path, "normal": path or None}."""
     scene = bpy.context.scene
     engine = scene.render.engine
     scene.render.engine = "CYCLES"
-    scene.cycles.device = "CPU"
+    import gpu_setup
+    device = gpu_setup.use_cycles_gpu(scene)        # OptiX/CUDA when there is a GPU (AUTORIG_GPU=0: the CPU)
     scene.cycles.samples = samples
     os.makedirs(folder, exist_ok=True)
     mat = bpy.data.materials.new(name + "_atlas")
@@ -181,7 +182,7 @@ def bake_to_atlas(sources, target, size, folder, name, normal=True, margin=None,
     bake.max_ray_distance = dims * 0.03
     # a wide margin: the LODs collapsed from this mesh drag a few UVs over a chart's edge, into the gutter
     bake.margin = margin if margin is not None else max(8, size // 64)
-    out = {"basecolor": None, "normal": None}
+    out = {"basecolor": None, "normal": None, "device": device}
     for kind in ("DIFFUSE", "NORMAL") if normal else ("DIFFUSE",):
         suffix = "basecolor" if kind == "DIFFUSE" else "normal"
         img = _bake_image("%s_%s" % (name, suffix), size, kind == "DIFFUSE")

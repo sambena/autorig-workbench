@@ -9,7 +9,7 @@
 #               <model>_repaired.glb
 # --watertight  PyMeshFix (extra) closes every shell, manifold3d joins them: one closed surface for voxel skinning, a
 #               collider or a boolean; <model>_watertight.glb. UVs are lost; --bake N re-unwraps it with xatlas and
-#               bakes the source's colour onto an N x N atlas (selected to active, Cycles on the CPU).
+#               bakes the source's colour onto an N x N atlas (selected to active, Cycles on the GPU when there is one).
 # Every copy goes to the output folder (work/doctor); the model's own source file is never overwritten.
 
 import argparse
