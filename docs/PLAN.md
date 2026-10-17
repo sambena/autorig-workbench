@@ -297,6 +297,13 @@ one pull request each, code first; models are run through the tool only in R6.
     change how steps fit together, so they wait for R6's timings to show they are worth it.
 - **R6: measured on models**: timing and audits before and after, and each weight pass tried on and off.
 
+- **Working folder and model organiser** (October 2026): the GUI switches its models root while it runs (a
+  collection, one pack or one group), remembers the last one, and offers the current folder's groups, the collection
+  above it, recent folders, the samples and collections beside the repo. A group menu and a search box narrow the
+  list; the Model Manager (Ctrl+M) moves, renames, duplicates and deletes models and rigs, audits or moves a ticked
+  set. Tested by tests/test_model_management.py and test_delete_model.py, and by hand in the GUI on a copy of the
+  samples; not yet used on asset-packs itself.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

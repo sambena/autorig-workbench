@@ -12,7 +12,7 @@ pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch run
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. Expect rough edges; issues and pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -54,6 +54,24 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
    step, Home/End. A gamepad (standard mapping: Xbox or PlayStation): D-pad or left stick model/clip, A play, Y
    overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
    (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
+
+## Working folder and model organiser
+
+The model list shows one **working folder** (the models root) at a time. The folder button at the left of the
+toolbar (or **File → Choose Working Folder…**) lists the current folder and its groups, the collection above it,
+recent folders, the bundled samples, and collections beside this repo (a folder with an `autorig.json` or an
+`_autorig` work folder) with their packs, each with its model count. Pick a pack or a single group to see only
+those models, or type a path: a full one, or a short one found under the current folder or beside this repo
+(`asset-packs/Heartroot`). A pack shares its collection's `_autorig` when it has none of its own, so its audits
+and logs stay where they were. The GUI opens on the last folder picked (kept in `.autorig_roots.json`, which git
+ignores); `--models` or `AUTORIG_MODELS` overrides it for that run. Switching waits until no step is running.
+
+Beside it, the **group** menu and the **search** box narrow the list further (name, group, format or clip
+archetype). **Model → Model Manager** (Ctrl+M) is a table of every model in the folder with the same filters,
+a sort, and per model **Move** (to another group; a new name makes the group), **Rename** (the folder, the rig
+outputs named after it and its work files), **Duplicate** (the source and `rig.json` only, so the copy starts
+unrigged), and **Delete** (the folder and its work files, after a confirm). Tick models to rig, audit or move them
+together. Specs and work files are keyed on the model's name, so moving between groups changes nothing else.
 
 ## Documentation and help guide
 
@@ -103,7 +121,8 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 
 - `AUTORIG_MODELS`: the models root (default `samples/`). A model is a folder with a source export, at the root or
   one level down in a group.
-- `AUTORIG_WORK`: QA pictures, rig logs, audits, survey results, clip frames (default `<models>/_autorig`).
+- `AUTORIG_WORK`: QA pictures, rig logs, audits, survey results, clip frames (default `<models>/_autorig`, or
+  the parent folder's `_autorig` when only that exists).
 - `AUTORIG_BLENDER`: the Blender executable, when it is not found by itself (tested on 5.2 LTS; warns on other versions).
 
 ## Layout
@@ -156,7 +175,7 @@ three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERS
 
 ## Model Studio
 
-Open **Model â†’ Model Studio** for static/skinned LOD exports, vehicle wheel pivots and a spin preview,
+Open **Model → Model Studio** for static/skinned LOD exports, vehicle wheel pivots and a spin preview,
 reference comparison sheets, Poly Haven materials, seeded foliage/card generation, resumable Hyper3D
 jobs and per-clip animation quality checks. Settings stay with the model in `studio.json`; derived files
 stay in `_studio/`, outside source discovery. Image tools optionally need Pillow; paid generation is

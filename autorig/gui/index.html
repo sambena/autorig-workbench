@@ -477,6 +477,37 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 
 #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 999; cursor: zoom-out; }
 #zoom img { max-width: 95vw; max-height: 95vh; background: #fff; border-radius: 6px; }
+
+.suggested-root-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; cursor: pointer; transition: background .12s, border-color .12s;
+  text-align: left; width: 100%;
+}
+.suggested-root-card:hover {
+  background: var(--panel2); border-color: var(--accent);
+}
+.suggested-root-card.current {
+  border-color: var(--accent); background: var(--sel);
+}
+.suggested-root-card .root-meta {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.suggested-root-card .root-title {
+  font-weight: 650; font-size: 13px; display: flex; align-items: center; gap: 6px;
+}
+.suggested-root-card .root-path {
+  font-size: 11px; color: var(--muted); font-family: ui-monospace, Consolas, monospace;
+}
+#modelManagerModal[open] { display: flex; }
+.group-chip {
+  display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px;
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
+}
+.format-chip {
+  display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 10.5px;
+  font-family: ui-monospace, Consolas, monospace; background: var(--chip); color: var(--ink);
+}
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
@@ -498,10 +529,13 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <div class="menu-item">
         <button type="button">File ▾</button>
         <div class="menu-dropdown">
+          <button type="button" data-action="switch-root">📁 Choose Working Folder…</button>
+          <hr>
           <button type="button" data-action="import-model">📥 Import / Add Model… <span class="shortcut">Ctrl+O</span></button>
           <button type="button" data-action="samples-gallery">🎨 Sample Models Gallery…</button>
           <hr>
           <button type="button" data-action="open-output">📂 Open Output Folder</button>
+          <button type="button" data-action="open-root">📂 Open Models Root Folder</button>
           <button type="button" data-action="refresh">🔄 Refresh State</button>
         </div>
       </div>
@@ -510,12 +544,20 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <div class="menu-item">
         <button type="button">Model ▾</button>
         <div class="menu-dropdown">
+          <button type="button" data-action="model-manager">📦 Model Manager &amp; Organizer… <span class="shortcut">Ctrl+M</span></button>
           <button type="button" data-action="model-details">📋 Model Details &amp; Notes…</button>
           <button type="button" data-action="model-studio">Model Studio: LODs, vehicles, materials &amp; references…</button>
           <button type="button" data-action="mesh-doctor">🩺 Mesh Doctor (Diagnostics)…</button>
           <button type="button" data-action="facing-views">🖼️ Survey Facing Views…</button>
           <hr>
           <button type="button" data-action="rebake-model-clips">🎬 Re-bake Clips…</button>
+          <hr>
+          <button type="button" data-action="move-model">📁 Move to Group…</button>
+          <button type="button" data-action="rename-model">✏️ Rename Model…</button>
+          <button type="button" data-action="duplicate-model">📋 Duplicate Model…</button>
+          <button type="button" data-action="new-group">➕ New Group Folder…</button>
+          <hr>
+          <button type="button" data-action="delete-model">🗑️ Delete Model…</button>
         </div>
       </div>
 
@@ -620,10 +662,28 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
   <!-- Tier 2: Workspace Toolbar -->
   <div class="app-toolbar">
     <div class="toolbar-left">
+      <!-- Root Working Folder Selector -->
+      <button type="button" id="btnSwitchRoot" class="small" title="Choose the working folder: the models root the list shows" style="background:var(--panel); border-color:var(--line); padding: 3px 8px; font-weight:600; gap:5px;">
+        <span style="font-size:12px;">📁</span>
+        <span id="activeRootName" style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Root</span>
+        <span style="font-size:9px; opacity:0.6;">▾</span>
+      </button>
+
+      <!-- Group / Pack Filter Dropdown -->
+      <select id="groupSelect" class="small" title="Filter models by group / pack" style="max-width:130px; font-weight:500;">
+        <option value="all">📂 All Groups</option>
+      </select>
+
       <!-- Model Switcher -->
       <div class="model-switcher">
-        <span class="toolbar-label">Model:</span>
         <select id="modelSelect" title="Switch active model"></select>
+        
+        <!-- Live Search Box -->
+        <div class="search-box" style="position:relative; display:inline-flex; align-items:center;">
+          <input type="text" id="modelSearchInput" placeholder="🔍 Find..." style="width:100px; padding:2px 18px 2px 6px; font-size:11.5px; height:24px; border-radius:5px;" title="Search models in active root">
+          <button type="button" id="clearModelSearch" style="position:absolute; right:2px; background:none; border:none; color:var(--muted); font-size:11px; padding:0 3px; cursor:pointer; display:none;" title="Clear search">✕</button>
+        </div>
+
         <div class="menu-item filter-menu-item">
           <button type="button" id="modelFilterBtn" class="small" title="Filter models list by audit or rig status">
             <span>⚡ All</span> ▾
@@ -640,6 +700,12 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
             <button type="button" data-filter="nospec">📝 Missing Spec <span class="shortcut" id="filterCountNoSpec"></span></button>
           </div>
         </div>
+
+        <!-- Open Model Manager & Organizer Button -->
+        <button type="button" id="btnOpenModelManager" class="small" title="Open Model Manager & Organizer (Ctrl+M)" style="font-weight:600;">
+          <span>📦</span><span class="btn-text"> Models</span>
+        </button>
+
         <span id="modelBadge" class="chip" style="display:none" title="Audit grade"></span>
       </div>
 
@@ -922,6 +988,183 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
       <tr><td><kbd>F</kbd></td><td>Frame / Focus model in viewport</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close open dialog or menu</td></tr>
     </table>
+  </div>
+</dialog>
+
+<!-- Root Working Folder Selector Modal -->
+<dialog id="rootModal" style="width:720px">
+  <div class="dialog-header">
+    <h3>📁 Choose Working Folder</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.5px;">Active Working Root</span>
+        <button type="button" id="btnOpenRootInExplorer" class="small">📂 Open in Explorer</button>
+      </div>
+      <div id="activeRootDisplay" style="font-size:14px; font-weight:600; word-break:break-all; color:var(--ink);"></div>
+      <div id="activeWorkDisplay" style="font-size:12px; color:var(--muted); margin-top:4px; word-break:break-all;"></div>
+      <div id="activeRootStats" style="margin-top:8px; font-size:12px; color:var(--accent);"></div>
+    </div>
+
+    <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.5px; margin-bottom:8px;">Suggested &amp; Recent Roots:</div>
+    <div id="suggestedRootsList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:18px; max-height:220px; overflow-y:auto;">
+    </div>
+
+    <div style="border-top:1px solid var(--line); padding-top:14px;">
+      <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.5px; margin-bottom:6px;">Or Enter Custom Folder Path:</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="customRootInput" placeholder="a full path, or one beside this repo: asset-packs/Heartroot" style="flex:1;">
+        <button type="button" id="btnApplyCustomRoot" class="primary">Switch Root</button>
+      </div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">
+        A short path is looked for under the current folder, then beside this repo. Pick a pack or a group to see only its models.
+      </div>
+      <div style="margin-top:8px;">
+        <details>
+          <summary style="font-size:12px; color:var(--muted); cursor:pointer;">Advanced: Custom Work Directory (_autorig)</summary>
+          <div style="margin-top:6px;">
+            <input type="text" id="customWorkInput" placeholder="Leave empty for auto-detected _autorig" style="width:100%;">
+          </div>
+        </details>
+      </div>
+    </div>
+    <div id="rootSwitchMsg" class="msg" style="margin-top:10px;"></div>
+  </div>
+</dialog>
+
+<!-- Model Manager & Organizer Modal -->
+<dialog id="modelManagerModal" style="width:980px; max-width:96vw; height:85vh; max-height:85vh; flex-direction:column;">
+  <div class="dialog-header" style="flex-shrink:0;">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <h3 style="margin:0;">📦 Model Manager &amp; Workspace Organizer</h3>
+      <span id="mgrStatsBadge" class="chip" style="font-size:11px;"></span>
+    </div>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body" style="flex:1; display:flex; flex-direction:column; padding:12px 16px; overflow:hidden;">
+    <!-- Top Filter & Action Bar -->
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; flex-shrink:0;">
+      <input type="text" id="mgrSearchInput" placeholder="🔍 Filter by name, group, format..." style="width:240px; font-size:12px;">
+      
+      <select id="mgrGroupFilter" style="font-size:12px; max-width:160px;">
+        <option value="all">📂 All Groups</option>
+      </select>
+
+      <select id="mgrStatusFilter" style="font-size:12px; max-width:140px;">
+        <option value="all">⚡ All Statuses</option>
+        <option value="pass">🟢 PASS</option>
+        <option value="check">🟡 CHECK</option>
+        <option value="fail">🔴 FAIL</option>
+        <option value="rigged">🎬 Rigged</option>
+        <option value="unrigged">🛠️ Unrigged</option>
+        <option value="nospec">📝 No Spec</option>
+      </select>
+
+      <select id="mgrSortBy" style="font-size:12px; max-width:150px;">
+        <option value="name_asc">Sort: Name (A-Z)</option>
+        <option value="name_desc">Sort: Name (Z-A)</option>
+        <option value="audit_worst">Sort: Grade (Worst first)</option>
+        <option value="audit_best">Sort: Grade (Best first)</option>
+        <option value="group">Sort: Group</option>
+      </select>
+
+      <div class="header-spacer"></div>
+
+      <button type="button" id="btnMgrNewGroup" class="small">➕ New Group</button>
+      <button type="button" id="btnMgrChangeRoot" class="small">📁 Change Root</button>
+    </div>
+
+    <!-- Batch Selection Action Bar -->
+    <div id="mgrBatchBar" style="display:none; align-items:center; gap:8px; padding:6px 12px; background:var(--sel); border:1px solid var(--accent); border-radius:6px; margin-bottom:10px; flex-shrink:0;">
+      <span id="mgrSelectedCount" style="font-weight:700; font-size:12px; color:var(--accent-ink);">0 selected</span>
+      <button type="button" id="btnBatchRig" class="small primary">⚡ Rig Selected</button>
+      <button type="button" id="btnBatchAudit" class="small">📋 Audit Selected</button>
+      <span style="border-left:1px solid rgba(255,255,255,0.2); height:16px; margin:0 4px;"></span>
+      <span style="font-size:12px;">Move to:</span>
+      <select id="mgrBatchGroupTarget" class="small" style="max-width:140px;"></select>
+      <button type="button" id="btnBatchMove" class="small">Move</button>
+      <div class="header-spacer"></div>
+      <button type="button" id="btnBatchDeselect" class="small">Deselect All</button>
+    </div>
+
+    <!-- Models Table Container -->
+    <div style="flex:1; overflow-y:auto; border:1px solid var(--line); border-radius:6px; background:var(--panel);">
+      <table style="width:100%; border-collapse:collapse;" id="mgrTable">
+        <thead style="position:sticky; top:0; background:var(--panel2); z-index:2;">
+          <tr>
+            <th style="width:36px; text-align:center;"><input type="checkbox" id="mgrSelectAll"></th>
+            <th style="width:80px;">Status</th>
+            <th>Model Name</th>
+            <th style="width:130px;">Group / Pack</th>
+            <th style="width:110px;">Format</th>
+            <th style="width:100px;">Tris / Budget</th>
+            <th style="width:220px; text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="mgrTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</dialog>
+
+<!-- Move Model Modal -->
+<dialog id="moveModelModal" style="width:420px;">
+  <div class="dialog-header">
+    <h3>Move Model to Group</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="font-size:13px; margin-bottom:12px;">Move <b id="moveModelTargetName"></b> to:</div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Target Group:</label>
+      <select id="moveTargetGroupSelect" style="width:100%;"></select>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Or New Group Name:</label>
+      <input type="text" id="moveNewGroupNameInput" placeholder="e.g. Bosses" style="width:100%;">
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button type="button" class="close-dialog">Cancel</button>
+      <button type="button" id="btnConfirmMoveModel" class="primary">Move Model</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Rename Model Modal -->
+<dialog id="renameModelModal" style="width:420px;">
+  <div class="dialog-header">
+    <h3>Rename Model</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">New Model Name:</label>
+      <input type="text" id="renameModelInput" style="width:100%;">
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button type="button" class="close-dialog">Cancel</button>
+      <button type="button" id="btnConfirmRenameModel" class="primary">Rename</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- New Group Modal -->
+<dialog id="newGroupModal" style="width:420px;">
+  <div class="dialog-header">
+    <h3>Create New Group Folder</h3>
+    <button class="close-dialog small">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Group Name:</label>
+      <input type="text" id="newGroupNameInput" placeholder="e.g. Bosses, Enemies, Weapons" style="width:100%;">
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button type="button" class="close-dialog">Cancel</button>
+      <button type="button" id="btnConfirmCreateGroup" class="primary">Create Group</button>
+    </div>
   </div>
 </dialog>
 

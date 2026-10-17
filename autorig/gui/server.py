@@ -341,6 +341,8 @@ def status(group, name):
         c_arch = spec_store.infer_clip_archetype(spec)
     out.update({
         "source": os.path.relpath(src, d).replace("\\", "/") if src else None,
+        "source_ext": os.path.splitext(src)[1].lower() if src else None,
+        "has_textures": bool(src and layout.has_own_textures(src)),
         "spec": bool(spec), "kind": rig.get("kind"), "rig_folder": os.path.basename(rd),
         "rigged": os.path.exists(blend), "rigged_fbx": os.path.exists(fbx),
         "clips_spec": c_arch,
@@ -554,6 +556,95 @@ def audit_all_job():
     job = Job("(all rigged models)", "", "audit-all", cmds)
     job.keep_going = True
     return job
+
+
+def rig_selected_job(model_names):
+    names_set = set(model_names)
+    ms = [(g, n) for g, n in riggable_models() if n in names_set]
+    if not ms: raise ValueError("none of the selected models are ready to rig")
+    cmds = []
+    for k, (g, n) in enumerate(ms, 1):
+        model_cmds = commands(g, n, "rig", spec_store.model(n))
+        for item in model_cmds:
+            lbl, argv, prep = item[0], item[1], item[2]
+            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep, n))
+    job = Job("(%d selected models)" % len(ms), "", "rig-selected", cmds)
+    job.keep_going = True
+    return job
+
+
+def audit_selected_job(model_names):
+    names_set = set(model_names)
+    work = os.path.join(layout.WORK, "audit")
+    os.makedirs(work, exist_ok=True)
+    ms = [(g, n) for g, n in rigged_models() if n in names_set]
+    if not ms: raise ValueError("none of the selected models have a rigged FBX/blend")
+    def forget(n):
+        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
+    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
+            for k, (g, n) in enumerate(ms, 1)]
+    job = Job("(%d selected models)" % len(ms), "", "audit-selected", cmds)
+    job.keep_going = True
+    return job
+
+
+def _busy(app, *names):
+    """ValueError when a job is running on one of these models (or on any, when no name is given)."""
+    cur = app.runner.current
+    if cur and (not names or set(names) & {cur.model, cur.current_model}):
+        raise Busy("a step is running%s; cancel it or wait for it first" % (" on " + cur.current_model if names else ""))
+
+
+class Busy(ValueError):
+    pass
+
+
+def _forget_grades(*names):
+    for key in list(_GRADES):
+        if os.path.splitext(os.path.basename(key))[0] in names:
+            _GRADES.pop(key, None)
+
+
+def organise(app, path, body):
+    """The model organiser's POST routes: switch the root, make groups, move, rename, duplicate, delete, batch steps.
+
+    Each answers with layout's summary of what it did; the page fetches /api/state again afterwards.
+    """
+    name = str(body.get("model") or "")
+    if path == "/api/workspace/set-root":
+        _busy(app)
+        out = layout.set_root(body.get("root", ""), body.get("work") or None)
+        _GRADES.clear()
+    elif path == "/api/open-root":
+        open_folder(layout.ROOT)
+        return {"opened": layout.ROOT}
+    elif path == "/api/group/create":
+        out = layout.create_group(body.get("group", ""))
+    elif path == "/api/model/move":
+        _busy(app, name)
+        out = layout.move_model(name, body.get("group", ""))
+    elif path == "/api/model/rename":
+        _busy(app, name)
+        out = layout.rename_model(name, body.get("new_name", ""))
+        _forget_grades(name)
+    elif path == "/api/model/duplicate":
+        out = layout.duplicate_model(name, body.get("new_name", ""))
+    elif path == "/api/model/delete":
+        _busy(app, name)
+        out = layout.delete_model(name)
+        _forget_grades(name)
+    else:                                                        # /api/batch/rig-selected, /api/batch/audit-selected
+        models = [str(m) for m in body.get("models") or []]
+        if not models: raise ValueError("no models selected")
+        _busy(app)
+        make = rig_selected_job if path.endswith("rig-selected") else audit_selected_job
+        return app.runner.submit(make(models)).info()
+    spec_store.reload()
+    return out
+
+
+ORGANISE = ("/api/workspace/set-root", "/api/open-root", "/api/group/create", "/api/model/move", "/api/model/rename",
+            "/api/model/duplicate", "/api/model/delete", "/api/batch/rig-selected", "/api/batch/audit-selected")
 
 
 def failed_models():
@@ -976,6 +1067,8 @@ def make_handler(app):
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
                 if path == "/api/state": return self._send(200, self.state())
+                if path == "/api/workspace/roots":
+                    return self._send(200, {"root": layout.ROOT, "work": layout.WORK, "roots": layout.discover_roots()})
                 if path == "/api/samples":
                     return self._send(200, {"samples": sample_models_list()})
                 if path == "/api/export/targets":
@@ -1079,7 +1172,9 @@ def make_handler(app):
             models = [status(g, n) for g, n in layout.all_models()]
             cur = app.runner.current
             b_path = blender.find(required=False)
-            return {"root": layout.ROOT, "work": layout.WORK, "blender": b_path,
+            return {"root": layout.ROOT, "work": layout.WORK,
+                    "root_name": os.path.basename(os.path.normpath(layout.ROOT)),
+                    "blender": b_path,
                     "blender_version": blender.version_string(b_path) if b_path else None,
                     "blender_warning": blender.version_warning(b_path) if b_path else None,
                     "models": models, "groups": layout.groups(),
@@ -1215,6 +1310,8 @@ def make_handler(app):
                     if g is None: return self._send(404, {"error": "no such model"})
                     open_folder(model_dir(g, body["model"]))
                     return self._send(200, {"opened": model_dir(g, body["model"])})
+                if path in ORGANISE:
+                    return self._send(200, organise(app, path, body))
                 if path == "/api/samples/load":
                     slug = clean_name(body.get("name", ""))
                     return self._send(200, load_sample_model(slug))
@@ -1262,6 +1359,8 @@ def make_handler(app):
                 self._send(404, {"error": "not found"})
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
+            except Busy as e:
+                self._send(409, {"error": str(e)})
             except ValueError as e:
                 try:
                     self._send(400, {"error": str(e)})
@@ -1294,13 +1393,22 @@ def main(argv=None):
     ap.add_argument("--no-browser", action="store_true", help="do not open the browser")
     ap.add_argument("--token", default=os.environ.get("AUTORIG_TOKEN"), help="session token (default: a random one)")
     a = ap.parse_args(argv)
-    if a.models: os.environ["AUTORIG_MODELS"] = os.path.abspath(a.models)
-    if a.work: os.environ["AUTORIG_WORK"] = os.path.abspath(a.work)
 
     global layout, spec_store, blender, grades, exporter
     sys.path.insert(0, CORE)
     import layout as _l, spec_store as _s, blender as _b, grades as _g, exporter as _e
     layout, spec_store, blender, grades, exporter = _l, _s, _b, _g, _e
+
+    # --models, else AUTORIG_MODELS, else the root the GUI had last, else samples/ (layout's default). Only a root
+    # picked in the GUI becomes the one it opens next time.
+    if a.models:
+        layout.set_root(a.models, a.work, create=True, remember=False)
+    elif a.work:
+        layout.set_root(layout.ROOT, a.work, create=True, remember=False)
+    elif "AUTORIG_MODELS" not in os.environ and layout.active_root():
+        layout.set_root(*layout.active_root())
+    spec_store.reload()
+
     os.makedirs(layout.ROOT, exist_ok=True)
     os.makedirs(layout.WORK, exist_ok=True)
 
