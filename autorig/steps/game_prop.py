@@ -9,6 +9,7 @@
 #
 #   blender -b --python autorig/steps/game_prop.py -- --in barn.glb --name Barn --length 18 --out <folder>
 #           [--height 9] [--front -y|+y|+x|-x] [--triangles 30000] [--lods 0.4,0.15] [--carve-wheels | --wheels]
+#           [--atlas 2048]
 #   python autorig/cli/run.py game-prop <the same arguments>
 #
 # What it does, in order:
@@ -19,7 +20,8 @@
 #   4. with --carve-wheels, cuts the tyres out of a truck in one piece; with --wheels, takes a truck already split into
 #      parts (hyper3d bang) and names the four corner parts;
 #   5. makes LOD1 and LOD2 by decimation, named <Name>_LOD0, _LOD1, _LOD2 (an engine's LODGroup); with the pymeshlab
-#      extra the LODs' collapse is PyMeshLab's (the silhouette holds), without it Blender's Decimate;
+#      extra the LODs' collapse is PyMeshLab's (the silhouette holds), without it Blender's Decimate; --atlas N
+#      re-textures LOD0 first: collapsed to --triangles, re-unwrapped (xatlas) and baked from the full model;
 #   6. exports the FBX: -Z forward, Y up, unit scale applied, no leaf bones.
 # It never repairs topology: a model that is wrong gets regenerated, not fixed.
 import argparse, math, os, sys
@@ -42,6 +44,9 @@ def args():
     p.add_argument("--front", default="-y", choices=["-y", "+y", "+x", "-x"], help="which way the model faces as imported")
     p.add_argument("--triangles", type=int, help="decimate the base mesh to this many triangles before making LODs")
     p.add_argument("--lods", default="0.4,0.15", help="decimation ratios for LOD1 and LOD2")
+    p.add_argument("--atlas", type=int, default=0, metavar="SIZE",
+                   help="re-texture the base mesh: PyMeshLab collapse to --triangles, a fresh xatlas UV atlas, and the "
+                        "full-resolution model's colour and normal detail baked onto it (SIZE x SIZE; one material)")
     p.add_argument("--out", required=True, help="folder for the FBX and its <Name>.fbm maps")
     p.add_argument("--wind", action="store_true", help="a plant: height-based vertex alpha for a wind shader to bend it by")
     p.add_argument("--carve-wheels", action="store_true", help="a truck in one piece (Tripo): cut the four tyres out as Wheel_FL/FR/RL/RR")
@@ -643,7 +648,20 @@ def main():
         for w in wheels.values():
             decimate_to_triangles(w, 2500)
         parts = [obj] + list(wheels.values())
-    decimate_to_triangles(obj, a.triangles)
+    if a.atlas:
+        import mesh_bridge
+        report = mesh_bridge.bake_atlas(obj, a.atlas, os.path.join(os.path.abspath(out_dir), a.name + ".fbm"), a.name,
+                                        decimate_to=a.triangles)
+        if report is None:
+            print("game_prop.py: --atlas needs the xatlas extra (python autorig/cli/run.py extras install xatlas); "
+                  "kept the generated texture")
+            decimate_to_triangles(obj, a.triangles)
+        else:
+            print("game_prop.py: baked a %d px atlas onto %d triangles (from %d): %s" % (
+                a.atlas, report["triangles"], report["triangles_before"],
+                ", ".join(os.path.basename(p) for p in (report["basecolor"], report["normal"]) if p)))
+    else:
+        decimate_to_triangles(obj, a.triangles)
     if a.wind or a.name in {"TreeOak", "TreeRound", "TreePine", "TreeDead", "Bush"}:
         mark_tree_wind(obj)
     ratios = [float(r) for r in a.lods.split(",") if r.strip()]
