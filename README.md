@@ -61,7 +61,8 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
 ## Game tools
 
 `run.py game-prop` (a generated prop as a game prop: metres, facing, LODs, maps, a one-piece truck's tyres cut out),
-`run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
+`run.py game-parts` (a game prop's moving parts, such as a pumpjack's beam or a windpump's fan, cut out of LOD0 as
+their own meshes at their pivots), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
 `run.py crop-cards` (flat picture cards of plants for a foliage atlas). See [docs/GAME-TOOLS.md](docs/GAME-TOOLS.md).
 
 ## Working folder and model organiser

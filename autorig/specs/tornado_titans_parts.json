@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "Moving parts of Tornado Titans' farm props, for steps/game_parts.py (run.py game-parts). Measured 2026-10-17 from",
+    "the FBX files game_prop.py wrote (storm-chaser Assets/Resources/Models): every fragment's centre and bounds",
+    "(--survey) and side/front renders over a metre grid (--renders), in Blender's frame: metres, Z up, front -Y.",
+    "Pumpjack: Beam (walking beam and horse head) tips about its bearing at the top of the samson post; Rod (bridle,",
+    "polished rod, weight) hangs under the head; Link is Rodin's slanted rear frame from the base to the beam's tail",
+    "(pivot at its foot, so a game stretches it); Pitman is Tripo's pair of arms from the crank to the tail (pivot at",
+    "the top). Windpump: Fan turns about its hub; the tail vane, the gearbox and the tower stay."
+  ],
+  "Pumpjack": {"parts": [
+    {"name": "Beam",
+     "regions": [{"box": {"min": [-1.0, -3.9, 4.12], "max": [1.0, -1.95, 7.9]}},
+                 {"box": {"min": [-0.8, -1.95, 5.38], "max": [0.8, 3.8, 6.7]}}],
+     "exclude": [{"box": {"min": [-0.8, -0.7, 4.8], "max": [0.8, 0.7, 5.92]}}],
+     "pivot": [0.0, 0.0, 5.75]},
+    {"name": "Rod", "box": {"min": [-0.6, -3.9, 0.6], "max": [0.6, -2.6, 4.12]}, "pivot": [0.0, -3.3, 4.1]},
+    {"name": "Link", "box": {"min": [-2.6, 2.3, 0.65], "max": [2.6, 3.8, 5.37]}, "pivot": [0.0, 2.8, 0.62]}
+  ]},
+  "Pumpjack_T": {"parts": [
+    {"name": "Beam",
+     "regions": [{"box": {"min": [-0.5, -1.95, 4.8], "max": [0.5, 2.3, 5.6]}},
+                 {"box": {"min": [-0.5, 2.25, 3.6], "max": [0.5, 3.45, 6.3]}},
+                 {"box": {"min": [-0.5, 2.25, 3.38], "max": [0.5, 2.9, 3.6]}}],
+     "exclude": [{"box": {"min": [-0.5, 0.4, 4.0], "max": [0.5, 1.15, 4.95]}}],
+     "pivot": [0.0, 0.75, 4.95]},
+    {"name": "Rod", "box": {"min": [-0.4, 2.85, 0.72], "max": [0.4, 3.5, 3.6]}, "pivot": [0.0, 3.2, 3.55]},
+    {"name": "Pitman",
+     "regions": [{"box": {"min": [0.7, -1.95, 2.5], "max": [1.3, -1.15, 4.6]}},
+                 {"box": {"min": [-1.3, -1.95, 2.5], "max": [-0.7, -1.15, 4.6]}},
+                 {"box": {"min": [-1.3, -1.95, 4.1], "max": [1.3, -1.15, 4.8]}}],
+     "pivot": [0.0, -1.55, 4.6]}
+  ]},
+  "Windpump": {"parts": [
+    {"name": "Fan", "disc": {"centre": [0.02, -1.4, 7.645], "axis": "y", "radius": 2.7, "slab": [-0.48, 0.36]},
+     "exclude": [{"box": {"min": [-3.0, -2.0, 0.0], "max": [3.0, -0.9, 5.5]}},
+                 {"box": {"min": [-0.45, -1.3, 6.6], "max": [0.45, -0.7, 7.35]}}],
+     "max_size": [9.0, 9.0, 1.6],
+     "pivot": [0.02, -1.4, 7.645]}
+  ]},
+  "Windpump_B": {"parts": [
+    {"name": "Fan", "disc": {"centre": [0.0, 0.33, 7.45], "axis": "x", "radius": 3.4, "slab": [-0.3, 0.3]},
+     "exclude": [{"box": {"min": [-1.0, -3.8, 6.45], "max": [1.0, -2.52, 7.65]}},
+                 {"box": {"min": [-0.3, -0.4, 0.0], "max": [0.3, 1.05, 6.0]}}],
+     "max_size": [0.2, 9.0, 9.0],
+     "pivot": [0.0, 0.33, 7.45]}
+  ]},
+  "Windpump_T": {"parts": [
+    {"name": "Fan", "disc": {"centre": [0.0, -0.55, 8.31], "axis": "x", "radius": 1.95, "slab": [-0.35, 0.35]},
+     "exclude": [{"box": {"min": [-0.7, -0.45, 8.2], "max": [0.7, 1.8, 8.45]}},
+                 {"box": {"min": [-0.3, -0.8, 6.0], "max": [0.3, -0.25, 7.5]}}],
+     "max_size": [9.0, 9.0, 1.3],
+     "pivot": [0.0, -0.55, 8.31]}
+  ]}
+}

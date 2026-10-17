@@ -579,7 +579,9 @@ def decimate_to_triangles(obj, target):
     print("game_prop.py: reduced base mesh from %d to %d triangles" % (current, len(obj.data.loop_triangles)))
 
 
-def export(root, lods, out_path, extras=()):
+def export(root, lods, out_path, extras=(), path_mode="COPY"):
+    """The game FBX: -Z forward, Y up, unit scale applied, no leaf bones. path_mode "COPY" puts the maps beside it;
+    game_parts.py passes "RELATIVE" to keep naming them in <Name>.fbm where they already lie."""
     bpy.ops.object.select_all(action="DESELECT")
     root.select_set(True)
     for lod in lods:
@@ -590,7 +592,7 @@ def export(root, lods, out_path, extras=()):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     bpy.ops.export_scene.fbx(filepath=out_path, use_selection=True, apply_unit_scale=True, apply_scale_options="FBX_SCALE_ALL",
                              axis_forward="-Z", axis_up="Y", bake_space_transform=True, use_mesh_modifiers=True, mesh_smooth_type="FACE",
-                             add_leaf_bones=False, bake_anim=False, path_mode="COPY", embed_textures=False)
+                             add_leaf_bones=False, bake_anim=False, path_mode=path_mode, embed_textures=False)
 
 
 def main():

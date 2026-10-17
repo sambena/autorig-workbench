@@ -21,6 +21,8 @@
 #                                                   a generated prop as a game prop: metres, facing, LODs, maps, wheels
 #   python autorig/cli/run.py tripo-clips --in Dog_rigged.glb --name Dog --height 0.62 --out <folder>
 #                                                   idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton
+#   python autorig/cli/run.py game-parts --in Pumpjack.fbx --spec parts.json --out <folder> [--renders <folder>] [--survey]
+#                                                   a game prop's moving parts cut out of LOD0, each its own mesh at its pivot
 #   python autorig/cli/run.py crop-cards --out <folder> --card <name>=<plant.glb>[:<view>[:<wide>]] ...
 #                                                   flat picture cards of plants, for a foliage atlas
 #   python autorig/cli/run.py fbx-maps --fbx rigged/Ice.fbx --source Ice.glb --name IceTeen --out <folder>
@@ -69,8 +71,9 @@ def main(argv):
         arch = watch_daemon.suggest_spec(name)
         print("SUGGEST %s: %s" % (name, ("rig.json written (%s)" % arch) if arch else "no spec could be suggested"))
         return 0 if arch else 1
-    if cmd in ("game-prop", "tripo-clips", "crop-cards", "fbx-maps"):
-        script = {"game-prop": "game_prop.py", "tripo-clips": "tripo_clips.py", "crop-cards": "crop_cards.py", "fbx-maps": "fbx_maps.py"}[cmd]
+    if cmd in ("game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps"):
+        script = {"game-prop": "game_prop.py", "game-parts": "game_parts.py", "tripo-clips": "tripo_clips.py",
+                  "crop-cards": "crop_cards.py", "fbx-maps": "fbx_maps.py"}[cmd]
         return blender_step(script, *rest)
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
@@ -146,7 +149,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("suggest", "game-prop", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 
