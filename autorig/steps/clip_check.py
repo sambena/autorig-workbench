@@ -11,7 +11,8 @@
 #           otherwise the model cracks open where the seams are
 #   hands   how often a hand is inside the body (a dance learned on dancers in tight clothes puts hands into a robe)
 # Evaluates each take separately across all meshes; samples every frame by default.
-# Reports compression, triangle collapse, floor penetration and foot speed as well.
+# Reports compression, triangle collapse, floor penetration, foot speed and foot skate as well (--max-skate S fails a
+# clip whose skate score is above S: core/foot_contact.foot_skate).
 # Exits 1 for still clips, cracks, stretched edges, or a requested loop mismatch.
 import sys, os
 HERE = os.path.dirname(os.path.abspath(__file__))

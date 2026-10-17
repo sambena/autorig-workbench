@@ -53,6 +53,7 @@ In the model's `clips/` folder:
   "windUpEnd": 0.5833,                                   // a fraction of "attack": the wind-up ends here
   "walkSpeed": 1.2,                                      // twice the stride per walk cycle, times metres (an older unit)
   "decimation": {"triangles_before": 19000, "triangles": 2000, "max_influences": 4},
+  "footSkate": {"idle": {"before": 3.13, "after": 0.06}, ...},   // the anti-slide pass's scores (CLIP-MOTION.md)
   "licence": "..."                                       // the collection's licence line
 }
 ```

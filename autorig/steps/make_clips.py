@@ -38,6 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 import layout
 import gait
+import clip_passes
 import digits
 import morph_generator
 # Per-model clip settings (archetype, display name, category, attack...): rig.json "clips"; the licence line:
@@ -2456,6 +2457,7 @@ def author(key, spec, argv):
     grounded = ground_deaths(rig, mesh, clips, made)
     if grounded:
         made = build(rig, clips)
+    skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid), rig.size, argv, mesh)
 
     out = os.path.join(pack, "clips")
     os.makedirs(out, exist_ok=True)
@@ -2498,6 +2500,7 @@ def author(key, spec, argv):
         # An older unit kept for engines that already read it; "speed" on the walk clip is metres a second.
         "walkSpeed": round(facts["stride"] * metres / (duty_f * walk_s), 4) if facts.get("stride") else 1.0,
         "decimation": dec,
+        **({"footSkate": skate} if skate else {}),
         "licence": LICENCE,
     }
     with open(os.path.join(out, key + "_clips.json"), "w", encoding="utf-8", newline="\n") as fh:
@@ -2511,6 +2514,35 @@ def author(key, spec, argv):
 # ---------------------------------------------------------------------------------------------------------------
 # Build, save, export
 # ---------------------------------------------------------------------------------------------------------------
+
+def qa_skeleton(key):
+    """The bone roles the rig pipeline logged for a model with no card yet (its QA log)."""
+    q = os.path.join(layout.work_dir("qa"), key + ".json")
+    return json.load(open(q, encoding="utf-8")).get("skeleton") if os.path.exists(q) else None
+
+
+def settle_feet(arm, made, chains, size, argv, mesh=None):
+    """The anti-slide pass over every authored clip (clip_passes.anti_slide): a foot that is down stays where it
+    landed. Retargeted mocap keeps its own feet. --no-anti-slide skips it. Returns {clip: {before, after}}, the
+    foot-skate scores (core/foot_contact.foot_skate)."""
+    if "--no-anti-slide" in argv or not chains: return {}
+    fps = bpy.context.scene.render.fps
+    out = {}
+    for name, last, loops in made:
+        action = bpy.data.actions.get(name)
+        if action is None or action.get("autorig_retarget"): continue
+        still = None if clip_passes.foot_contact.travels(name) else (0.0, 0.0, 0.0)
+        r = clip_passes.anti_slide(arm, action, last, loops, chains, size, velocity=still, fps=fps, mesh=mesh)
+        if r is None: continue
+        out[name] = {"before": round(r["before"], 3), "after": round(r["after"], 3)}
+        print("ANTI_SLIDE " + json.dumps({"clip": name, **r}), flush=True)
+    arm.animation_data.action = None
+    for pb in arm.pose.bones:
+        pb.location = Vector(); pb.rotation_quaternion = Quaternion(); pb.scale = Vector((1, 1, 1))
+    bpy.context.scene.frame_set(0)
+    bpy.context.view_layer.update()
+    return out
+
 
 def mute_constraints(arm):
     for pb in arm.pose.bones:
@@ -2783,6 +2815,8 @@ def main():
     arche = ARCHETYPES[spec["archetype"]](rig, spec)
     clips = arche.clips()
     made = build(rig, clips)
+    skeleton = (card.get("rig") or {}).get("skeleton") or qa_skeleton(key)
+    settle_feet(arm, made, clip_passes.leg_chains(arm, skeleton), rig.size, argv, mesh)
 
     # 1. the source: the rig with every clip as an action
     bpy.context.preferences.filepaths.save_version = 0

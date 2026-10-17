@@ -161,6 +161,11 @@ Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
 conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
 
+## Clip motion
+
+Clips are keyed, then planted feet are held where they land; `clip-check` scores foot skate. See
+[docs/CLIP-MOTION.md](docs/CLIP-MOTION.md).
+
 ## Optional extras
 
 Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases). These install

@@ -9,7 +9,44 @@ import bpy
 import numpy as np
 from deformation import metrics, seam_pairs
 from rig_quality import coords
+import foot_contact
 import studio
+
+LEG_WORDS = ('leg', 'foot', 'ankle', 'toe', 'paw', 'hoof', 'claw_foot')
+
+
+def foot_ends(arms):
+    """The end of every leg: a leaf bone with a leg word in its name or an ancestor's (not an IK control), whatever
+    the rig calls its bones."""
+    out = []
+    for arm in arms:
+        for b in arm.pose.bones:
+            if b.children: continue
+            chain = [b] + list(b.parent_recursive)
+            names = [c.name.lower() for c in chain]
+            if any('ik' in n.split('_')[0] or 'pole' in n for n in names[:1]): continue
+            if any(w in n for n in names for w in LEG_WORDS): out.append((arm, b))
+    return out
+
+
+def foot_points(ends, obs, rest):
+    """Where each leg meets the ground: the lowest tenth (at rest) of the vertices skinned mostly to its foot bone, or
+    to the nearest bone up the leg that has any. A glTF keeps no bone tails (the importer guesses a leaf's length), so
+    the mesh is the measure. {key: vertex indices into the concatenated meshes}."""
+    owned={};offset=0
+    for o in obs:
+        names={g.index:g.name for g in o.vertex_groups}
+        for v in o.data.vertices:
+            if v.groups:owned.setdefault(names.get(max(v.groups,key=lambda g:g.weight).group,''),[]).append(offset+v.index)
+        offset+=len(o.data.vertices)
+    out={}
+    for arm,b in ends:
+        bone=b
+        while bone is not None and bone.name not in owned:bone=bone.parent
+        if bone is None:continue
+        idx=np.array(owned[bone.name]);idx=idx[np.argsort(rest[idx,2])][:max(3,len(idx)//10)]
+        out[arm.name+':'+b.name]=idx
+    return out
 
 
 def owners():
@@ -23,6 +60,7 @@ def check(argv):
     ap.add_argument('source');ap.add_argument('--every',type=int,default=1)
     ap.add_argument('--report');ap.add_argument('--loop',action='append',default=[],help='Clip name expected to loop; repeat for multiple clips')
     ap.add_argument('--seam-mm',type=float,default=1)
+    ap.add_argument('--max-skate',type=float,help='Fail a clip whose foot-skate score is above this')
     a=ap.parse_args(argv)
     if a.every<1 or not math.isfinite(a.seam_mm) or a.seam_mm<=0:raise ValueError('sampling and seam limits must be positive')
     source=a.source
@@ -59,6 +97,8 @@ def check(argv):
         ignored.extend([v.value>.5 for v in cut.data] if cut else [False]*len(o.data.vertices))
         offset+=len(o.data.vertices)
     pairs=seam_pairs(rest,ignored=ignored,labels=labels)
+    ends=foot_points(foot_ends(arms),obs,rest)
+    foot_floor=min((float(rest[i,2].mean()) for i in ends.values()),default=None)
     for arm in arms:arm.data.pose_position='POSE'
     feet=[(arm,b) for arm in arms for b in arm.pose.bones if any(k in b.name.lower() for k in ('foot','ankle')) and 'ik' not in b.name.lower()]
     # Retain the old hand/body cross-section diagnostic, with arbitrary armature prefixes.
@@ -92,7 +132,7 @@ def check(argv):
         end=int(math.ceil(max(st.frame_end for _,tr in bindings for st in tr.strips)))
         frames=sorted(set(range(start,end+1,a.every))|{start,end})
         worst={};previous=None;first=None;last=None;foot_previous={};foot_slide={};ground=float(rest[:,2].min());movement=0.0;penetration=0.0
-        root_ends=[];hand_inside={arm.name+':'+b.name:0 for arm,b,_ in hands}
+        root_ends=[];hand_inside={arm.name+':'+b.name:0 for arm,b,_ in hands};end_tracks={k:[] for k in ends}
         for frame in frames:
             bpy.context.scene.frame_set(frame);bpy.context.view_layer.update()
             p=np.concatenate([coords(o) for o in obs])
@@ -120,24 +160,30 @@ def check(argv):
                         dt=(frame-old_frame)/bpy.context.scene.render.fps
                         foot_slide[key]=max(foot_slide.get(key,0),float(np.linalg.norm(pos[:2]-old[:2]))/max(dt,1e-9))
                 foot_previous[key]=(pos,frame)
+            for k,i in ends.items():end_tracks[k].append(tuple(float(x) for x in p[i].mean(axis=0)))
             roots=[arm.matrix_world@next((b for b in arm.pose.bones if b.parent is None),arm.pose.bones[0]).head for arm in arms if len(arm.pose.bones)]
             if frame in (start,end):root_ends.append(np.array(roots))
         loop_error=None
         if name in a.loop:
             displacement=np.median(root_ends[-1]-root_ends[0],axis=0) if roots else np.median(last-first,axis=0)
             loop_error=float(np.linalg.norm((last-first)-displacement,axis=1).max(initial=0))
+        skate=foot_contact.foot_skate(end_tracks,scale,fps=bpy.context.scene.render.fps/a.every,velocity=None if foot_contact.travels(name) else (0.0,0.0,0.0),floor=foot_floor) if ends else None
         errors=[]
         if movement<1e-7*scale:errors.append('no evaluated mesh movement')
         if worst.get('seam_gap',0)>a.seam_mm/1000:errors.append('seam crack')
         if worst.get('tear_edges',0)>0:errors.append('stretched edges')
         if loop_error is not None and loop_error>.001*scale:errors.append('loop pose mismatch')
+        if skate and a.max_skate is not None and skate['score']>a.max_skate:errors.append('foot skate')
         entry={'name':name,'frames':len(frames),'range':[start,end],**worst,'floor_penetration':max(0,penetration),
-               'near_ground_foot_speed':foot_slide,'hand_inside_body_frames':hand_inside,'loop_error':loop_error,'errors':errors}
+               'near_ground_foot_speed':foot_slide,'foot_skate':skate,'hand_inside_body_frames':hand_inside,'loop_error':loop_error,'errors':errors}
         report['clips'].append(entry);failed|=bool(errors)
         print('CLIP_CHECK '+json.dumps(entry),flush=True)
         for owner,track in bindings:owner.animation_data.action=None
     report['pass']=not failed
     report['notes']=['Foot speed is a near-ground diagnostic; in-place clips require intended travel speed to interpret sliding.',
+                     'foot_skate is measured against the ground: still, or under an in-place walk/trot/run moving at a speed estimated '
+                     'from the feet '
+                     '(ground_speed): thousandths of the model size a frame, 0 when planted feet stay put (MoMask weighting).',
                      'Floor penetration and compression are diagnostics; loop checks apply only to explicitly named --loop clips.']
     dest=Path(a.report) if a.report else Path(source).with_suffix('.quality.json')
     studio.atomic_json(dest,report)
