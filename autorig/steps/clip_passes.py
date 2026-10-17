@@ -15,9 +15,29 @@ import foot_contact
 import limb_ik
 
 
-def leg_chains(arm, skeleton=None, humanoid=None):
+def foot_point(arm, mesh, chain):
+    """Where a leg meets the ground, in its last bone's rest space: the lowest tenth (at rest) of the vertices skinned
+    mostly to that bone, or to the nearest bone up the leg that has any (clip-check measures the same point). A
+    placed rig's bones need not run down the middle of the mesh's legs (the beetle's splay out while its legs hang
+    straight down), so a bone's tail can be well off the foot. None without a mesh or skinned vertices."""
+    if mesh is None: return None
+    groups = {g.index: g.name for g in mesh.vertex_groups}
+    to_arm = arm.matrix_world.inverted() @ mesh.matrix_world
+    for bone in reversed(chain):
+        pts = [to_arm @ v.co for v in mesh.data.vertices
+               if v.groups and groups.get(max(v.groups, key=lambda g: g.weight).group) == bone]
+        if pts:
+            pts.sort(key=lambda p: p.z)
+            low = pts[:max(3, len(pts) // 10)]
+            centre = sum(low, Vector()) / len(low)
+            return arm.data.bones[chain[-1]].matrix_local.inverted() @ centre
+    return None
+
+
+def leg_chains(arm, skeleton=None, humanoid=None, mesh=None):
     """The legs a pass can re-solve: [{name, bones (hip first), keep (bones whose orientation is held: a humanoid's
-    foot)}]. From the card's skeleton legs (rig pipeline rigs), else a Mixamo humanoid's thigh and shin."""
+    foot), foot (where it meets the ground, in the last bone's rest space; None: its tail)}]. From the card's skeleton
+    legs (rig pipeline rigs), else a Mixamo humanoid's thigh and shin."""
     bones = arm.data.bones
     out = []
     for leg in (skeleton or {}).get("legs", []):
@@ -26,18 +46,24 @@ def leg_chains(arm, skeleton=None, humanoid=None):
         if any(bones[chain[i + 1]].parent is None or bones[chain[i + 1]].parent.name != chain[i]
                for i in range(len(chain) - 1)): continue
         if any(c.type == 'IK' and not c.mute for b in chain for c in arm.pose.bones[b].constraints): continue
-        out.append({"name": leg.get("name") or chain[0], "bones": chain, "keep": []})
+        out.append({"name": leg.get("name") or chain[0], "bones": chain, "keep": [], "foot": foot_point(arm, mesh, chain)})
     if not out and humanoid:
         for s in "LR":
             th, sh, ft = humanoid.get("thigh." + s), humanoid.get("shin." + s), humanoid.get("foot." + s)
             if th and sh and bones[sh].parent and bones[sh].parent.name == th:
-                out.append({"name": "leg." + s, "bones": [th, sh], "keep": [ft] if ft else []})
+                out.append({"name": "leg." + s, "bones": [th, sh], "keep": [ft] if ft else [], "foot": None})
     return out
 
 
 def rest_floor(arm, chains):
     """The floor: the lowest foot at rest (armature space). A clip's own lowest feet are not it: a flier hovers."""
-    return min(arm.data.bones[c["bones"][-1]].tail_local.z for c in chains)
+    return min(rest_foot(arm, c).z for c in chains)
+
+
+def rest_foot(arm, chain):
+    """A chain's foot at rest, armature space."""
+    b = arm.data.bones[chain["bones"][-1]]
+    return b.matrix_local @ chain["foot"] if chain.get("foot") is not None else b.tail_local.copy()
 
 
 def action_curves(action):
@@ -92,7 +118,8 @@ class Posed:
 def _joints(arm, chain):
     pb = arm.pose.bones
     pts = [tuple(pb[b].head) for b in chain["bones"]]
-    pts.append(tuple(pb[chain["bones"][-1]].tail))
+    last = pb[chain["bones"][-1]]
+    pts.append(tuple(last.matrix @ chain["foot"]) if chain.get("foot") is not None else tuple(last.tail))
     return pts
 
 
@@ -112,6 +139,9 @@ MAX_TURN = 0.6     # radians (about 35 degrees): the most a re-solve turns one b
                    # inside that (the beetle's hip): the mesh check below keeps the authored clip then.
 
 
+STEP_TURN = 1.2    # radians: a stepping leg (place_feet from leg_planting) swings much further than a fix needs
+
+
 def _solve_frame(arm, chains, joints, targets, tolerance, max_turn=MAX_TURN):
     """Re-solves the chains at the current frame onto their targets. Returns {bone: quaternion} for the bones turned."""
     pbs = arm.pose.bones
@@ -123,12 +153,12 @@ def _solve_frame(arm, chains, joints, targets, tolerance, max_turn=MAX_TURN):
         cur = joints[c["name"]]
         if (Vector(cur[-1]) - Vector(tgt)).length < tolerance: continue
         held = {b: pbs[b].matrix.copy() for b in c["keep"]}
-        new = limb_ik.fabrik(cur, tgt, pole=tuple(FORWARD))
+        new = limb_ik.swing_then_fabrik(cur, tgt, pole=tuple(FORWARD))
         for i, bone in enumerate(c["bones"]):
             pb = pbs[bone]
             m = pb.matrix.copy()
             head = m.to_translation()
-            nxt = pbs[c["bones"][i + 1]].head if i + 1 < len(c["bones"]) else pb.tail
+            nxt = pbs[c["bones"][i + 1]].head if i + 1 < len(c["bones"]) else                 (pb.matrix @ c["foot"] if c.get("foot") is not None else pb.tail)
             old_dir = Vector(nxt) - head                   # to the next joint, as FABRIK measured the bone
             new_dir = Vector(new[i + 1]) - head
             if old_dir.length < 1e-9 or new_dir.length < 1e-9: continue

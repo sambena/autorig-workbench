@@ -39,13 +39,14 @@ After the clips are keyed, every authored clip of a rig with leg chains gets the
    contact flickers of two frames or fewer. Loops wrap round.
 2. **Pins**: each contact run holds the foot at its mean position, on the floor. The four frames either side ease
    between the pin and the clip with MoMask's `alpha(t) = 2t^3 - 3t^2 + 1`.
-3. **Re-solve**: each leg is solved onto its pinned foot with FABRIK, from its own pose, so the knee stays on its side
-   (a straight leg bends forward). No bone turns more than 35 degrees from the authored pose. Only the leg bones'
+3. **Re-solve**: each leg is first swung whole about its hip toward its pinned foot, then FABRIK takes up the change
+   in distance, from the leg's own pose, so the knee stays on its side (a straight leg bends forward). No bone turns more than 35 degrees from the authored pose. Only the leg bones'
    rotation keys are rewritten.
 4. **Kept only if better**: the clip is re-measured. Unless the skate dropped by a tenth and the mesh tears no more
    (no new torn edges, stretch up by at most 0.25), the authored keys go back.
 
-Legs come from the card's `rig.skeleton.legs` (or the QA log for a model without a card), else a Mixamo humanoid's
+The foot is the same point clip-check measures (the lowest skinned vertices of the leg's last bone, carried by that
+bone): a placed rig's bones need not run down the middle of its mesh's legs. Legs come from the card's `rig.skeleton.legs` (or the QA log for a model without a card), else a Mixamo humanoid's
 thigh and shin (its foot keeps its orientation). Legs driven by a live IK target, and retargeted mocap, are left
 alone. `--no-anti-slide` skips the pass. The manifest's `footSkate` lists each clip's score before and after
 (in-Blender, measured at the bone tails).
@@ -62,3 +63,25 @@ On the samples (clip-check scores; `--no-anti-slide` build first, then the pass)
 The wyvern's clips are all in the air (the feet never come within 3% of the rest floor): 0 before and after. A clip
 whose body lifts out of the legs' reach (a rear, a jump, a dodge) cannot hold its feet with the legs alone; the pass
 leaves it as authored rather than worse.
+
+## Stepping legs: planting each foot in turn
+
+A rig pipeline rig (`kind: placed`) has FK legs and no IK targets. Its walk used to keep them still while the body
+rocked. Now the travelling clips step (`core/leg_planting.py`, after Spider Walker):
+
+- **Which legs step when.** Four legs (two of them front): the lateral-sequence walk (LH, LF, RH, RF), the diagonal
+  trot and the rotary gallop, timed as `core/gait.py` times them. Six: the alternating tripod. Any other count:
+  Spider Walker's round robin, front to back down one side and then the other, offset by half a step.
+- **Where a foot lands.** Spider Walker's predicted target: the foot's rest spot under where the body will be, ahead
+  by half a stride, raycast down onto the ground (a flat floor at the rest feet; `step_cycle` takes any raycast).
+- **The step.** From one plant to the next by smoothstep, lifted along the surface normal by `sin(pi t) x height`.
+- **Looping.** Each leg steps once a cycle at its phase, and the drift that triggers it is one cycle's travel, so
+  the last frame is the first. A planted foot moves back at `stride / (duty x frames)` a frame: the speed the
+  manifest publishes.
+- **Legs.** Re-solved onto the steps (swing, then FABRIK, up to 70 degrees a bone). A stride is at most 0.9 of the
+  shortest leg on four legs and 0.55 on more. A stepping leg that tears the mesh more than the clip did tries 70%
+  and then 50% of the stride, and then gives up: the clip keeps its legs still (the beetle, whose hips fail the rig
+  audit's bends, does). The walk's published stride and footfall events follow what was planted.
+
+Clips: `walk` always, and `trot` and `gallop` for four legs, as for IK rigs. `--no-plant` skips the stepping.
+Footfall events name the legs that land together.

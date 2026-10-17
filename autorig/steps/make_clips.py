@@ -39,6 +39,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 import layout
 import gait
 import clip_passes
+import leg_planting
 import digits
 import morph_generator
 # Per-model clip settings (archetype, display name, category, attack...): rig.json "clips"; the licence line:
@@ -724,6 +725,22 @@ class CreatureRig:
         # foot, LF moved with LH and RF with RH (a bound, not a rotary gallop)
         for f in self.feet:
             f["is_front"] = f["name"] in self.front
+        # Legs with no IK target (the rig pipeline's placed rigs): FK chains whose feet the walk plants afterwards
+        # (leg_planting.py, then clip_passes.place_feet). Named as the card names them.
+        self.legs = []
+        if not self.feet:
+            for leg in sk.get("legs", []):
+                chain = [b for b in leg.get("bones", []) if has(b)]
+                if not chain or has(leg.get("ik")): continue
+                tail = arm.data.bones[chain[-1]].tail_local.copy()
+                self.legs.append({"name": leg.get("name") or chain[0], "bones": chain, "rest": tail,
+                                  "reach": sum(arm.data.bones[b].length for b in chain),
+                                  "side": 1.0 if leg.get("side", "L") == "L" else -1.0, "along": tail.dot(FORWARD)})
+            for side in (1.0, -1.0):
+                row = sorted((l for l in self.legs if l["side"] == side), key=lambda l: -l["along"])
+                for i, l in enumerate(row):
+                    l["group"] = (i + (0 if side > 0 else 1)) % 2
+                    l["is_front"] = i == 0 and len(row) > 1
 
     def direction(self, bone):
         b = self.arm.data.bones[bone]
@@ -788,7 +805,8 @@ def creature_walker(rig, style, spec=None):
 
     stride = 0.26 * L * gait_params.get("stride", 1.0)
     lift = 0.06 * L * gait_params.get("foot_lift", 1.0)
-    legless = not rig.feet
+    legless = not rig.feet and not rig.legs
+    gait_legs = rig.feet or rig.legs     # IK targets the clips move, or FK legs planted after the clip is keyed
     discharge = style == "discharge"
     # windup: "rear" (up on the hind legs, forelegs raised: the default bite) or "head_down" (a big beast bracing to
     # charge: front end dropped, neck and head lowered, then the lunge); hit_rear scales how far a hit rocks it
@@ -843,7 +861,7 @@ def creature_walker(rig, style, spec=None):
 
     # Four feet with a lateral-sequence phase are a quadruped. gait "trot" (or the trot preset) makes the walk
     # clip the 2-beat diagonal instead, and does not add a separate trot and gallop: that clip is the trot.
-    has_lateral = len(rig.feet) == 4 and any("lateral_phase" in f for f in rig.feet)
+    has_lateral = (len(rig.feet) == 4 and any("lateral_phase" in f for f in rig.feet)) or                   (len(rig.legs) == 4 and sum(1 for l in rig.legs if l["is_front"]) == 2)
     wants_trot = spec.get("gait") == "trot" or preset_name == "quadruped_trot"
     is_quad = has_lateral and not wants_trot
 
@@ -1207,8 +1225,31 @@ def creature_walker(rig, style, spec=None):
         fact_stride = stride
         fact_duty = 0.5
         fact_frames = 16
+    # FK legs step after the clip is keyed (leg_planting.step_cycle, Spider Walker's step): each travelling clip's
+    # stride, duty, lift and footfall order, matching what its body does and the speed published for it. A stride is
+    # at most 0.9 of the shortest leg on four legs and 0.55 on more (an insect takes short steps): the evaluators size
+    # strides by the body, and a long body on short legs (the canine's gallop: 1.2 on 0.63 legs) would swing its legs
+    # out flat and tear the hips.
+    plant = {}
+    reach = (0.9 if len(rig.legs) == 4 else 0.55) * min((l["reach"] for l in rig.legs), default=0.0)
+    if rig.legs and fact_stride > reach:
+        fact_stride = reach
+    if rig.legs:
+        if is_quad:
+            plant["walk"] = {"frames": 24, "stride": fact_stride, "duty": fact_duty, "kind": "walk",
+                             "lift": 0.065 * L * gait_params.get("foot_lift", 1.0)}
+            plant["trot"] = {"frames": 16, "stride": gait.evaluate_quadruped_trot(0.0, L, L, params=trot_params)["stride_length"],
+                             "duty": trot_params["duty_factor"], "kind": "trot", "lift": 0.09 * L * trot_params.get("foot_lift", 1.0)}
+            gp = gait.merge_gait_params("quadruped_gallop", None)
+            plant["gallop"] = {"frames": 14, "stride": 0.45 * L * gp["stride"], "duty": gp.get("duty_factor", 0.28),
+                               "kind": "gallop", "lift": 0.12 * L * gp.get("foot_lift", 1.0)}
+        elif has_lateral and wants_trot:
+            plant["walk"] = {"frames": 16, "stride": fact_stride, "duty": fact_duty, "kind": "trot",
+                             "lift": 0.09 * L * trot_params.get("foot_lift", 1.0)}
+        else:
+            plant["walk"] = {"frames": 16, "stride": fact_stride, "duty": fact_duty, "kind": "tripod", "lift": lift}
     return clips, {"windUpEnd": windup_end / 24.0, "stride": fact_stride, "walkFrames": fact_frames,
-                   "duty": fact_duty}
+                   "duty": fact_duty, "plant": plant}
 
 
 def humanoid_walker(rig, style, spec=None):
@@ -2397,9 +2438,17 @@ class Authored:
         ev = {}
         for name, last, loops in made:
             length = s(last if loops else last + 1)
+            plan = (self.facts.get("plant") or {}).get(name)
             if name == "walk" and self.rig.feet:
                 ev[name] = [{"name": "footfall", "time": round(s(last) * (0.5 * g), 4),
                              "detail": ",".join(f["name"][3:] for f in self.rig.feet if f["group"] == g)} for g in (0, 1)]
+            elif plan and self.rig.legs:
+                # a planted leg's footfall is the start of its stance; legs that land together share an event
+                at = {}
+                for leg, ph in leg_planting.phases_for(self.rig.legs, plan["kind"]).items():
+                    at.setdefault(round(ph, 4), []).append(leg)
+                ev[name] = [{"name": "footfall", "time": round(s(last) * ph, 4), "detail": ",".join(sorted(legs))}
+                            for ph, legs in sorted(at.items())]
             elif name == "attack":
                 ev[name] = [{"name": "windup_full", "time": s(WINDUP_END - 2)}, {"name": "strike_release", "time": s(WINDUP_END)},
                             {"name": "strike_impact", "time": s(STRIKE_END)}]
@@ -2457,7 +2506,8 @@ def author(key, spec, argv):
     grounded = ground_deaths(rig, mesh, clips, made)
     if grounded:
         made = build(rig, clips)
-    skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid), rig.size, argv, mesh)
+    plant_feet(rig, made, arche.facts, argv)
+    skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid, mesh), rig.size, argv, mesh)
 
     out = os.path.join(pack, "clips")
     os.makedirs(out, exist_ok=True)
@@ -2519,6 +2569,44 @@ def qa_skeleton(key):
     """The bone roles the rig pipeline logged for a model with no card yet (its QA log)."""
     q = os.path.join(layout.work_dir("qa"), key + ".json")
     return json.load(open(q, encoding="utf-8")).get("skeleton") if os.path.exists(q) else None
+
+
+def plant_feet(rig, made, facts, argv):
+    """FK legs step: each travelling clip in facts["plant"] gets its feet from leg_planting.step_cycle (Spider
+    Walker's raycast-and-step, laid out as a loop) and its legs re-solved onto them (clip_passes.place_feet). A
+    stepping leg that tears the mesh (a placed rig whose joints bend badly) tries a shorter stride, then gives up
+    and keeps the clip as authored; the walk's published stride follows. Returns {clip: stride}."""
+    plan = facts.get("plant") or {}
+    if not plan or not rig.legs or "--no-plant" in argv: return {}
+    chains = {c["name"]: c for c in clip_passes.leg_chains(rig.arm, rig.skeleton, mesh=rig.mesh)}
+    legs = [l for l in rig.legs if l["name"] in chains]
+    if not legs: return {}
+    rest = {l["name"]: tuple(clip_passes.rest_foot(rig.arm, chains[l["name"]])) for l in legs}
+    reach = (0.9 if len(legs) == 4 else 0.55) * min(l["reach"] for l in legs)
+    done = {}
+    for name, last, loops in made:
+        p = plan.get(name)
+        if p is None or not loops: continue
+        action = bpy.data.actions[name]
+        phases = leg_planting.phases_for(legs, p["kind"])
+        base = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh) if rig.mesh else None
+        for share in (1.0, 0.7, 0.5):
+            stride = min(p["stride"], reach) * share
+            tracks = leg_planting.step_cycle(rest, last, stride, p["duty"], min(p["lift"], 0.3 * reach), phases,
+                                             forward=tuple(FORWARD))
+            targets = [{k: tracks[k][f] for k in tracks} for f in range(last)]
+            _, saved = clip_passes.place_feet(rig.arm, action, last, True, [chains[l["name"]] for l in legs],
+                                              targets, rig.size, max_turn=clip_passes.STEP_TURN)
+            torn = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh)[0] if base else 0
+            if base is None or torn <= base[0]:
+                done[name] = stride
+                break
+            clip_passes.restore(saved)
+        print("PLANT_FEET " + json.dumps({"clip": name, "legs": len(legs), "kind": p["kind"], "duty": p["duty"],
+                                          "stride": round(done[name], 4) if name in done else None}), flush=True)
+    if "walk" in done: facts["stride"] = done["walk"]           # the speed the manifest publishes
+    elif "walk" in plan: facts.pop("plant", None)                # the walk stayed as authored: no footfalls to publish
+    return done
 
 
 def settle_feet(arm, made, chains, size, argv, mesh=None):
@@ -2816,7 +2904,7 @@ def main():
     clips = arche.clips()
     made = build(rig, clips)
     skeleton = (card.get("rig") or {}).get("skeleton") or qa_skeleton(key)
-    settle_feet(arm, made, clip_passes.leg_chains(arm, skeleton), rig.size, argv, mesh)
+    settle_feet(arm, made, clip_passes.leg_chains(arm, skeleton, mesh=mesh), rig.size, argv, mesh)
 
     # 1. the source: the rig with every clip as an action
     bpy.context.preferences.filepaths.save_version = 0

@@ -66,6 +66,25 @@ def fabrik(joints, target, iterations=20, tolerance=1e-5, pole=None):
     return pts
 
 
+def _rotate(v, q):
+    w, x, y, z = q
+    u = (x, y, z)
+    t = _mul(_cross(u, v), 2.0)
+    return _add(_add(v, _mul(t, w)), _cross(u, t))
+
+
+def swing_then_fabrik(joints, target, iterations=20, tolerance=1e-5, pole=None):
+    """The leg swung whole about its root toward the target first, then FABRIK for what is left (the change in
+    distance). A leg keeps its shape while it sweeps, as a dog's swings from the shoulder or an insect's from the
+    hip, and its joints bend only as far as the foot comes nearer or goes further."""
+    pts = [tuple(p) for p in joints]
+    if len(pts) < 2: return pts
+    root = pts[0]
+    q = rotation_between(_sub(pts[-1], root), _sub(target, root))
+    swung = [root] + [_add(root, _rotate(_sub(p, root), q)) for p in pts[1:]]
+    return fabrik(swung, target, iterations, tolerance, pole)
+
+
 def rotation_between(a, b):
     """The shortest rotation taking direction a to direction b, as a quaternion (w, x, y, z)."""
     la, lb = _len(a), _len(b)
