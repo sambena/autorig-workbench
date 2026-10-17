@@ -548,6 +548,9 @@ async function handleAction(action) {
     case "git-commit":
       openGitCommit();
       break;
+    case "clean-generated":
+      openCleanGenerated();
+      break;
     case "import-model":
       openModal("#importModal");
       break;
@@ -1608,6 +1611,67 @@ function openExportModal(targetPreset = "all") {
       }
     };
   });
+}
+
+// ---- File > Clean Up Generated Files… (core/clean_generated.py): delete what the tool can rebuild
+const fmtBytes = (n) => (n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB");
+
+async function openCleanGenerated() {
+  openModal("#cleanModal");
+  const body = $("#cleanModalBody");
+  if (!body) return;
+  body.innerHTML = `<div class="empty">Measuring the generated files…</div>`;
+  let scan;
+  try {
+    scan = await api("/api/clean/scan");
+  } catch (e) {
+    body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    return;
+  }
+  const rows = scan.kinds.map((k) => `
+    <tr>
+      <td style="width:1.5em"><input type="checkbox" data-kind="${esc(k.key)}" ${k.default && k.files ? "checked" : ""} ${k.files ? "" : "disabled"}></td>
+      <td><b>${esc(k.label)}</b><div class="meta">${esc(k.note)}</div></td>
+      <td class="num" style="white-space:nowrap">${k.files ? fmtBytes(k.bytes) : "—"}</td>
+      <td class="num" style="white-space:nowrap">${k.files} file${k.files === 1 ? "" : "s"}</td>
+    </tr>`).join("");
+  body.innerHTML = `
+    <div class="meta" style="margin-bottom:10px">Work folder <code>${esc(scan.work)}</code>. Models, textures, rig.json, cards, rigs and clips are never touched.</div>
+    <table style="margin-bottom:12px">${rows}</table>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <span id="cleanResult" class="meta" style="margin-right:auto"></span>
+      <button type="button" class="small close-clean">Cancel</button>
+      <button type="button" class="small primary" id="cleanGo">Delete</button>
+    </div>`;
+  const go = $("#cleanGo");
+  const result = $("#cleanResult");
+  const update = () => {
+    const picked = scan.kinds.filter((k) => body.querySelector(`input[data-kind="${k.key}"]`).checked);
+    const total = picked.reduce((a, k) => a + k.bytes, 0);
+    go.disabled = !picked.length;
+    go.textContent = picked.length ? `Delete ${fmtBytes(total)}` : "Delete";
+  };
+  body.querySelectorAll("input[data-kind]").forEach((c) => (c.onchange = update));
+  update();
+  body.querySelector(".close-clean").onclick = () => $("#cleanModal").close();
+  go.onclick = async () => {
+    const kinds = [...body.querySelectorAll("input[data-kind]:checked")].map((c) => c.dataset.kind);
+    if (!kinds.length) return;
+    go.disabled = true;
+    result.textContent = "Deleting…";
+    try {
+      const r = await api("/api/clean", { kinds });
+      const files = Object.values(r.deleted).reduce((a, d) => a + d.files, 0);
+      const bytes = Object.values(r.deleted).reduce((a, d) => a + d.bytes, 0);
+      result.textContent = `Deleted ${files} file${files === 1 ? "" : "s"}, ${fmtBytes(bytes)} freed.` +
+        (r.failed.length ? ` ${r.failed.length} couldn't be deleted: ${r.failed[0]}` : "");
+      go.textContent = "Done";
+      await refreshState();
+    } catch (e) {
+      result.textContent = e.message;
+      go.disabled = false;
+    }
+  };
 }
 
 // ---- File > Commit to Git Repo… (core/git_commit.py): commit the models folder, push, open a pull request
