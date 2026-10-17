@@ -198,6 +198,9 @@ def suggest_spec(name, log=print, spec_file=None):
     if os.path.exists(out):
         os.remove(out)
     r = blender.run("suggest_step.py", name, "-out", out_dir)
+    for line in (r.stdout or "").splitlines():          # what the step could not weigh (an extra not installed)
+        if line.startswith("SUGGEST_LOG "):
+            log(f"WATCH_SUGGEST {name}: {line[len('SUGGEST_LOG '):]}")
     if r.returncode != 0 or not os.path.isfile(out):
         log(f"WATCH_SUGGEST {name}: suggest failed (exit {r.returncode})")
         return None
@@ -211,6 +214,8 @@ def suggest_spec(name, log=print, spec_file=None):
         json.dump(spec, fh, indent=2)
     spec_store.reload()
     log(f"WATCH_SUGGEST {name}: wrote rig.json ({prop.get('archetype')}, {prop.get('confidence')} confidence)")
+    # why: the tips, the body plan and the picture vote, and which decided (core/suggest.py combine)
+    log(f"WATCH_SUGGEST {name}: why: {'; '.join(prop.get('reasons') or []) or 'no reasons given'}")
     return prop.get("archetype")
 
 

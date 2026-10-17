@@ -111,7 +111,9 @@ the spec as a form beside it. Nothing needs Blender or JSON:
   with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
   `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
 - **Suggest skeleton**: One click proposes an archetype and placed bone chains from geodesic extremities (`probe_tips`),
-  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies.
+  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies. With the
+  `trimesh` and `open-clip` extras it also weighs the mesh's body plan (feet on the ground, wing sheets, a solid base)
+  and a picture vote over four renders, and says why it picked what it picked (docs/SPEC.md).
 - **Placed builder (`kind: "placed"`)**: Body-part rules (allowed/denied bones), join blending radii, weld seam ripping
   to prevent stretch between limbs, distance gradient wing membranes with flank cutoffs, jaw hinges, and rigid islands.
 - **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
@@ -163,7 +165,8 @@ conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.j
 
 ## Optional extras
 
-Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases). These install
+Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases, the suggester's body
+plan and picture vote). These install
 for Blender's own Python with `python autorig/cli/run.py extras install <name|all>`. See [docs/EXTRAS.md](docs/EXTRAS.md).
 
 ## Tests
