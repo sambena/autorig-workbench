@@ -2517,7 +2517,10 @@ def author(key, spec, argv):
     made = add_variants(rig.arm, made, rig.size, argv, legs | {f["name"] for f in rig.feet})
     planted = plant_feet(rig, made, arche.facts, argv)
     made = drop_unplanted(rig.arm, made, arche.facts, planted)
-    skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid, mesh), rig.size, argv, mesh)
+    f = arche.facts
+    walk_ground = {"walk": tuple(-FORWARD * (f["stride"] / (float(f.get("duty") or 0.5) * f["walkFrames"])))}         if f.get("stride") and f.get("walkFrames") else {}
+    skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid, mesh), rig.size, argv, mesh,
+                        walk_ground)
     springs = spring_pass(arm, made, spec, (card.get("metres") or 0) and rig.size / float(card["metres"]), argv, mesh)
 
     out = os.path.join(pack, "clips")
@@ -2586,7 +2589,7 @@ def qa_skeleton(key):
 def plant_feet(rig, made, facts, argv):
     """FK legs step: each travelling clip in facts["plant"] gets its feet from leg_planting.step_cycle (Spider
     Walker's raycast-and-step, laid out as a loop) and its legs re-solved onto them (clip_passes.place_feet). A
-    stepping leg that tears the mesh (a placed rig whose joints bend badly) tries a shorter stride, then gives up
+    stepping leg that tears the mesh (a placed rig whose joints bend badly) tries a shorter, lower step, then gives up
     and keeps the clip as authored; the walk's published stride follows. Returns {clip: stride}."""
     plan = facts.get("plant") or {}
     if not plan or not rig.legs or "--no-plant" in argv: return {}
@@ -2607,21 +2610,39 @@ def plant_feet(rig, made, facts, argv):
         action = bpy.data.actions[name]
         phases = leg_planting.phases_for(legs, p["kind"])
         base = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh) if rig.mesh else None
+        chain_list = [chains[l["name"]] for l in legs]
+        floor = clip_passes.rest_floor(rig.arm, chain_list)
+
+        def skate(stride):
+            # at the speed this clip travels (what a game moves it at), the mesh's own foot points
+            frames = clip_passes.sample(rig.arm, action, last, chain_list)
+            tracks = {c["name"]: [frames[g][c["name"]][-1] for g in range(last)] for c in chain_list}
+            v = tuple(-FORWARD * (stride / (p["duty"] * cycle)))
+            return clip_passes.foot_contact.foot_skate(tracks, rig.size, loop=True, velocity=v, floor=floor)["score"]
         shares = (1.0, 0.7, 0.5) if source == name else (done[source] / min(p["stride"], reach),)
+        tries = []
         for share in shares:
             stride = min(p["stride"], reach) * share
-            tracks = leg_planting.step_cycle(rest, cycle, stride, p["duty"], min(p["lift"], 0.3 * reach), phases,
-                                             forward=tuple(FORWARD))
+            tracks = leg_planting.step_cycle(rest, cycle, stride, p["duty"], min(p["lift"], 0.3 * reach) * share,
+                                             phases, forward=tuple(FORWARD))
             targets = [{k: tracks[k][f % cycle] for k in tracks} for f in range(last)]
             _, saved = clip_passes.place_feet(rig.arm, action, last, True, [chains[l["name"]] for l in legs],
                                               targets, rig.size, max_turn=clip_passes.STEP_TURN)
             torn = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh)[0] if base else 0
-            if base is None or torn <= base[0]:
+            # still legs at the same speed: what stepping has to beat
+            clip_passes.restore(saved); still = skate(stride)
+            _, saved = clip_passes.place_feet(rig.arm, action, last, True, chain_list, targets, rig.size,
+                                              max_turn=clip_passes.STEP_TURN)
+            stepped = skate(stride)
+            tries.append({"stride": round(stride, 4), "torn": torn, "skate": round(stepped, 3), "still": round(still, 3)})
+            if (base is None or torn <= base[0]) and stepped < still:
                 done[name] = stride
                 break
             clip_passes.restore(saved)
         print("PLANT_FEET " + json.dumps({"clip": name, "legs": len(legs), "kind": p["kind"], "duty": p["duty"],
-                                          "stride": round(done[name], 4) if name in done else None}), flush=True)
+                                          "stride": round(done[name], 4) if name in done else None,
+                                          **({} if name in done else {"tries": tries, "torn_before": base and base[0]})}),
+              flush=True)
     if "walk" in done: facts["stride"] = done["walk"]           # the speed the manifest publishes
     elif "walk" in plan: facts.pop("plant", None)                # the walk stayed as authored: no footfalls to publish
     return done
@@ -2716,20 +2737,21 @@ def drop_unplanted(arm, made, facts, planted):
     return keep
 
 
-def settle_feet(arm, made, chains, size, argv, mesh=None):
+def settle_feet(arm, made, chains, size, argv, mesh=None, grounds=None):
     """The anti-slide pass over every authored clip (clip_passes.anti_slide): a foot that is down stays where it
     landed. Retargeted mocap keeps its own feet. --no-anti-slide skips it. Returns {clip: {before, after}}, the
-    foot-skate scores (core/foot_contact.foot_skate)."""
+    foot-skate scores (core/foot_contact.foot_skate). grounds: {clip: velocity a frame} for clips whose speed is
+    published (the walk): their ground moves at it, not at what the feet suggest."""
     if "--no-anti-slide" in argv or not chains: return {}
     fps = bpy.context.scene.render.fps
-    out, grounds = {}, {}
+    out, grounds = {}, dict(grounds or {})
     for name, last, loops in made:
         action = bpy.data.actions.get(name)
         if action is None or action.get("autorig_retarget"): continue
         # a variant (walk_v2) travels at its clip's speed, the one the manifest publishes
         source = re.sub(r"_v\d+$", "", name)
         if not clip_passes.foot_contact.travels(name): ground = (0.0, 0.0, 0.0)
-        else: ground = grounds.get(source) if source != name else None
+        else: ground = grounds.get(source)
         r = clip_passes.anti_slide(arm, action, last, loops, chains, size, velocity=ground, fps=fps, mesh=mesh)
         if r is None: continue
         grounds.setdefault(name, r.pop("velocity"))

@@ -5,7 +5,7 @@ open-source project, credited in the code that carries it.
 
 ## Foot skate: the measure
 
-    python autorig/cli/run.py clip-check <model | file.glb> [--max-skate S]
+    python autorig/cli/run.py clip-check <model | file.glb> [--max-skate S] [--speed walk=0.73]
 
 Every clip in the report has `foot_skate`:
 
@@ -19,8 +19,10 @@ Every clip in the report has `foot_skate`:
   tenth (at rest) of the vertices skinned mostly to that bone.
 - **Floor.** The feet at rest. A clip's own lowest feet are not it: a flier hovers.
 - **Ground.** Still, except under clips that travel in place (`walk`, `trot`, `gallop`, `run` and the like): their
-  ground moves back at the speed the planted feet share, estimated from the feet and reported as `ground_speed`
-  (units a second). Compare it with the manifest's walk `speed`.
+  ground moves back at the speed a game moves them at: `--speed clip=units/s`, else the `speed` the clips manifest
+  beside the rig publishes (`<model>/clips/*_clips.json`: the walk and its takes), else the speed the planted feet
+  share, estimated from them. A walk whose legs never step estimates to 0 and looks planted while it glides, so the
+  published speed is the honest one. The speed used is reported as `ground_speed` (units a second).
 - **Score.** MoMask's `compute_foot_sliding` in the ground's frame: each frame step, a foot's horizontal slip `d`
   while its height above the floor `h` is under `H` (3% of the model's size, MoMask's 5 cm on a person) counts
   `d x (2 - 2^(h/H))`. The sum over feet and frames, divided by the frames, in thousandths of the model's size a frame.
@@ -68,9 +70,10 @@ rocked. Now the travelling clips step (`core/leg_planting.py`, after Spider Walk
   the last frame is the first. A planted foot moves back at `stride / (duty x frames)` a frame: the speed the
   manifest publishes.
 - **Legs.** Re-solved onto the steps (swing, then FABRIK, up to 70 degrees a bone). A stride is at most 0.9 of the
-  shortest leg on four legs and 0.55 on more. A stepping leg that tears the mesh more than the clip did tries 70%
-  and then 50% of the stride, and then gives up: the clip keeps its legs still (the beetle, whose hips fail the rig
-  audit's bends, does). The walk's published stride and footfall events follow what was planted.
+  shortest leg on four legs and 0.55 on more. A step is kept only if it tears the mesh no more than the clip did and
+  skates less than still legs would at that speed; otherwise it tries 70% and then 50% of the stride and the lift,
+  and then gives up, and the clip keeps its legs still. The walk's published stride and footfall events follow what
+  was planted.
 
 Clips: `walk` always, and `trot` and `gallop` for four legs, as for IK rigs. `--no-plant` skips the stepping.
 Footfall events name the legs that land together.
@@ -127,24 +130,25 @@ and its `attack` and `death` (a tail whipped by a fall would tear) keep their au
 
 ## On the samples
 
-`clip-check` foot-skate scores, `main` before these passes against now (default specs, no variants, no springs).
-Neither adds a torn edge, and every `--loop` clip loops exactly.
+`clip-check` foot-skate scores, `main` (`ded8689`, its new skinning) against this branch, default specs, no variants,
+no springs; the walks at each build's published speed. Neither adds a torn edge, and every `--loop` clip loops
+exactly.
 
 | Clip | canine | beetle | wyvern |
 |---|---|---|---|
 | idle | 3.10 -> 0.09 | 3.73 (kept) | 0 |
-| walk | 36.25 -> 2.71 (steps) | 50.97 -> 16.19 (still legs) | - |
+| walk | 77.89 -> 2.70 (steps) | 97.80 -> 56.51 (steps) | - |
 | trot | new: 2.63 | - | - |
 | gallop | new: 10.79 | - | - |
 | hit | 9.28 -> 1.19 | 7.44 (kept) | 0 |
 | attack_windup | 3.23 -> 0.38 | 3.08 (kept) | 0 |
 | attack, block, strike, jumps, dodge, death | as authored | as authored | 0 |
 
-- **Canine** steps a lateral-sequence walk, a trot and a gallop, and its idle and hits hold their feet.
-- **Beetle**: stepping tears its hips even at half its stride (its rig fails the bend audit), so its walk keeps still
-  legs with a gentle roll (the old legless heave is gone, hence the lower score). Its foot vertices are blended
-  across bones, so a rigid pin cannot hold them and anti-slide keeps every clip as authored. A better-weighted beetle
-  steps.
-- **Wyvern**: every clip is in the air, so 0 throughout. Its `attack_rise` tears 4 edges with or without these passes.
+- **Canine** steps a lateral-sequence walk, a trot and a gallop at the speed it publishes (0.73 m/s; `main`
+  published 1.32 for a walk whose legs did not move), and its idle and hits hold their feet.
+- **Beetle** steps an alternating tripod at 70% of its stride and lift (the full step tears its hips), so it now
+  publishes 0.37 m/s, not 0.83. Its foot vertices are blended across bones, so the mesh feet still slide some way
+  under the planted bones, and anti-slide keeps its other clips as authored. Better foot weights would fix both.
+- **Wyvern**: every clip is in the air, so 0 throughout.
 - Clips whose body rises out of the legs' reach (attack, block, jumps, dodge) cannot hold their feet with the legs
   alone, and the pass leaves them as authored.

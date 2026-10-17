@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import bpy
+from mathutils import Vector
 import numpy as np
 from deformation import metrics, seam_pairs
 from rig_quality import coords
@@ -49,6 +50,19 @@ def foot_points(ends, obs, rest):
     return out
 
 
+def published_speeds(source):
+    """{clip: units a second} from the clips manifest beside a model's rig (<model>/clips/*_clips.json): the speed a
+    game moves an in-place walk at. Empty when there is none."""
+    out={}
+    for m in sorted(Path(source).resolve().parent.parent.glob('clips/*_clips.json')):
+        try:d=json.load(open(m,encoding='utf-8'))
+        except (OSError,ValueError):continue
+        per=float(d.get('unitsPerMetre') or 1.0)
+        for c in d.get('clips',[]):
+            if c.get('speed'):out[c['name']]=float(c['speed'])*per
+    return out
+
+
 def owners():
     result=list(bpy.context.scene.objects)
     result += [o.data.shape_keys for o in bpy.context.scene.objects if o.type=='MESH' and o.data.shape_keys]
@@ -61,6 +75,8 @@ def check(argv):
     ap.add_argument('--report');ap.add_argument('--loop',action='append',default=[],help='Clip name expected to loop; repeat for multiple clips')
     ap.add_argument('--seam-mm',type=float,default=1)
     ap.add_argument('--max-skate',type=float,help='Fail a clip whose foot-skate score is above this')
+    ap.add_argument('--speed',action='append',default=[],help='clip=units a second: the ground speed under an in-place '
+                    'clip (default: the clips manifest beside the rig, else estimated from the feet)')
     a=ap.parse_args(argv)
     if a.every<1 or not math.isfinite(a.seam_mm) or a.seam_mm<=0:raise ValueError('sampling and seam limits must be positive')
     source=a.source
@@ -73,6 +89,10 @@ def check(argv):
     helpers={b.custom_shape for arm in arms for b in arm.pose.bones if b.custom_shape}
     obs=[o for o in obs if o not in helpers]
     if not obs:raise ValueError('no mesh in animation file')
+    speeds=published_speeds(source)
+    for item in a.speed:
+        clip,_,value=item.partition('=')
+        speeds[clip]=float(value)
     animated=owners();takes={}
     object_rest={o:o.matrix_basis.copy() for o in bpy.context.scene.objects}
     for owner in animated:
@@ -169,7 +189,15 @@ def check(argv):
         if name in a.loop:
             displacement=np.median(root_ends[-1]-root_ends[0],axis=0) if roots else np.median(last-first,axis=0)
             loop_error=float(np.linalg.norm((last-first)-displacement,axis=1).max(initial=0))
-        skate=foot_contact.foot_skate(end_tracks,scale,fps=bpy.context.scene.render.fps/a.every,velocity=None if foot_contact.travels(name) else (0.0,0.0,0.0),floor=foot_floor) if ends else None
+        fps=bpy.context.scene.render.fps
+        if not foot_contact.travels(name):ground=(0.0,0.0,0.0)
+        elif name in speeds and arms:
+            # the ground moves back (+Y: the rig faces -Y) at the published speed, a sample at a time
+            back=arms[0].matrix_world.to_3x3()@Vector((0.0,1.0,0.0));back.z=0.0
+            back=back.normalized()*speeds[name]*a.every/fps if back.length>1e-9 else back
+            ground=(back.x,back.y,0.0)
+        else:ground=None
+        skate=foot_contact.foot_skate(end_tracks,scale,fps=fps/a.every,velocity=ground,floor=foot_floor) if ends else None
         errors=[]
         if movement<1e-7*scale:errors.append('no evaluated mesh movement')
         if worst.get('seam_gap',0)>a.seam_mm/1000:errors.append('seam crack')
