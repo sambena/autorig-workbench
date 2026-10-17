@@ -203,6 +203,7 @@ The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with 
 | `beats`, `flap` | flyer: wingbeats per loop, the wing root's swing in degrees |
 | `loop`, `ripple`, `flicker`, `pulse` | flyer: loop length in frames, rippling wings, flickering flames, the bone that pulses (a bell) |
 | `body` | the body bone, when it is not the one the card names |
+| `secondary` | springs baked into the clips (CLIP-MOTION.md): a list of `{bones: [root first] or chain: "stem", stiffness, damping, gravity, iterations, clips}`, e.g. `[{"chain": "tail", "stiffness": 150, "damping": 2}, {"chain": "ear"}]`. Defaults are Wiggle 2's: stiffness 400, damping 1, gravity 1, 2 iterations; every clip |
 | `rig`, `triangles`, `flySpeed`, `splitWalkSpeed` | winged: the rig folder (default the model's rig folder), the export's triangle budget (default the model's budget, else full resolution), the fly loop's speed in metres a second (left out of the manifest when not given), and the `walkSpeed` written with `--split-clips` |
 
 ### Suggesting a skeleton

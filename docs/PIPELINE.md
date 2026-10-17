@@ -19,7 +19,7 @@ from the front quarter; bottom row: posed). `qa_overview.py` puts all of them on
 | Rig | `rerig.py`, `rerig_humanoid.py`, or a custom builder | Blender | builds the armature from the spec, skins it, writes the `.blend`, the `.fbx` and the bend test |
 | Trim | `decimate.py` | Blender | cuts the FBX to the budget, at most four influences per vertex, and writes it at the rest pose |
 | Audit | `audit.py` | Blender | PASS, CHECK or FAIL on the engine FBX (below) |
-| Clips | `make_clips.py` | Blender | authors the archetype's clips and writes them for engines (FORMATS.md). A standing model's `death` / `explode` ends with its lowest point on the floor, measured on the skinned mesh frame by frame (never under it on the way down) |
+| Clips | `make_clips.py` | Blender | authors the archetype's clips and writes them for engines (FORMATS.md). A standing model's `death` / `explode` ends with its lowest point on the floor, measured on the skinned mesh frame by frame (never under it on the way down). Planted feet are then held where they land (the anti-slide pass, CLIP-MOTION.md) |
 | Publish | `publish.py` | Python | writes the model card and the group's index |
 | Preview | `preview_glb.py` | Blender | `<rig folder>/preview.glb` (mesh, armature, every clip) and `preview.json`, for the GUI's 3D viewer only |
 | Source view | `source_preview.py` | Blender | `<work>/source/<model>.glb` (the source mesh as it came, no skin) and `.json` (its own joints), for the spec editor only |
@@ -188,6 +188,7 @@ The GUI's `/api/audit?name=<model>` serves the whole JSON.
   level and turned with the pelvis (a lifted one follows its shin partway); the older `--feet-keep` only scales the ankle's
   own turn, which at 0.3 froze a dancer's boots at the shin's angle (toes down to 84 deg, splayed 22 deg), so prefer the first. SMPL has no fingers, so a rig with `digits` dances
   with its hands flat as in its T-pose; `--finger-curl 25` holds five fingers per hand in a relaxed curl. Then `run.py retarget`, then
-  `run.py clip-check <model>`: does every clip move, do the seams stay closed, how often is a hand inside the body.
+  `run.py clip-check <model>`: does every clip move, do the seams stay closed, how often is a hand inside the body,
+  how much do the feet skate (CLIP-MOTION.md).
   Retarget refuses to save a clip that does not move.
 - Bend tests are stills of one strong pose. They catch tearing and wrong ownership, not everything an animation will.
