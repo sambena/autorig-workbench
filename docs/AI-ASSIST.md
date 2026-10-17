@@ -45,6 +45,25 @@ spec has them) and preview, like Save & Re-rig. **Undo** puts the old `rig.json`
 
 A conversation carries on: ask a follow-up and it keeps what it has seen. **New conversation** starts afresh.
 
+**When the AI needs you.** Any task can stop to ask (its `ask_user` tool): the question appears in the
+conversation with its likely answers as buttons, the prompt box empties and shows the question as its hint, and
+an answer button fills the box. **Ask** sends it, with its cost on the button as always. The answer goes back to the
+AI as that question's result, so it carries on where it stopped. A failed request leaves the question open. When the
+AI asks in its reply instead, the prompt's hint quotes the question.
+
+**Next steps.** Above the prompt, the dialog lists the workbench steps the model is missing, in the order they run:
+
+1. **Survey** (and the four facing views) when there are none, since reading which way a model faces needs them.
+2. **Suggest a skeleton** when there is no `rig.json` (`run.py suggest`, the watch folder's suggester; it never
+   replaces a rig.json).
+3. **Rig, trim and audit** when it isn't rigged, or **Audit** when it is rigged but not graded.
+4. **Make clips** when `rig.json` names a clip archetype and there are none.
+5. **Preview** when the viewer has no copy.
+
+The AI can add a step it needs with `propose_step`; the dialog marks those. Each step is a button, and **Fix all**
+runs every listed step as one job. These are the workbench's own steps: they run on this computer and cost
+nothing. When the job ends, the list refreshes; ask again to carry on.
+
 ## How it is built
 
 | File | What it does |

@@ -113,7 +113,8 @@ async function loadUsage() {
 
 // ---- Fix this rig --------------------------------------------------------------------------------------------
 
-let fix = { model: "", conversation: "", job: "", timer: 0, undo: null };
+let fix = { model: "", conversation: "", job: "", timer: 0, undo: null, aiSteps: [], running: 0 };
+const STEP_ORDER = ["survey", "suggest", "rig", "audit", "clips", "preview"];
 
 function log(html, cls) {
   const div = document.createElement("div");
@@ -129,12 +130,13 @@ async function openFixRig(model) {
   fix.model = model;
   $("#aiFixModel").textContent = model;
   show("#aiFixModal");
-  await refreshEstimate();
+  await Promise.all([refreshEstimate(), loadSteps()]);
 }
 
 function newConversation() {
   clearTimeout(fix.timer);
-  fix = { model: fix.model, conversation: "", job: "", timer: 0, undo: null };
+  fix = { model: fix.model, conversation: "", job: "", timer: 0, undo: null, aiSteps: [], running: 0 };
+  $("#aiFixSteps").innerHTML = "";
   $("#aiFixLog").innerHTML = "";
   $("#aiFixPlan").innerHTML = "";
   $("#aiFixMsg").className = "msg";
@@ -172,6 +174,7 @@ async function run() {
   $("#aiFixRun").disabled = true;
   $("#aiFixPlan").innerHTML = "";
   log(esc(message), "ai-you");
+  setPrompt("", "Working on it…");
   try {
     const r = await api("/api/ai/start", { task: "fix-rig", model: fix.model, message, conversation: fix.conversation });
     fix.conversation = r.conversation;
@@ -212,9 +215,17 @@ async function poll() {
   fix.live.remove();
   if (j.error) log(esc(j.error), "ai-step err");
   if (j.reply) log(esc(j.reply), "ai-reply");
+  if (j.question) showQuestion(j.question);
+  else if (j.reply && /\?\s*$/.test(j.reply)) {
+    // asked in its reply rather than with ask_user: the last sentence becomes the prompt's hint
+    const last = j.reply.trim().split(/(?<=[.!?])\s+/).pop();
+    setPrompt("", "Answer: " + last);
+  } else setPrompt("", "Ask a follow-up, or press New conversation to start over");
   log(`This request cost ${money(j.cost || 0)}.`, "ai-step");
   fix.job = "";
   if (j.plan) showPlan(j.plan);
+  if (j.actions && j.actions.length) fix.aiSteps = j.actions;
+  loadSteps();
   refreshEstimate();
 }
 
@@ -256,6 +267,91 @@ async function undo() {
   } catch (e) {
     msg.className = "msg err";
     msg.textContent = e.message;
+  }
+}
+
+// The prompt box follows the conversation: empty after a request, its hint the question to answer.
+function setPrompt(text, hint) {
+  const box = $("#aiFixMessage");
+  box.value = text;
+  box.placeholder = hint || "";
+  if (text || hint) box.focus();
+  refreshEstimate();
+}
+
+// The AI stopped to ask (ask_user): the question, and its answers as buttons that fill the prompt (Ask still sends it,
+// with its cost on the button).
+function showQuestion(q) {
+  const div = log(`<b>${esc(q.text)}</b>`, "ai-question");
+  if (q.options && q.options.length) {
+    const row = document.createElement("div");
+    row.className = "ai-options";
+    for (const o of q.options) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "small";
+      b.textContent = o;
+      b.onclick = () => setPrompt(o, q.text);
+      row.append(b);
+    }
+    div.append(row);
+  }
+  setPrompt("", q.text);
+}
+
+// ---- next steps: the workbench's own steps the model is missing, as buttons in the order they run ----------------
+
+async function loadSteps() {
+  const box = $("#aiFixSteps");
+  if (!fix.model) return;
+  let todo = [];
+  try {
+    todo = (await api("/api/ai/todo?" + new URLSearchParams({ task: "fix-rig", model: fix.model }))).steps;
+  } catch (e) {
+    box.innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
+    return;
+  }
+  // what the model is missing, plus anything the AI asked to run; once each, in pipeline order
+  const byStep = {};
+  for (const s of todo) byStep[s.step] = s;
+  for (const s of fix.aiSteps) byStep[s.step] = Object.assign({}, byStep[s.step] || {}, s, { ai: true });
+  const steps = STEP_ORDER.filter((k) => byStep[k]).map((k) => byStep[k]);
+  if (!steps.length) { box.innerHTML = ""; return; }
+  const busy = fix.running ? "disabled" : "";
+  box.innerHTML = `<div style="display:flex; align-items:center; gap:8px"><b style="flex:1">Next steps</b>` +
+    `<span class="meta">free: they run on this computer</span>` +
+    (steps.length > 1 ? `<button type="button" class="small primary" data-fixall ${busy}>Fix all (${steps.length})</button>` : "") +
+    `</div>` + steps.map((s, i) =>
+      `<div class="ai-step-row"><span class="meta">${i + 1}. ${esc(s.why)}${s.ai ? " (the AI asked for this)" : ""}</span>` +
+      `<button type="button" class="small" data-step="${esc(s.step)}" ${busy}>${esc(s.label)}</button></div>`).join("") +
+    (fix.running ? `<div class="meta" style="margin-top:6px">Running… the console shows its log.</div>` : "");
+  box.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => runSteps([b.dataset.step])));
+  const all = box.querySelector("[data-fixall]");
+  if (all) all.onclick = () => runSteps(steps.map((s) => s.step));
+}
+
+async function runSteps(steps) {
+  try {
+    const r = await api("/api/ai/run-steps", { task: "fix-rig", model: fix.model, steps });
+    fix.running = r.job.id;
+    if (window.workbench) window.workbench.followJob(r.job);
+    loadSteps();
+    // when the job ends: the steps it did drop off the list, and the AI can be asked again
+    const wait = async () => {
+      try {
+        const j = await api("/api/jobs/" + fix.running);
+        if (j.state === "queued" || j.state === "running") { setTimeout(wait, 2000); return; }
+        log(`${esc(j.step)}: ${esc(j.state)}.` + (j.state === "done" ? " Ask again to carry on." : ""), j.state === "done" ? "ai-step" : "ai-step err");
+      } catch (e) { /* the job has gone from the list: carry on */ }
+      fix.running = 0;
+      fix.aiSteps = fix.aiSteps.filter((s) => !steps.includes(s.step));
+      loadSteps();
+      refreshEstimate();
+    };
+    setTimeout(wait, 2000);
+  } catch (e) {
+    $("#aiFixMsg").className = "msg err";
+    $("#aiFixMsg").textContent = e.message;
   }
 }
 

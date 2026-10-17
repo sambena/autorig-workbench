@@ -9,6 +9,8 @@
 #   POST /api/ai/apply     {plan, skip}   apply the plan (minus the change numbers in skip)
 #   POST /api/ai/undo      {task, journal}
 #   GET  /api/ai/usage                    the last calls and what they cost
+#   GET  /api/ai/todo?task=&model=        the workbench steps the model is missing, in order (the dialog's buttons)
+#   POST /api/ai/run-steps {task, model, steps}   run those steps (free, on this computer) as one job
 
 try:
     from . import ai_rig
@@ -49,6 +51,9 @@ def get(h, app, srv, path, q):
         elif path == "/api/ai/estimate":
             _ctx(srv, {"model": one("model")})
             h._send(200, a.estimate(one("task") or "fix-rig", one("message"), one("conversation")))
+        elif path == "/api/ai/todo":
+            task = a._task(one("task") or "fix-rig")
+            h._send(200, {"steps": task.todo(_ctx(srv, {"model": one("model")})) if hasattr(task, "todo") else []})
         elif path == "/api/ai/job":
             j = a.job(one("id"))
             h._send(200, j) if j else h._send(404, {"error": "that request has run out"})
@@ -74,6 +79,12 @@ def post(h, app, srv, path, body):
         elif path == "/api/ai/start":
             h._send(200, a.start(str(body.get("task") or "fix-rig"), body.get("message", ""), _ctx(srv, body),
                                  str(body.get("conversation") or "")))
+        elif path == "/api/ai/run-steps":
+            if app.runner.current:
+                h._send(409, {"error": "a step is running; wait for it to finish"})
+                return True
+            task = a._task(str(body.get("task") or "fix-rig"))
+            h._send(200, task.run_steps(_ctx(srv, body), body.get("steps") or []))
         elif path == "/api/ai/apply":
             h._send(200, a.apply(str(body.get("plan") or ""), body.get("skip") or []))
         elif path == "/api/ai/undo":

@@ -505,6 +505,12 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 .ai-log .ai-step { color: var(--muted); padding-left: 8px; border-left: 2px solid var(--line); }
 .ai-log .ai-step.err { color: var(--fail); border-left-color: var(--fail); }
 .ai-log .ai-reply { background: var(--panel2); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
+.ai-log .ai-question { background: var(--sel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; }
+.ai-log .ai-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ai-steps:empty { display: none; }
+.ai-steps { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel2); }
+.ai-steps .ai-step-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+.ai-steps .ai-step-row .meta { flex: 1; }
 .ai-form { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .ai-form label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
 .ai-form input, .ai-form select { width: 60%; }
@@ -1198,6 +1204,7 @@ figcaption { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
   <div class="dialog-body">
     <div id="aiFixStatus" class="meta" style="margin-bottom:10px"></div>
     <div id="aiFixLog" class="ai-log"></div>
+    <div id="aiFixSteps" class="ai-steps"></div>
     <label style="display:block; font-size:12px; color:var(--muted); margin:10px 0 4px">What should it do?</label>
     <textarea id="aiFixMessage" rows="3" style="width:100%">Make this rig pass its audit. Fix the worst tears first, and try each change before proposing it.</textarea>
     <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap">

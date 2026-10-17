@@ -233,6 +233,61 @@ class AssistantLoop(CostGate):
         with self.assertRaises(providers.AIError):
             a.apply(j["plan"]["id"])                                      # once only
 
+    def test_the_ai_can_stop_to_ask_and_the_answer_comes_back_as_the_result(self):
+        a = self.make()
+        ask = {"type": "call", "id": "q1", "name": "ask_user",
+               "args": {"question": "Which way does it face?", "options": ["Toward you", "+X", "-X"]}}
+        chat = scripted([
+            {"parts": [{"type": "text", "text": "The beak points along X."}, call("look", "1"), ask], "raw": None,
+             "usage": {"in": 1000, "out": 80}, "stop": "tool"},
+            {"parts": [{"type": "text", "text": "Facing set toward you."}], "raw": None, "usage": {"in": 1500, "out": 40},
+             "stop": "end"},
+        ])
+        r = a.start("fake", "rotate it so the doors face you", {"model": "wolf"}, chat=chat)
+        j = self.wait(a, r["job"])
+        self.assertEqual(j["question"], {"text": "Which way does it face?", "options": ["Toward you", "+X", "-X"]})
+        self.assertEqual(j["reply"], "The beak points along X.")
+        self.assertEqual(len(chat.sent), 1)                         # it stopped: no second model call
+        self.assertIn("ask_user", [t["name"] for t in chat.sent[0]["tools"]])
+        self.assertIn("ask_user", chat.sent[0]["system"])
+        # the answer goes back as ask_user's result, after the other tool's result from the same step
+        r2 = a.start("fake", "Toward you", {"model": "wolf"}, conversation=r["conversation"], chat=chat)
+        j2 = self.wait(a, r2["job"])
+        self.assertEqual((j2["reply"], j2["question"]), ("Facing set toward you.", None))
+        last = chat.sent[1]["messages"][-1]
+        self.assertEqual(last["role"], "user")
+        self.assertEqual([(p["type"], p["id"]) for p in last["parts"]], [("result", "1"), ("result", "q1")])
+        self.assertEqual(last["parts"][1]["content"], "The person answered: Toward you")
+        self.assertNotIn("pending", a.conversations[r["conversation"]])
+
+    def test_steps_a_tool_offers_ride_along_on_the_job(self):
+        a = self.make()
+        self.task.run = lambda name, args, ctx: {"action": {"step": "survey", "label": "Survey", "why": "no views"},
+                                                 "content": "offered"}
+        chat = scripted([
+            {"parts": [call("look", "1"), call("look", "2")], "raw": None, "usage": {"in": 10, "out": 5}, "stop": "tool"},
+            {"parts": [{"type": "text", "text": "Run the survey, then ask again."}], "raw": None,
+             "usage": {"in": 10, "out": 5}, "stop": "end"},
+        ])
+        j = self.wait(a, a.start("fake", "fix it", {"model": "wolf"}, chat=chat)["job"])
+        self.assertEqual(j["actions"], [{"step": "survey", "label": "Survey", "why": "no views"}])   # once, not twice
+
+    def test_a_failed_answer_leaves_the_question_open(self):
+        a = self.make()
+        ask = {"type": "call", "id": "q1", "name": "ask_user", "args": {"question": "Which way?", "options": []}}
+        r = a.start("fake", "rotate it", {"model": "wolf"}, chat=scripted([
+            {"parts": [ask], "raw": None, "usage": {"in": 10, "out": 5}, "stop": "tool"}]))
+        self.wait(a, r["job"])
+        convo = a.conversations[r["conversation"]]
+        before = json.dumps(convo["messages"])
+
+        def down(**kw):
+            raise providers.AIError("Couldn't reach Anthropic.")
+        j = self.wait(a, a.start("fake", "+X", {"model": "wolf"}, conversation=r["conversation"], chat=down)["job"])
+        self.assertIn("reach", j["error"])
+        self.assertEqual(json.dumps(convo["messages"]), before)
+        self.assertEqual(convo["pending"]["id"], "q1")
+
     def test_the_limit_stops_a_request_before_it_is_sent(self):
         a = self.make(limit=0.01)
         chat = scripted([])
@@ -300,6 +355,25 @@ class FixRigTools(unittest.TestCase):
 
     def run_tool(self, tool_name, **args):
         return self.tool.run(tool_name, args, {"model": "canine"})
+
+    def test_the_next_steps_come_in_pipeline_order_and_fix_all_runs_them(self):
+        todo = [s["step"] for s in self.tool.todo({"model": "canine"})]
+        self.assertEqual(todo, ["survey", "rig", "clips", "preview"])   # the sample has a rig.json (with clips), nothing run
+        status = json.loads(self.run_tool("get_status")["content"])
+        self.assertEqual(status["missing_steps"], todo)
+        out = self.tool.run_steps({"model": "canine"}, ["preview", "audit", "survey", "rig"])
+        self.assertEqual(out["steps"], ["survey", "rig", "preview"])  # in order; Rig already ends with an audit
+        cmds = self.tool.app.runner.job.cmds
+        self.assertEqual([c[1][3:] for c in cmds], [["survey", "canine"], ["facing", "canine"], ["canine"], ["preview", "canine"]])
+        self.assertTrue(all(c[1][2].endswith(os.path.join("cli", "run.py")) for c in cmds))
+        with self.assertRaises(ValueError):
+            self.tool.run_steps({"model": "canine"}, ["paint"])
+
+    def test_propose_step_offers_a_button(self):
+        out = self.run_tool("propose_step", step="survey", reason="I need the facing views")
+        self.assertEqual(out["action"], {"step": "survey", "label": "Survey", "why": "I need the facing views"})
+        with self.assertRaises(ValueError):
+            self.run_tool("propose_step", step="teleport", reason="")
 
     def test_reading(self):
         self.assertIn('"rig"', self.run_tool("get_spec")["content"])
