@@ -69,6 +69,25 @@ class BatchWatchTest(unittest.TestCase):
         riggable_flag = batch_runner.resolve_models(["all"], riggable_only=True)
         self.assertEqual(riggable, riggable_flag)
 
+    def test_steps_run_in_pipeline_order(self):
+        # clips read the card publish writes, so publish goes first whatever order the command line gave
+        self.assertEqual(batch_runner.ordered_steps(["clips", "publish", "audit", "rig"]),
+                         ["rig", "audit", "publish", "clips"])
+        self.assertEqual(batch_runner.ordered_steps(["rig", "auto-tune", "audit"]), ["rig", "auto-tune", "audit"])
+
+    def test_once_waits_for_a_file_still_being_written(self):
+        inbox = os.path.join(self.tmp, "inbox_settle")
+        os.makedirs(inbox)
+        with open(os.path.join(inbox, "fresh.obj"), "w") as fh:
+            fh.write("v 0 0 0\n")
+        answers = [None, None, {"model": "fresh"}]           # not ready twice, then taken
+        logged = []
+        with patch.object(watch_daemon, "process_incoming_file", side_effect=lambda *a, **k: answers.pop(0)), \
+                patch.object(watch_daemon.time, "sleep"):
+            done = watch_daemon.scan_incoming(inbox, settle=30.0, log=logged.append)
+        self.assertEqual(done, [{"model": "fresh"}])
+        self.assertTrue(any(l.startswith("WATCH_WAIT fresh.obj") for l in logged))
+
     def test_format_batch_table(self):
         summary = {
             "models_count": 2,
@@ -163,6 +182,13 @@ class BatchWatchTest(unittest.TestCase):
                                  capture_output=True, text=True)
         self.assertEqual(r_batch.returncode, 0)
         self.assertIn("--auto-tune", r_batch.stdout)
+
+        # run.py with a step and no models prints that step's usage; the step's name is never taken as a model
+        r_run = subprocess.run([sys.executable, os.path.join(REPO, "autorig", "cli", "run.py"), "retarget"],
+                               capture_output=True, text=True)
+        self.assertEqual(r_run.returncode, 2)
+        self.assertIn("run.py retarget <model>", r_run.stdout)
+        self.assertNotIn("PIPELINE", r_run.stdout)
 
         # Test watch CLI --help
         r_watch = subprocess.run([sys.executable, os.path.join(REPO, "autorig", "steps", "watch.py"), "--help"],

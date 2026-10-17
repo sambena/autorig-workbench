@@ -68,8 +68,13 @@ def pair_tips(tips, sym_center=0.5, tol_x=0.15, tol_yz=0.18):
     return centerline, pairs, unpaired
 
 
-def classify_limbs(pairs):
-    """Classifies symmetric limb pairs into wings, legs (front/mid/hind), arms, and head accessories (horns/ears)."""
+def classify_limbs(pairs, proportions=None):
+    """Classifies symmetric limb pairs into wings, legs (front/mid/hind), arms, and head accessories (horns/ears).
+
+    Spans are fractions of the model's width. With proportions (size x, y, z), a wide pair is only wings when it
+    also spans most of the body's length: a narrow body (a dog seen from the front is a third as wide as it is
+    long) makes every pair look wide on its own width."""
+    sx, sy = (proportions[0], proportions[1]) if proportions and len(proportions) == 3 else (None, None)
     legs = []
     wings = []
     arms = []
@@ -83,7 +88,7 @@ def classify_limbs(pairs):
         if z > 0.72 and y < 0.35 and span < 0.40:
             accessories.append(p)
         # Upper body, very wide span -> wings
-        elif z > 0.45 and span > 0.55:
+        elif z > 0.45 and span > 0.55 and (not sx or not sy or span * sx >= 0.6 * sy):
             wings.append(p)
         # Upper body / torso height, moderate span -> arms (humanoid / biped)
         elif z >= 0.35 and span >= 0.25:
@@ -540,13 +545,13 @@ def suggest_skeleton(name, source_data=None, survey_data=None, tips=None, propor
         ]
         reasons.append("no geodesic tips provided; using standard quadruped archetype template")
 
-    centerline, pairs, _ = pair_tips(coords)
-    classified_limbs = classify_limbs(pairs)
-    centerline_info = classify_centerline(centerline)
-
     prop = proportions or (source_data or {}).get("size") or [1.0, 1.0, 1.0]
     if isinstance(prop, (int, float)):
         prop = [prop, prop, prop]
+
+    centerline, pairs, _ = pair_tips(coords)
+    classified_limbs = classify_limbs(pairs, prop)
+    centerline_info = classify_centerline(centerline)
 
     archetype, confidence, arch_reasons = propose_archetype(prop, classified_limbs, centerline_info, skel_kind)
     reasons.extend(arch_reasons)
