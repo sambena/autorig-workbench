@@ -36,6 +36,15 @@ class TestSuggestHeuristics(unittest.TestCase):
         self.assertEqual(len(limbs["legs"]), 2)
         self.assertEqual(len(limbs["wings"]), 0)
 
+    def test_wings_need_a_span_across_the_body(self):
+        # the pair spans 90% of the width either way; only the proportions say whether that is a wingspan
+        pair = {"left": [0.95, 0.4, 0.7], "right": [0.05, 0.4, 0.7], "y": 0.4, "z": 0.7, "span": 0.9}
+        narrow_long = [0.56, 1.77, 1.0]                  # the canine sample: a third as wide as it is long
+        wide = [1.76, 1.58, 1.1]                         # the wyvern sample, wings out
+        self.assertEqual(suggest.classify_limbs([dict(pair)], narrow_long)["wings"], [])
+        self.assertEqual(len(suggest.classify_limbs([dict(pair)], wide)["wings"]), 1)
+        self.assertEqual(len(suggest.classify_limbs([dict(pair)])["wings"]), 1)       # no proportions: as before
+
     def test_propose_archetypes(self):
         # 4 leg pairs -> octopod
         octo_limbs = {"legs": [{}] * 4, "wings": []}
