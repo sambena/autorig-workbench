@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Autorig Workbench: rewrites an FBX so Unity imports every root object with rotation (0,0,0) and scale 1.
 #
-#   blender -b --python autorig/steps/unity_fbx.py -- <in.fbx> <out.fbx>
+#   blender -b --python autorig/steps/unity_fbx.py -- <in.fbx> <out.fbx> [--relative]
 #
 # The rig, decimate and clips steps write FBX for every engine (-Z forward, Y up, bake_space_transform). Blender's
 # space transform is only baked into meshes: an armature keeps it as its own rotation, so in Unity the rig's root
@@ -24,8 +24,10 @@ import mathutils
 
 def args():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    if len(a) != 2: sys.exit("usage: blender -b --python unity_fbx.py -- <in.fbx> <out.fbx>")
-    return a
+    relative = "--relative" in a
+    a = [x for x in a if x != "--relative"]
+    if len(a) != 2: sys.exit("usage: blender -b --python unity_fbx.py -- <in.fbx> <out.fbx> [--relative]")
+    return a[0], a[1], relative
 
 
 def reset_parent_inverse(ob):
@@ -104,7 +106,7 @@ def drop_object_motion():
 
 
 def main():
-    src, out = args()
+    src, out, relative = args()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.abspath(src), ignore_leaf_bones=False, use_anim=True)
     if bpy.ops.object.mode_set.poll(): bpy.ops.object.mode_set(mode='OBJECT')
@@ -138,7 +140,11 @@ def main():
         primary_bone_axis='Y', secondary_bone_axis='X', use_armature_deform_only=False,
         bake_anim=animated, bake_anim_use_all_actions=False, bake_anim_use_nla_strips=animated,
         bake_anim_use_all_bones=True, bake_anim_force_startend_keying=True, bake_anim_step=1.0,
-        bake_anim_simplify_factor=0.0, mesh_smooth_type='OFF', path_mode='STRIP', embed_textures=False)
+        bake_anim_simplify_factor=0.0, mesh_smooth_type='OFF',
+        # --relative: texture paths stay relative to the new file (Dog2.fbm/Dog2_basecolor.png), for a game file
+        # rewritten in place next to its .fbm folder, as the original pointed. Packages copy textures beside the FBX:
+        # bare names (STRIP) there.
+        path_mode='RELATIVE' if relative else 'STRIP', embed_textures=False)
     print("UNITY_FBX " + json.dumps({"in": src, "out": out, "roots": [o.name for o in roots], "takes": takes,
                                     "object_motion_dropped": moved}))
 
