@@ -13,7 +13,7 @@ import math
 import bpy
 
 
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 
 def all_meshes():
@@ -129,15 +129,15 @@ def carve_wheel(body, like, mid_x):
 
 
 def face_minus_y(objs, front):
-    turns = {"-y": 0.0, "+y": math.pi, "+x": math.pi / 2, "-x": -math.pi / 2}
+    # a turn of +90 degrees takes +x to +y, so a model facing +x turns -90 to face -y (the old table had +x and -x
+    # the wrong way round); and the vertices themselves turn, since a glTF import leaves objects in quaternion mode,
+    # where setting rotation_euler did nothing (fixed with game_prop.py, 2026-10-17)
+    turns = {"-y": 0.0, "+y": math.pi, "+x": -math.pi / 2, "-x": math.pi / 2}
     if turns[front] == 0.0:
         return
-    bpy.ops.object.select_all(action="DESELECT")
+    turn = Matrix.Rotation(turns[front], 4, "Z")
     for obj in objs:
-        obj.rotation_euler = (0.0, 0.0, turns[front])
-        obj.select_set(True)
-    bpy.context.view_layer.objects.active = objs[0]
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        obj.data.transform(turn)
 
 
 def bounds(obj):

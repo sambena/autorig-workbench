@@ -17,6 +17,12 @@
 #   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
+#   python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out <folder> [--front +x] [--carve-wheels]
+#                                                   a generated prop as a game prop: metres, facing, LODs, maps, wheels
+#   python autorig/cli/run.py tripo-clips --in Dog_rigged.glb --name Dog --height 0.62 --out <folder>
+#                                                   idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton
+#   python autorig/cli/run.py crop-cards --out <folder> --card <name>=<plant.glb>[:<view>[:<wide>]] ...
+#                                                   flat picture cards of plants, for a foliage atlas
 #
 # Folders come from AUTORIG_MODELS and AUTORIG_WORK, as everywhere else.
 import os, subprocess, sys
@@ -61,6 +67,9 @@ def main(argv):
         arch = watch_daemon.suggest_spec(name)
         print("SUGGEST %s: %s" % (name, ("rig.json written (%s)" % arch) if arch else "no spec could be suggested"))
         return 0 if arch else 1
+    if cmd in ("game-prop", "tripo-clips", "crop-cards"):
+        script = {"game-prop": "game_prop.py", "tripo-clips": "tripo_clips.py", "crop-cards": "crop_cards.py"}[cmd]
+        return blender_step(script, *rest)
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
@@ -135,7 +144,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("suggest", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "game-prop", "tripo-clips", "crop-cards", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 

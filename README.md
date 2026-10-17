@@ -58,6 +58,12 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
    overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
    (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
 
+## Game tools
+
+`run.py game-prop` (a generated prop as a game prop: metres, facing, LODs, maps, a one-piece truck's tyres cut out),
+`run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
+`run.py crop-cards` (flat picture cards of plants for a foliage atlas). See [docs/GAME-TOOLS.md](docs/GAME-TOOLS.md).
+
 ## Working folder and model organiser
 
 The model list shows one **working folder** (the models root) at a time. The folder button at the left of the
