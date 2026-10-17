@@ -52,6 +52,9 @@ def main(argv=None):
     elif a.tool == "generate":
         from studio_generation import generate
         generate(settings, model_dir, out)
+    elif a.tool == "engine":
+        from engine_lods import build
+        build(a.model, settings, out)
     studio.atomic_json(out / "last_run.json", {"tool": a.tool, "model": a.model, "settings": settings, "status": "complete"})
     print("STUDIO " + json.dumps({"tool": a.tool, "output": str(out)}))
     return 0

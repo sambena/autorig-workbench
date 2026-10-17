@@ -175,8 +175,8 @@ three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERS
 
 ## Model Studio
 
-Open **Model → Model Studio** for static/skinned LOD exports, vehicle wheel pivots and a spin preview,
-reference comparison sheets, Poly Haven materials, seeded foliage/card generation, resumable Hyper3D
+Open **Model → Model Studio** for static/skinned LOD exports, one merged engine LOD FBX (static, skinned with
+its clips, or vehicle parts on wheel pivots), vehicle wheel pivots and a spin preview, reference comparison sheets, Poly Haven materials, seeded foliage/card generation, resumable Hyper3D
 jobs and per-clip animation quality checks. Settings stay with the model in `studio.json`; derived files
 stay in `_studio/`, outside source discovery. Image tools optionally need Pillow; paid generation is
 only submitted when explicitly started. See [Model Studio](docs/MODEL-STUDIO.md) for setup and limits.
@@ -184,3 +184,5 @@ only submitted when explicitly started. See [Model Studio](docs/MODEL-STUDIO.md)
     python autorig/cli/run.py studio lods wolf
     python autorig/cli/run.py studio reference wolf
     python autorig/cli/run.py studio validate wolf
+    python autorig/cli/run.py studio engine wolf      # after studio lods (glb): one FBX with every level
+    python autorig/steps/export.py wolf --target unity --engine-lods
