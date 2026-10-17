@@ -163,8 +163,11 @@ conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.j
 
 ## Optional extras
 
-Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases). These install
-for Blender's own Python with `python autorig/cli/run.py extras install <name|all>`. See [docs/EXTRAS.md](docs/EXTRAS.md).
+Some steps do better with a pip library. These install for Blender's own Python with
+`python autorig/cli/run.py extras install <name|all>`. See [docs/EXTRAS.md](docs/EXTRAS.md). In use now: PyMeshLab
+decimation for LODs and untextured meshes, game-prop `--atlas` (xatlas re-unwrap and bake) and `--colliders` (CoACD),
+Mesh Doctor repair and watertight copies (PyMeshLab, PyMeshFix, manifold3d), and manifold3d cuts in game-parts and
+wheel carving ([docs/GAME-TOOLS.md](docs/GAME-TOOLS.md), with before/after numbers).
 
 ## Tests
 
