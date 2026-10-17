@@ -15,7 +15,7 @@
 import json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CODE = ("/viewer.js", "/viewer_logic.js", "/workbench.js", "/studio.js")
+CODE = ("/viewer.js", "/viewer_logic.js", "/workbench.js", "/studio.js", "/ai_assist.js")
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                 ".html": "text/html; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 # The viewer's page: three.js loads GLB textures through blob: URLs.

@@ -321,6 +321,18 @@ one pull request each, code first; models are run through the tool only in R6.
   (EngineSettings, EnginePackage: each layout re-imported from the FBX) and on the canine sample and a test truck;
   not yet imported into Unity itself.
 
+- **AI Assist** (October 2026): an AI menu that drives the workbench's own tools.
+  - Lifted from Deal Hunter (the cost gate) and Cougar Player (providers with native tool calling, the plan/apply/undo
+    loop): Claude, OpenAI, Gemini, or Ollama, over plain HTTP.
+  - Every request shows its worst-case cost first, and the monthly limit holds every model call.
+  - First task, **Fix this rig**: reads the audit and pictures, tries specs on a scratch copy, proposes a `rig.json`;
+    apply re-rigs and can be undone.
+  - Tested with a scripted AI and on a real trial rig.
+  - First paid run (Claude Haiku 5.5, $0.009 over 8 calls) on the biped sample: it found 4 tears at the left hip and
+    added thigh-to-spine blends. Its trial went FAIL -> PASS, and applying it re-rigged the biped to PASS; Undo put it
+    back to FAIL.
+  - docs/AI-ASSIST.md lists the eleven tasks to add next.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

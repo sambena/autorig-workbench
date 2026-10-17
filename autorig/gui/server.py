@@ -18,10 +18,12 @@ try:
     from . import viewer_api                      # the results viewer's routes (gui/viewer_api.py)
     from . import spec_api                        # the spec editor's routes (gui/spec_api.py)
     from . import studio_api
+    from . import ai_api                          # AI Assist (gui/ai_api.py)
 except ImportError:
     import viewer_api
     import spec_api
     import studio_api
+    import ai_api
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.dirname(HERE)
@@ -1115,6 +1117,7 @@ def make_handler(app):
             if not self._guard(q): return
             try:
                 if studio_api.get(self,app,sys.modules[__name__],path,q): return
+                if ai_api.get(self, app, sys.modules[__name__], path, q): return
                 if path == "/api/previews":
                     spec_store.reload()
                     return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
@@ -1313,6 +1316,7 @@ def make_handler(app):
                     return self._send(200, {"stored": True, "file": dest, "meta": meta})
                 body = self._json_body()
                 if studio_api.post(self,app,sys.modules[__name__],path,body): return
+                if ai_api.post(self, app, sys.modules[__name__], path, body): return
                 if path == "/api/upload/done":
                     r = app.uploads.finish(body.get("batch", ""), body.get("group", ""), clean_name(body.get("name", "")))
                     return self._send(200, r)

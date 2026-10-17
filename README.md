@@ -176,6 +176,18 @@ re-rig twice, the second run carrying the first one's audit as "before".
 GPL-3.0-or-later (LICENSE). The steps run inside Blender and import `bpy`, which is GPL; one licence keeps it simple.
 three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERSION.txt says where it came from).
 
+## AI Assist
+
+**AI Assist** in the menu bar lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
+tools. The first one is **Fix this rig**: the AI reads the model's audit and QA pictures, tries candidate `rig.json`
+files on a scratch copy (rigging and auditing them on this computer), and proposes the best one. You apply it, which
+saves `rig.json` and re-rigs, or not; an applied fix can be undone.
+
+AI is off until you pick one in **AI Assist > AI settings & spending**. Every request shows its worst-case cost on the
+button before it runs. Paid AI stops at a monthly limit ($5 by default), and every call's cost is logged. Keys stay
+on this computer, in `.autorig_ai.json`, which git ignores. See [docs/AI-ASSIST.md](docs/AI-ASSIST.md), which also
+lists the next tools planned for it.
+
 ## Model Studio
 
 Open **Model → Model Studio** for static/skinned LOD exports, one merged engine LOD FBX (static, skinned with
