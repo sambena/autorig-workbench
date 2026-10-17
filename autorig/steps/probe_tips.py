@@ -8,7 +8,7 @@ import rerig, geo
 from spec_store import SPECS
 keys = sys.argv[sys.argv.index("--") + 1].split(",")
 for key in keys:
-    spec = dict(SPECS[key])
+    spec = dict(SPECS.get(key) or {})             # a model with no rig.json yet is the usual case for probing
     mesh, joints = rerig.load(rerig.find_fbx(key, spec))
     spec_n = dict(spec, kind="build")
     rerig.normalise(mesh, {}, spec_n)
