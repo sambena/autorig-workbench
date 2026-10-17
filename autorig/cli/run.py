@@ -16,6 +16,12 @@
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
+#   python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out <folder> [--front +x] [--carve-wheels]
+#                                                   a generated prop as a game prop: metres, facing, LODs, maps, wheels
+#   python autorig/cli/run.py tripo-clips --in Dog_rigged.glb --name Dog --height 0.62 --out <folder>
+#                                                   idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton
+#   python autorig/cli/run.py crop-cards --out <folder> --card <name>=<plant.glb>[:<view>[:<wide>]] ...
+#                                                   flat picture cards of plants, for a foliage atlas
 #
 # Folders come from AUTORIG_MODELS and AUTORIG_WORK, as everywhere else.
 import os, subprocess, sys
@@ -51,6 +57,9 @@ def main(argv):
                  if l.startswith("#   python autorig/cli/run.py %s " % cmd)]
         print("usage:\n" + "\n".join(lines or ["  python autorig/cli/run.py %s <model>[,<model>...]" % cmd]))
         return 2
+    if cmd in ("game-prop", "tripo-clips", "crop-cards"):
+        script = {"game-prop": "game_prop.py", "tripo-clips": "tripo_clips.py", "crop-cards": "crop_cards.py"}[cmd]
+        return blender_step(script, *rest)
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
@@ -125,7 +134,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("game-prop", "tripo-clips", "crop-cards", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 
