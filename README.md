@@ -181,7 +181,9 @@ three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERS
 **AI Assist** in the menu bar lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
 tools. The first one is **Fix this rig**: the AI reads the model's audit and QA pictures, tries candidate `rig.json`
 files on a scratch copy (rigging and auditing them on this computer), and proposes the best one. You apply it, which
-saves `rig.json` and re-rigs, or not; an applied fix can be undone.
+saves `rig.json` and re-rigs, or not; an applied fix can be undone. When it needs a decision it asks with answer
+buttons, and the dialog lists the steps the model is missing (survey, suggest a skeleton, rig, audit, clips, preview)
+as buttons in order, with **Fix all**: the workbench's own steps, free.
 
 AI is off until you pick one in **AI Assist > AI settings & spending**. Every request shows its worst-case cost on the
 button before it runs. Paid AI stops at a monthly limit ($5 by default), and every call's cost is logged. Keys stay

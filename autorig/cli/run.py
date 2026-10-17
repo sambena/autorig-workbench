@@ -14,6 +14,7 @@
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
 #   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
+#   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #
@@ -51,6 +52,15 @@ def main(argv):
                  if l.startswith("#   python autorig/cli/run.py %s " % cmd)]
         print("usage:\n" + "\n".join(lines or ["  python autorig/cli/run.py %s <model>[,<model>...]" % cmd]))
         return 2
+    if cmd == "suggest" and rest:
+        import spec_store, watch_daemon
+        name = rest[0]
+        if os.path.exists(spec_store.spec_path(name)) and "--force" not in rest:
+            print("SUGGEST %s already has a rig.json; --force replaces it" % name)
+            return 0
+        arch = watch_daemon.suggest_spec(name)
+        print("SUGGEST %s: %s" % (name, ("rig.json written (%s)" % arch) if arch else "no spec could be suggested"))
+        return 0 if arch else 1
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
@@ -125,7 +135,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 

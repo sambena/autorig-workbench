@@ -24,6 +24,18 @@ MAX_IMAGE_BYTES = 4_500_000          # the providers take about 5 MB a picture
 MAX_SIDE = 1568                      # larger pictures are scaled down first (when Pillow is there) to save tokens
 TRIAL_TIMEOUT = 1800
 
+# The workbench's own steps the dialog can offer as buttons, in the order they have to run. Each is one or more
+# run.py commands, so a later step sees what an earlier one wrote (Suggest writes rig.json, then Rig reads it).
+STEPS = [
+    ("survey", "Survey", "what the file holds, and the four views that show which way it faces", [["survey"], ["facing"]]),
+    ("suggest", "Suggest a skeleton", "measures the mesh and writes a starting rig.json (never replaces one)", [["suggest"]]),
+    ("rig", "Rig, trim and audit", "builds the rig from rig.json, cuts it to its budget, and grades it", [[None]]),
+    ("audit", "Audit", "grades the current rig: tears, bleed, the bend test", [["audit"]]),
+    ("clips", "Make clips", "the archetype's clips (walk, idle, ...) on the rig", [["clips"]]),
+    ("preview", "Preview", "the 3D viewer's copy of the rig and its clips", [["preview"]]),
+]
+STEP_ORDER = [s[0] for s in STEPS]
+
 SYSTEM = """You are the rigging assistant inside Autorig Workbench, a tool that rigs 3D models for games from a spec \
 file (rig.json) and grades each rig with an audit. You are working on one model (named below). Your job: make its \
 rig better, by changing its rig.json.
@@ -39,6 +51,8 @@ time and compare against the current audit; keep what helps.
 - Then propose. Call propose_spec once with the best rig.json you found (the whole file) and a one-line summary. It \
 does not change anything: it adds the spec to a plan the person reads and applies. Never say a change has been made.
 - If nothing you tried beat the current rig, say so plainly and don't propose.
+- If something you need is missing (no survey or facing views, no rig.json, not rigged, no audit), don't guess: call
+propose_step for each step, in order. The person runs them with a button, then asks you again.
 
 Grades: PASS is within every limit, CHECK is past a limit but inside its warn band, FAIL is clearly broken. Tears \
 (edges that stretch open when a bone bends or twists) matter most; then weight bleed and the head's share.
@@ -114,6 +128,13 @@ class FixRig:
                         ["spec", "note"]),
          "description": "Rig, trim and audit a candidate rig.json on a scratch copy of the model; returns its audit and "
                         "adds its QA render to the pictures. The real model is not touched."},
+        {"name": "propose_step", "kind": "action",
+         "schema": _obj({"step": {"type": "string", "enum": [s[0] for s in STEPS]},
+                         "reason": {"type": "string", "description": "Why it is needed, in a few words."}}, ["step", "reason"]),
+         "description": "Offer the person one of the workbench's own steps as a button, when something you need is "
+                        "missing: survey (the facing views), suggest (a starting rig.json), rig (rig, trim, audit), audit, "
+                        "clips, preview. They run it (free, on their computer); then ask again. get_status lists what is "
+                        "missing."},
         {"name": "propose_spec", "kind": "change",
          "schema": _obj({"spec": SPEC_ARG, "summary": {"type": "string", "description": "One line: what it changes."}},
                         ["spec", "summary"]),
@@ -145,6 +166,9 @@ class FixRig:
             return "Read the docs on %s" % (args.get("topic") or "rig.json")
         if name == "trial_rig":
             return "Tried: %s" % (args.get("note") or "a candidate spec")
+        if name == "propose_step":
+            step = args.get("step")
+            return "Offered: %s" % (STEPS[STEP_ORDER.index(step)][1] if step in STEP_ORDER else step)
         return self.LABELS.get(name, name.replace("_", " "))
 
     def _pictures(self, name):
@@ -190,7 +214,9 @@ class FixRig:
         if tool == "get_status":
             st = srv.status(srv.find_group(name), name)
             keep = ("name", "group", "source", "source_ext", "kind", "rigged", "audit", "spec", "spec_error", "clips_spec", "budget")
-            return {"content": json.dumps({k: st.get(k) for k in keep})}
+            out = {k: st.get(k) for k in keep}
+            out["missing_steps"] = [t["step"] for t in self.todo(ctx)]
+            return {"content": json.dumps(out)}
         if tool == "get_spec":
             _, text = spec_api.read_spec_text(srv, name)
             return {"content": text or "(this model has no rig.json yet)"}
@@ -214,6 +240,12 @@ class FixRig:
             return {"content": "%s: %s" % (key, pics[key][1]), "images": [_picture(pics[key][0])]}
         if tool == "spec_reference":
             return {"content": spec_reference(args.get("topic") or "")}
+        if tool == "propose_step":
+            step = str(args.get("step") or "")
+            if step not in STEP_ORDER:
+                raise ValueError("no step called %r; the steps are %s" % (step, ", ".join(STEP_ORDER)))
+            item = self._action(step, str(args.get("reason") or "").strip()[:200])
+            return {"action": item, "content": "Offered as a button: %s. The person runs it, then asks again." % item["label"]}
         if tool == "trial_rig":
             return self._trial(name, args.get("spec"), str(args.get("note") or ""))
         if tool == "propose_spec":
@@ -282,6 +314,56 @@ class FixRig:
         pics = [k for k in self._pictures(name) if k.startswith("trial%d_" % n)]
         return {"content": json.dumps(view) + ("\nPictures: " + ", ".join(pics) if pics else ""),
                 "label": "Tried (%d): %s -> %s" % (n, note or "a candidate", view.get("grade") or "?")}
+
+    # ---- the steps the dialog offers -----------------------------------------------------------------------------
+
+    def _action(self, step, reason=""):
+        _, label, what, _ = STEPS[STEP_ORDER.index(step)]
+        return {"step": step, "label": label, "why": reason or what}
+
+    def todo(self, ctx):
+        """The steps this model is missing, in the order they run: what the dialog shows as buttons before (and
+        beside) anything the AI asks for."""
+        name = self._model(ctx)
+        srv, L = self.srv, self.srv.layout
+        srv.spec_store.reload()
+        st = srv.status(srv.find_group(name), name)
+        out = []
+        if st.get("source") and not (os.path.isfile(os.path.join(L.WORK, "survey", name + ".json")) and
+                                     glob.glob(os.path.join(glob.escape(L.WORK), "facing", glob.escape(name) + "__*.png"))):
+            out.append(self._action("survey", "no survey or facing views yet: needed to read which way it faces"))
+        if not st.get("spec") and not st.get("spec_error"):
+            out.append(self._action("suggest", "no rig.json yet"))
+        if not st.get("rigged_fbx"):
+            out.append(self._action("rig", "not rigged yet"))
+        elif not st.get("audit"):
+            out.append(self._action("audit", "rigged but not audited"))
+        if st.get("clips_spec") and not st.get("clips"):
+            out.append(self._action("clips", "rig.json names a clip archetype, and there are no clips yet"))
+        rd = srv._quiet(L.rigged_dir, name)
+        if (st.get("spec") or st.get("rigged") or st.get("rigged_fbx") or out) and not (rd and os.path.isfile(os.path.join(rd, "preview.glb"))):
+            out.append(self._action("preview", "no viewer preview yet"))
+        return out
+
+    def run_steps(self, ctx, steps):
+        """Queue the chosen steps as one job, in pipeline order (Fix all is every step the dialog shows)."""
+        name = self._model(ctx)
+        chosen = [s for s in STEP_ORDER if s in set(steps or [])]
+        if not chosen:
+            raise ValueError("pick a step: " + ", ".join(STEP_ORDER))
+        if "rig" in chosen and "audit" in chosen:
+            chosen.remove("audit")                            # Rig already ends with an audit
+        run_py = os.path.join(REPO, "autorig", "cli", "run.py")
+        cmds = []
+        for s in chosen:
+            _, label, _, argvs = STEPS[STEP_ORDER.index(s)]
+            for sub in argvs:
+                args = [name] if sub == [None] else [sub[0], name]     # [None]: the pipeline, rig -> trim -> audit
+                cmds.append((label if len(argvs) == 1 else "%s (%s)" % (label, sub[0]),
+                             [sys.executable, "-u", run_py] + args, None, name))
+        label = "AI Assist: " + ", ".join(STEPS[STEP_ORDER.index(s)][1] for s in chosen)
+        return {"job": self.app.runner.submit(self.srv.Job(name, self.srv.find_group(name), label, cmds)).info(),
+                "steps": chosen}
 
     # ---- applying ---------------------------------------------------------------------------------------------
 

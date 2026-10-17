@@ -22,6 +22,17 @@ import ai_providers as providers
 
 HOUR = 3600.0
 
+# Every task gets this tool: when the AI needs the person's decision it asks it here, the request stops, and the
+# person's next message comes back as the answer (the page puts the question and the answers on its prompt).
+ASK_TOOL = {"name": "ask_user", "description": "Ask the person a question you need answered before you can go on, "
+            "with the likely answers. The request stops here; their reply comes back as this tool's result.",
+            "schema": {"type": "object", "additionalProperties": False, "required": ["question", "options"], "properties": {
+                "question": {"type": "string", "description": "One short, plain question."},
+                "options": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
+                            "description": "Two to four short answers they can pick, in the words they would reply with."}}}}
+ASK_NOTE = ("\n\nWhen you need the person to decide or tell you something, call ask_user with one short question and "
+            "two to four answers, rather than asking in your reply; then stop. Don't ask what the tools can find out.")
+
 
 def new_id():
     return secrets.token_urlsafe(9)
@@ -135,6 +146,7 @@ class Assistant:
                    "at": time.time(), "busy": True}
             self.jobs[job["id"]] = job
         before = len(convo["messages"])
+        pending = convo.get("pending")                  # a question the AI asked last time, waiting for this answer
 
         def work():
             try:
@@ -142,10 +154,12 @@ class Assistant:
             except providers.AIError as e:
                 job["error"] = str(e)
                 del convo["messages"][before:]          # a failed turn leaves no half-finished tool calls behind
+                convo["pending"] = pending              # and the question is still open
             except Exception as e:                      # a bug: say so plainly, keep the trace in the server log
                 job["error"] = "Something went wrong: %s" % e
                 traceback.print_exc()
                 del convo["messages"][before:]
+                convo["pending"] = pending
             finally:
                 convo["busy"] = False
                 convo["at"] = time.time()
@@ -160,20 +174,29 @@ class Assistant:
         info = cost.model_info(provider, model, s)
         max_steps, max_tokens = int(s["max_steps"]), int(s["max_tokens"])
         effort = "medium" if info.get("effort") else None
-        defs = [{"name": d["name"], "description": d["description"], "schema": d["schema"]} for d in task.defs]
+        defs = [{"name": d["name"], "description": d["description"], "schema": d["schema"]} for d in task.defs] + [ASK_TOOL]
+        system = task.system + ASK_NOTE
         note = task.context_note(context)
-        convo["messages"].append({"role": "user", "parts": [{"type": "text", "text": "%s\n\n(%s)" % (text, note) if note else text}]})
+        pending = convo.pop("pending", None)
+        if pending:
+            # the answer to ask_user, after the results of any other tools that step called (they must all come back)
+            answer = {"type": "result", "id": pending["id"], "name": ASK_TOOL["name"], "content": "The person answered: " + text,
+                      "error": False}
+            convo["messages"].append({"role": "user", "parts": pending["results"] + [answer]})
+        else:
+            first = "%s\n\n(%s)" % (text, note) if note else text
+            convo["messages"].append({"role": "user", "parts": [{"type": "text", "text": first}]})
         plan = {"id": new_id(), "changes": [], "at": time.time(), "applied": False, "task": task.name, "context": context}
         said = ""
         for step in range(max_steps):
             chars, images = _chars(convo["messages"])
-            chars += len(task.system) + len(json.dumps(defs))
+            chars += len(system) + len(json.dumps(defs))
             worst = cost.estimate(info, chars, images, max_tokens, 1)["worst"]
             with self.ledger.lock:
                 ok, reason = cost.check(info, worst, self.ledger.spent_this_month(), float(s["monthly_limit"]))
                 if not ok:
                     raise providers.AIError(reason)
-                res = chat(provider=provider, model=model, key=key, url=url, system=task.system,
+                res = chat(provider=provider, model=model, key=key, url=url, system=system,
                            messages=convo["messages"], tools=defs, max_tokens=max_tokens, effort=effort)
                 spent = cost.cost(info, res["usage"]["in"], res["usage"]["out"])
                 self.ledger.add(provider, model, res["usage"]["in"], res["usage"]["out"], spent, task.name)
@@ -188,15 +211,24 @@ class Assistant:
                 job["reply"] = said or ("The answer was cut off. Try asking for less at once." if res["stop"] == "max"
                                         else "(No answer.)")
                 break
+            said_at = None
             if said:
+                said_at = len(job["steps"])
                 job["steps"].append({"tool": "", "summary": said[:400]})
-            results = []
+            results, asked = [], None
             for call in calls:
                 args = call.get("args") if isinstance(call.get("args"), dict) else {}
+                if call["name"] == ASK_TOOL["name"] and not asked:
+                    asked = call
+                    continue
                 label = task.step_label(call["name"], args)
                 job["steps"].append({"tool": call["name"], "summary": label, "running": True})
                 try:
                     out = task.run(call["name"], args, context)
+                    if out.get("action"):                     # a step the person runs with a button
+                        acts = job.setdefault("actions", [])
+                        if out["action"]["step"] not in [a["step"] for a in acts]:
+                            acts.append(out["action"])
                     if out.get("change"):
                         change = dict(out["change"], n=len(plan["changes"]) + 1)
                         # a task may say a new proposal replaces its earlier one (one rig.json at a time)
@@ -215,6 +247,17 @@ class Assistant:
                     msg = str(e) or e.__class__.__name__
                     job["steps"][-1] = {"tool": call["name"], "summary": "%s: %s" % (label, msg), "error": True}
                     results.append({"type": "result", "id": call["id"], "name": call["name"], "content": msg, "error": True})
+            if asked:
+                # stop and wait: the answer is the person's next message (start() hands it back as this call's result)
+                args = asked.get("args") if isinstance(asked.get("args"), dict) else {}
+                question = str(args.get("question") or "").strip() or "What would you like me to do?"
+                options = [str(o).strip()[:120] for o in (args.get("options") or []) if str(o).strip()][:4]
+                convo["pending"] = {"id": asked["id"], "results": results}
+                job["question"] = {"text": question, "options": options}
+                if said_at is not None:
+                    del job["steps"][said_at]           # what it said before asking is shown once: as the reply
+                job["reply"] = said
+                break
             convo["messages"].append({"role": "user", "parts": results})
             if step == max_steps - 1:
                 job["reply"] = (said + "\n\n" if said else "") + ("I stopped after %d steps. Ask me to carry on if there's "
@@ -228,7 +271,7 @@ class Assistant:
         j = self.jobs.get(job_id)
         if not j:
             return None
-        return {k: j.get(k) for k in ("done", "steps", "reply", "plan", "error", "cost", "spent")}
+        return {k: j.get(k) for k in ("done", "steps", "reply", "plan", "error", "cost", "spent", "question", "actions")}
 
     # ---- applying a plan ------------------------------------------------------------------------------------
 
