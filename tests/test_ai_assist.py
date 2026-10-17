@@ -364,6 +364,7 @@ class FixRigTools(unittest.TestCase):
         out = self.tool.run_steps({"model": "canine"}, ["preview", "audit", "survey", "rig"])
         self.assertEqual(out["steps"], ["survey", "rig", "preview"])  # in order; Rig already ends with an audit
         cmds = self.tool.app.runner.job.cmds
+        self.assertTrue(self.tool.app.runner.job.keep_going)          # a failing audit doesn't stop clips and preview
         self.assertEqual([c[1][3:] for c in cmds], [["survey", "canine"], ["facing", "canine"], ["canine"], ["preview", "canine"]])
         self.assertTrue(all(c[1][2].endswith(os.path.join("cli", "run.py")) for c in cmds))
         with self.assertRaises(ValueError):

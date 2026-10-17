@@ -362,8 +362,10 @@ class FixRig:
                 cmds.append((label if len(argvs) == 1 else "%s (%s)" % (label, sub[0]),
                              [sys.executable, "-u", run_py] + args, None, name))
         label = "AI Assist: " + ", ".join(STEPS[STEP_ORDER.index(s)][1] for s in chosen)
-        return {"job": self.app.runner.submit(self.srv.Job(name, self.srv.find_group(name), label, cmds)).info(),
-                "steps": chosen}
+        job = self.srv.Job(name, self.srv.find_group(name), label, cmds)
+        # a failing audit makes the Rig step exit 1, but clips and the preview are still worth having: carry on
+        job.keep_going = True
+        return {"job": self.app.runner.submit(job).info(), "steps": chosen}
 
     # ---- applying ---------------------------------------------------------------------------------------------
 
