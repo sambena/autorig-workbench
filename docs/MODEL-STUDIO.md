@@ -58,7 +58,8 @@ leaves colours alone) and `roughness` (the flattened materials' roughness, defau
 
 `--engine-lods` applies to the Unity and Unreal packages (with `--target all`, only those two); Godot
 and Web packages are unchanged. The FBX uses Unity's axes (-Z forward, Y up); Unreal's importer
-converts them. FBX takes are named `<armature>|<clip>` by Blender's exporter.
+converts them. In the Unity package the FBX goes through the `unity-fbx` pass ([EXPORT.md](EXPORT.md)): a rig root
+that would import at -90 X is rewritten so every root reads rotation (0,0,0) and scale 1. FBX takes are named `<armature>|<clip>` by Blender's exporter.
 
 Adapted from storm-chaser `Tools/blender/package_autorig_lods.py`, `package_skinned_lods.py` and
 `package_vehicle_lods.py` (written 2026-10-16 for the farm model pilots). Those scripts hard-coded

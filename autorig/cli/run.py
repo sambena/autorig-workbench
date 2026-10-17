@@ -14,7 +14,7 @@
 #   python autorig/cli/run.py smpl-to-bvh <motion.pkl> <out.bvh> [--arms-out 15 ...]   EDGE / SMPL dance -> BVH
 #   python autorig/cli/run.py clip-check <model|file.glb>   does it move, do seams hold, where are the hands
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
-#   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages for Blender's Python
+#   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages, export-pass programs
 #   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
 #   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
