@@ -85,7 +85,10 @@ def status(root, known=None):
     # a branch whose pull request is merged or closed is finished: start a fresh one from the latest base
     restart = bool(pr and pr["state"] != "OPEN")
     models = sorted({seg for _, p in rows for seg in p.split("/")[:-1] if seg in (known or ())})
-    ahead = git(top, "rev-list", "--count", "origin/%s..HEAD" % branch, check=False) if branch else None
+    # commits not on GitHub yet: against the branch's remote copy, or against the base for a branch never pushed
+    pushed = branch and git(top, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch, check=False)
+    ahead = git(top, "rev-list", "--count", "%s..HEAD" % ("origin/" + (branch if pushed else base)), check=False) \
+        if branch and branch != base else None
     return {"repo": top, "root": root, "branch": branch, "base": base, "remote": url, "github": github_repo(url),
             "new_branch": branch in ("", base) or restart, "restart": restart, "pr": pr, "changes": [{"code": c, "path": p} for c, p in rows],
             "count": len(rows), "models": models[:200], "unpushed": int(ahead) if ahead and ahead.isdigit() else 0,
@@ -99,14 +102,18 @@ def branch_name(message, now=None):
 
 
 def run(cmd, cwd):
+    """Run it, its output into the log line by line as it comes (a big push runs for minutes)."""
     print("$ " + " ".join('"%s"' % a if " " in a else a for a in cmd), flush=True)
-    p = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace")
-    for line in (p.stdout + p.stderr).splitlines():
+    p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding="utf-8", errors="replace")
+    out = []
+    for line in p.stdout:
+        line = line.rstrip()
+        out.append(line)
         print("  " + line, flush=True)
-    if p.returncode != 0:
+    if p.wait() != 0:
         raise RuntimeError("%s exited with %d" % (cmd[0], p.returncode))
-    return p.stdout.strip()
+    return "\n".join(out).strip()
 
 
 def commit_push_pr(root, message, title=None, body=None):
@@ -120,9 +127,11 @@ def commit_push_pr(root, message, title=None, body=None):
     remote = ["git", "-c", "pack.useSparse=false"]
     if st["gh"] and st["github"]: remote += ["-c", "credential.https://github.com.helper=!gh auth git-credential"]
     print("Repo %s, branch %s, %d change(s) under %s" % (top, branch or "(detached)", st["count"], root), flush=True)
+    # the latest base first: the push sends only what GitHub lacks, which git can work out only from a commit both
+    # sides have. A base fetched long ago (or never: VM 207) made git send the whole repo, and GitHub gave up (HTTP 500)
+    run(remote + ["fetch", "-q", "origin", base], top)
     if st["restart"]:
         print("%s's pull request is %s: starting a new branch from the latest %s." % (branch, st["pr"]["state"].lower(), base))
-        run(remote + ["fetch", "-q", "origin", base], top)
     if st["new_branch"]:
         branch = branch_name(title or message)
         # the changes come along; from a finished branch, onto the latest base
@@ -130,6 +139,7 @@ def commit_push_pr(root, message, title=None, body=None):
     if st["count"]:
         run(["git", "add", "-A", "--", root], top)
         run(["git", "commit", "-q", "-m", message], top)
+    print("Pushing to GitHub: a big change takes minutes, and git says nothing until it is done.", flush=True)
     run(remote + ["push", "-u", "origin", branch], top)
     url = None
     if not st["github"]:

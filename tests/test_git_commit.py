@@ -87,6 +87,14 @@ class GitCommitTest(unittest.TestCase):
         self.assertNotEqual(new, old)
         self.assertEqual(sh(self.top, "rev-parse", "HEAD~1"), sh(self.top, "rev-parse", "origin/main"))
 
+    def test_a_commit_whose_push_failed_is_pushed_next_time(self):
+        sh(self.top, "switch", "-q", "-c", "autorig/20261017-1222-rig-the-oak")
+        self.write("Pack/Oak/rig.json", "{}")
+        sh(self.top, "add", "-A"); sh(self.top, "commit", "-q", "-m", "Rig the oak")   # the push never happened
+        self.assertEqual(git_commit.status(self.root)["unpushed"], 1)
+        self.commit("anything")
+        self.assertEqual(sh(self.remote, "log", "-1", "--format=%s", "autorig/20261017-1222-rig-the-oak"), "Rig the oak")
+
     def test_nothing_to_commit(self):
         self.assertIn("Nothing to commit", self.commit("Nothing"))
         self.assertEqual(sh(self.top, "branch", "--show-current"), "main")
