@@ -111,6 +111,12 @@ def decimate(obj, target, textured_ok=False, log=print, **options):
     if len(F) <= target:
         return {"before": len(F), "after": len(F), "method": "pymeshlab"}
     V2, F2, UV2, FD2 = mesh_prep.decimate(V, F, UV, FD, int(target), **options)
+    if len(F2) > 1.1 * target + 10:
+        # the texture-aware collapse refuses edges on UV seams and flips; on a mesh Blender's Decimate already cut it
+        # can stall far above the budget (a barn: 10,000 -> 9,934 for 4,000). Blender's Decimate then, as before.
+        log("mesh_bridge: PyMeshLab stopped at %d triangles of %d asked for %s; left to Blender's Decimate" %
+            (len(F2), target, obj.name))
+        return None
     write(obj, V2, F2, UV2, FD2, smooth)
     log("mesh_bridge: %s %d -> %d triangles with PyMeshLab (%s)" %
         (obj.name, len(F), len(F2), "texture-aware" if UV is not None else "no UVs"))

@@ -201,7 +201,7 @@ def _meshlab_textured(V, F, UV, FD, folder):
 
 
 def decimate(V, F, UV, FD, target, weld_tol=None, preserve_boundary=True, quality=0.3, texture_weight=1.0,
-             optimal_placement=True, planar=True):
+             optimal_placement=True, planar=True, preserve_topology=False):
     """Quadric edge collapse to `target` triangles with PyMeshLab, the UV-aware variant when there are UVs (it adds the
     texture coordinates to the error, so a seam is not dragged across and the silhouette is held). Returns
     (V, F, UV, FD). weld_tol merges split seam vertices first (default: a millionth of the model's size)."""
@@ -224,7 +224,7 @@ def decimate(V, F, UV, FD, target, weld_tol=None, preserve_boundary=True, qualit
                 ms.meshing_decimation_quadric_edge_collapse(
                     targetfacenum=int(target), qualitythr=quality, preserveboundary=preserve_boundary,
                     boundaryweight=1.0, optimalplacement=True, preservenormal=True, planarquadric=True,
-                    autoclean=True)
+                    preservetopology=preserve_topology, autoclean=True)
         ms.meshing_remove_unreferenced_vertices()
         if UV is None:
             return _from_meshlab(ms, None, FD)
@@ -356,20 +356,34 @@ def unwrap(V, F, resolution=1024, padding=4):
 
 # ------------------------------------------------------------------ CoACD: convex pieces for colliders
 
-def convex_parts(V, F, threshold=0.08, max_hulls=16, max_hull_verts=60, resolution=2000, seed=0):
+def convex_parts(V, F, threshold=0.08, max_hulls=16, max_hull_verts=60, resolution=2000, seed=0, simplify_to=4000,
+                 remesh_resolution=30, search=(30, 8, 2)):
     """CoACD's approximate convex decomposition: [(V, F)] hulls. max_hull_verts keeps each hull under Unity's 255-
-    triangle limit for a convex MeshCollider (a hull of n vertices has at most 2n - 4 triangles). A non-manifold
-    input is fine: CoACD remeshes it first ("auto")."""
+    triangle limit for a convex MeshCollider (a hull of n vertices has at most 2n - 4 triangles).
+
+    A generated model is not manifold, so CoACD remeshes it first (a voxel remesh at remesh_resolution, which also
+    fuses its thousands of loose boards and fragments into one solid). Its time is mostly the search and the merging
+    of pieces down to max_hulls: with its defaults a Tripo barn took nearly three minutes, with search (MCTS
+    iterations, nodes, depth) = (30, 8, 2) and a remesh at 30 about 40 s. A dense input is cut to simplify_to
+    triangles first with PyMeshLab when it is installed: a collider needs no detail."""
     import coacd
     np = _np()
     V, F, _ = weld(V, F, max(float(np.linalg.norm(np.ptp(np.asarray(V), axis=0))) * 1e-6, 1e-9))
+    if simplify_to and len(F) > simplify_to:
+        try:
+            V, F, _, _ = decimate(V, F, None, None, simplify_to, preserve_boundary=False)
+        except ImportError:
+            pass
     try:
         coacd.set_log_level("error")
     except Exception:
         pass
+    iters, nodes, depth = search
     mesh = coacd.Mesh(np.asarray(V, dtype=np.float64), np.asarray(F, dtype=np.int32))
     parts = coacd.run_coacd(mesh, threshold=threshold, max_convex_hull=int(max_hulls), resolution=int(resolution),
-                            max_ch_vertex=int(max_hull_verts), decimate=True, merge=True, seed=int(seed))
+                            max_ch_vertex=int(max_hull_verts), decimate=True, merge=True, seed=int(seed),
+                            preprocess_mode="auto", preprocess_resolution=int(remesh_resolution),
+                            mcts_iterations=int(iters), mcts_nodes=int(nodes), mcts_max_depth=int(depth))
     return [(np.asarray(v, dtype=np.float64), np.asarray(f, dtype=np.int64)) for v, f in parts]
 
 

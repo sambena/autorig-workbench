@@ -9,7 +9,7 @@
 #
 #   blender -b --python autorig/steps/game_prop.py -- --in barn.glb --name Barn --length 18 --out <folder>
 #           [--height 9] [--front -y|+y|+x|-x] [--triangles 30000] [--lods 0.4,0.15] [--carve-wheels | --wheels]
-#           [--atlas 2048]
+#           [--atlas 2048] [--colliders 12 [--collider-detail 0.08]]
 #   python autorig/cli/run.py game-prop <the same arguments>
 #
 # What it does, in order:
@@ -22,7 +22,8 @@
 #   5. makes LOD1 and LOD2 by decimation, named <Name>_LOD0, _LOD1, _LOD2 (an engine's LODGroup); with the pymeshlab
 #      extra the LODs' collapse is PyMeshLab's (the silhouette holds), without it Blender's Decimate; --atlas N
 #      re-textures LOD0 first: collapsed to --triangles, re-unwrapped (xatlas) and baked from the full model;
-#   6. exports the FBX: -Z forward, Y up, unit scale applied, no leaf bones.
+#   6. with --colliders N, adds up to N convex pieces (CoACD) as <Name>_Collider_00.. for convex MeshColliders;
+#   7. exports the FBX: -Z forward, Y up, unit scale applied, no leaf bones.
 # It never repairs topology: a model that is wrong gets regenerated, not fixed.
 import argparse, math, os, sys
 
@@ -44,6 +45,11 @@ def args():
     p.add_argument("--front", default="-y", choices=["-y", "+y", "+x", "-x"], help="which way the model faces as imported")
     p.add_argument("--triangles", type=int, help="decimate the base mesh to this many triangles before making LODs")
     p.add_argument("--lods", default="0.4,0.15", help="decimation ratios for LOD1 and LOD2")
+    p.add_argument("--colliders", type=int, default=0, metavar="N",
+                   help="up to N convex collider pieces (CoACD) as <Name>_Collider_00.. beside the LODs, for convex "
+                        "MeshColliders; each stays under Unity's 255-triangle limit")
+    p.add_argument("--collider-detail", type=float, default=0.08,
+                   help="CoACD's concavity threshold: lower follows the shape closer with more pieces (0.02-0.2)")
     p.add_argument("--atlas", type=int, default=0, metavar="SIZE",
                    help="re-texture the base mesh: PyMeshLab collapse to --triangles, a fresh xatlas UV atlas, and the "
                         "full-resolution model's colour and normal detail baked onto it (SIZE x SIZE; one material)")
@@ -601,6 +607,31 @@ def decimate_to_triangles(obj, target):
     print("game_prop.py: reduced base mesh from %d to %d triangles (%s)" % (current, len(obj.data.loop_triangles), method))
 
 
+def add_colliders(obj, root, name, count, detail=0.08):
+    """Convex pieces of obj (CoACD's approximate convex decomposition, core/mesh_prep.convex_parts), each its own
+    material-less mesh <Name>_Collider_NN under root, for a game to make convex MeshColliders of (and not draw): a
+    barn gets its walls and roof, not one box over the doorway. None without the coacd extra."""
+    import extras, mesh_bridge, mesh_prep
+    if not extras.have("coacd"):
+        print("game_prop.py: --colliders needs the coacd extra (python autorig/cli/run.py extras install coacd)")
+        return []
+    V, F, _, _, _ = mesh_bridge.read(obj)
+    hulls = mesh_prep.convex_parts(V, F, threshold=detail, max_hulls=count)
+    out = []
+    for cname, (hv, hf) in zip(mesh_prep.collider_names(name, len(hulls)), hulls):
+        me = bpy.data.meshes.new(cname)
+        me.from_pydata([tuple(v) for v in hv.tolist()], [], [tuple(f) for f in hf.tolist()])
+        me.update()
+        o = bpy.data.objects.new(cname, me)
+        bpy.context.scene.collection.objects.link(o)
+        o.parent = root
+        o.display_type = "WIRE"
+        out.append(o)
+    print("game_prop.py: %d convex colliders (CoACD, threshold %.2f): triangles %s" % (
+        len(out), detail, [len(h[1]) for h in hulls]))
+    return out
+
+
 def export(root, lods, out_path, extras=(), path_mode="COPY"):
     """The game FBX: -Z forward, Y up, unit scale applied, no leaf bones. path_mode "COPY" puts the maps beside it;
     game_parts.py passes "RELATIVE" to keep naming them in <Name>.fbm where they already lie."""
@@ -680,6 +711,8 @@ def main():
         baked.parent = root
         extras.append(baked)
         print("game_prop.py: tyres stay in the body (Wheels_Baked)")
+    if a.colliders:
+        extras += add_colliders(lods[0], root, a.name, a.colliders, a.collider_detail)
     export(root, lods, out, extras)
     tris = [sum(len(p.vertices) - 2 for p in lod.data.polygons) for lod in lods]
     print("wrote %s: %.1f x %.1f x %.1f m, triangles %s, wheels %s" % (out, x1 - x0, y1 - y0, z1 - z0, tris, sorted(wheels)))
