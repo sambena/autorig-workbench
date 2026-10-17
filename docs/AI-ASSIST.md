@@ -91,7 +91,7 @@ above.
 |---|---|---|---|
 | 1 | **Fix this rig** (done) | audit, bend test, skin sheet, `trial_rig` | a new `rig.json` |
 | 2 | **Facing & orientation**: which way is the front | the four survey views | `rig.forward` / up axis |
-| 3 | **Suggest a skeleton**: archetype and chains for a model with no spec. Today's suggester reads the biped sample as rigid and the pedestal as winged. | survey, front/side renders, geodesic tips | a starting `rig.json` |
+| 3 | **Suggest a skeleton**: archetype and chains for a model with no spec. The suggester now weighs a body plan and a local picture vote (OpenCLIP) with its tips and gets all 5 samples right (docs/PLAN.md). | survey, front/side renders, geodesic tips | a starting `rig.json` |
 | 4 | **Place joints** on a boneless model | measure sheets on the 0..1 grid, `probe` tips | chain points |
 | 5 | **Clip doctor**: feet that slide, floor penetration, seams opening in a clip | Studio *Animation quality* report, clip strips | gait parameters, clip settings |
 | 6 | **Mesh prep**: decide what Prepare and Mesh Doctor should do | doctor report, UV and joint-band checks | prepare options (unwrap, loops) |

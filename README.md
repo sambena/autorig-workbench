@@ -111,7 +111,9 @@ the spec as a form beside it. Nothing needs Blender or JSON:
   with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
   `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
 - **Suggest skeleton**: One click proposes an archetype and placed bone chains from geodesic extremities (`probe_tips`),
-  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies.
+  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies. With the
+  `trimesh` and `open-clip` extras it also weighs the mesh's body plan (feet on the ground, wing sheets, a solid base)
+  and a picture vote over four renders, and says why it picked what it picked (docs/SPEC.md).
 - **Placed builder (`kind: "placed"`)**: Body-part rules (allowed/denied bones), join blending radii, weld seam ripping
   to prevent stretch between limbs, distance gradient wing membranes with flank cutoffs, jaw hinges, and rigid islands.
 - **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
@@ -150,7 +152,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
                      source_preview                        the editor's GLB of the source and its own skeleton
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
-    docs/            PIPELINE  SPEC  FORMATS  SKELETONS  PLAN  CI  rig.schema.json
+    docs/            PIPELINE  SPEC  FORMATS  SKELETONS  EXPORT  PLAN  CI  rig.schema.json
     tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py
                      test_suggest.py  test_placed_rules.py  test_blender_version.py
                      test_audit_thresholds_ci.py  test_json_schema.py  viewer_logic_test.mjs
@@ -159,7 +161,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
-conventions), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
+conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Clip motion
 
@@ -168,8 +170,10 @@ Clips are keyed, then planted feet are held where they land; `clip-check` scores
 
 ## Optional extras
 
-Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases). These install
-for Blender's own Python with `python autorig/cli/run.py extras install <name|all>`. See [docs/EXTRAS.md](docs/EXTRAS.md).
+Some steps do better with a pip library (texture-safe decimation, mesh repair, UV atlases, the suggester's body
+plan and picture vote). These install for Blender's own Python with `python autorig/cli/run.py extras install
+<name|all>`. The export passes' two programs (gltfpack, glTF-Validator) install the same way. See
+[docs/EXTRAS.md](docs/EXTRAS.md).
 
 ## Tests
 
@@ -220,3 +224,11 @@ only submitted when explicitly started. See [Model Studio](docs/MODEL-STUDIO.md)
     python autorig/cli/run.py studio validate wolf
     python autorig/cli/run.py studio engine wolf      # after studio lods (glb): one FBX with every level
     python autorig/steps/export.py wolf --target unity --engine-lods
+
+## Engine export
+
+**File > Export** (or `python autorig/steps/export.py <model> --target unreal|unity|godot|web|all`) writes a zipped
+package per engine. Unity's FBX is rewritten so every root imports with rotation (0,0,0) and scale 1, and checked by
+reading the file back. Web and Godot GLBs go through gltfpack and the Khronos glTF-Validator when those are
+installed (`run.py extras install gltfpack gltf-validator`); a GLB with validator errors stops the export. Each
+package lists its passes in `export_report.json`. See [docs/EXPORT.md](docs/EXPORT.md).

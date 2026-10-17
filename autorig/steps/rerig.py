@@ -945,6 +945,8 @@ def root_mask(mesh, arm, chains, spec, log):
         return out
     TD = np.stack([_seg(P, np.array(bones[names[k]].head_local[:]), np.array(bones[names[k]].tail_local[:]))[0]
                    for k in torso], axis=1)
+    # how far apart two torso bones' distances may be and still share a vertex: a fifth of a torso bone's length
+    torso_soft = 0.2 * float(np.median([bones[names[k]].length for k in torso])) if torso else 0.0
     freed_total = 0.0
     for ci, c in enumerate(chains):
         if ci in torso_chains or c["parent"] is None or c["parent"][0] not in torso_chains: continue
@@ -961,7 +963,10 @@ def root_mask(mesh, arm, chains, spec, log):
         W[:, sub] *= w[:, None]
         tw = W[:, torso].copy(); tsum = tw.sum(1)
         none = tsum < 1e-6
-        tw[none, TD[none].argmin(1)] = 1.0; tsum[none] = 1.0
+        # a vertex the limb owned outright goes to the torso bones near it, shared by distance: all to the nearest
+        # one cut a hard seam where two torso bones meet (the beetle's flank, over its middle legs' roots)
+        tw[none] = placed_rules.soft_nearest(TD[none], torso_soft)
+        tsum[none] = 1.0
         W[:, torso] += tw / tsum[:, None] * freed[:, None]
         freed_total += float(freed.sum())
     for g in vg:
@@ -1247,6 +1252,81 @@ def _lo_span(mesh):
     lo = co.min(axis=0).tolist()
     return Vector(lo), Vector([max(1e-9, h - l) for h, l in zip(co.max(axis=0).tolist(), lo)])
 
+SKINNING = ("bone-heat", "proxy-transfer")
+
+def skinning_mode(spec):
+    """rig.json "skinning": "bone-heat" (the default: bone heat on the mesh itself, a voxel copy only when it fails)
+    or "proxy-transfer" (bone heat on a watertight voxel copy, its weights carried back by robust transfer)."""
+    mode = spec.get("skinning") or "bone-heat"
+    if mode not in SKINNING:
+        raise ValueError("rig.json skinning must be one of %s, not %r" % (", ".join(SKINNING), mode))
+    return mode
+
+PROXY_VOXELS = (0.016, 0.022, 0.012, 0.03)   # voxel sizes tried, fractions of the model's longest side
+
+def voxel_proxy(mesh, arm, size, log, voxel=None):
+    """A watertight voxel-remeshed copy of the mesh, bone-heat skinned to arm, or None when bone heat leaves more
+    than 5% of every copy tried bare. `voxel` (a fraction of the longest side) is tried first when given."""
+    proxy = None
+    for vx in ([float(voxel)] if voxel else []) + [v for v in PROXY_VOXELS if v != voxel]:
+        select_only(mesh); bpy.ops.object.duplicate()
+        proxy = bpy.context.active_object
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        for m in list(proxy.modifiers): proxy.modifiers.remove(m)
+        proxy.vertex_groups.clear()
+        proxy.data.remesh_voxel_size = max(size) * vx; proxy.data.remesh_voxel_adaptivity = 0.0
+        bpy.ops.object.voxel_remesh()
+        select_only(proxy, arm); bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        pbare = sum(1 for v in proxy.data.vertices if not skinned(v))
+        log["proxy"] = {"voxel": vx, "verts": len(proxy.data.vertices), "unreached": pbare}
+        if pbare <= len(proxy.data.vertices) * 0.05: return proxy
+        bpy.data.objects.remove(proxy, do_unlink=True); proxy = None
+    return None
+
+def _world_tris(obj):
+    """An object's vertices (world space), vertex normals and loop triangles, as numpy arrays."""
+    me = obj.data
+    n = len(me.vertices)
+    co = np.empty(n * 3); me.vertices.foreach_get("co", co); co = co.reshape(n, 3)
+    nr = np.empty(n * 3); me.vertex_normals.foreach_get("vector", nr); nr = nr.reshape(n, 3)
+    me.calc_loop_triangles()
+    tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int64); me.loop_triangles.foreach_get("vertices", tri)
+    mw = np.array(obj.matrix_world)
+    co = co @ mw[:3, :3].T + mw[:3, 3]
+    nr = nr @ np.linalg.inv(mw[:3, :3])
+    nr /= np.maximum(np.linalg.norm(nr, axis=1, keepdims=True), 1e-20)
+    return co, nr, tri.reshape(-1, 3)
+
+def proxy_transfer(mesh, proxy, spec, size, log):
+    """Carries the skinned proxy's weights onto the mesh by robust transfer (core/weight_transfer.py): each vertex
+    near the proxy's surface, normals agreeing either way round, interpolates the closest point's weights; the
+    rest (inner shells, folds, pieces dipping inside) are inpainted smoothly from those. rig.json tunes it with
+    `transfer_distance` (a fraction of the longest side; default 2.5 voxels of the proxy) and `transfer_angle`
+    (degrees, default 30)."""
+    import weight_transfer as WT
+    t = time.time()
+    P, N, Ft = _world_tris(mesh)
+    V, _, F = _world_tris(proxy)
+    names = [g.name for g in proxy.vertex_groups]
+    W = np.zeros((len(V), len(names)))
+    for v in proxy.data.vertices:
+        for g in v.groups: W[v.index, g.group] = g.weight
+    tree = BVHTree.FromPolygons([tuple(p) for p in V.tolist()], F.tolist(), all_triangles=True)
+    face = np.zeros(len(P), dtype=np.int64); point = P.copy()
+    for i, p in enumerate(P.tolist()):
+        loc, _, fi, _ = tree.find_nearest(p)
+        if fi is not None: face[i] = fi; point[i] = loc[:]
+    voxel = log.get("proxy", {}).get("voxel", PROXY_VOXELS[0])
+    dist = float(spec.get("transfer_distance") or 2.5 * voxel) * max(size)
+    Wt, stats = WT.robust_transfer(P, N, Ft, V, F, W, face, point, dist, float(spec.get("transfer_angle", 30.0)))
+    mesh.vertex_groups.clear()
+    for nm in names: mesh.vertex_groups.new(name=nm)
+    for j, g in enumerate(mesh.vertex_groups):
+        col = Wt[:, j]
+        for i in np.nonzero(col > 1e-4)[0]: g.add([int(i)], float(col[i]), 'REPLACE')
+    stats["seconds"] = round(time.time() - t, 3)
+    log["proxy_transfer"] = stats
+
 def skin(mesh, arm, chains, spec, size, log):
     height = size.z
     verts = mesh.data.vertices
@@ -1254,6 +1334,8 @@ def skin(mesh, arm, chains, spec, size, log):
     select_only(mesh, arm)
     mesh.vertex_groups.clear()
     t_heat = time.time()
+    transfer = skinning_mode(spec) == "proxy-transfer"
+    log["skinning"] = skinning_mode(spec)
     if spec.get("mesh_heal") or spec.get("heal"):
         try:
             import mesh_doctor
@@ -1287,22 +1369,20 @@ def skin(mesh, arm, chains, spec, size, log):
                 pass
     if len(bare) > len(verts) * 0.05:
         # Bone heat gives up on a sculpt made of loose pieces: skin a watertight voxel copy and carry the weights over.
-        for voxel in (0.016, 0.022, 0.012, 0.03):
-            select_only(mesh); bpy.ops.object.duplicate()
-            proxy = bpy.context.active_object
-            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-            for m in list(proxy.modifiers): proxy.modifiers.remove(m)
-            proxy.vertex_groups.clear()
-            proxy.data.remesh_voxel_size = max(size) * voxel; proxy.data.remesh_voxel_adaptivity = 0.0
-            bpy.ops.object.voxel_remesh()
-            select_only(proxy, arm); bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-            pbare = sum(1 for v in proxy.data.vertices if not skinned(v))
-            log["proxy"] = {"voxel": voxel, "verts": len(proxy.data.vertices), "unreached": pbare}
-            if pbare <= len(proxy.data.vertices) * 0.05: break
-            bpy.data.objects.remove(proxy, do_unlink=True); proxy = None
+        proxy = voxel_proxy(mesh, arm, size, log)
         if proxy is None and len(bare) > len(verts) * 0.5:
             log["error"] = "bone heat failed, on voxel copies too"; return False
-    if proxy is not None:
+    if proxy is None and transfer:
+        # skinning "proxy-transfer": always skin the voxel copy, whatever bone heat made of the mesh itself
+        proxy = voxel_proxy(mesh, arm, size, log, spec.get("proxy_voxel"))
+        if proxy is None: log["proxy_transfer"] = {"skipped": "no voxel copy bone heat could skin"}
+    if proxy is not None and transfer:
+        proxy_transfer(mesh, proxy, spec, size, log)
+        bpy.data.objects.remove(proxy, do_unlink=True)
+        verts = mesh.data.vertices
+        bare = [v.index for v in verts if not skinned(v)]
+        log["unreached_after_proxy"] = len(bare)
+    elif proxy is not None:
         mesh.vertex_groups.clear()
         for g in proxy.vertex_groups: mesh.vertex_groups.new(name=g.name)
         dt = mesh.modifiers.new("weights", 'DATA_TRANSFER')

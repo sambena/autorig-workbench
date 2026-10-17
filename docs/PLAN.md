@@ -314,6 +314,42 @@ one pull request each, code first; models are run through the tool only in R6.
   suggester reads the biped sample as rigid and the pedestal as winged, and beetle, biped and wyvern audit FAIL on bend
   tears with their bundled specs.
 
+- **Suggester: body plan and picture vote** (October 2026): the suggester weighs two more opinions with its tips: the
+  mesh's body plan (`core/body_plan.py`, trimesh: feet on the ground, wing sheets, height, symmetry, stable rest) and
+  a picture vote (`core/picture_vote.py`, OpenCLIP ViT-B/32 on the CPU over four renders), which breaks ties
+  (`suggest.combine`, docs/SPEC.md). The auto facing now asks which way the mesh is mirror-symmetric, which turned the
+  biped sample (and a T-posed asset-packs figure) side-on before. The trimesh extra now brings scipy, which its hulls
+  and connected parts need. Checked on the 5 samples and 16 asset-packs models stripped to bare meshes (wrong in bold):
+
+  | Model | Is | Before | Tips + body plan | Tips + body plan + pictures |
+  |---|---|---|---|---|
+  | beetle (sample) | hexapod | hexapod | hexapod | hexapod |
+  | biped (sample) | humanoid | **rigid** | humanoid | humanoid |
+  | canine (sample) | quadruped | quadruped | quadruped | quadruped |
+  | pedestal (sample) | prop | **winged** | rigid | rigid |
+  | wyvern (sample) | winged | winged | **humanoid** | winged |
+  | Dog_BlackTan | quadruped | quadruped | quadruped | quadruped |
+  | Horse_Bay | quadruped | **hexapod** | quadruped | quadruped |
+  | Chicken_Hen | bird | **hexapod** | **hexapod** | winged |
+  | Cat_Tabby | quadruped | **humanoid** | quadruped | quadruped |
+  | Goat_Alpine | quadruped | **hexapod** | quadruped | quadruped |
+  | Leon_Age10 | humanoid | **floater** | humanoid | humanoid |
+  | Car_Vintage | prop | **octopod** | **quadruped** | rigid |
+  | Junk_Refrigerator | prop | **hexapod** | rigid | rigid |
+  | dragon (Smeltdown) | winged | **octopod** | **octopod** | winged |
+  | candle_moth | winged | **rigid** | winged | winged |
+  | crawler | hexapod | **octopod** | hexapod | hexapod |
+  | gloomcrawler | many-legged | octopod | **quadruped** | hexapod |
+  | heartstone | prop | **octopod** | rigid | rigid |
+  | glass_eel | serpent | **humanoid** | **humanoid** | serpent |
+  | the_human | humanoid | **hexapod** | humanoid | humanoid |
+  | sentry_turret | prop | **octopod** | rigid | rigid |
+
+  Before: 5 of 21 right; with the body plan 15; with both 21. Without the extras this branch gives the "before"
+  column except the biped, now humanoid (the facing fix). Not yet checked: models that come with a Tripo or Mixamo
+  skeleton (they take the skeleton's path and never reach the vote), and rarer shapes (fish, jellyfish, plants).
+  Tested by tests/test_suggest_votes.py (made-up picture scores; the body-plan test runs where trimesh is installed).
+
 - **Engine LOD FBX** (October 2026): storm-chaser's three one-off Blender packagers (Unity LOD FBX, skinned LODs
   with the clip moved onto the prepared rig, vehicle parts on wheel pivots) are now the Studio `engine` tool
   (steps/engine_package.py, core/engine_lods.py), with the clip name, frame rate, wind channel and resource name as
@@ -332,6 +368,62 @@ one pull request each, code first; models are run through the tool only in R6.
     added thigh-to-spine blends. Its trial went FAIL -> PASS, and applying it re-rigged the biped to PASS; Undo put it
     back to FAIL.
   - docs/AI-ASSIST.md lists the eleven tasks to add next.
+
+- **Skinning: proxy transfer, and where the bend tears come from** (October 2026, prototype).
+  - Idea: generated meshes are non-manifold and made of many shells, so bone heat might tear at the joints. Skin a
+    watertight voxel copy instead and carry its weights back with Robust Skin Weights Transfer (Abdrashitov et al.
+    2023, the authors' MIT code reimplemented in numpy in core/weight_transfer.py). Blender 5.2's Python has numpy
+    but neither scipy nor libigl, so the solver is a Jacobi-preconditioned conjugate gradient on numpy alone; nothing
+    is installed into Blender.
+  - Built as `skinning: "proxy-transfer"` (docs/SPEC.md). The default (`"bone-heat"`) is unchanged.
+  - Measured on 2026-10-17 (combined / single-bend tear edges, the full pipeline with decimation):
+
+    | model | bone-heat | proxy-transfer | bone-heat, skin passes off |
+    |---|---|---|---|
+    | beetle | 6 / 28 FAIL | 8 / 28 FAIL | 0 / 0 PASS |
+    | biped | 4 / 4 FAIL | 4 / 3 FAIL | 0 / 0 PASS |
+    | wyvern | 1 / 6 FAIL | 6 / 7 FAIL | 0 / 0 PASS |
+    | Chicken_Rooster_Tripo (suggested spec, rig + audit) | 2345 / 1141 FAIL | 2274 / 1110 FAIL | 1086 / 243 FAIL |
+
+  - So the transfer is not where the tears come from: bone heat on these meshes tears nothing, and the tears are cut
+    in by the skin passes after it. On the samples, one pass off makes each one PASS: `envelope` (the root mask) on the
+    beetle, `barrier` on the wyvern, `barrier` or `centerline_armor` on the biped. On the rooster, bone heat on the
+    mesh itself reaches none of its 44k vertices, so the default already skins the voxel copy. There the root mask
+    frees 11.9k vertices and is the main source; `barrier` off takes bend tears from 1110 to 803. With every pass off,
+    proxy-transfer and the default are about the same (235 vs 243 bend tears).
+  - Next: make those passes blend instead of cut. That is a separate change; proxy-transfer stays as an option.
+  - Cost: on the rooster (44k vertices, an 8.2k-vertex copy) the transfer takes about 47 s on top of bone heat.
+
+## Tears from the skin passes (October 2026)
+
+Plain bone heat gives zero bend tears on the beetle, biped and wyvern samples. The passes that ran after it cut
+the tears in. Each cut was a hard line between two owners. Fixed:
+
+| model | before (combined / bend) | after |
+|---|---|---|
+| beetle | 6 / 28 FAIL | 0 / 0 PASS |
+| biped | 4 / 4 FAIL | 0 / 0 PASS |
+| wyvern | 1 / 6 FAIL | 1 / 1 |
+| canine, pedestal | 0 / 0 | 0 / 0 |
+| armoured_guard (Heartroot, scratch copy) | 58 / 55, bleed 1.64% | 46 / 20, bleed 0.68% |
+
+- **Root mask (rerig.root_mask):** a vertex a limb owned outright went wholly to the *nearest* torso bone, a hard
+  seam where two torso bones meet (the beetle's flank over its middle legs). It is now shared between the near
+  torso bones by distance (`placed_rules.soft_nearest`).
+- **Barrier rule 4 (shoulders off the neck and the lower spine):** a hard box, 12% of the height either side of the
+  middle, reached the collarbones on a broad model. It now fades in over a band, in both width and height.
+- **Barrier rule 5 (chest off the legs):** "below hip height" took in the underside of a horizontal torso's chest
+  (the wyvern). It now runs only on an upright torso.
+- **Crotch band cap:** it also measures the leg joints themselves, because a placed biped's legs have no "leg" role.
+- **Centerline armour, placed rigs:** the pelvis band ran down to the ankles and left a few per cent of the hips on
+  each shin, which tore the bent knee. It now stops halfway down the thigh. Humanoids keep the long band: there it
+  holds armour faulds and skirts together, and the guard tore more without it.
+
+Tried and dropped: handing a rule's freed weight back to the vertex's own bones instead of to the rule's target.
+It made the guard and the wyvern worse.
+
+The guard's other tears are at the crotch faulds and on the lower back. No single pass explains them.
+`AUTORIG_DEBUG_BARRIER=<file.npz>` saves the barrier's input and output, to replay it outside Blender.
 
 ## Risks
 
