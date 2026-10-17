@@ -17,7 +17,8 @@ def main(argv=None):
     ap.add_argument("model")
     ap.add_argument("--settings", help="JSON settings file; otherwise reads the model's studio.json")
     a = ap.parse_args(argv)
-    if a.model not in {n for _, n in layout.all_models()}: raise ValueError("unknown model: " + a.model)
+    if a.model not in {n for _, n in layout.all_models()}:
+        ap.error("no model %s under %s" % (a.model, layout.ROOT))
     model_dir = layout.pack_dir(a.model)
     settings = studio.validate(a.tool, json.loads(Path(a.settings).read_text(encoding="utf-8")) if a.settings else studio.load(model_dir)[a.tool])
     out = Path(model_dir) / "_studio" / a.tool

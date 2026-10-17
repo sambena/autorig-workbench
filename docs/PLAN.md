@@ -305,6 +305,15 @@ one pull request each, code first; models are run through the tool only in R6.
   set. Tested by tests/test_model_management.py and test_delete_model.py, and by hand in the GUI on a copy of the
   samples; not yet used on asset-packs itself.
 
+- **Tool check** (October 2026): every command, step, GUI page and Model Studio tool (all but paid generation) run on
+  the samples. Fixed: `run.py` / `run.py gui` crashed on import (only `python -m autorig` worked); a step named with no
+  models ran the pipeline on a model of that name; winged clips needed `rig`, `triangles` and a published card that
+  the bundled wyvern lacks; batch ran clips before publish; probe needed a spec; studio on an unknown model gave a
+  traceback; `watch --once` skipped a file dropped under a second ago without saying so; the suggester called a narrow
+  quadruped winged (a pair's span is now measured against the body's length as well as its width). Still wrong: the
+  suggester reads the biped sample as rigid and the pedestal as winged, and beetle, biped and wyvern audit FAIL on bend
+  tears with their bundled specs.
+
 ## Risks
 
 - **Blender API drift.** The steps are tested on 5.2 LTS. `parent_set(ARMATURE_AUTO)`, the FBX exporter and

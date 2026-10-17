@@ -31,7 +31,22 @@ except ImportError:
 
 
 DEFAULT_STEPS = ["rig", "trim", "audit"]
-ALL_STEPS = ["survey", "rig", "trim", "audit", "clips", "publish", "preview"]
+# The GUI's Run all order: publish writes the card (model.json) the clips read their size and bone roles from.
+ALL_STEPS = ["survey", "rig", "trim", "audit", "publish", "clips", "preview"]
+
+
+def ordered_steps(steps):
+    """The steps asked for, in pipeline order (ALL_STEPS); names it does not know (auto-tune) keep their place
+    after the step before them."""
+    steps = [s.strip().lower() for s in steps if s and s.strip()]
+    out = []
+    for s in steps:
+        if s in ALL_STEPS:
+            at = next((i for i, o in enumerate(out) if o in ALL_STEPS and ALL_STEPS.index(o) > ALL_STEPS.index(s)), len(out))
+            out.insert(at, s)
+        else:
+            out.append(s)
+    return out
 
 
 def resolve_models(names=None, group=None, pattern=None, riggable_only=False):
@@ -85,7 +100,7 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
     appended to it as (model, group) instead of run (run_batch runs those one at a time after a parallel batch).
     Returns: dict with timing, executed steps, audit grade, and status."""
     t0 = time.time()
-    steps_to_run = list(steps or DEFAULT_STEPS)
+    steps_to_run = ordered_steps(steps or DEFAULT_STEPS)
     executed = []
     audit_grade = None
     export_result = None

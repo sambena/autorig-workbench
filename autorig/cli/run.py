@@ -40,10 +40,17 @@ def main(argv):
     blender.warn_if_untested()
     if not argv or argv[0] == "gui" or argv[0].startswith("--"):
         sys.path.insert(0, PKG)
+        sys.path.insert(0, os.path.dirname(PKG))              # the gui imports autorig.core.* by package name
         from gui import server
         server.main(argv[1:] if argv and argv[0] == "gui" else argv)
         return 0
     cmd, rest = argv[0], argv[1:]
+    if cmd in NEEDS_ARGS and not rest:
+        # without its arguments a step's name would fall through to the pipeline as a model name
+        lines = [l[2:].rstrip() for l in open(__file__, encoding="utf-8")
+                 if l.startswith("#   python autorig/cli/run.py %s " % cmd)]
+        print("usage:\n" + "\n".join(lines or ["  python autorig/cli/run.py %s <model>[,<model>...]" % cmd]))
+        return 2
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
@@ -115,6 +122,11 @@ def main(argv):
         return 0
     # anything else is a model list for the pipeline
     return subprocess.call([sys.executable, os.path.join(HERE, "pipeline.py")] + argv)
+
+
+# Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
+NEEDS_ARGS = ("rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+              "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 
 def model_exists(name):

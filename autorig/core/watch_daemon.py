@@ -293,7 +293,7 @@ def process_incoming_file(filepath, target_group=None, auto_rig=True, auto_tune=
 
 
 def scan_incoming(incoming_dir, target_group=None, auto_rig=True, auto_tune=False, export_target=None,
-                  seen=None, log=print):
+                  seen=None, log=print, settle=0.0):
     """Scans the watch folder once for all stable unprocessed files. `seen` (a set kept by the caller across
     passes) remembers items that were handled but could not be archived, or that failed, so they are not taken
     again until they change."""
@@ -342,12 +342,22 @@ def scan_incoming(incoming_dir, target_group=None, auto_rig=True, auto_tune=Fals
         try:
             res = process_incoming_file(p, target_group=target_group, auto_rig=auto_rig,
                                         auto_tune=auto_tune, export_target=export_target, log=log)
+            waited = 0.0
+            while res is None and waited < settle:
+                # --once: a file still being written (or dropped under a second ago) is waited for, not skipped
+                if waited == 0.0:
+                    log(f"WATCH_WAIT {os.path.basename(p)}: still being written")
+                time.sleep(1.0); waited += 1.0
+                res = process_incoming_file(p, target_group=target_group, auto_rig=auto_rig,
+                                            auto_tune=auto_tune, export_target=export_target, log=log)
         except Exception as e:
             log(f"WATCH_ERROR {os.path.basename(p)}: {e}")
             log(traceback.format_exc().rstrip())
             seen.add(key)
             continue
         if res is None:
+            if settle:
+                log(f"WATCH_SKIP {os.path.basename(p)}: still changing after {settle:.0f} s")
             continue
         if not res.get("archived") and os.path.exists(p):
             seen.add(key)
@@ -363,7 +373,7 @@ def run_watch_loop(incoming_dir, interval=2.0, once=False, target_group=None,
     seen = set()
     if once:
         results = scan_incoming(incoming_dir, target_group=target_group, auto_rig=auto_rig,
-                                auto_tune=auto_tune, export_target=export_target, seen=seen)
+                                auto_tune=auto_tune, export_target=export_target, seen=seen, settle=30.0)
         if callback:
             for r in results:
                 callback(r)

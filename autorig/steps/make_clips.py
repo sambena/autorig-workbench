@@ -2762,7 +2762,16 @@ def main():
     if spec["archetype"] in CREATURE:
         return author(key, spec, argv)
     pack = layout.pack_dir(key)
-    card = json.load(open(os.path.join(pack, "model.json"), encoding="utf-8"))
+    # model.json is Publish's card; a model not yet published goes without (its size is then its own)
+    cp = os.path.join(pack, "model.json")
+    card = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else {"rig": {}}
+    # SPEC.md lists rig, triangles and display for the winged archetype; a spec without them gets the model's own
+    spec = dict(spec)
+    spec.setdefault("rig", layout.rig_folder(key))
+    spec.setdefault("display", key[:1].upper() + key[1:])
+    spec.setdefault("category", layout.group_of(key) or "Creatures")
+    if spec.get("triangles") is None:
+        spec["triangles"] = layout.budget(key) or 10 ** 9           # no budget: full resolution
     rig_dir = os.path.join(pack, spec["rig"])
     blend = os.path.join(rig_dir, key + ".blend")
     bpy.ops.wm.open_mainfile(filepath=blend)
@@ -2829,7 +2838,7 @@ def main():
         "frameRate": FPS,
         "clips": [{"name": n, "take": n, "length": round(last / float(FPS) if loops else (last + 1) / float(FPS), 4),
                    "frames": last if loops else last + 1, "loop": loops,
-                   **({"speed": spec["flySpeed"]} if n == "fly" else {}),
+                   **({"speed": spec["flySpeed"]} if n == "fly" and "flySpeed" in spec else {}),
                    "events": ev.get(n, [])} for n, last, loops in made],
         "windUpEnd": round(arche.windup_end(), 4),
         "notes": arche.notes(),
