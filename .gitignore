@@ -32,3 +32,6 @@ __pycache__/
 # Local editor and preview settings (paths on one machine).
 .claude/
 .autorig_roots.json
+# AI Assist settings (API keys) and its spend log, on this machine only.
+.autorig_ai.json
+.autorig_ai_usage.jsonl

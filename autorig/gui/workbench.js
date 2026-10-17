@@ -525,6 +525,13 @@ function setWorkbenchMode(mode) {
 
 async function handleAction(action) {
   switch (action) {
+    case "ai-fix-rig":
+      if (!currentModel) alert("Select a model first.");
+      else if (window.aiAssist) window.aiAssist.openFixRig(currentModel);
+      break;
+    case "ai-settings":
+      if (window.aiAssist) window.aiAssist.openSettings();
+      break;
     case "model-studio":
       window.open("./studio.html?t=" + encodeURIComponent(TOKEN) + (currentModel ? "&model=" + encodeURIComponent(currentModel) : ""), "_blank");
       break;
@@ -2613,6 +2620,7 @@ window.workbench = {
   setViewbarCollapsed,
   applyLogHeight,
   getCurrentJobWorkingModel: () => currentJobWorkingModel,
+  getCurrentModel: () => currentModel,
   openRootModal,
   switchRoot,
   openModelManagerModal,
