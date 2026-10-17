@@ -6,6 +6,8 @@
 #   blender -b --python autorig/steps/make_clips.py -- wolf                          a creature archetype: writes clips/
 #   blender -b --python autorig/steps/make_clips.py -- wolf --preview <dir>          also render check frames per clip
 #   blender -b --python autorig/steps/make_clips.py -- wyvern --split-clips <dir>    winged: also write the split pair
+#   blender -b --python autorig/steps/make_clips.py -- wolf --variants 3 [--seed 7]  also 3 varied takes of the idle
+#                                                                                    and each gait (docs/CLIP-MOTION.md)
 #
 # A creature archetype (walker, flyer, exploder, swimmer, turret) writes clips/ in the model folder (see below).
 # The winged archetype writes, for a model <key> with display name <Name>, beside the rig it animated
@@ -2438,7 +2440,9 @@ class Authored:
         ev = {}
         for name, last, loops in made:
             length = s(last if loops else last + 1)
-            plan = (self.facts.get("plant") or {}).get(name)
+            source = re.sub(r"_v\d+$", "", name)
+            plan = (self.facts.get("plant") or {}).get(source)
+            cycles = 1 if source == name else 2                    # a variant is twice its clip
             if name == "walk" and self.rig.feet:
                 ev[name] = [{"name": "footfall", "time": round(s(last) * (0.5 * g), 4),
                              "detail": ",".join(f["name"][3:] for f in self.rig.feet if f["group"] == g)} for g in (0, 1)]
@@ -2447,8 +2451,8 @@ class Authored:
                 at = {}
                 for leg, ph in leg_planting.phases_for(self.rig.legs, plan["kind"]).items():
                     at.setdefault(round(ph, 4), []).append(leg)
-                ev[name] = [{"name": "footfall", "time": round(s(last) * ph, 4), "detail": ",".join(sorted(legs))}
-                            for ph, legs in sorted(at.items())]
+                ev[name] = [{"name": "footfall", "time": round(s(last) * (c + ph) / cycles, 4), "detail": ",".join(sorted(legs))}
+                            for c in range(cycles) for ph, legs in sorted(at.items())]
             elif name == "attack":
                 ev[name] = [{"name": "windup_full", "time": s(WINDUP_END - 2)}, {"name": "strike_release", "time": s(WINDUP_END)},
                             {"name": "strike_impact", "time": s(STRIKE_END)}]
@@ -2506,7 +2510,10 @@ def author(key, spec, argv):
     grounded = ground_deaths(rig, mesh, clips, made)
     if grounded:
         made = build(rig, clips)
-    plant_feet(rig, made, arche.facts, argv)
+    legs = {b for c in clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid) for b in c["bones"] + c["keep"]}
+    made = add_variants(rig.arm, made, rig.size, argv, legs | {f["name"] for f in rig.feet})
+    planted = plant_feet(rig, made, arche.facts, argv)
+    made = drop_unplanted(rig.arm, made, arche.facts, planted)
     skate = settle_feet(rig.arm, made, clip_passes.leg_chains(arm, rig.skeleton, rig.humanoid, mesh), rig.size, argv, mesh)
 
     out = os.path.join(pack, "clips")
@@ -2543,7 +2550,7 @@ def author(key, spec, argv):
         "skeleton": rig.skeleton or None,
         "clips": [{"name": n, "take": n, "frames": (last if loops else last + 1),
                    "seconds": round((last if loops else last + 1) / float(CREATURE_FPS), 4), "loops": loops,
-                   **({"speed": round(speed_m, 4)} if n == "walk" and speed_m else {}),
+                   **({"speed": round(speed_m, 4)} if (n == "walk" or n.startswith("walk_v")) and speed_m else {}),
                    "events": ev.get(n, [])} for n, last, loops in made],
         "windUpEnd": round(arche.windup_end(), 4),
         # walkSpeed: twice the stride per walk cycle, scaled by the card's metres (the rig's longest axis is about 1).
@@ -2584,17 +2591,23 @@ def plant_feet(rig, made, facts, argv):
     rest = {l["name"]: tuple(clip_passes.rest_foot(rig.arm, chains[l["name"]])) for l in legs}
     reach = (0.9 if len(legs) == 4 else 0.55) * min(l["reach"] for l in legs)
     done = {}
+    lengths = {name: last for name, last, _ in made}
     for name, last, loops in made:
-        p = plan.get(name)
+        source = re.sub(r"_v\d+$", "", name)            # a variant steps as its clip does, once a clip cycle
+        p = plan.get(source)
         if p is None or not loops: continue
+        if source != name and source not in done: continue  # its clip could not step: neither can it
+        cycle = lengths.get(source, last)
+        if last % cycle: continue
         action = bpy.data.actions[name]
         phases = leg_planting.phases_for(legs, p["kind"])
         base = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh) if rig.mesh else None
-        for share in (1.0, 0.7, 0.5):
+        shares = (1.0, 0.7, 0.5) if source == name else (done[source] / min(p["stride"], reach),)
+        for share in shares:
             stride = min(p["stride"], reach) * share
-            tracks = leg_planting.step_cycle(rest, last, stride, p["duty"], min(p["lift"], 0.3 * reach), phases,
+            tracks = leg_planting.step_cycle(rest, cycle, stride, p["duty"], min(p["lift"], 0.3 * reach), phases,
                                              forward=tuple(FORWARD))
-            targets = [{k: tracks[k][f] for k in tracks} for f in range(last)]
+            targets = [{k: tracks[k][f % cycle] for k in tracks} for f in range(last)]
             _, saved = clip_passes.place_feet(rig.arm, action, last, True, [chains[l["name"]] for l in legs],
                                               targets, rig.size, max_turn=clip_passes.STEP_TURN)
             torn = clip_passes.mesh_strain(rig.arm, action, last, rig.mesh)[0] if base else 0
@@ -2609,19 +2622,40 @@ def plant_feet(rig, made, facts, argv):
     return done
 
 
+def drop_unplanted(arm, made, facts, planted):
+    """A gait variant whose legs could not step (planting it tore the mesh) would ship sliding feet: it goes."""
+    plan = facts.get("plant") or {}
+    keep = []
+    for entry in made:
+        name = entry[0]
+        source = re.sub(r"_v\d+$", "", name)
+        if source != name and source in plan and source in planted and name not in planted:
+            ad = arm.animation_data
+            for tr in [t for t in ad.nla_tracks if t.name == name]: ad.nla_tracks.remove(tr)
+            if name in bpy.data.actions: bpy.data.actions.remove(bpy.data.actions[name])
+            print("VARIANT_DROPPED " + json.dumps({"take": name, "why": "its legs could not step without tearing"}))
+            continue
+        keep.append(entry)
+    return keep
+
+
 def settle_feet(arm, made, chains, size, argv, mesh=None):
     """The anti-slide pass over every authored clip (clip_passes.anti_slide): a foot that is down stays where it
     landed. Retargeted mocap keeps its own feet. --no-anti-slide skips it. Returns {clip: {before, after}}, the
     foot-skate scores (core/foot_contact.foot_skate)."""
     if "--no-anti-slide" in argv or not chains: return {}
     fps = bpy.context.scene.render.fps
-    out = {}
+    out, grounds = {}, {}
     for name, last, loops in made:
         action = bpy.data.actions.get(name)
         if action is None or action.get("autorig_retarget"): continue
-        still = None if clip_passes.foot_contact.travels(name) else (0.0, 0.0, 0.0)
-        r = clip_passes.anti_slide(arm, action, last, loops, chains, size, velocity=still, fps=fps, mesh=mesh)
+        # a variant (walk_v2) travels at its clip's speed, the one the manifest publishes
+        source = re.sub(r"_v\d+$", "", name)
+        if not clip_passes.foot_contact.travels(name): ground = (0.0, 0.0, 0.0)
+        else: ground = grounds.get(source) if source != name else None
+        r = clip_passes.anti_slide(arm, action, last, loops, chains, size, velocity=ground, fps=fps, mesh=mesh)
         if r is None: continue
+        grounds.setdefault(name, r.pop("velocity"))
         out[name] = {"before": round(r["before"], 3), "after": round(r["after"], 3)}
         print("ANTI_SLIDE " + json.dumps({"clip": name, **r}), flush=True)
     arm.animation_data.action = None
@@ -2635,6 +2669,73 @@ def settle_feet(arm, made, chains, size, argv, mesh=None):
 def mute_constraints(arm):
     for pb in arm.pose.bones:
         for c in pb.constraints: c.mute = True
+
+
+VARIED = ("idle", "walk", "trot", "gallop", "fly", "swim", "run")   # the clips --variants makes takes of
+
+
+def add_variants(arm, made, size, argv, legs=()):
+    """--variants N: N more takes of the idle and each gait, `<clip>_v1`..: GenMM (core/genmm, through
+    core/motion_variants) rearranges the clip's own patches into a new loop twice its length, on the CPU. Different
+    each time (--seed S picks the first seed), never a copy, built only of what the clip does. Returns `made` with the
+    takes added (their NLA tracks too); the passes after this treat them as clips. `legs`: bones a gait's variant
+    plays as the clip does, cycle after cycle (leg bones, IK foot targets): GenMM blends patches, and a blended
+    stance no longer moves back at the walk's speed. The body, head and tail vary; the feet keep the gait's timing."""
+    if "--variants" not in argv: return made
+    try:
+        count = max(0, int(argv[argv.index("--variants") + 1]))
+    except (IndexError, ValueError):
+        sys.exit("--variants needs a number")
+    seed = int(argv[argv.index("--seed") + 1]) if "--seed" in argv else 0
+    import motion_variants
+    out = list(made)
+    ad = arm.animation_data
+    for name, last, loops in made:
+        if name not in VARIED or not loops: continue
+        src = bpy.data.actions.get(name)
+        if src is None: continue
+        curves = clip_passes.action_curves(src)
+        channels, constant, tiled = {}, {}, {}
+        gait = clip_passes.foot_contact.travels(name)
+        for (bone, prop), by in curves.items():
+            width = max(by) + 1
+            rows = np.array([[by[i].evaluate(f) if i in by else 0.0 for i in range(width)] for f in range(last)])
+            if np.ptp(rows, axis=0).max(initial=0.0) < 1e-9:
+                constant[(bone, prop)] = tuple(rows[0])
+                continue
+            if gait and bone in legs:
+                tiled[(bone, prop)] = list(map(tuple, rows))
+                continue
+            kind = "quat" if prop == "rotation_quaternion" else ("loc" if prop == "location" else "vec")
+            channels[(bone, prop)] = (kind, rows)
+        frames = 2 * last
+        for v in range(1, count + 1):
+            take = "%s_v%d" % (name, v)
+            synth = motion_variants.synthesize(channels, frames, loop=True, seed=seed + 1000 * v + len(name), size=size)
+            action = bpy.data.actions.new(take)
+            action.use_fake_user = True
+            ad.action = action
+            keys = {}
+            for key, rows in synth.items():
+                rows = list(map(tuple, rows))
+                keys[key] = [(f, rows[f % frames]) for f in range(frames + 1)]       # the last key is the first
+            for key, value in constant.items():
+                keys[key] = [(f, value) for f in range(frames + 1)]
+            for key, rows in tiled.items():
+                keys[key] = [(f, rows[f % last]) for f in range(frames + 1)]
+            flush_keys(action, arm, keys)
+            action.use_frame_range = True
+            action.frame_start, action.frame_end = 0, frames
+            ad.action = None
+            tr = ad.nla_tracks.new(); tr.name = take
+            st = tr.strips.new(take, 0, action); st.name = take
+            out.append((take, frames, True))
+            # how far it strays from the clip played twice over: 0 would be a copy
+            differs = float(np.mean([motion_variants.difference(synth[k], np.concatenate([ch[1], ch[1]]))
+                                     for k, ch in channels.items()])) if channels else 0.0
+            print("VARIANT " + json.dumps({"clip": name, "take": take, "frames": frames, "channels": len(channels),
+                                           "differs": round(differs, 5)}), flush=True)
+    return out
 
 
 def build(rig, clips):
@@ -2904,6 +3005,8 @@ def main():
     clips = arche.clips()
     made = build(rig, clips)
     skeleton = (card.get("rig") or {}).get("skeleton") or qa_skeleton(key)
+    legs = {b for c in clip_passes.leg_chains(arm, skeleton) for b in c["bones"]}
+    made = add_variants(arm, made, rig.size, argv, legs)
     settle_feet(arm, made, clip_passes.leg_chains(arm, skeleton, mesh=mesh), rig.size, argv, mesh)
 
     # 1. the source: the rig with every clip as an action

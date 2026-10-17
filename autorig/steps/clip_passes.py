@@ -259,7 +259,8 @@ def anti_slide(arm, action, last, loops, chains, size, velocity=None, fps=24, me
     before = foot_contact.foot_skate(tracks, size, fps=fps, loop=loops, velocity=velocity, floor=floor)
     pins, contacts, v = foot_contact.plan_pins(tracks, size, loop=loops, velocity=velocity, floor=floor)
     if not any(any(c) for c in contacts.values()):
-        return {"before": before["score"], "after": before["score"], "moved": 0.0, "ground_speed": before["ground_speed"]}
+        return {"before": before["score"], "after": before["score"], "moved": 0.0, "ground_speed": before["ground_speed"],
+                "velocity": v}
     targets = [{k: pins[k][f] for k in pins if contacts[k][f] or pins[k][f] != tracks[k][f]} for f in range(n)]
     strain = mesh_strain(arm, action, last, mesh) if mesh is not None else None
     moved, saved = place_feet(arm, action, last, loops, chains, targets, size)
@@ -275,4 +276,4 @@ def anti_slide(arm, action, last, loops, chains, size, velocity=None, fps=24, me
         # them strains the mesh more than the clip did: the clip as authored is the better one
         restore(saved)
     return {"before": before["score"], "after": after["score"] if kept else before["score"], "kept": kept,
-            "moved": round(moved / size, 5) if kept else 0.0, "ground_speed": before["ground_speed"]}
+            "moved": round(moved / size, 5) if kept else 0.0, "ground_speed": before["ground_speed"], "velocity": v}

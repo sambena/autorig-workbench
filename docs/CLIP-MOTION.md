@@ -85,3 +85,25 @@ rocked. Now the travelling clips step (`core/leg_planting.py`, after Spider Walk
 
 Clips: `walk` always, and `trot` and `gallop` for four legs, as for IK rigs. `--no-plant` skips the stepping.
 Footfall events name the legs that land together.
+
+## Variants: takes that do not repeat
+
+    python autorig/cli/run.py clips <model> --variants N [--seed S]
+
+adds N takes of the idle and of each gait (`walk`, `trot`, `gallop`, `fly`, `swim`, `run`): `idle_v1`, `walk_v1`
+and so on, each a loop twice its clip's length, in the FBX, the `.blend`, the preview and the manifest (a walk's
+take carries the walk's `speed`). Same skeleton, any skeleton; on the CPU, in seconds, with nothing to install.
+
+They come from GenMM (generative motion matching, Apache-2.0), vendored in `autorig/core/genmm/` and ported from
+PyTorch to NumPy (see its NOTICE). A take is the clip's own patches rearranged and blended, coarse to fine: never a
+copy, made only of what the clip does. Each channel is a bone property over the clip: rotations as GenMM's 6D, a
+location divided by the model's size. The seed is `S + 1000 x take`, so a rebake makes the same takes.
+
+- **Feet stay the gait's.** GenMM blends patches, and a blended stance no longer moves back at the walk's speed. In a
+  gait the leg bones and IK foot targets play as the clip does, cycle after cycle; the body, head and tail vary. FK
+  legs are then planted again for the take's own body (two steps a leg). A gait take whose legs cannot step without
+  tearing the mesh is dropped, not published sliding.
+- **Then the passes.** Anti-slide runs on the takes as on any clip, at their clip's ground speed.
+
+On the canine (`--variants 2`): `idle_v1`/`idle_v2` skate 0.04, `walk_v1`/`walk_v2` 3.2/2.9 (the walk 3.9),
+`trot_v1`/`trot_v2` 3.2/3.2 (the trot 2.6). Its gallop takes bound further than its legs can step and are dropped.

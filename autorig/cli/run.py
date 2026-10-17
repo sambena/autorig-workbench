@@ -16,7 +16,7 @@
 #   python autorig/cli/run.py studio <tool> <model> [--settings file.json]   Model Studio tools
 #   python autorig/cli/run.py extras [install <name ...|all>]   optional pip packages for Blender's Python
 #   python autorig/cli/run.py suggest <model> [--force]   survey it and write a suggested rig.json (keeps one there)
-#   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir]
+#   python autorig/cli/run.py clips wolf [--preview dir] [--split-clips dir] [--variants N [--seed S]]
 #   python autorig/cli/run.py publish Creatures [-only wolf]
 #   python autorig/cli/run.py game-prop --in barn.glb --name Barn --length 18 --out <folder> [--front +x] [--carve-wheels]
 #                                                   a generated prop as a game prop: metres, facing, LODs, maps, wheels
