@@ -569,11 +569,19 @@ $('classic-rig').onclick = () => runRig('classic')
 
 // The model Mesh2Motion opens: the rigged GLB m2m-rig wrote, whose coordinates the fitted joints are in (turned to
 // face the template's way, standing on the ground); the source itself only when there is no rigged GLB yet
+// m2m-rig names its files after the model's game name (Cow_Holstein's are rigged/Cow.glb), so any GLB in the rig
+// folder will do, except the viewer's preview and the audit's. Once a model has a fitted skeleton, the source is never
+// a fallback: it is not in the fitted coordinates, and the joints would float off the mesh.
 function m2mModelUrl () {
   const st = state.details?.status
   const files = state.details?.files || []
-  const rigged = files.find((f) => f.path === `${st?.rig_folder || 'rigged'}/${state.model}.glb`)
+  const rf = st?.rig_folder || 'rigged'
+  const inRig = files.filter((f) => f.path.startsWith(rf + '/') && f.path.toLowerCase().endsWith('.glb') &&
+    !f.path.includes('/audit/') && !f.path.endsWith('/preview.glb'))
+  const rigged = inRig.find((f) => f.path === `${rf}/${state.model}.glb`) || inRig[0] ||
+    files.find((f) => f.path === `${rf}/preview.glb`)
   if (rigged) return withToken(rigged.url)
+  if (state.skeleton) return null
   if (!st?.source || !['.glb', '.fbx'].includes(st.source_ext)) return null
   return withToken(`/api/v1${m(state.model)}/files/${st.source.split('/').map(encodeURIComponent).join('/')}`)
 }
@@ -589,7 +597,11 @@ function setAdjusting (on) {
 async function openInM2M (stage, placeholder, step) {
   if (stage.id === 'rig-stage') $('preview').hidden = true
   const model = m2mModelUrl()
-  if (!model) throw new Error(`Mesh2Motion opens GLB or FBX; this model's source is ${state.details?.status?.source_ext || 'missing'}`)
+  if (!model) {
+    throw new Error(state.skeleton
+      ? 'The rigged GLB is missing from the rig folder: run Auto rig again to rebuild it.'
+      : `Mesh2Motion opens GLB or FBX; this model's source is ${state.details?.status?.source_ext || 'missing'}`)
+  }
   placeholder.hidden = true
   await bridge.show(stage)
   await bridge.call({ type: 'load', model, template: state.skeleton.template, skeleton: { template: state.skeleton.template, joints: state.skeleton.joints }, step })
