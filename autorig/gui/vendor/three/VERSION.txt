@@ -1,0 +1,23 @@
+three.js 0.186.0 (MIT, see LICENSE), vendored for the page's model preview (gui/viewer.js) so it works offline.
+
+Source: the npm package, `npm pack three@0.186.0`
+  https://registry.npmjs.org/three/-/three-0.186.0.tgz
+  integrity sha512-cr/fIM2ddMSVbYVgkfD4jLJv7Fh/8ZTjvo+7gQeSVGUZHxpx9FDwoL5iC7hUz/LiRA8wMbqfnb90xKfm1/HHkQ==
+  shasum    08f70ce80dffa9247a567b421165bec630e86f8d
+
+Files copied unchanged, at their paths in the package:
+  LICENSE
+  build/three.module.js
+  build/three.core.js
+  examples/jsm/loaders/GLTFLoader.js
+  examples/jsm/loaders/FBXLoader.js
+  examples/jsm/loaders/TGALoader.js            (FBX models often carry TGA textures)
+  examples/jsm/controls/OrbitControls.js
+  examples/jsm/utils/BufferGeometryUtils.js     (GLTFLoader imports it)
+  examples/jsm/utils/SkeletonUtils.js
+  examples/jsm/libs/fflate.module.js            (FBXLoader imports it; MIT, by 101arrowz)
+  examples/jsm/curves/NURBSCurve.js             (FBXLoader imports it)
+  examples/jsm/curves/NURBSUtils.js             (NURBSCurve imports it)
+
+To update: `npm pack three@<version>`, unpack, copy the same files over these, change the version here, and open
+the page's preview on a GLB with clips and on an FBX.
