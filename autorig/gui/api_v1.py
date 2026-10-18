@@ -122,13 +122,12 @@ def route(h, app, srv, method, path, q):
             if method == "POST":
                 m = add_model(h, srv, q)
                 return 201, {"model": srv.status(m["group"], m["name"])}
-        name = parts[1] if len(parts) > 1 else ""
-        g = srv.find_group(name)
+        name, g = find_model(srv, parts[1] if len(parts) > 1 else "")
         if g is None: raise ApiError(404, "no model %r" % name)
         rest = parts[2:]
         if not rest and method == "GET":
             srv.spec_store.reload()
-            return dict(srv.details(g, name), files=model_files(srv, g, name))
+            return dict(srv.details(g, name), name=name, group=g, files=model_files(srv, g, name))
         if rest and rest[0] == "files" and method == "GET" and len(rest) > 1:
             h.file("models", "/".join(([g] if g else []) + [name] + rest[1:]))
             return None
@@ -178,16 +177,25 @@ def route(h, app, srv, method, path, q):
             m = add_from_url(srv, body["url"], body.get("name"), body.get("group") or "")
             name, g = m["name"], m["group"]
         else:
-            name = body.get("model") or ""
-            g = srv.find_group(name)
+            name, g = find_model(srv, body.get("model") or "")
             if g is None: raise ApiError(404, "no model %r: give model, or url to add one" % name)
-        job = submit(app, srv, g, name, "m2m-rig", m2m_args(
+        code, job = submit(app, srv, g, name, "m2m-rig", m2m_args(
             srv, name, template=body.get("template") or "auto", height=body.get("height"),
             clips=body.get("clips") or "all", naming=body.get("naming"), target=body.get("target"),
             fmt=body.get("format")))
-        return 202, dict(job, model=name)
+        return code, dict(job, model=name)
 
     raise ApiError(404, "no route %s %s (GET /api/v1 lists them)" % (method, path))
+
+
+def find_model(srv, name):
+    """(name as the collection spells it, group), or (name, None). Names are matched without regard to case: the
+    tool lowercases the names it gives (clean_name), and a caller may well send the name it asked for."""
+    g = srv.find_group(name)
+    if g is not None: return name, g
+    for grp, n in srv.layout.all_models():
+        if n.lower() == name.lower(): return n, grp
+    return name, None
 
 
 # ---------------------------------------------------------------------------------------------------------------
