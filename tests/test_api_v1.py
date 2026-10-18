@@ -7,7 +7,7 @@
 # the OpenAPI description, the steps and tools list, Mesh2Motion's templates and clips (when the submodule is there),
 # adding a model as a raw body, its files, the rig/animate/skeleton routes' refusals, tool path confinement, and jobs.
 # Nothing here needs Blender: a route that would start it answers with a reason when it is missing.
-import json, os, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
+import json, os, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse, urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "autorig", "core"))
@@ -25,7 +25,24 @@ class ApiV1Test(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="autorig-api-")
         cls.models = os.path.join(cls.tmp, "models")
         url_file = os.path.join(cls.tmp, "url.txt")
-        env = dict(os.environ, AUTORIG_URL_FILE=url_file)
+        # what the server may reach: a second collection and a browsable inbox, both in the temp folder; its AI
+        # settings, spend log and recent roots there too, so nothing in the repo is read or written
+        cls.other = os.path.join(cls.tmp, "other")
+        cls.inbox = os.path.join(cls.tmp, "inbox")
+        os.makedirs(os.path.join(cls.other, "Rock"))
+        os.makedirs(cls.inbox)
+        column_obj(os.path.join(cls.other, "Rock", "Rock.obj"))
+        column_obj(os.path.join(cls.inbox, "Post.obj"))
+        with open(os.path.join(cls.inbox, "notes.txt"), "w") as fh: fh.write("not a model")
+        config = os.path.join(cls.tmp, "server.json")
+        with open(config, "w") as fh:
+            json.dump({"collections": [{"name": "Other", "path": cls.other}], "browse": [cls.inbox]}, fh)
+        env = {k: v for k, v in os.environ.items() if k not in (
+            "AUTORIG_ALLOW_ANY_FOLDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")}
+        env.update(AUTORIG_URL_FILE=url_file, AUTORIG_CONFIG=config,
+                   AUTORIG_AI_FILE=os.path.join(cls.tmp, "ai.json"),
+                   AUTORIG_AI_USAGE_FILE=os.path.join(cls.tmp, "ai_usage.jsonl"),
+                   AUTORIG_ROOTS_FILE=os.path.join(cls.tmp, "roots.json"))
         cls.proc = subprocess.Popen([sys.executable, "-m", "autorig", "--models", cls.models, "--port", "0",
                                      "--no-browser", "--token", TOKEN], cwd=REPO, env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -190,6 +207,59 @@ class ApiV1Test(unittest.TestCase):
         code, out = self.req("POST", "/api/v1/tools/game-prop",
                              body={"options": {"in": "Props/nothing.glb", "name": "Barn", "out": "Props/out"}})
         self.assertEqual(code, 404, out)
+
+    def test_9_collections_and_server_files(self):
+        if self.req("GET", "/api/v1/models/column")[0] == 404:
+            self.test_5_add_model_and_files()
+        code, c = self.req("GET", "/api/v1/collections")
+        self.assertEqual(code, 200)
+        paths = {os.path.realpath(x["path"]): x for x in c["collections"]}
+        self.assertIn(os.path.realpath(self.models), paths)
+        self.assertIn(os.path.realpath(self.other), paths)
+        self.assertIn(os.path.realpath(os.path.join(self.models, "Props")), paths)    # a group, as a view
+        self.assertFalse(c["allow_any_folder"])
+        # only listed collections open; adding folders is off
+        self.assertEqual(self.req("POST", "/api/v1/collections/select", body={"path": self.inbox})[0], 403)
+        self.assertEqual(self.req("POST", "/api/v1/collections", body={"path": self.tmp})[0], 403)
+        code, c = self.req("POST", "/api/v1/collections/select", body={"path": self.other})
+        self.assertEqual(code, 200, c)
+        self.assertEqual(os.path.realpath(c["current"]), os.path.realpath(self.other))
+        code, ms = self.req("GET", "/api/v1/models")
+        self.assertEqual([x["name"] for x in ms["models"]], ["Rock"])
+        code, c = self.req("POST", "/api/v1/collections/select", body={"path": self.models})
+        self.assertEqual(code, 200, c)
+        # the server's files: the roots, a folder, nothing outside them
+        code, top = self.req("GET", "/api/v1/files")
+        self.assertEqual(code, 200)
+        roots = [os.path.realpath(e["path"]) for e in top["entries"]]
+        self.assertIn(os.path.realpath(self.inbox), roots)
+        code, d = self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.inbox))
+        self.assertEqual(code, 200)
+        self.assertEqual([e["name"] for e in d["entries"]], ["Post.obj"])        # models only, no notes.txt
+        self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.tmp))[0], 403)
+        self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(
+            os.path.join(self.inbox, "..")))[0], 403)
+        # a file on the server becomes a model (a copy); one inside a model opens that model
+        code, out = self.req("POST", "/api/v1/models", body={"path": os.path.join(self.inbox, "Post.obj")})
+        self.assertEqual(code, 201, out)
+        self.assertEqual((out["model"]["name"], out["existing"]), ("post", False))
+        self.assertTrue(os.path.isfile(os.path.join(self.inbox, "Post.obj")))         # copied, not moved
+        code, out = self.req("POST", "/api/v1/models", body={"path": os.path.join(self.models, "Props", "column", "column.obj")})
+        self.assertEqual((code, out["model"]["name"], out["existing"]), (200, "column", True))
+        self.assertEqual(self.req("POST", "/api/v1/models", body={"path": os.path.join(self.tmp, "url.txt")})[0], 403)
+        self.assertEqual(self.req("POST", "/api/v1/models", body={"path": os.path.join(self.inbox, "notes.txt")})[0], 400)
+
+    def test_9b_ai_routes(self):
+        code, st = self.req("GET", "/api/v1/ai/status")
+        self.assertEqual(code, 200)
+        self.assertFalse(st["enabled"])                     # no provider, no key: off, and it says why
+        self.assertTrue(st.get("problem"))
+        code, s = self.req("GET", "/api/v1/ai/settings")
+        self.assertEqual(code, 200)
+        self.assertIn("providers", s["catalog"])
+        self.assertEqual(self.req("GET", "/api/v1/ai/status", auth=None)[0], 401)
+        code, u = self.req("GET", "/api/v1/ai/usage")
+        self.assertEqual((code, u["recent"]), (200, []))
 
     def test_8_jobs_and_methods(self):
         code, j = self.req("GET", "/api/v1/jobs")

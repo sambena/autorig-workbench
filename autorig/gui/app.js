@@ -218,6 +218,7 @@ async function selectModel (name) {
   await refreshModel()
   renderLibrary()
   renderAdvancedSteps()
+  if ($('adv-ai').open) refreshAI()
 }
 
 async function refreshModel () {
@@ -291,6 +292,92 @@ function upload (file) {
   xhr.onerror = () => { $('upload-text').textContent = 'Upload failed: the connection dropped' }
   xhr.send(file)
 }
+
+// ---- picking a file that is already on the server (GET /api/v1/files): only folders the server allows
+const browser = { path: null }
+
+async function browse (path) {
+  let d
+  try {
+    d = await api('GET', '/files' + (path ? '?path=' + encodeURIComponent(path) : ''))
+  } catch (e) {
+    toast(e.message, true)
+    return
+  }
+  browser.path = d.path
+  browser.parent = d.parent
+  $('library').hidden = true
+  $('browser').hidden = false
+  $('browser-path').textContent = d.path || 'Folders on the server you may use'
+  $('browser-up').disabled = !d.path
+  $('browser-use').hidden = !d.path
+  $('browser-list').innerHTML = d.entries.length
+    ? d.entries.map((x, i) => `<button class="entry" data-i="${i}" type="button"><span class="ico">${x.type === 'dir' ? (x.model ? '◆' : '▸') : '◇'}</span>
+        <span class="nm">${esc(x.name)}</span><span class="sz">${x.model ? 'model folder' : x.bytes ? (x.bytes / 1048576).toFixed(1) + ' MB' : ''}</span></button>`).join('')
+    : '<p class="hint" style="padding:10px">No models or folders here.</p>'
+  for (const b of $('browser-list').querySelectorAll('.entry')) {
+    const x = d.entries[Number(b.dataset.i)]
+    b.onclick = () => (x.type === 'dir' ? browse(x.path) : useServerPath(x.path))   // a folder opens; Use this folder takes it
+  }
+}
+
+async function useServerPath (path) {
+  try {
+    const r = await api('POST', '/models', { path })
+    toast(r.existing ? `Opened ${r.model.name}` : `Added ${r.model.name}`)
+    closeBrowser()
+    await loadLibrary()
+    await selectModel(r.model.name)
+    goStep('rig')
+  } catch (e) {
+    toast(e.message, true)
+  }
+}
+
+function closeBrowser () {
+  $('browser').hidden = true
+  $('library').hidden = false
+}
+
+$('server-pick').onclick = () => browse(null)
+$('browser-up').onclick = () => browse(browser.parent || null)
+$('browser-use').onclick = () => useServerPath(browser.path)
+$('browser-close').onclick = closeBrowser
+
+// ---- the collection the page works on (GET /api/v1/collections): a picker in the header when there is a choice
+let cols = null
+
+async function loadCollections () {
+  try {
+    cols = await api('GET', '/collections')
+  } catch {
+    return
+  }
+  const sel = $('collection')
+  sel.innerHTML = cols.collections.map((c) =>
+    `<option value="${esc(c.path)}" ${c.current ? 'selected' : ''}>${esc(c.name)} (${c.models})</option>`).join('')
+  sel.hidden = cols.collections.length < 2
+  renderCollectionsPane()
+}
+
+async function openCollection (path) {
+  try {
+    cols = await api('POST', '/collections/select', { path })
+  } catch (e) {
+    toast(e.message, true)
+    await loadCollections()
+    return
+  }
+  state.model = null
+  state.details = null
+  $('model-chip').textContent = 'No model yet'
+  await loadCollections()
+  await loadLibrary()
+  goStep('load')
+  toast('Opened ' + (cols.collections.find((c) => c.current)?.name || path))
+}
+
+$('collection').onchange = (e) => openCollection(e.target.value)
 
 // ---------------------------------------------------------------------------------------------------------------
 // 2. Rig
@@ -601,12 +688,233 @@ async function runTool (e) {
 
 $('advanced').ontoggle = () => { if ($('advanced').open) loadAdvanced() }
 
+// ---- Settings: collections and folders
+function renderCollectionsPane () {
+  const pane = $('collections-pane')
+  if (!cols) return
+  pane.innerHTML = `<p class="hint">Open: <b>${esc(cols.current)}</b><br>Work folder: ${esc(cols.work)}</p>
+    <table>${cols.collections.map((c) => `<tr><td>${esc(c.name)}</td><td>${c.models} models</td>
+      <td>${c.current ? '<b>open</b>' : `<button class="link" data-path="${esc(c.path)}" type="button">Open</button>`}</td></tr>`).join('')}</table>
+    ${cols.allow_any_folder
+      ? `<form class="row" id="add-collection"><input type="text" name="path" placeholder="a folder on the server" style="flex:1">
+         <button>Add</button></form>`
+      : `<p class="hint">This server lists its collections and browsable folders in <code>.autorig_server.json</code> next to the tool
+         (collections, browse). Running your own copy? Start it with <code>--allow-any-folder</code> to add any folder here.</p>`}`
+  for (const b of pane.querySelectorAll('[data-path]')) b.onclick = () => openCollection(b.dataset.path)
+  const form = $('add-collection')
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault()
+      try {
+        cols = await api('POST', '/collections', { path: form.path.value.trim() })
+        await loadCollections()
+      } catch (err) { toast(err.message, true) }
+    }
+  }
+}
+
+// ---- Settings: AI Assist (GET/POST /api/v1/ai/...; docs/AI-ASSIST.md). A request costs money: the button says how
+// much at most before it is pressed, and nothing is sent without that press.
+const money = (x) => (x > 0 && x < 0.01 ? '$' + x.toFixed(3) : '$' + Number(x || 0).toFixed(2))
+const ai = { catalog: null, settings: null, conversation: '', job: '', shown: 0, timer: 0 }
+
+async function loadAI () {
+  try {
+    const d = await api('GET', '/ai/settings')
+    ai.catalog = d.catalog
+    ai.settings = d.settings
+    fillAISettings()
+  } catch (e) {
+    $('ai-status').textContent = e.message
+    return
+  }
+  loadAIUsage()
+  refreshAI()
+}
+
+function fillAISettings () {
+  const s = ai.settings
+  const sel = $('ai-provider')
+  sel.innerHTML = '<option value="off">Off</option>' + Object.entries(ai.catalog.providers).map(([k, label]) =>
+    `<option value="${esc(k)}">${esc(label)}</option>`).join('')
+  sel.value = s.provider
+  $('ai-limit').value = s.monthly_limit
+  const fields = () => {
+    const p = sel.value
+    const box = $('ai-provider-fields')
+    if (p === 'off') { box.innerHTML = ''; return }
+    if (p === 'ollama') {
+      box.innerHTML = `<label for="ai-ollama-url">Ollama address</label><input type="text" id="ai-ollama-url" value="${esc(s.ollama_url)}">
+        <label for="ai-model">Model</label><input type="text" id="ai-model" value="${esc(s.ollama_model)}">`
+      return
+    }
+    const models = ai.catalog.models.filter((x) => x.provider === p)
+    const keyState = s[p + '_key']
+    box.innerHTML = `<label for="ai-model">Model</label><select id="ai-model">${models.map((x) =>
+      `<option value="${esc(x.id)}">${esc(x.label)}: $${x.in} in / $${x.out} out per M tokens</option>`).join('')}</select>
+      <label for="ai-key">API key</label><input type="password" id="ai-key" autocomplete="off"
+        placeholder="${keyState ? esc(keyState) + ' (empty keeps it)' : 'paste the key'}">`
+    $('ai-model').value = s[p + '_model']
+  }
+  sel.onchange = fields
+  fields()
+}
+
+$('ai-settings').onsubmit = async (e) => {
+  e.preventDefault()
+  const p = $('ai-provider').value
+  const body = { provider: p, monthly_limit: $('ai-limit').value }
+  if (p === 'ollama') {
+    body.ollama_url = $('ai-ollama-url').value
+    body.ollama_model = $('ai-model').value
+  } else if (p !== 'off') {
+    body[p + '_model'] = $('ai-model').value
+    body[p + '_key'] = $('ai-key').value
+  }
+  try {
+    const d = await api('POST', '/ai/settings', body)
+    ai.settings = d.settings
+    fillAISettings()
+    $('ai-settings-msg').textContent = p === 'off' ? 'AI is off.' : d.status.enabled ? `Saved: ${d.status.model_label}.` : d.status.problem
+    refreshAI()
+  } catch (err) {
+    $('ai-settings-msg').textContent = err.message
+  }
+}
+
+async function loadAIUsage () {
+  try {
+    const u = await api('GET', '/ai/usage')
+    $('ai-usage').innerHTML = `Spent ${money(u.spent)} of the ${money(u.limit)} monthly limit.` + (u.recent.length
+      ? `<table>${u.recent.slice(0, 8).map((r) => `<tr><td>${esc(new Date(r.at * 1000).toLocaleString())}</td><td>${esc(r.model)}</td><td>${money(r.cost)}</td></tr>`).join('')}</table>`
+      : ' No calls yet.')
+  } catch (e) { $('ai-usage').textContent = e.message }
+}
+
+// the status line, the free steps the model is missing, and what pressing Ask may cost
+async function refreshAI () {
+  const btn = $('ai-run')
+  btn.disabled = true
+  $('ai-model-hint').hidden = !!state.model
+  try {
+    const st = await api('GET', '/ai/status')
+    $('ai-status').textContent = st.enabled ? `${st.model_label} · this month ${money(st.spent)} of ${money(st.limit)}` : st.problem
+    if (!st.enabled || !state.model) { $('ai-estimate').textContent = ''; $('ai-todo').innerHTML = ''; return }
+    const todo = (await api('GET', '/ai/todo?' + new URLSearchParams({ task: 'fix-rig', model: state.model }))).steps
+    $('ai-todo').innerHTML = todo.length
+      ? `<p class="hint">First, free (on this server): ${todo.map((s) => `<button type="button" data-step="${esc(s.step)}" title="${esc(s.why)}">${esc(s.label)}</button>`).join(' ')}</p>`
+      : ''
+    for (const b of $('ai-todo').querySelectorAll('[data-step]')) b.onclick = () => aiRunSteps([b.dataset.step])
+    const q = new URLSearchParams({ task: 'fix-rig', model: state.model, message: $('ai-message').value, conversation: ai.conversation })
+    const est = await api('GET', '/ai/estimate?' + q)
+    btn.textContent = est.free ? `Ask ${est.model_label} (free)` : `Ask ${est.model_label} (up to ${money(est.worst)})`
+    $('ai-estimate').textContent = est.allowed ? (est.free ? '' : `usually about ${money(est.typical)}`) : est.reason
+    btn.disabled = !est.allowed || !!ai.job || !$('ai-message').value.trim()
+  } catch (e) {
+    $('ai-status').textContent = e.message
+  }
+}
+
+async function aiRunSteps (steps) {
+  try {
+    const r = await api('POST', '/ai/run-steps', { task: 'fix-rig', model: state.model, steps })
+    await followJob($('adv-job'), r.job, steps.join(', ') + ' on ' + state.model)
+    await refreshModel()
+    refreshAI()
+  } catch (e) { toast(e.message, true) }
+}
+
+function aiLog (text, cls = '') {
+  const div = document.createElement('div')
+  div.className = cls
+  div.textContent = text
+  $('ai-log').append(div)
+  return div
+}
+
+$('ai-run').onclick = async () => {
+  const message = $('ai-message').value.trim()
+  if (!message || !state.model) return
+  $('ai-run').disabled = true
+  $('ai-plan').innerHTML = ''
+  aiLog(message, 'you')
+  try {
+    const r = await api('POST', '/ai/start', { task: 'fix-rig', model: state.model, message, conversation: ai.conversation })
+    ai.conversation = r.conversation
+    ai.job = r.job
+    ai.shown = 0
+    ai.live = aiLog('Working…')
+    $('ai-message').value = ''
+    aiPoll()
+  } catch (e) {
+    aiLog(e.message, 'err')
+    refreshAI()
+  }
+}
+
+async function aiPoll () {
+  let j
+  try {
+    j = await api('GET', '/ai/job?id=' + encodeURIComponent(ai.job))
+  } catch (e) {
+    aiLog(e.message, 'err')
+    ai.job = ''
+    return refreshAI()
+  }
+  const steps = j.steps || []
+  for (let k = ai.shown; k < steps.length; k++) {
+    if (k === steps.length - 1 && steps[k].running && !j.done) break
+    ai.live.before(Object.assign(document.createElement('div'), { className: steps[k].error ? 'err' : '', textContent: steps[k].summary }))
+    ai.shown = k + 1
+  }
+  ai.live.textContent = `Working… (${money(j.cost || 0)} so far)`
+  if (!j.done) { ai.timer = setTimeout(aiPoll, 1500); return }
+  ai.live.remove()
+  ai.job = ''
+  if (j.error) aiLog(j.error, 'err')
+  if (j.reply) aiLog(j.reply)
+  if (j.question) aiLog(j.question.text + (j.question.options?.length ? ' (' + j.question.options.join(' / ') + ')' : ''))
+  if (j.plan) showAIPlan(j.plan)
+  loadAIUsage()
+  refreshAI()
+}
+
+function showAIPlan (plan) {
+  const box = $('ai-plan')
+  box.innerHTML = '<b>Plan</b>' + plan.changes.map((c) =>
+    `<label class="row"><input type="checkbox" data-n="${c.n}" checked>${esc(c.summary)}</label>`).join('') +
+    '<div class="row"><button class="primary" id="ai-apply" type="button">Apply and re-rig</button><span class="hint">free: saves rig.json (kept for Undo), then rigs, trims and audits</span></div>'
+  $('ai-apply').onclick = async () => {
+    const skip = [...box.querySelectorAll('[data-n]')].filter((c) => !c.checked).map((c) => Number(c.dataset.n))
+    try {
+      const r = await api('POST', '/ai/apply', { plan: plan.id, skip })
+      $('ai-apply').disabled = true
+      if (r.error) { toast(r.error, true); return }
+      const undo = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Undo' })
+      undo.onclick = async () => {
+        try { await api('POST', '/ai/undo', { task: 'fix-rig', journal: r.journal }); toast('Undone: rig.json is back'); undo.disabled = true } catch (e) { toast(e.message, true) }
+      }
+      box.append(undo)
+      if (r.job) await followJob($('adv-job'), r.job, 'AI fix: re-rig ' + state.model)
+      await refreshModel()
+    } catch (e) { toast(e.message, true) }
+  }
+}
+
+$('ai-new').onclick = () => { clearTimeout(ai.timer); Object.assign(ai, { conversation: '', job: '', shown: 0 }); $('ai-log').innerHTML = ''; $('ai-plan').innerHTML = ''; refreshAI() }
+let aiTyping = 0
+$('ai-message').oninput = () => { clearTimeout(aiTyping); aiTyping = setTimeout(refreshAI, 400) }
+$('adv-ai').ontoggle = () => { if ($('adv-ai').open) loadAI() }
+$('adv-collections').ontoggle = () => { if ($('adv-collections').open) loadCollections() }
+
+
 // ---------------------------------------------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------------------------------------------
 
 async function start () {
   loadLibrary()
+  loadCollections()
   try {
     state.templates = (await api('GET', '/templates')).templates
   } catch { /* Mesh2Motion not checked out: auto and classic still work */ }

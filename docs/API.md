@@ -104,6 +104,11 @@ The FBX comes with Unity's axes (root rotation 0, scale 1) and one take per clip
 | POST | `/api/v1/models/{model}/steps/{step}` | one model step: survey, rig, trim, audit, clips, publish, preview, all… |
 | POST | `/api/v1/tools/{tool}` | one tool with `{options: {...}}`: game-prop, fbx-maps, mixamo-import… |
 | POST | `/api/v1/pipeline` | add (optional), rig and animate in one job |
+| GET | `/api/v1/collections` | the collections this server offers and which is open |
+| POST | `/api/v1/collections/select` | `{path}`: open another collection (one of the list) |
+| POST | `/api/v1/collections` | `{path, name}`: add one (only with `allow_any_folder`) |
+| GET | `/api/v1/files?path=` | list a server folder (no path: the folders you may browse); folders and model files only |
+| GET/POST | `/api/v1/ai/{settings,status,estimate,todo,job,usage,start,apply,undo,run-steps}` | AI Assist ([AI-ASSIST.md](AI-ASSIST.md)). `start` spends money: call `estimate` first |
 | GET | `/api/v1/jobs` | recent jobs |
 | GET | `/api/v1/jobs/{id}` | state, progress, `results`, and the last `?log=N` lines (default 40) |
 | GET | `/api/v1/jobs/{id}/events` | the log as Server-Sent Events |
@@ -116,6 +121,24 @@ The FBX comes with Unity's axes (root rotation 0, scale 1) and one take per clip
 - A file must be `.glb`, `.gltf`, `.fbx`, `.obj` or `.zip`.
 - A GLB is mended on the way in (`core/tripo_glb.py`: NaN numbers, joints that all sit at the origin), so Tripo exports load.
 - Model names are unique across the collection.
+- `{"path": ...}` adds a file or folder that is already on the server, copying it in. A path inside a model of the open
+  collection opens that model instead (`"existing": true`, HTTP 200).
+
+**Which folders the page may reach** is the server's choice, in `.autorig_server.json` next to the tool (or
+`AUTORIG_CONFIG`). Nothing there by default; the root the server was started with is always a collection, and so are
+its groups.
+
+```json
+{
+  "collections": [{"name": "asset-packs", "path": "/home/cosmo/src/asset-packs"}],
+  "browse": ["/home/cosmo/incoming"],
+  "allow_any_folder": false
+}
+```
+
+`collections` are models roots the page may switch to. `browse` adds folders whose files may be picked (the
+collections are browsable too). `allow_any_folder` (or `--allow-any-folder`, or `AUTORIG_ALLOW_ANY_FOLDER=1`) lets the
+page open and browse any folder: only for a copy you alone use. Paths outside the list answer 403.
 - Import by a generator's task id (`{"provider": "tripo", "task_id": ...}`) answers 501 until phase M8. Until then, send the download URL.
 
 **Tools**

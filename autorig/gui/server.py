@@ -1447,7 +1447,10 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=int(os.environ.get("AUTORIG_PORT") or 0), help="port (default: any free one)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the browser")
     ap.add_argument("--token", default=os.environ.get("AUTORIG_TOKEN"), help="session token (default: a random one)")
+    ap.add_argument("--allow-any-folder", action="store_true",
+                    help="let the page open and browse any folder (a copy only you use; core/server_config.py)")
     a = ap.parse_args(argv)
+    if a.allow_any_folder: os.environ["AUTORIG_ALLOW_ANY_FOLDER"] = "1"
 
     global layout, spec_store, blender, grades, exporter
     sys.path.insert(0, CORE)
@@ -1471,6 +1474,7 @@ def main(argv=None):
     httpd.daemon_threads = True
     app = App(httpd.server_address[1])
     if a.token: app.token = a.token
+    app.start_root = layout.ROOT                      # always one of the collections (gui/api_v1.py)
     httpd.RequestHandlerClass = make_handler(app)
     url = "http://127.0.0.1:%d/?t=%s" % (app.port, app.token)
     b_exe = blender.find(required=False)

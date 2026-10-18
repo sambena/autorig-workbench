@@ -29,7 +29,7 @@ ROUTES = [
     ("GET", "/api/v1/templates", "Mesh2Motion's skeleton templates and how many clips each has", None),
     ("GET", "/api/v1/templates/{template}/clips", "one template's clips: name, duration, root motion", None),
     ("GET", "/api/v1/models", "every model in the collection, with its state, Mesh2Motion template and thumbnail", None),
-    ("POST", "/api/v1/models", "add a model: a raw file body (?filename=&name=&group=), or JSON {url, name, group}",
+    ("POST", "/api/v1/models", "add a model: a raw file body (?filename=&name=&group=), or JSON {url | path, name, group}",
      {"url": "https://example.com/Cow.glb", "name": "Cow", "group": "Farm"}),
     ("GET", "/api/v1/models/{model}", "one model: state, audit, clips, files", None),
     ("GET", "/api/v1/models/{model}/files/{path}", "a file in the model's folder (results: GLB, FBX, model.json...)", None),
@@ -45,6 +45,14 @@ ROUTES = [
      {"options": {"in": "Farm/Barn/Barn.glb", "name": "Barn", "out": "Farm/Barn/game"}}),
     ("POST", "/api/v1/pipeline", "add (optional), rig and animate in one job",
      {"url": "https://example.com/Cow.glb", "name": "Cow", "template": "auto", "clips": ["Idle", "Walk"]}),
+    ("GET", "/api/v1/collections", "the collections (models roots) this server offers, and which is open", None),
+    ("POST", "/api/v1/collections/select", "open another collection: {path}", {"path": "/home/me/asset-packs"}),
+    ("POST", "/api/v1/collections", "add a collection (only when the server allows any folder): {path, name}",
+     {"path": "/home/me/my-models", "name": "Mine"}),
+    ("GET", "/api/v1/files", "list a folder on the server (?path=; none: the folders you may browse)", None),
+    ("GET", "/api/v1/ai/{route}", "AI Assist: settings, status, estimate, todo, job, usage (docs/AI-ASSIST.md)", None),
+    ("POST", "/api/v1/ai/{route}", "AI Assist: settings, start, apply, undo, run-steps. A start spends money: "
+                                   "estimate first", {"task": "fix-rig", "model": "wolf", "message": "fix the tail"}),
     ("GET", "/api/v1/jobs", "recent jobs", None),
     ("GET", "/api/v1/jobs/{id}", "one job: state, progress, results, the last lines of its log (?log=N)", None),
     ("GET", "/api/v1/jobs/{id}/events", "the job's log as Server-Sent Events, ending with event: end", None),
@@ -114,14 +122,31 @@ def route(h, app, srv, method, path, q):
     if head == "jobs":
         return jobs(h, app, method, parts, q)
 
+    if head == "collections":
+        if method == "GET" and len(parts) == 1:
+            return collections(srv, app)
+        if method == "POST" and parts[1:] == ["select"]:
+            return select_collection(srv, app, h._json_body())
+        if method == "POST" and len(parts) == 1:
+            return add_collection(srv, app, h._json_body())
+
+    if head == "files" and method == "GET" and len(parts) == 1:
+        return list_files(srv, app, (q.get("path") or [""])[0])
+
+    if head == "ai" and len(parts) >= 2:                   # AI Assist (gui/ai_api.py), under the v1 token rules
+        legacy = "/api/ai/" + "/".join(parts[1:])
+        if method == "GET" and srv.ai_api.get(h, app, srv, legacy, q): return None
+        if method == "POST" and srv.ai_api.post(h, app, srv, legacy, h._json_body()): return None
+
     if head == "models":
         if len(parts) == 1:
             if method == "GET":
                 srv.spec_store.reload()
                 return {"models": [listed(srv, g, n) for g, n in srv.layout.all_models()]}
             if method == "POST":
-                m = add_model(h, srv, q)
-                return 201, {"model": srv.status(m["group"], m["name"])}
+                m = add_model(h, srv, q, app)
+                return (200 if m.get("existing") else 201), {"model": srv.status(m["group"], m["name"]),
+                                                              "existing": bool(m.get("existing"))}
         name, g = find_model(srv, parts[1] if len(parts) > 1 else "")
         if g is None: raise ApiError(404, "no model %r" % name)
         rest = parts[2:]
@@ -312,14 +337,16 @@ def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=N
 # Adding models
 # ---------------------------------------------------------------------------------------------------------------
 
-def add_model(h, srv, q):
+def add_model(h, srv, q, app=None):
     ctype = (h.headers.get("Content-Type") or "").split(";")[0].strip().lower()
     if ctype == "application/json":
         body = h._json_body()
         if body.get("provider") or body.get("task_id"):
             raise ApiError(501, "import by provider task id comes with generation (docs/PLAN.md, M8); "
                                 "for now give the download url")
-        if not body.get("url"): raise ValueError("JSON body needs url (or send the file itself as the body)")
+        if body.get("path"):
+            return add_from_server(srv, app, body["path"], body.get("name"), body.get("group") or "")
+        if not body.get("url"): raise ValueError("JSON body needs url or path (or send the file itself as the body)")
         return add_from_url(srv, body["url"], body.get("name"), body.get("group") or "")
     filename = os.path.basename((q.get("filename") or [""])[0])
     if not filename.lower().endswith(MODEL_EXTS):
@@ -381,6 +408,141 @@ def place(srv, stage, path, name, group):
         return srv.place(stage, group, name, move=True)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Collections and server files: only the folders .autorig_server.json allows (core/server_config.py)
+# ---------------------------------------------------------------------------------------------------------------
+
+def _same(a, b):
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def collection_list(srv, app):
+    """[(summary)] of the collections the page may open, and the config."""
+    import server_config
+    cfg = server_config.load()
+    out = []
+
+    def add(path, name, kind):
+        if not os.path.isdir(path) or any(_same(path, c["path"]) for c in out): return
+        s = srv.layout.root_summary(path, kind)
+        if name: s["name"] = name
+        out.append(s)
+
+    start = getattr(app, "start_root", None) or srv.layout.ROOT
+    add(start, None, "collection")
+    for d in sorted(os.listdir(start)) if os.path.isdir(start) else ():
+        p = os.path.join(start, d)
+        if d.startswith((".", "_")) or not os.path.isdir(p) or srv.layout.is_model_dir(p): continue
+        if srv.layout.count_models(p): add(p, "%s / %s" % (os.path.basename(os.path.normpath(start)), d), "group")
+    for c in cfg["collections"]:
+        add(c["path"], c["name"], "collection")
+    add(srv.layout.ROOT, None, "current")
+    if cfg["allow_any_folder"]:
+        for r in srv.layout.discover_roots():
+            add(r["path"], None, r.get("kind") or "found")
+    return out, cfg
+
+
+def collections(srv, app):
+    out, cfg = collection_list(srv, app)
+    for c in out: c["current"] = _same(c["path"], srv.layout.ROOT)
+    return {"current": srv.layout.ROOT, "work": srv.layout.WORK, "collections": out,
+            "allow_any_folder": cfg["allow_any_folder"]}
+
+
+def select_collection(srv, app, body):
+    want = str(body.get("path") or "")
+    if not want: raise ValueError("path: the collection to open")
+    out, cfg = collection_list(srv, app)
+    if not any(_same(c["path"], want) for c in out) and not cfg["allow_any_folder"]:
+        raise ApiError(403, "that folder is not one of this server's collections (.autorig_server.json lists them)")
+    if not os.path.isdir(want): raise ApiError(404, "no folder %s" % want)
+    srv._busy(app)
+    srv.layout.set_root(want)
+    srv.spec_store.reload()
+    return collections(srv, app)
+
+
+def add_collection(srv, app, body):
+    import server_config
+    if not server_config.load()["allow_any_folder"]:
+        raise ApiError(403, "this server does not let the page add folders; list them in .autorig_server.json")
+    p = os.path.realpath(os.path.expanduser(str(body.get("path") or "")))
+    if not os.path.isdir(p): raise ApiError(404, "no folder %s" % p)
+    server_config.add_collection(p, body.get("name"))
+    return collections(srv, app)
+
+
+def browse_roots(srv, app):
+    """The folders whose files the page may list: the collections (not their group views) and config browse."""
+    out, cfg = collection_list(srv, app)
+    roots = []
+    for r in [c["path"] for c in out if c["kind"] != "group"] + cfg["browse"]:
+        if os.path.isdir(r) and not any(_same(r, u) for u in roots):
+            roots.append(os.path.realpath(r))
+    return roots, cfg
+
+
+def allowed_path(srv, app, p):
+    import server_config
+    roots, cfg = browse_roots(srv, app)
+    full = os.path.realpath(os.path.expanduser(p))
+    if not cfg["allow_any_folder"] and not server_config.inside(full, roots):
+        raise ApiError(403, "outside the folders this server lets you browse")
+    return full
+
+
+def list_files(srv, app, p):
+    import server_config
+    roots, cfg = browse_roots(srv, app)
+    if not p:
+        return {"path": None, "parent": None, "entries": [
+            {"name": r, "path": r, "type": "dir", "model": srv.layout.is_model_dir(r)} for r in roots]}
+    full = allowed_path(srv, app, p)
+    if not os.path.isdir(full): raise ApiError(404, "no folder %s" % full)
+    parent = os.path.dirname(full)
+    if parent == full or (not cfg["allow_any_folder"] and not server_config.inside(parent, roots)):
+        parent = ""                                       # the top: back to the list of roots
+    try:
+        names = sorted(os.listdir(full), key=str.lower)
+    except OSError as e:
+        raise ApiError(403, str(e))
+    entries = []
+    for n in names:
+        if n.startswith("."): continue
+        q = os.path.join(full, n)
+        if os.path.isdir(q):
+            entries.append({"name": n, "path": q, "type": "dir", "model": srv.layout.is_model_dir(q)})
+        elif n.lower().endswith(MODEL_EXTS):
+            entries.append({"name": n, "path": q, "type": "file", "bytes": os.path.getsize(q)})
+        if len(entries) >= 2000: break
+    return {"path": full, "parent": parent, "entries": entries}
+
+
+def add_from_server(srv, app, p, name=None, group=""):
+    """A file or folder already on the server, as a model: the model it already belongs to in the open collection,
+    else a copy brought in (GLBs mended, as an upload's are)."""
+    import server_config
+    full = allowed_path(srv, app, p)
+    if not os.path.exists(full): raise ApiError(404, "no such file %s" % full)
+    for g, n in srv.layout.all_models():
+        if server_config.inside(full, [srv.model_dir(g, n)]):
+            return {"group": g, "name": n, "existing": True}
+    if os.path.isfile(full) and not full.lower().endswith(MODEL_EXTS):
+        raise ValueError("pick a .glb, .gltf, .fbx, .obj or .zip, or a folder")
+    name = srv.clean_name(name or os.path.splitext(os.path.basename(os.path.normpath(full)))[0])
+    if not name: raise ValueError("no usable model name: give name")
+    if group and not srv.NAME.match(group): raise ValueError("a group name is letters, digits, _ and -")
+    m = srv.place(full, group, name, move=False)
+    import tripo_glb
+    for f in os.listdir(m["dir"]):
+        if f.lower().endswith(".glb"):
+            g = os.path.join(m["dir"], f)
+            fixed = tripo_glb.mend(g, report=lambda *_: None)
+            if fixed != g: shutil.move(fixed, g)
+    return m
 
 
 def incoming(srv):
