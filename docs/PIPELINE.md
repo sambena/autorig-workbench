@@ -142,6 +142,17 @@ binary FBX (a browser may still call it `.tmp`), gives it the source's full colo
 axes (unity_fbx, inside the folder with its `.fbm`, so the texture paths come out relative). In Unity, import the `.fbm`
 folder before the FBX.
 
+Clips for such a person can come from Mesh2Motion's human library (178 clips, CC0) without rigging it again:
+
+```bash
+python autorig/cli/run.py m2m-clips TornadoTitans/Ice_Age26_Tripo --clips "Idle,Walk,Run"   # writes IceAdult_m2m.fbx
+```
+
+`m2m-clips` reads `model.json` (`game_name`, `model_file`) and `mixamo/<Name>_mixamo.fbx`, bakes each clip onto the
+Mixamo skeleton, keeps the feet planted (leg IK onto the clip's ankles), and writes `<Name>_m2m.fbx` with one take per
+clip beside the shipped `<Name>.fbx`; `--replace` writes over the shipped file instead. A preview GLB in
+`<work>/qa/m2m_clips/` goes through clip-check. `--list` names every clip; "Idle" and "Run" mean `Idle_A` and `Jog`.
+
 ### Any body on a Mesh2Motion skeleton
 
 [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app)'s clips (about 250, CC0) play only on its own nine

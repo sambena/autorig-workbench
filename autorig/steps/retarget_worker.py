@@ -56,6 +56,171 @@ def topological_sort_bones(arm, bone_names):
     return order
 
 
+def bake_clip(src_arm, tgt_arm, mapping, clip_name, frame_start, frame_end, src_fps, out_fps=None,
+              root_motion=True, root_pair=None, scale_factor=1.0, solve_offsets=True, keep_actions=(),
+              travel_bone=None):
+    """Bakes the source armature's current action onto the target as a new action named clip_name, keyed at
+    frame_start.. (main() shifts it to 0). The source's world-space change from its own rest is applied to each
+    mapped target bone's rest; the root pair's bone also gets the source's translation from rest, times scale_factor.
+    travel_bone: a source bone whose own translation from rest is taken out of the root's (Mesh2Motion keeps the
+    travel of its *_RM clips on root, above the pelvis): the clip then plays in place. An action named clip_name made
+    since keep_actions was taken is replaced. Returns (action, frames baked, sorted (source, target) pairs)."""
+    bpy.context.view_layer.update()
+    # Filter valid mapped pairs
+    valid_pairs = []
+    for sb, tb in mapping.items():
+        if sb in src_arm.pose.bones and tb in tgt_arm.pose.bones:
+            valid_pairs.append((sb, tb))
+
+    # Sort target bones topologically
+    tgt_bone_names = [tb for _, tb in valid_pairs]
+    sorted_tgt_names = topological_sort_bones(tgt_arm, tgt_bone_names)
+    sorted_pairs = []
+    for tb in sorted_tgt_names:
+        for sb, mapped_tb in valid_pairs:
+            if mapped_tb == tb:
+                sorted_pairs.append((sb, tb))
+                break
+
+    # Cache rest matrices & rest locations
+    src_rest_r = {}
+    src_rest_l = {}
+    for sb, _ in sorted_pairs:
+        db = src_arm.data.bones[sb]
+        src_rest_r[sb] = (src_arm.matrix_world.to_3x3() @ db.matrix_local.to_3x3())
+        src_rest_l[sb] = (src_arm.matrix_world @ db.matrix_local.translation)
+
+    tgt_rest_r = {}
+    tgt_rest_l = {}
+    for _, tb in sorted_pairs:
+        db = tgt_arm.data.bones[tb]
+        tgt_rest_r[tb] = (tgt_arm.matrix_world.to_3x3() @ db.matrix_local.to_3x3())
+        tgt_rest_l[tb] = (tgt_arm.matrix_world @ db.matrix_local.translation)
+
+    tgt_w_inv = tgt_arm.matrix_world.to_3x3().inverted()
+    if isinstance(travel_bone, str):
+        travel_bone = src_arm.pose.bones.get(travel_bone)
+    travel_rest = (src_arm.matrix_world @ travel_bone.bone.matrix_local.translation) if travel_bone else None
+
+    # Rest alignment, per mapped bone: the world rotation that turns the source bone's rest direction onto the
+    # target's (swing only). A T-posed source driving an A-posed target differs by ~45 degrees at the shoulders; the
+    # source's motion is applied on top of this, so the target bone points where the source bone points.
+    # Limbs only (bones with a side: arms, legs, fingers, wings), within 90 degrees. The root and torso are left as
+    # they were: their rest directions differ by rig convention, not by pose (Mixamo's Hips point up, this tool's
+    # root lies along -Y), and turning one of those would tip the whole body. Past 90 degrees, and at 180 where the
+    # turn's axis is arbitrary, it is a different convention too, not a T-pose against an A-pose.
+    align_inv = {}
+    for sb, tb in sorted_pairs:
+        s_dir = (src_rest_r[sb] @ Vector((0, 1, 0))).normalized()
+        t_dir = (tgt_rest_r[tb] @ Vector((0, 1, 0))).normalized()
+        limb = bone_side(tb) != "" and not (root_pair and tb == root_pair[1])
+        align_inv[tb] = (s_dir.rotation_difference(t_dir).inverted().to_matrix()
+                         if solve_offsets and limb and s_dir.dot(t_dir) > 0.0 else Matrix.Identity(3))
+
+    # IK and copy-rotation constraints on the target would drive its legs from their (still) controls over the keys
+    # this bakes: silenced while baking, and keyed off (influence 0) in the clip itself, so it plays as baked;
+    # make_clips keys them back on in its own clips
+    silenced = []
+    for pb in tgt_arm.pose.bones:
+        for c in pb.constraints:
+            if c.type in ("IK", "COPY_ROTATION", "DAMPED_TRACK", "LOCKED_TRACK", "TRACK_TO"):
+                silenced.append((pb, c, c.mute))
+                c.mute = True
+
+    tgt_rest3 = {b.name: b.matrix_local.to_3x3() for b in tgt_arm.data.bones}
+
+    def orient(bname, cur):
+        """Armature-space rotation of a target bone this frame: baked if mapped, else its rest relation to its
+        parent's (unmapped bones are not keyed): never the pose's own matrix, which is still last frame's."""
+        if bname in cur:
+            return cur[bname]
+        b = tgt_arm.data.bones[bname]
+        r = tgt_rest3[bname] if b.parent is None else \
+            orient(b.parent.name, cur) @ (tgt_rest3[b.parent.name].inverted() @ tgt_rest3[bname])
+        cur[bname] = r
+        return r
+
+    # Frames to bake: every source frame, or resampled to --fps (the output frame k shows the source at time k/fps)
+    out_fps = float(out_fps or src_fps)
+    span_s = (frame_end - frame_start) / src_fps
+    n_out = max(1, int(round(span_s * out_fps)) + 1)
+    bpy.context.scene.render.fps = max(1, int(round(out_fps)))
+    bpy.context.scene.render.fps_base = bpy.context.scene.render.fps / out_fps
+
+    # Create target action
+    if not tgt_arm.animation_data:
+        tgt_arm.animation_data_create()
+    old = bpy.data.actions.get(clip_name)
+    if old is not None and old not in keep_actions:
+        old = None
+    if old is not None:                      # re-retargeting a clip replaces it
+        bpy.data.actions.remove(old)
+    new_action = bpy.data.actions.new(name=clip_name)
+    new_action.use_fake_user = True
+    new_action["autorig_retarget"] = True    # make_clips.py keeps and exports tagged actions on a rebake
+    tgt_arm.animation_data.action = new_action
+
+    scene = bpy.context.scene
+
+    cur_arm_r = {}
+    # Process all frames (only the source moves: the target's pose is computed here, not read back)
+    for k in range(n_out):
+        src_t = frame_start + k * src_fps / out_fps
+        scene.frame_set(int(math.floor(src_t)), subframe=src_t - math.floor(src_t))
+        f = frame_start + k                      # keyed here, shifted to start at 0 afterwards
+        cur_arm_r.clear()
+
+        for sb, tb in sorted_pairs:
+            src_pb = src_arm.pose.bones[sb]
+            tgt_pb = tgt_arm.pose.bones[tb]
+            db = tgt_arm.data.bones[tb]
+
+            # Source world rotation, and its change from the source's rest (in world space: roll-independent)
+            r_src_w = src_arm.matrix_world.to_3x3() @ src_pb.matrix.to_3x3()
+            delta_r = r_src_w @ src_rest_r[sb].inverted()
+            # the same change, applied to the target's rest after aligning the rests (align_inv)
+            r_tgt_w = delta_r @ align_inv[tb] @ tgt_rest_r[tb]
+
+            # Convert to target armature local coordinates
+            r_tgt_local = tgt_w_inv @ r_tgt_w
+            cur_arm_r[tb] = r_tgt_local
+
+            # Decompose into parent-relative basis matrix, against the parent as computed this frame
+            if tgt_pb.parent is None:
+                mat_basis = db.matrix_local.to_3x3().inverted() @ r_tgt_local
+            else:
+                p_name = tgt_pb.parent.name
+                rel_rest_r = tgt_rest3[p_name].inverted() @ tgt_rest3[tb]
+                p_frame = orient(p_name, cur_arm_r) @ rel_rest_r
+                mat_basis = p_frame.inverted() @ r_tgt_local
+
+            tgt_pb.rotation_mode = "QUATERNION"
+            tgt_pb.rotation_quaternion = mat_basis.to_quaternion()
+            tgt_pb.keyframe_insert("rotation_quaternion", frame=f)
+
+            # Root motion translation
+            is_root = root_motion and root_pair and (sb == root_pair[0] and tb == root_pair[1])
+            if is_root:
+                pos_src_w = src_arm.matrix_world @ src_pb.matrix.translation
+                delta_p_src = pos_src_w - src_rest_l[sb]
+                if travel_bone is not None:
+                    delta_p_src = delta_p_src - (src_arm.matrix_world @ travel_bone.matrix.translation - travel_rest)
+                delta_p_scaled = delta_p_src * scale_factor
+                # Local displacement relative to rest
+                delta_p_local = tgt_w_inv @ delta_p_scaled
+                tgt_pb.location = db.matrix_local.to_3x3().inverted() @ delta_p_local
+                tgt_pb.keyframe_insert("location", frame=f)
+
+    # the constraints come back for every other clip; this one keys them off at its first and last frame
+    for pb, c, was in silenced:
+        c.mute = was
+        c.influence = 0.0
+        for fr in (frame_start, frame_start + n_out - 1):
+            c.keyframe_insert("influence", frame=fr)
+        c.influence = 1.0
+    return new_action, n_out, sorted_pairs
+
+
 def main(argv=None):
     args = argv or sys.argv
     config_idx = -1
@@ -157,157 +322,15 @@ def main(argv=None):
     scale_factor = (h_tgt / h_src) if (scale_proportions and h_src > 1e-4) else 1.0
     print(f"RETARGET_WORKER: Scale factor = {scale_factor:.3f} (src_h={h_src:.2f}, tgt_h={h_tgt:.2f})")
 
-    # Filter valid mapped pairs
-    valid_pairs = []
-    for sb, tb in mapping.items():
-        if sb in src_arm.pose.bones and tb in tgt_arm.pose.bones:
-            valid_pairs.append((sb, tb))
-
-    # Sort target bones topologically
-    tgt_bone_names = [tb for _, tb in valid_pairs]
-    sorted_tgt_names = topological_sort_bones(tgt_arm, tgt_bone_names)
-    sorted_pairs = []
-    for tb in sorted_tgt_names:
-        for sb, mapped_tb in valid_pairs:
-            if mapped_tb == tb:
-                sorted_pairs.append((sb, tb))
-                break
-
-    # Cache rest matrices & rest locations
-    src_rest_r = {}
-    src_rest_l = {}
-    for sb, _ in sorted_pairs:
-        db = src_arm.data.bones[sb]
-        src_rest_r[sb] = (src_arm.matrix_world.to_3x3() @ db.matrix_local.to_3x3())
-        src_rest_l[sb] = (src_arm.matrix_world @ db.matrix_local.translation)
-
-    tgt_rest_r = {}
-    tgt_rest_l = {}
-    for _, tb in sorted_pairs:
-        db = tgt_arm.data.bones[tb]
-        tgt_rest_r[tb] = (tgt_arm.matrix_world.to_3x3() @ db.matrix_local.to_3x3())
-        tgt_rest_l[tb] = (tgt_arm.matrix_world @ db.matrix_local.translation)
-
-    tgt_w_inv = tgt_arm.matrix_world.to_3x3().inverted()
-
-    # Rest alignment, per mapped bone: the world rotation that turns the source bone's rest direction onto the
-    # target's (swing only). A T-posed source driving an A-posed target differs by ~45 degrees at the shoulders; the
-    # source's motion is applied on top of this, so the target bone points where the source bone points.
-    # Limbs only (bones with a side: arms, legs, fingers, wings), within 90 degrees. The root and torso are left as
-    # they were: their rest directions differ by rig convention, not by pose (Mixamo's Hips point up, this tool's
-    # root lies along -Y), and turning one of those would tip the whole body. Past 90 degrees, and at 180 where the
-    # turn's axis is arbitrary, it is a different convention too, not a T-pose against an A-pose.
-    align_inv = {}
-    for sb, tb in sorted_pairs:
-        s_dir = (src_rest_r[sb] @ Vector((0, 1, 0))).normalized()
-        t_dir = (tgt_rest_r[tb] @ Vector((0, 1, 0))).normalized()
-        limb = bone_side(tb) != "" and not (root_pair and tb == root_pair[1])
-        align_inv[tb] = (s_dir.rotation_difference(t_dir).inverted().to_matrix()
-                         if solve_offsets and limb and s_dir.dot(t_dir) > 0.0 else Matrix.Identity(3))
-
-    # IK and copy-rotation constraints on the target would drive its legs from their (still) controls over the keys
-    # this bakes: silenced while baking, and keyed off (influence 0) in the clip itself, so it plays as baked;
-    # make_clips keys them back on in its own clips
-    silenced = []
-    for pb in tgt_arm.pose.bones:
-        for c in pb.constraints:
-            if c.type in ("IK", "COPY_ROTATION", "DAMPED_TRACK", "LOCKED_TRACK", "TRACK_TO"):
-                silenced.append((pb, c, c.mute))
-                c.mute = True
-
-    tgt_rest3 = {b.name: b.matrix_local.to_3x3() for b in tgt_arm.data.bones}
-
-    def orient(bname, cur):
-        """Armature-space rotation of a target bone this frame: baked if mapped, else its rest relation to its
-        parent's (unmapped bones are not keyed): never the pose's own matrix, which is still last frame's."""
-        if bname in cur:
-            return cur[bname]
-        b = tgt_arm.data.bones[bname]
-        r = tgt_rest3[bname] if b.parent is None else \
-            orient(b.parent.name, cur) @ (tgt_rest3[b.parent.name].inverted() @ tgt_rest3[bname])
-        cur[bname] = r
-        return r
-
-    # Frames to bake: every source frame, or resampled to --fps (the output frame k shows the source at time k/fps)
-    src_fps = float(config.get("source_fps") or bpy.context.scene.render.fps or 30)
-    out_fps = float(fps_override or src_fps)
-    span_s = (frame_end - frame_start) / src_fps
-    n_out = max(1, int(round(span_s * out_fps)) + 1)
-    bpy.context.scene.render.fps = max(1, int(round(out_fps)))
-    bpy.context.scene.render.fps_base = bpy.context.scene.render.fps / out_fps
-    fps = out_fps
-    total_frames = n_out
-
-    # Create target action
-    if not tgt_arm.animation_data:
-        tgt_arm.animation_data_create()
-    old = bpy.data.actions.get(clip_name)
-    if old is not None and old not in before_actions:
-        old = None
-    if old is not None:                      # re-retargeting a clip replaces it
-        bpy.data.actions.remove(old)
-    new_action = bpy.data.actions.new(name=clip_name)
-    new_action.use_fake_user = True
-    new_action["autorig_retarget"] = True    # make_clips.py keeps and exports tagged actions on a rebake
+    src_fps = float(config.get("source_fps") or bpy.context.scene.render.fps or 30)   # the mocap's own rate
+    new_action, n_out, sorted_pairs = bake_clip(
+        src_arm, tgt_arm, mapping, clip_name, frame_start, frame_end, src_fps, fps_override,
+        root_motion=root_motion, root_pair=root_pair, scale_factor=scale_factor, solve_offsets=solve_offsets,
+        keep_actions=before_actions)
     new_action["autorig_retarget_source"] = os.path.basename(source_file)
-    tgt_arm.animation_data.action = new_action
-
+    fps = float(fps_override or src_fps)
+    total_frames = n_out
     scene = bpy.context.scene
-
-    cur_arm_r = {}
-    # Process all frames (only the source moves: the target's pose is computed here, not read back)
-    for k in range(n_out):
-        src_t = frame_start + k * src_fps / out_fps
-        scene.frame_set(int(math.floor(src_t)), subframe=src_t - math.floor(src_t))
-        f = frame_start + k                      # keyed here, shifted to start at 0 afterwards
-        cur_arm_r.clear()
-
-        for sb, tb in sorted_pairs:
-            src_pb = src_arm.pose.bones[sb]
-            tgt_pb = tgt_arm.pose.bones[tb]
-            db = tgt_arm.data.bones[tb]
-
-            # Source world rotation, and its change from the source's rest (in world space: roll-independent)
-            r_src_w = src_arm.matrix_world.to_3x3() @ src_pb.matrix.to_3x3()
-            delta_r = r_src_w @ src_rest_r[sb].inverted()
-            # the same change, applied to the target's rest after aligning the rests (align_inv)
-            r_tgt_w = delta_r @ align_inv[tb] @ tgt_rest_r[tb]
-
-            # Convert to target armature local coordinates
-            r_tgt_local = tgt_w_inv @ r_tgt_w
-            cur_arm_r[tb] = r_tgt_local
-
-            # Decompose into parent-relative basis matrix, against the parent as computed this frame
-            if tgt_pb.parent is None:
-                mat_basis = db.matrix_local.to_3x3().inverted() @ r_tgt_local
-            else:
-                p_name = tgt_pb.parent.name
-                rel_rest_r = tgt_rest3[p_name].inverted() @ tgt_rest3[tb]
-                p_frame = orient(p_name, cur_arm_r) @ rel_rest_r
-                mat_basis = p_frame.inverted() @ r_tgt_local
-
-            tgt_pb.rotation_mode = "QUATERNION"
-            tgt_pb.rotation_quaternion = mat_basis.to_quaternion()
-            tgt_pb.keyframe_insert("rotation_quaternion", frame=f)
-
-            # Root motion translation
-            is_root = root_motion and root_pair and (sb == root_pair[0] and tb == root_pair[1])
-            if is_root:
-                pos_src_w = src_arm.matrix_world @ src_pb.matrix.translation
-                delta_p_src = pos_src_w - src_rest_l[sb]
-                delta_p_scaled = delta_p_src * scale_factor
-                # Local displacement relative to rest
-                delta_p_local = tgt_w_inv @ delta_p_scaled
-                tgt_pb.location = db.matrix_local.to_3x3().inverted() @ delta_p_local
-                tgt_pb.keyframe_insert("location", frame=f)
-
-    # the constraints come back for every other clip; this one keys them off at its first and last frame
-    for pb, c, was in silenced:
-        c.mute = was
-        c.influence = 0.0
-        for fr in (frame_start, frame_start + n_out - 1):
-            c.keyframe_insert("influence", frame=fr)
-        c.influence = 1.0
     src_range = [frame_start, frame_end]     # reported beside the output's own 0..n_out-1
     frame_end = frame_start + n_out - 1
 

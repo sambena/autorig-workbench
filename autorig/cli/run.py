@@ -37,6 +37,8 @@
 #                                                   the Mixamo rig with full maps and Unity's axes, as a game file
 #   python autorig/cli/run.py m2m-rig --model Cow_Holstein_Tripo [--template auto] [--clips all] [--joints j.json]
 #                                                   fit a Mesh2Motion skeleton, skin, audit, attach its clips
+#   python autorig/cli/run.py m2m-clips <model> --clips "Idle,Walk,Run" [--root-motion] [--out <folder>] [--replace]
+#                                                   Mesh2Motion's human clips on a Mixamo-rigged person, as takes
 #   python autorig/cli/run.py m2m-quadruped --in Cow.glb --name Cow --rig horse-animations.glb --out <folder>
 #                                                   the first Mesh2Motion fit, four-legged only
 #

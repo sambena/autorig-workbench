@@ -478,7 +478,7 @@ scripts, AI agents and Unity.
 | M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI; docs/API.md) and one step registry (`core/steps_registry.py`) for the server, the CLI, batches and the API | done |
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
 | M5 | The new three-step page, replacing the old GUI ([OLD-UI.md](OLD-UI.md) maps the old features) | done |
-| M6 | Mesh2Motion clips on existing Mixamo-rigged humans | |
+| M6 | Mesh2Motion clips on existing Mixamo-rigged humans (`m2m-clips`) | done |
 | M7 | Docs, runbook, deploy | |
 | M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | |
 
@@ -517,6 +517,27 @@ What it took, on the box's Tripo models (2026-10-18):
 
 The clips look right in renders of every one; the grades are the skinning's, which M2b compares against
 Mesh2Motion's own. For scale, the cow's shipped Tripo rig grades FAIL too (61 / 36, bleed 9.8%).
+
+M6 notes: `run.py m2m-clips <model> --clips "Idle,Walk,Run" [--root-motion]` (steps/m2m_clips.py) plays any of
+Mesh2Motion's 178 human clips on a person rigged on Mixamo, read straight from `human-{base,addon,mocap}-animations.glb`.
+The rig is not touched: the result is `<Name>_m2m.fbx` beside the shipped `<Name>.fbx`, one take per clip, made the
+way `mixamo-import` makes the game file (`fbx_maps`, then `unity_fbx --relative`); `--replace` writes over it. The
+bake is the retargeter's own (`retarget_worker.bake_clip`, now a function): world-space change from rest per mapped
+bone, limb rests aligned (the library rests in a T-pose, a Mixamo upload in its own). The library's armature is first
+turned and scaled to the person's hips (facing and leg height). Two fixes keep the feet planted, because a person's
+legs are not in the library's proportions: Hips goes up or down to the clip's foot height each frame, and each leg is
+re-solved with two-bone IK onto the clip's ankle, bending in the plane the clip's knee bends in. Only clips named
+`... RM` or `..._RM` travel (Mesh2Motion keys it on `root`); without `--root-motion` the travel is removed and the
+`_RM` dropped from the take's name.
+
+The preview GLB goes through `clip_check`. On Tornado Titans' IceAdult (Ice_Age26_Tripo), foot skate was Idle_A 0.59,
+Walk 2.11 and Jog 0.72, against 0.43, 5.14 and 1.03 for the same clips on Mesh2Motion's own mannequin. Without the
+fixes it was 0.78, 3.97 and 3.55, and the jog put the feet 6 cm into the floor. `clip_check` still reports stretched
+edges at the shoulders, with a worst gap of 9% of height on the jog's back swing, where the jacket smears. Mixamo's
+own Breathing Idle tears the same skin there, so the step fails a clip only when it explodes (a gap over 15%).
+
+On Leon (Leon_Age10_Tripo, RadarKid: a child, the library scaled to 0.78) it was 0.45, 1.48 and 0.59, worst gap 14.3%
+on the jog. Both play cleanly in renders: knees bend forward, feet stay on the floor, nothing flies off.
 
 M5 notes: `gui/index.html` and `app.js` are the whole page:
 - **Load** adds a file (`POST /api/v1/models`) or picks from the library, which now lists each model's Mesh2Motion
