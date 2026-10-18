@@ -504,7 +504,10 @@ What it took, on the box's Tripo models (2026-10-18):
 - Wings: the bird's rest has them spread, so its walk opened a hen's folded wings like a cape; wings keep the
   clip's turns, at 0.3 of their swing on the ground.
 - Picking: the tips called Tripo's hen and shark quadrupeds and the sea serpent rigid; the body measures overrule
-  that. The fox and horse sample meshes have the same build, so size picks between them.
+  that. Fox or horse is the tail: how far the body reaches back past the hind feet, over the distance between the
+  feet (Tripo horse 0.37, cows 0.30-0.41, goat 0.46, pig 0.28; dogs 0.70, cat 0.80). The first cut picked by height
+  and put the API's first live horse on the fox: Tripo's meshes come out about 1 m whatever the animal, and leg
+  length over the body does not separate them either (fox and horse templates 0.64 and 0.63).
 
 | Model (box, Tripo) | Template | Grade | Bleed % | Combined / bend tears | Clips in preview.glb |
 |---|---|---|---|---|---|

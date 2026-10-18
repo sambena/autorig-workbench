@@ -57,8 +57,16 @@ for _t in TEMPLATES.values():
 DEFAULT_ROLES = ("idle", "walk")
 SKIN_METHODS = ("autorig",)            # "m2m" arrives with P2b (core/m2m_skin.py)
 
-# quadruped: Horse or Fox by size. Their sample meshes have the same build (legs 0.64 and 0.63 of the body between
-# the feet), so the shape cannot tell a cow from a dog; standing this tall or more (metres) is a horse's size.
+# quadruped: Horse or Fox by the tail. tail_reach is how far the body reaches back past its hind feet, over the
+# distance between the front and hind feet: a fox's, dog's or cat's tail is carried out behind it, a horse's, cow's
+# or goat's hangs. Measured at height 1 on the box's Tripo animals (2026-10-18): horse 0.37, cows 0.30-0.41, goat
+# 0.46, sheep 0.20, pig 0.28; dogs 0.70 and 0.71, cat 0.80, rabbit 0.69 (the templates' own meshes: horse 0.77, fox
+# 1.23). Leg length over the body does not separate them (fox 0.64, horse 0.63, the Tripo horse 0.65, dogs
+# 0.48-0.51), nor does the head's reach forward. Absolute height cannot either: Tripo's meshes come out about 1 m
+# whatever the animal. A real height (the caller's --height, or the card's) only breaks a tail reach inside the
+# band, standing this tall or more being a horse's size.
+FOX_TAIL = 0.55
+TAIL_BAND = (0.48, 0.62)
 HORSE_HEIGHT = 0.9
 # a body whose underside lies on the ground over this share of its footprint has no legs to stand on: a snake if
 # it is this slender (length over width and height), a fish otherwise
@@ -81,7 +89,9 @@ def is_root_motion(name):
 
 def choose(archetype, measures=None):
     """(template, reason) for an archetype, or (None, reason) when Mesh2Motion has none for it. measures, all optional:
-       metres      its standing height, when the height is real (quadrupeds: Horse or Fox)
+       tail_reach  how far it reaches back past its hind feet, over the distance between the feet (quadrupeds:
+                   Fox from FOX_TAIL, Horse under it)
+       metres      its standing height, only when the height is real (the caller's): breaks a tail reach in the band
        feet        feet touching the ground (core/body_plan.py)
        ground      the share of its footprint lying on the ground (m2m_rig.body_measures)
        slender     length over the larger of width and height
@@ -123,12 +133,19 @@ def _choose(a, m):
             return "kaiju", "a biped with a tail %.2f of its height: Kaiju" % m["tail"]
         return "human", "humanoid: Human"
     if a in ("quadruped", "canine", "feline", "equine", "bovine"):
-        h = m.get("metres")
-        if h is None:
-            return "horse", "quadruped of unknown size: Horse"
-        if h >= HORSE_HEIGHT:
-            return "horse", "quadruped %.2f m tall (Horse from %.1f m): Horse" % (h, HORSE_HEIGHT)
-        return "fox", "quadruped %.2f m tall (under %.1f m): Fox" % (h, HORSE_HEIGHT)
+        r, h = m.get("tail_reach"), m.get("metres")
+        if r is not None and h is not None and TAIL_BAND[0] <= r <= TAIL_BAND[1]:
+            t = "horse" if h >= HORSE_HEIGHT else "fox"
+            return t, "quadruped, tail reach %.2f (between %.2f and %.2f), %.2f m tall (Horse from %.1f m): %s" % (
+                r, TAIL_BAND[0], TAIL_BAND[1], h, HORSE_HEIGHT, t.capitalize())
+        if r is not None:
+            if r >= FOX_TAIL:
+                return "fox", "quadruped carrying its tail out behind (reach %.2f, Fox from %.2f): Fox" % (r, FOX_TAIL)
+            return "horse", "quadruped with a hanging tail (reach %.2f, under %.2f): Horse" % (r, FOX_TAIL)
+        if h is not None:
+            t = "horse" if h >= HORSE_HEIGHT else "fox"
+            return t, "quadruped %.2f m tall (Horse from %.1f m): %s" % (h, HORSE_HEIGHT, t.capitalize())
+        return "horse", "quadruped, shape and size unknown: Horse"
     if a in ("winged", "bird", "dragon", "flyer"):
         if (m.get("feet") or 0) >= 4 or a == "dragon":
             return "dragon", "winged on four feet: Dragon"

@@ -205,9 +205,13 @@ picked for:
 How the template is picked, when `--template` is `auto`: the archetype (`--archetype`, the model's `rig.skeleton`,
 or `core/suggest.py` from the tips and the body plan), checked against the body's own measures where they plainly
 disagree: a body lying along the ground is a snake (slender) or a fish; two feet are a bird (low) or a person
-(upright), not a quadruped; a quadruped 0.9 m tall or more stands on the horse, a smaller one on the fox; a person
+(upright), not a quadruped; a quadruped carrying its tail out behind it (a fox, a dog, a cat: the body reaches back
+past its hind feet 0.55 or more of the distance between its feet) stands on the fox, one whose tail hangs (a horse,
+a cow, a goat, a pig) on the horse, with a real height (`--height`, or the card's) breaking a reach near the line
+(0.9 m or more is the horse); a person
 with a tail is a kaiju. Archetypes with no template (`floater`, `rigid`, turrets, machines) exit 3 and keep the
-`rerig.py` + `make_clips.py` path.
+`rerig.py` + `make_clips.py` path. `--choose-only` prints the choice and its reasons (`M2M_RIG {template, choice}`)
+and stops.
 
 How the clips are made to fit: position tracks are dropped but the template's tracking bone's (`pelvis` or `hips`,
 the snake's `head`) and, on a root-motion clip (a name ending in " RM" or "_RM"), the root's; the travel is scaled by
