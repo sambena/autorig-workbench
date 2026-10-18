@@ -160,6 +160,16 @@ class ApiV1Test(unittest.TestCase):
         if code == 202:
             self.assertEqual(out["step"], "m2m-rig")
             self.req("DELETE", "/api/v1/jobs/%d" % out["id"])
+        code, d = self.req("GET", "/api/v1/models/COLUMN")             # any case finds it
+        self.assertEqual((code, d.get("name")), (200, "column"))
+        code, out = self.req("POST", "/api/v1/pipeline", body={"model": "Column", "template": "fox", "clips": ["Idle"]})
+        self.assertIn(code, (202, 400, 501), out)
+        if code == 202:
+            self.assertEqual((out["step"], out["model"]), ("m2m-rig", "column"))
+            self.req("DELETE", "/api/v1/jobs/%d" % out["id"])
+        else:
+            self.assertIn("error", out)
+        self.assertEqual(self.req("POST", "/api/v1/pipeline", body={"model": "nothing"})[0], 404)
         self.assertEqual(self.req("POST", "/api/v1/models/column/steps/explode", body={})[0], 404)
         code, out = self.req("POST", "/api/v1/models/column/steps/rig", body={})
         self.assertEqual(code, 409)                     # no rig.json yet: the reason, as the page shows it

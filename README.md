@@ -12,8 +12,10 @@ pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch run
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. Expect rough edges; issues and
-pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. `run.py m2m-rig` (M2) fits
+any of Mesh2Motion's nine skeletons to a mesh (picked from the body plan, or named), skins and audits it, and bakes
+its clips into GLB and FBX; the grades on generated meshes are still mostly FAIL, which the skinning bake-off (M2b)
+takes on. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -61,7 +63,7 @@ classic rig instead.
 
 `run.py game-prop` (a generated prop as a game prop: metres, facing, LODs, maps, a one-piece truck's tyres cut out),
 `run.py game-parts` (a game prop's moving parts, such as a pumpjack's beam or a windpump's fan, cut out of LOD0 as
-their own meshes at their pivots), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
+their own meshes at their pivots), `run.py m2m-rig` (any body on one of Mesh2Motion's nine skeletons, playing its clips: docs/PIPELINE.md), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
 `run.py crop-cards` (flat picture cards of plants for a foliage atlas). See [docs/GAME-TOOLS.md](docs/GAME-TOOLS.md).
 
 ## Working folder

@@ -142,6 +142,27 @@ binary FBX (a browser may still call it `.tmp`), gives it the source's full colo
 axes (unity_fbx, inside the folder with its `.fbm`, so the texture paths come out relative). In Unity, import the `.fbm`
 folder before the FBX.
 
+### Any body on a Mesh2Motion skeleton
+
+[Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app)'s clips (about 250, CC0) play only on its own nine
+skeletons, so `m2m-rig` fits one of those skeletons to the mesh instead of building one: the bones keep their names,
+parents and roll frames and move into the body, then the step skins, audits and bakes:
+
+```bash
+python autorig/cli/run.py m2m-rig --in Cow.glb --name CowHolstein --height 1.5 --out <folder>                # template picked
+python autorig/cli/run.py m2m-rig --model Ice_Age26_Tripo --height 1.8 --clips idle,walk,run --naming mixamo   # into the model's folder
+python autorig/cli/run.py m2m-rig --in Snake.glb --name Snake --template snake --clips all --out <folder>
+python autorig/cli/run.py m2m-rig --in Cow.glb --name CowHolstein --joints <folder>/rig.json --out <folder>      # after editing joints
+```
+
+It writes `<name>.glb` (each clip an animation), `<name>.fbx` (takes, Unity's axes unless `--target generic`),
+`<name>.blend`, `preview.glb`, `rig.json` (`rig.kind: "m2m"`, the template and every joint: docs/SPEC.md, "`m2m`"),
+the card (`model.json`, merged, the game's own fields kept) and `<name>_m2m.json`, and grades it with `audit.py`.
+`--clips` takes roles (`idle`, `walk`, `run`, `trot`, `fly`... per template), Mesh2Motion's own clip names, either
+with `=engine name`, or `all`. A body with no template (a floater, a prop) exits 3: rig it with `rerig.py` and
+`make_clips.py` as before. The Mesh2Motion files come from `--m2m`, else the `third_party/mesh2motion-app`
+submodule, `AUTORIG_M2M` or `~/src/mesh2motion-app`.
+
 ### Grades
 
 A pass limit of zero tears made nearly every rig a red FAIL, though one tear on one extreme bend and 150 across the
@@ -204,6 +225,31 @@ For a viewer to mark them, the audit JSON also carries:
   `points` (`[x, y, z, gap_pct]`, widest first). Positions are the edges' midpoints at rest.
 
 The GUI's `/api/audit?name=<model>` serves the whole JSON.
+
+## Mesh2Motion's skinning (M2b)
+
+`autorig/core/m2m_skin.py` is a NumPy port of [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app)'s
+skin-weight solver (Scott Petrovic and contributors, MIT), kept so the M2b bake-off can skin one fitted skeleton both
+ways and let the audit choose each template's default. It is faithful on purpose, quirks included:
+
+1. each vertex goes wholly to the bone whose midpoint (halfway to its first child) is nearest, never the root or a
+   `leaf`/`tip` bone; on a human, a hips or pelvis bone is ignored above the crotch depth (a ray straight down from
+   the pelvis to the mesh, plus 10%);
+2. a vertex behind a finger or toe bone's start joint goes back to its parent (knuckles stay with the hand);
+3. optional arm plane: arm weights inboard of the shoulder joint's |x| (plus an offset) go to the nearest non-arm bone;
+4. smoothing at boundaries between bones: torso 50% at the seam, then 25% and 10% one and two rings out; limbs blend
+   only the child's side; extremity-extremity seams not at all; the rest 50/50;
+5. weights summed back to 1, then the optional head plane (above a height, arm weights become the head's).
+
+It works in M2M's frame (glTF axes, Y up, world space); `autorig/core/m2m_skin_blender.py` converts a Blender mesh and
+armature, writes the weights as vertex groups with an Armature modifier, and returns what `m2m_rig.skin()` returns, so
+`steps/audit.py` grades the result like our own skinning. The M2 step calls it for `--skin m2m`.
+
+    python scripts/m2m_skin_parity.py           the port against the TypeScript (Node, vitest) on M2M's 9 samples
+
+The parity run needs `npm ci` in `third_party/mesh2motion-app`; it builds its fixtures fresh each time (nothing is
+committed) and has matched exactly (max weight difference 0) on all nine templates, with the planes off, at M2M's
+defaults and moved. `tests/test_m2m_skin.py` runs it when Node is there.
 
 ## Known rough edges
 

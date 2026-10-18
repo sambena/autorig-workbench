@@ -59,6 +59,7 @@ points are read.
 | `build` | a model with no skeleton (or a useless one): chains are traced through the mesh | `rerig.py` |
 | `placed` | hand-placed chains with body-part rules: which bones each part may use, blending at joins, welds to rip, membranes riding only wing spar bones and cut free from the flank, jaw line, rigid islands | `rerig.py` |
 | `humanoid` | a person: the standard humanoid skeleton (SKELETONS.md), joints measured at the heights in the `humanoid` section | `rerig_humanoid.py` |
+| `m2m` | a Mesh2Motion skeleton (human, fox, horse, bird, dragon, kaiju, spider, snake, shark) fitted to the mesh, so Mesh2Motion's clips play on it as made; written by the step itself, with the `m2m` section | `m2m_rig.py` |
 | `custom` | a hand-written builder for one model, `builder`: a script in the model's folder, run through `run_builder.py` | yours |
 
 Common to all kinds:
@@ -184,6 +185,36 @@ within a foot's length ahead of the ankle.
 `straight_arms: true` (optional) is for a T-pose with wide sleeves that hang below the arm: each slice's middle is
 then the sleeve's and the arm tracker follows it down. With it the shoulder, elbow, wrist and knuckle lie on the
 straight line from the shoulder (the arm height, the torso's depth) to the measured fingertip.
+
+### `m2m`
+
+Written by `steps/m2m_rig.py` (`run.py m2m-rig`), with `rig.kind: "m2m"` and `rig.skeleton` the archetype it was
+picked for:
+
+| Field | Meaning |
+|---|---|
+| `template` | the Mesh2Motion skeleton: `human`, `fox`, `horse`, `bird`, `dragon`, `kaiju`, `spider`, `snake`, `shark` (`core/m2m_templates.py`) |
+| `joints` | `{bone: [x, y, z]}`: every bone's head by Mesh2Motion's name, in metres on the body as modelled (the rigged files' own coordinates: turned to face the template's way and stood on the ground; before a template rest straightens a snake or a fish). The shape the API's `/skeleton` and the Mesh2Motion bridge (docs/M2M-BRIDGE.md) use. Edit a joint and pass it back with `--joints` (rig.json itself, `{"template", "joints"}`, or the joints alone; `{bone: {"head", "tail"}}` works too) to fit again: the bones named take the edited places, the rest the measured ones |
+| `axes` | the joints' axes: `"gltf"` (Y up, facing +Z, as Mesh2Motion and three.js see it; the default) or `"blender"` (Z up, facing -Y) |
+| `rest` | `"template"`: the exported rest pose is the template's (snakes and fish are straightened along its line, their default); `"as-modelled"`: the body as it was modelled (the default for the others) |
+| `clips` | the Mesh2Motion clips baked, by their own names (the files carry the engine names given with `--clips`) |
+| `skin` | `"autorig"`: bone heat on a watertight voxel copy, carried back by nearest face, then the nearest-bone gate, smoothing and the leg confine. Mesh2Motion's own skinning arrives with the bake-off (docs/PLAN.md, M2b) |
+| `naming` | `"default"` (Mesh2Motion's bone names) or `"mixamo"` (Mixamo's, without the namespace: human only) |
+| `target` | `"unity"` (the FBX rewritten as `unity_fbx.py` does: roots at rotation 0, scale 1) or `"generic"` |
+
+How the template is picked, when `--template` is `auto`: the archetype (`--archetype`, the model's `rig.skeleton`,
+or `core/suggest.py` from the tips and the body plan), checked against the body's own measures where they plainly
+disagree: a body lying along the ground is a snake (slender) or a fish; two feet are a bird (low) or a person
+(upright), not a quadruped; a quadruped 0.9 m tall or more stands on the horse, a smaller one on the fox; a person
+with a tail is a kaiju. Archetypes with no template (`floater`, `rigid`, turrets, machines) exit 3 and keep the
+`rerig.py` + `make_clips.py` path.
+
+How the clips are made to fit: position tracks are dropped but the template's tracking bone's (`pelvis` or `hips`,
+the snake's `head`) and, on a root-motion clip (a name ending in " RM" or "_RM"), the root's; the travel is scaled by
+the leg-length change. Legs below the belly and a person's arms are rebaked to point the way the template's do,
+frame by frame (a cow's straight legs walk the horse's leg postures), with the feet standing as the template's do;
+the body, neck, head and tail keep the clip's own turns. `--swing`, `--tail-swing` and `--wing-swing` (on the
+ground) scale the swing of the legs, the tail and the wings.
 
 ### `budget`
 
