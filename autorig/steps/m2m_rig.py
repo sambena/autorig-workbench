@@ -70,10 +70,10 @@ def args(argv=None):
                    help="scale the wings' swing in clips on the ground (walk, idle); flying clips swing as made")
     p.add_argument("--voxel", type=float, default=0.0, help="proxy voxel size in metres (default: height / 70)")
     p.add_argument("--limbs", default="calibrated", choices=("calibrated", "absolute"),
-                   help="four-legged bodies: calibrated keeps each leg's fitted rest where the template stands at rest "
+                   help="legs and arms: calibrated keeps each leg's fitted rest where the template stands at rest "
                         "and adds the template's turns (default); absolute points every leg bone as the template's")
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
-                   help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
+                   help="the rest pose: the template's (default for snakes) or the body as modelled")
     p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
     p.add_argument("--choose-only", dest="choose_only", action="store_true",
                    help="print the template choice (M2M_RIG {template, choice}) and stop")
@@ -812,10 +812,10 @@ def match_world(arm, src, actions, limb, feet, k, root, calibrate=False):
     still leaves the ground and a stand stays on it."""
     pb, sb = arm.pose.bones, src.pose.bones
     order = [b.name for b in arm.data.bones if b.name in limb]          # bones come parents first
-    # calibrate (four-legged bodies): each bone keeps its own rest where the template stands at its rest, and takes
+    # calibrate (four-legged bodies and humans): each bone keeps its own rest where the template stands at its rest, and takes
     # the template's turns from there. Pointing the bones exactly as the template's do bent a fitted cow's legs by
     # the difference on every frame, 35-50 degrees at the ankles even in Idle, and tore the skin (Cow_Holstein,
-    # 2026-10-18). corr maps the template bone's rest frame onto this bone's, both in armature space.
+    # 2026-10-18); on Tornado Titans' people the absolute walk was a crouch on bent knees. corr maps the template bone's rest frame onto this bone's, both in armature space.
     corr = {}
     if calibrate:
         for n in order:
@@ -1041,10 +1041,11 @@ def side_rule(mesh, arm):
     midline (chest, belly, tail) keeps both sides. Returns the vertices changed."""
     pair = {}
     for b in arm.data.bones:
-        m = re.match(r"^(.*)_([lr])$", b.name)
+        m = re.match(r"^(.*)_([lrLR])$", b.name)           # horse and dragon say _l, fox and human _L
         if m and b.name in mesh.vertex_groups:
-            other = m.group(1) + ("_r" if m.group(2) == "l" else "_l")
-            if other in mesh.vertex_groups: pair[b.name] = (m.group(2), other)
+            side = m.group(2)
+            other = m.group(1) + "_" + {"l": "r", "r": "l", "L": "R", "R": "L"}[side]
+            if other in mesh.vertex_groups: pair[b.name] = (side.lower(), other)
     if not pair: return 0
     xs = {"l": [], "r": []}
     for b in arm.data.bones:
@@ -1482,7 +1483,7 @@ def run(a):
     limb_set.discard(root_bone)
     feet = [n for n in leg_of if not bones[n].children]
     if fam in ("human", "legged") and limb_set:
-        match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam == "legged" and a.limbs == "calibrated")
+        match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam in ("legged", "human") and a.limbs == "calibrated")
     else:
         scale_travel(actions, k)
     rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
@@ -1518,7 +1519,9 @@ def run(a):
     # rigged files' own coordinates, before a template rest straightens it): what the API's skeleton and the
     # bridge read and write, and what --joints takes back
     joints = {b.name: T.to_gltf(b.head_local) for b in arm.data.bones}
-    rest = a.rest or ("template" if fam == "body" else "as-modelled")
+    # a snake modelled in an S is straightened along the template's line; a shark is modelled near straight already,
+    # and straightening it with its weights pulled its head off the body (Tornado Titans' sharks, 2026-10-18)
+    rest = a.rest or ("template" if t == "snake" else "as-modelled")
     if rest == "template":
         log["reposed_offset"] = repose(arm, mesh, rest3)
     log["rest"] = rest
