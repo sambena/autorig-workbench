@@ -139,6 +139,7 @@ body are very different rigs. Each check is graded instead (`autorig/core/grades
 | Bleed | at most 2% | at most 3% | over 3% |
 | Head (+ jaw) share, where there is a head | at least 2.5% | at least 1.5% | under 1.5% |
 | Influences per vertex | at most 4 | (no band) | over 4 |
+| Folds standing (humanoids), per 10,000 triangles | at most 8 | at most 20 | over 20 |
 
 Why these numbers. They come from auditing a collection of about twenty generated creatures and people. Tear
 counts fell into two groups: 1, 3-4, 8, 10-11 (a weld under an arm, a wing root on a full 40 degrees, rigs already
@@ -149,6 +150,17 @@ and 5.5-7% in the combined pose, which bends every joint at once; in the second,
 5% and the combined pose 8% before even one tear fails. Bleed and head share get a narrow band (one point) because
 both were failures a picture missed: a head at 0.4% still fails, one at 1.8% is worth a look. Influences have no
 band: an engine takes four and drops the rest.
+
+Folds standing. A person in a game stands with the arms down far more than in any bend above, and a rig can tear
+nothing yet crumple a jacket at the shoulders the moment they come down. The audit's stand pose swings both upper arms
+(found by name: Mixamo, UE and rigify styles) to hang 12 degrees off vertical and counts the edges whose crease angle
+changes by more than 60 degrees (`deformation.fold_edges`), per 10,000 triangles. Calibrated on Tornado Titans' five
+story characters rigged both ways (2026-10-17): autorig's rigs folded 8-32 per 10k, crumpling visibly in the game;
+Mixamo's, 1-13. Anything without two upper arms skips the check.
+
+The bend and combined tests turn each bone about its own X axis, so they depend on how a rigger orients its bones:
+Mixamo's rigs of the same five models scored 98-171 combined tears against autorig's 24-64, while standing and in the
+game Mixamo's were the clean ones. Compare those counts between rigs from the same tool, not across tools.
 
 An allowance moves the whole band: a model allowed 8 combined tears passes at 8 and is CHECK up to 20. Tears within
 an allowance pass whatever their gap, since the allowance was written knowing them. The raw numbers are never
