@@ -26,8 +26,8 @@ import json, os, struct
 #             slice by slice (m2m_quadruped's fit, any number of leg pairs); "body": every joint slice by slice
 #             (no legs to stand on: snake, shark), and "spider" the same with its legs splayed out to the sides
 #   roles     clip roles -> the template's clip for it ("walk" and "idle" are what a game asks for first)
-#   skin      the default skinning method (P2b's bake-off decides; "autorig" = steps/m2m_rig.skin, bone heat on a
-#             voxel copy carried back by nearest face)
+#   skin      the default skinning method, set by M2b's bake-off (docs/SKIN-BAKEOFF.md): "autorig" = steps/m2m_rig.skin,
+#             bone heat on a voxel copy carried back by nearest face; "m2m" = Mesh2Motion's own (core/m2m_skin.py)
 TEMPLATES = {
     "human": {"title": "Human", "rig": "rig-human.glb",
               "animations": ["human-base-animations.glb", "human-addon-animations.glb", "human-mocap-animations.glb"],
@@ -51,11 +51,12 @@ TEMPLATES = {
               "family": "body", "roles": {"idle": "Idle", "walk": "Swim Horizontal", "swim": "Swim Horizontal",
                                           "attack": "Bite"}},
 }
+# M2b's bake-off (docs/SKIN-BAKEOFF.md, 2026-10-18): ours beat Mesh2Motion's skinning on all nine templates
 for _t in TEMPLATES.values():
     _t.setdefault("skin", "autorig")
 
 DEFAULT_ROLES = ("idle", "walk")
-SKIN_METHODS = ("autorig",)            # "m2m" arrives with P2b (core/m2m_skin.py)
+SKIN_METHODS = ("autorig", "m2m")     # m2m: Mesh2Motion's own skinning (core/m2m_skin.py, core/m2m_skin_blender.py)
 
 # quadruped: Horse or Fox by the tail. tail_reach is how far the body reaches back past its hind feet, over the
 # distance between the front and hind feet: a fox's, dog's or cat's tail is carried out behind it, a horse's, cow's

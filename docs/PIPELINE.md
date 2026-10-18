@@ -254,7 +254,7 @@ ways and let the audit choose each template's default. It is faithful on purpose
 
 It works in M2M's frame (glTF axes, Y up, world space); `autorig/core/m2m_skin_blender.py` converts a Blender mesh and
 armature, writes the weights as vertex groups with an Armature modifier, and returns what `m2m_rig.skin()` returns, so
-`steps/audit.py` grades the result like our own skinning. The M2 step calls it for `--skin m2m`.
+`steps/audit.py` grades the result like our own skinning. The M2 step uses it with `--skin m2m`. The bake-off ([SKIN-BAKEOFF.md](SKIN-BAKEOFF.md)) kept ours as every template's default.
 
     python scripts/m2m_skin_parity.py           the port against the TypeScript (Node, vitest) on M2M's 9 samples
 

@@ -153,7 +153,7 @@ TOOLS = {
                     opt("naming", "bone names", default="default", choices=("default", "mixamo")),
                     opt("target", "engine axes", default="unity", choices=("unity", "generic")),
                     opt("format", "outputs", default="glb,fbx"),
-                    opt("skin", "skinning method (default: the template's)"),
+                    opt("skin", "skinning method: autorig or m2m (default: the template's)"),
                     opt("triangles", "triangle budget", type="integer", default=15000),
                     opt("archetype", "what it is, when the template is auto (quadruped, humanoid...)"),
                     opt("choose-only", "print the template auto would pick, and why, and stop", type="boolean")]},

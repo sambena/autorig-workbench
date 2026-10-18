@@ -1,0 +1,2650 @@
+[
+ {
+  "label": "human_sample",
+  "template": "human",
+  "source": "sample:model-human.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "CHECK",
+    "bleed_pct": 0.0,
+    "combined_tears": 6,
+    "bend_tears": 4,
+    "head_pct": 6.8,
+    "stand_folds": 5.8,
+    "max_influences": 4,
+    "skin_seconds": 1.09,
+    "bare": 0,
+    "triangles": 13757,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 4,
+      "worst_gap_pct": 0.5386954033723492,
+      "collapsed": 0,
+      "skate": 0.4813,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 23,
+      "worst_gap_pct": 0.9955064660754255,
+      "collapsed": 0,
+      "skate": 1.7904,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 6,
+      "worst_gap_pct": 0.6748960982727911,
+      "collapsed": 1,
+      "skate": 7.2183,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 3.51,
+    "combined_tears": 61,
+    "bend_tears": 39,
+    "head_pct": 4.48,
+    "stand_folds": 8.7,
+    "max_influences": 2,
+    "skin_seconds": 0.08,
+    "bare": 0,
+    "triangles": 13757,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 204,
+      "worst_gap_pct": 2.625304984521049,
+      "collapsed": 4,
+      "skate": 0.482,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 253,
+      "worst_gap_pct": 6.733771242978197,
+      "collapsed": 5,
+      "skate": 2.1104,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 209,
+      "worst_gap_pct": 3.008025817281789,
+      "collapsed": 6,
+      "skate": 7.2135,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Ice_Age26",
+  "template": "human",
+  "source": "TornadoTitans/Ice_Age26_Tripo/Ice_Age26_Tripo.glb",
+  "what": "Tripo person",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.01,
+    "combined_tears": 48,
+    "bend_tears": 47,
+    "head_pct": 7.51,
+    "stand_folds": 64.0,
+    "max_influences": 4,
+    "skin_seconds": 1.4,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 61,
+      "worst_gap_pct": 1.6096775112072181,
+      "collapsed": 2,
+      "skate": 0.608,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 215,
+      "worst_gap_pct": 5.097033790905844,
+      "collapsed": 9,
+      "skate": 2.5425,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 85,
+      "worst_gap_pct": 2.706558133578372,
+      "collapsed": 5,
+      "skate": 4.1265,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.35,
+    "combined_tears": 465,
+    "bend_tears": 259,
+    "head_pct": 5.34,
+    "stand_folds": 260.7,
+    "max_influences": 2,
+    "skin_seconds": 0.25,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 840,
+      "worst_gap_pct": 10.319992388635308,
+      "collapsed": 5,
+      "skate": 0.6085,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 1542,
+      "worst_gap_pct": 12.591486151900005,
+      "collapsed": 11,
+      "skate": 3.1236,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 956,
+      "worst_gap_pct": 11.21982535402568,
+      "collapsed": 4,
+      "skate": 4.2307,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Laree_Age32",
+  "template": "human",
+  "source": "TornadoTitans/Laree_Age32_Tripo/Laree_Age32_Tripo.glb",
+  "what": "Tripo person",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.0,
+    "combined_tears": 19,
+    "bend_tears": 25,
+    "head_pct": 10.67,
+    "stand_folds": 50.0,
+    "max_influences": 4,
+    "skin_seconds": 1.37,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 55,
+      "worst_gap_pct": 1.2124867498533811,
+      "collapsed": 2,
+      "skate": 0.6885,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 189,
+      "worst_gap_pct": 3.105822157208164,
+      "collapsed": 7,
+      "skate": 3.4537,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 62,
+      "worst_gap_pct": 1.747684014775904,
+      "collapsed": 5,
+      "skate": 3.5915,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 2.06,
+    "combined_tears": 506,
+    "bend_tears": 314,
+    "head_pct": 7.19,
+    "stand_folds": 242.0,
+    "max_influences": 2,
+    "skin_seconds": 0.19,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle_A",
+     "Walk",
+     "Jog"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 553,
+      "worst_gap_pct": 9.677340209304115,
+      "collapsed": 4,
+      "skate": 0.6937,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 1182,
+      "worst_gap_pct": 16.604279359807038,
+      "collapsed": 11,
+      "skate": 4.1213,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 557,
+      "worst_gap_pct": 11.014138852537068,
+      "collapsed": 7,
+      "skate": 4.4126,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "horse_sample",
+  "template": "horse",
+  "source": "sample:model-horse.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "CHECK",
+    "bleed_pct": 0.0,
+    "combined_tears": 4,
+    "bend_tears": 3,
+    "head_pct": 4.19,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.66,
+    "bare": 0,
+    "triangles": 3414,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.055,
+      "errors": []
+     },
+     {
+      "name": "trot",
+      "tear_edges": 8,
+      "worst_gap_pct": 4.839846020122271,
+      "collapsed": 2,
+      "skate": 27.7746,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 9,
+      "worst_gap_pct": 5.2019075886849535,
+      "collapsed": 2,
+      "skate": 26.5804,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.61,
+    "combined_tears": 91,
+    "bend_tears": 34,
+    "head_pct": 3.28,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.02,
+    "bare": 0,
+    "triangles": 3414,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 4,
+      "worst_gap_pct": 1.7829968069618678,
+      "collapsed": 0,
+      "skate": 0.055,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "trot",
+      "tear_edges": 30,
+      "worst_gap_pct": 6.248740364030287,
+      "collapsed": 3,
+      "skate": 28.0142,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 31,
+      "worst_gap_pct": 6.406510736579266,
+      "collapsed": 2,
+      "skate": 27.1002,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Horse_Bay",
+  "template": "horse",
+  "source": "TornadoTitans/Horse_Bay_Tripo/Horse_Bay_Tripo.glb",
+  "what": "Tripo horse",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.14,
+    "combined_tears": 30,
+    "bend_tears": 21,
+    "head_pct": 4.15,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.14,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 12,
+      "worst_gap_pct": 3.389703364059862,
+      "collapsed": 0,
+      "skate": 0.0167,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "trot",
+      "tear_edges": 99,
+      "worst_gap_pct": 11.108250586362658,
+      "collapsed": 6,
+      "skate": 44.3459,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 153,
+      "worst_gap_pct": 11.325271383322093,
+      "collapsed": 5,
+      "skate": 37.1395,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.58,
+    "combined_tears": 1624,
+    "bend_tears": 703,
+    "head_pct": 2.54,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.09,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 882,
+      "worst_gap_pct": 6.790696292129049,
+      "collapsed": 3,
+      "skate": 0.0168,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "trot",
+      "tear_edges": 1355,
+      "worst_gap_pct": 9.281845904099647,
+      "collapsed": 6,
+      "skate": 46.9531,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1241,
+      "worst_gap_pct": 10.783148937366924,
+      "collapsed": 7,
+      "skate": 38.9532,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Cow_Holstein",
+  "template": "horse",
+  "source": "TornadoTitans/Cow_Holstein_Tripo/Cow_Holstein_Tripo.glb",
+  "what": "Tripo cow",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.23,
+    "combined_tears": 234,
+    "bend_tears": 143,
+    "head_pct": 3.91,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 2.27,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 82,
+      "worst_gap_pct": 18.151670074350093,
+      "collapsed": 1,
+      "skate": 0.5362,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "trot",
+      "tear_edges": 365,
+      "worst_gap_pct": 14.191109446732053,
+      "collapsed": 5,
+      "skate": 41.5798,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 477,
+      "worst_gap_pct": 16.97917543439238,
+      "collapsed": 4,
+      "skate": 29.8169,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.3,
+    "combined_tears": 1744,
+    "bend_tears": 558,
+    "head_pct": 4.11,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.12,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Trot"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 662,
+      "worst_gap_pct": 6.13256774052326,
+      "collapsed": 4,
+      "skate": 0.5455,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "trot",
+      "tear_edges": 1387,
+      "worst_gap_pct": 12.318638083471537,
+      "collapsed": 6,
+      "skate": 41.7951,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1409,
+      "worst_gap_pct": 15.332539065384873,
+      "collapsed": 6,
+      "skate": 31.9594,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "fox_sample",
+  "template": "fox",
+  "source": "sample:model-fox.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.0,
+    "combined_tears": 17,
+    "bend_tears": 4,
+    "head_pct": 4.33,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.06,
+    "bare": 0,
+    "triangles": 1652,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.0902,
+      "errors": []
+     },
+     {
+      "name": "run",
+      "tear_edges": 26,
+      "worst_gap_pct": 6.4262358128746895,
+      "collapsed": 2,
+      "skate": 17.9093,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 7,
+      "worst_gap_pct": 4.00264511351478,
+      "collapsed": 1,
+      "skate": 25.0109,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 5.08,
+    "combined_tears": 67,
+    "bend_tears": 32,
+    "head_pct": 4.95,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.01,
+    "bare": 0,
+    "triangles": 1652,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 2,
+      "skate": 0.0997,
+      "errors": []
+     },
+     {
+      "name": "run",
+      "tear_edges": 80,
+      "worst_gap_pct": 11.212187203405787,
+      "collapsed": 1,
+      "skate": 21.52,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 17,
+      "worst_gap_pct": 6.4751918590010105,
+      "collapsed": 3,
+      "skate": 35.3982,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Dog_BlackTan",
+  "template": "fox",
+  "source": "TornadoTitans/Dog_BlackTan_Tripo/Dog_BlackTan_Tripo.glb",
+  "what": "Tripo dog",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.16,
+    "combined_tears": 591,
+    "bend_tears": 346,
+    "head_pct": 3.71,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.33,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 20,
+      "worst_gap_pct": 3.1720799605567738,
+      "collapsed": 3,
+      "skate": 1.9444,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 1480,
+      "worst_gap_pct": 12.506777733705537,
+      "collapsed": 7,
+      "skate": 18.8461,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 518,
+      "worst_gap_pct": 5.9756012576737305,
+      "collapsed": 5,
+      "skate": 58.2875,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.78,
+    "combined_tears": 2210,
+    "bend_tears": 509,
+    "head_pct": 1.99,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.09,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 434,
+      "worst_gap_pct": 4.296743851782563,
+      "collapsed": 3,
+      "skate": 1.8579,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 2214,
+      "worst_gap_pct": 23.121680363490725,
+      "collapsed": 6,
+      "skate": 17.5244,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1181,
+      "worst_gap_pct": 11.356016070510528,
+      "collapsed": 5,
+      "skate": 54.7821,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Cat_Tabby",
+  "template": "fox",
+  "source": "TornadoTitans/Cat_Tabby_Tripo/Cat_Tabby_Tripo.glb",
+  "what": "Tripo cat",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.08,
+    "combined_tears": 1031,
+    "bend_tears": 693,
+    "head_pct": 3.72,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.96,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 231,
+      "worst_gap_pct": 12.356035317887889,
+      "collapsed": 2,
+      "skate": 0.4205,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 2311,
+      "worst_gap_pct": 77.9218457901783,
+      "collapsed": 14,
+      "skate": 22.162,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1143,
+      "worst_gap_pct": 41.96450322757475,
+      "collapsed": 9,
+      "skate": 25.8989,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 3.14,
+    "combined_tears": 2692,
+    "bend_tears": 708,
+    "head_pct": 2.17,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.08,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Run"
+    ],
+    "clip_checks": [
+     {
+      "name": "idle",
+      "tear_edges": 913,
+      "worst_gap_pct": 7.2192920400445715,
+      "collapsed": 5,
+      "skate": 0.5919,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "run",
+      "tear_edges": 3007,
+      "worst_gap_pct": 60.5205818978048,
+      "collapsed": 10,
+      "skate": 22.6894,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1884,
+      "worst_gap_pct": 28.532513149222687,
+      "collapsed": 9,
+      "skate": 29.8621,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "bird_sample",
+  "template": "bird",
+  "source": "sample:model-bird.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "CHECK",
+    "bleed_pct": 1.66,
+    "combined_tears": 9,
+    "bend_tears": 8,
+    "head_pct": 3.14,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 2.14,
+    "bare": 0,
+    "triangles": 2166,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 16,
+      "worst_gap_pct": 5.248230101214376,
+      "collapsed": 0,
+      "skate": 3.9107,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.0019,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 23.8706,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.77,
+    "combined_tears": 32,
+    "bend_tears": 28,
+    "head_pct": 2.35,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.02,
+    "bare": 0,
+    "triangles": 2166,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 101,
+      "worst_gap_pct": 7.975635834172892,
+      "collapsed": 1,
+      "skate": 3.9111,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 22,
+      "worst_gap_pct": 6.457604332394405,
+      "collapsed": 0,
+      "skate": 0.0019,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 35,
+      "worst_gap_pct": 6.457602917666986,
+      "collapsed": 0,
+      "skate": 23.1353,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Chicken_Hen",
+  "template": "bird",
+  "source": "TornadoTitans/Chicken_Hen_Tripo/Chicken_Hen_Tripo.glb",
+  "what": "Tripo hen",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 3.53,
+    "combined_tears": 2869,
+    "bend_tears": 1227,
+    "head_pct": 15.84,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.85,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 3681,
+      "worst_gap_pct": 39.776055055207465,
+      "collapsed": 10,
+      "skate": 0.0,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1126,
+      "worst_gap_pct": 6.46247878014286,
+      "collapsed": 8,
+      "skate": 0.1698,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1310,
+      "worst_gap_pct": 6.4624796249846845,
+      "collapsed": 13,
+      "skate": 70.6315,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 4.21,
+    "combined_tears": 2315,
+    "bend_tears": 482,
+    "head_pct": 7.03,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.09,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 2251,
+      "worst_gap_pct": 104.73738019046421,
+      "collapsed": 1,
+      "skate": 0.0,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1983,
+      "worst_gap_pct": 17.619477643112553,
+      "collapsed": 4,
+      "skate": 0.1717,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 2378,
+      "worst_gap_pct": 17.619487097509403,
+      "collapsed": 7,
+      "skate": 72.8615,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Chicken_Rooster",
+  "template": "bird",
+  "source": "TornadoTitans/Chicken_Rooster_Tripo/Chicken_Rooster_Tripo.glb",
+  "what": "Tripo rooster",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 2.43,
+    "combined_tears": 3406,
+    "bend_tears": 1516,
+    "head_pct": 1.78,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.86,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 1505,
+      "worst_gap_pct": 14.157458376280488,
+      "collapsed": 17,
+      "skate": 0.0,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1254,
+      "worst_gap_pct": 7.436461172038081,
+      "collapsed": 4,
+      "skate": 0.121,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1293,
+      "worst_gap_pct": 7.436471381786147,
+      "collapsed": 13,
+      "skate": 31.1375,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 5.31,
+    "combined_tears": 1835,
+    "bend_tears": 669,
+    "head_pct": 3.2,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.08,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 1978,
+      "worst_gap_pct": 55.26052130945208,
+      "collapsed": 2,
+      "skate": 0.0,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1568,
+      "worst_gap_pct": 21.071292184859487,
+      "collapsed": 1,
+      "skate": 0.1365,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1845,
+      "worst_gap_pct": 21.071311644138536,
+      "collapsed": 4,
+      "skate": 35.5786,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "dragon_sample",
+  "template": "dragon",
+  "source": "sample:model-dragon.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 9.84,
+    "combined_tears": 4,
+    "bend_tears": 2,
+    "head_pct": 0.59,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 3.4,
+    "bare": 0,
+    "triangles": 2994,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 3,
+      "worst_gap_pct": 0.47668551579135143,
+      "collapsed": 4,
+      "skate": 0.4001,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.2669,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 2,
+      "worst_gap_pct": 0.9417584888554055,
+      "collapsed": 0,
+      "skate": 13.0203,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 3.46,
+    "combined_tears": 89,
+    "bend_tears": 24,
+    "head_pct": 1.49,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.02,
+    "bare": 0,
+    "triangles": 2994,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 87,
+      "worst_gap_pct": 4.084245889412226,
+      "collapsed": 1,
+      "skate": 0.4608,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.2909,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 15,
+      "worst_gap_pct": 2.52849690665373,
+      "collapsed": 1,
+      "skate": 12.7328,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Dragon",
+  "template": "dragon",
+  "source": "Smeltdown/dragon/Dragon.fbx",
+  "what": "Smeltdown dragon",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 6.1,
+    "combined_tears": 4388,
+    "bend_tears": 880,
+    "head_pct": 0.31,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.08,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 3868,
+      "worst_gap_pct": 36.58029665751256,
+      "collapsed": 12,
+      "skate": 0.0,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 803,
+      "worst_gap_pct": 21.442523489984595,
+      "collapsed": 7,
+      "skate": 0.0001,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 849,
+      "worst_gap_pct": 18.646408566442478,
+      "collapsed": 9,
+      "skate": 0.1121,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 12.53,
+    "combined_tears": 3907,
+    "bend_tears": 1242,
+    "head_pct": 3.89,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.09,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 4645,
+      "worst_gap_pct": 97.88417925355999,
+      "collapsed": 3,
+      "skate": 0.0266,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 3069,
+      "worst_gap_pct": 21.50600415286277,
+      "collapsed": 2,
+      "skate": 3.2946,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 3521,
+      "worst_gap_pct": 49.36685080528838,
+      "collapsed": 4,
+      "skate": 9.1316,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Drake",
+  "template": "dragon",
+  "source": "Smeltdown/drake/Drake.fbx",
+  "what": "Smeltdown drake",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 2.27,
+    "combined_tears": 948,
+    "bend_tears": 708,
+    "head_pct": 2.6,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.23,
+    "bare": 0,
+    "triangles": 14997,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 771,
+      "worst_gap_pct": 8.325327896774128,
+      "collapsed": 4,
+      "skate": 5.7484,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 670,
+      "worst_gap_pct": 12.721138950461311,
+      "collapsed": 4,
+      "skate": 4.5058,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1218,
+      "worst_gap_pct": 26.298649061670154,
+      "collapsed": 5,
+      "skate": 7.1965,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 5.29,
+    "combined_tears": 2228,
+    "bend_tears": 850,
+    "head_pct": 2.7,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.11,
+    "bare": 0,
+    "triangles": 14997,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Fly Flap"
+    ],
+    "clip_checks": [
+     {
+      "name": "fly",
+      "tear_edges": 2147,
+      "worst_gap_pct": 33.89411757529764,
+      "collapsed": 4,
+      "skate": 3.543,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1605,
+      "worst_gap_pct": 18.253985548937116,
+      "collapsed": 6,
+      "skate": 4.9603,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1485,
+      "worst_gap_pct": 40.893127984855475,
+      "collapsed": 4,
+      "skate": 16.1644,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "kaiju_sample",
+  "template": "kaiju",
+  "source": "sample:model-kaiju.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "CHECK",
+    "bleed_pct": 0.72,
+    "combined_tears": 4,
+    "bend_tears": 4,
+    "head_pct": 1.6,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.64,
+    "bare": 0,
+    "triangles": 2318,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 4,
+      "worst_gap_pct": 0.8501768685635048,
+      "collapsed": 1,
+      "skate": 10.2617,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.0232,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 7,
+      "worst_gap_pct": 1.0648215473303848,
+      "collapsed": 1,
+      "skate": 6.7326,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.8,
+    "combined_tears": 55,
+    "bend_tears": 15,
+    "head_pct": 2.11,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.02,
+    "bare": 0,
+    "triangles": 2318,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 30,
+      "worst_gap_pct": 3.9881777914335967,
+      "collapsed": 1,
+      "skate": 10.12,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 5,
+      "worst_gap_pct": 5.121048416147881,
+      "collapsed": 3,
+      "skate": 0.023,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 26,
+      "worst_gap_pct": 4.029083912935316,
+      "collapsed": 1,
+      "skate": 6.0933,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "spider_sample",
+  "template": "spider",
+  "source": "sample:model-spider.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "CHECK",
+    "bleed_pct": 1.45,
+    "combined_tears": 0,
+    "bend_tears": 0,
+    "head_pct": 1.93,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 3.39,
+    "bare": 0,
+    "triangles": 1600,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 140.979,
+      "errors": []
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 0.47,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": 55.9215,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 7.2,
+    "combined_tears": 28,
+    "bend_tears": 10,
+    "head_pct": 2.83,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.01,
+    "bare": 0,
+    "triangles": 1600,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 8,
+      "worst_gap_pct": 5.418766506237085,
+      "collapsed": 0,
+      "skate": 139.8418,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 1,
+      "skate": 0.3692,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 3,
+      "worst_gap_pct": 1.7160921329881926,
+      "collapsed": 1,
+      "skate": 57.9332,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Crawler",
+  "template": "spider",
+  "source": "Smeltdown/crawler/Crawler.fbx",
+  "what": "Smeltdown hexapod",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.8,
+    "combined_tears": 2354,
+    "bend_tears": 1235,
+    "head_pct": 0,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.96,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 2301,
+      "worst_gap_pct": 9.880225312356602,
+      "collapsed": 18,
+      "skate": 51.973,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 375,
+      "worst_gap_pct": 5.913892202284647,
+      "collapsed": 5,
+      "skate": 5.1224,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1267,
+      "worst_gap_pct": 9.738076763679397,
+      "collapsed": 21,
+      "skate": 12.4237,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 6.3,
+    "combined_tears": 2981,
+    "bend_tears": 876,
+    "head_pct": 2.43,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.08,
+    "bare": 0,
+    "triangles": 15000,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 4084,
+      "worst_gap_pct": 33.968699893967255,
+      "collapsed": 7,
+      "skate": 48.8305,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 1593,
+      "worst_gap_pct": 6.864534852164775,
+      "collapsed": 4,
+      "skate": 4.1056,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 3495,
+      "worst_gap_pct": 28.860565708719555,
+      "collapsed": 3,
+      "skate": 20.2572,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "reef_crab",
+  "template": "spider",
+  "source": "Heartroot/reef_crab/tripo_convert_a26c3cfb-4b84-4c49-aed3-614135f3c96f.fbx",
+  "what": "Tripo crab",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 2.12,
+    "combined_tears": 804,
+    "bend_tears": 395,
+    "head_pct": 0,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 2.71,
+    "bare": 0,
+    "triangles": 7890,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 814,
+      "worst_gap_pct": 16.27406221776212,
+      "collapsed": 6,
+      "skate": 54.4865,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 29,
+      "worst_gap_pct": 2.019647915609232,
+      "collapsed": 1,
+      "skate": 3.4274,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 641,
+      "worst_gap_pct": 9.897494681782442,
+      "collapsed": 13,
+      "skate": 18.825,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 8.33,
+    "combined_tears": 1538,
+    "bend_tears": 626,
+    "head_pct": 5.81,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.05,
+    "bare": 0,
+    "triangles": 7890,
+    "clips": [
+     "Idle",
+     "Walk",
+     "Attack"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 1696,
+      "worst_gap_pct": 39.12928712798097,
+      "collapsed": 3,
+      "skate": 64.3373,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 718,
+      "worst_gap_pct": 9.076418152439485,
+      "collapsed": 3,
+      "skate": 3.3916,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 1485,
+      "worst_gap_pct": 33.53181242131107,
+      "collapsed": 4,
+      "skate": 19.2277,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "snake_sample",
+  "template": "snake",
+  "source": "sample:model-snake.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.0,
+    "combined_tears": 0,
+    "bend_tears": 0,
+    "head_pct": 0.32,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 30.96,
+    "bare": 0,
+    "triangles": 1130,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "PASS",
+    "bleed_pct": 0.0,
+    "combined_tears": 0,
+    "bend_tears": 0,
+    "head_pct": 3.94,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.01,
+    "bare": 0,
+    "triangles": 1130,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 2,
+      "worst_gap_pct": 2.2319295204917244,
+      "collapsed": 0,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "glass_eel",
+  "template": "snake",
+  "source": "Heartroot/glass_eel/tripo_convert_8b3f2a4e-67b2-40a6-b6fc-e2ba3bfe9bd4.fbx",
+  "what": "Tripo eel",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.35,
+    "combined_tears": 5,
+    "bend_tears": 3,
+    "head_pct": 0,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.43,
+    "bare": 0,
+    "triangles": 7684,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 28,
+      "worst_gap_pct": 2.986891389797111,
+      "collapsed": 3,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 34,
+      "worst_gap_pct": 2.1774796908172265,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 63,
+      "worst_gap_pct": 7.372713952677991,
+      "collapsed": 3,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.0,
+    "combined_tears": 17,
+    "bend_tears": 27,
+    "head_pct": 4.67,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.04,
+    "bare": 0,
+    "triangles": 7684,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 85,
+      "worst_gap_pct": 4.825321436259073,
+      "collapsed": 3,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 236,
+      "worst_gap_pct": 4.648831115986052,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 393,
+      "worst_gap_pct": 6.146790408795946,
+      "collapsed": 3,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "sea_serpent",
+  "template": "snake",
+  "source": "Heartroot/sea_serpent/tripo_convert_fa9b8772-bcb1-44f0-bdc5-af93e2744360.fbx",
+  "what": "Tripo serpent (coiled)",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.43,
+    "combined_tears": 1,
+    "bend_tears": 1,
+    "head_pct": 0,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 0.53,
+    "bare": 0,
+    "triangles": 7803,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 11,
+      "worst_gap_pct": 1.512544696186568,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 5,
+      "worst_gap_pct": 1.0237404485166932,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 11,
+      "worst_gap_pct": 1.5822562259453263,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 0.53,
+    "combined_tears": 3,
+    "bend_tears": 29,
+    "head_pct": 1.17,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.04,
+    "bare": 0,
+    "triangles": 7803,
+    "clips": [
+     "Idle",
+     "Side winding",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 21,
+      "worst_gap_pct": 4.396643125641727,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 24,
+      "worst_gap_pct": 4.265209245652397,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 36,
+      "worst_gap_pct": 3.1915377963994995,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "shark_sample",
+  "template": "shark",
+  "source": "sample:model-shark.glb",
+  "what": "M2M sample",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.29,
+    "combined_tears": 30,
+    "bend_tears": 1,
+    "head_pct": 31.87,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 2.18,
+    "bare": 0,
+    "triangles": 6576,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 2,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 6.72,
+    "combined_tears": 46,
+    "bend_tears": 93,
+    "head_pct": 30.38,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.03,
+    "bare": 0,
+    "triangles": 6576,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 55,
+      "worst_gap_pct": 1.7138356351730084,
+      "collapsed": 10,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 6,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 18,
+      "worst_gap_pct": 0.8230853162768685,
+      "collapsed": 3,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "Shark",
+  "template": "shark",
+  "source": "TornadoTitans/Shark_Tripo/Shark_Tripo.glb",
+  "what": "Tripo shark",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 4.61,
+    "combined_tears": 35,
+    "bend_tears": 14,
+    "head_pct": 39.52,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.26,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 13,
+      "worst_gap_pct": 0.6559931438219797,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 13,
+      "worst_gap_pct": 0.6536455196776357,
+      "collapsed": 0,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 11,
+      "worst_gap_pct": 0.6327373044152993,
+      "collapsed": 0,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 6.26,
+    "combined_tears": 149,
+    "bend_tears": 115,
+    "head_pct": 22.08,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.07,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 7,
+      "worst_gap_pct": 1.6068684372924074,
+      "collapsed": 2,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 38,
+      "worst_gap_pct": 1.7888582709970173,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "megalodon",
+  "template": "shark",
+  "source": "Heartroot/the_megalodon/tripo_convert_1414b4ed-40c3-4662-b60f-070bdc5544c5.fbx",
+  "what": "Tripo shark",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 10.76,
+    "combined_tears": 2,
+    "bend_tears": 2,
+    "head_pct": 40.95,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 1.21,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 1,
+      "worst_gap_pct": 0.48927256107490474,
+      "collapsed": 1,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 10.75,
+    "combined_tears": 30,
+    "bend_tears": 38,
+    "head_pct": 29.01,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.07,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 3,
+      "worst_gap_pct": 1.383051104954985,
+      "collapsed": 6,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 2,
+      "skate": null,
+      "errors": []
+     }
+    ]
+   }
+  }
+ }
+]
