@@ -4,7 +4,7 @@
 on that same skeleton (the second run takes the first run's joints through `--joints`; the heads match exactly):
 
 - **autorig**: `m2m_rig.skin()`. Bone heat on a watertight voxel copy, carried back by nearest face, then the
-  nearest-bone gate, six smoothing passes and, for legs, the confine below the belly. Girdle bones carry no skin.
+  nearest-bone gate, six smoothing passes and, for legs, the side and tail rules, the confine below the belly and the weld cut. Girdle bones carry no skin.
 - **m2m**: Mesh2Motion's own solver, ported faithfully in `core/m2m_skin.py`. It matches the TypeScript exactly on
   Mesh2Motion's samples (`scripts/m2m_skin_parity.py`). Closest bone midpoint, the human crotch rule, the knuckle fix,
   3-ring torso smoothing, and limbs that blend toward the child only. The arm and head planes stay off, as they are

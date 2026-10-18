@@ -69,6 +69,9 @@ def args(argv=None):
     p.add_argument("--wing-swing", dest="wing_swing", type=float, default=0.3,
                    help="scale the wings' swing in clips on the ground (walk, idle); flying clips swing as made")
     p.add_argument("--voxel", type=float, default=0.0, help="proxy voxel size in metres (default: height / 70)")
+    p.add_argument("--limbs", default="calibrated", choices=("calibrated", "absolute"),
+                   help="four-legged bodies: calibrated keeps each leg's fitted rest where the template stands at rest "
+                        "and adds the template's turns (default); absolute points every leg bone as the template's")
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
                    help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
     p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
@@ -798,7 +801,7 @@ def tip(mat, length):
     return (mat @ Matrix.Translation((0, length, 0))).to_translation()
 
 
-def match_world(arm, src, actions, limb, feet, k, root):
+def match_world(arm, src, actions, limb, feet, k, root, calibrate=False):
     """Rebakes the limbs so each limb bone points the way the template's own does, frame by frame, and stands the
     feet as the template's stand (scaled by k, the leg-length change), with the clips' travel scaled by k too.
     A clip is turns from the rest pose; a cow's legs stand straight where the horse's rest pose is angled, a T-posed
@@ -809,6 +812,15 @@ def match_world(arm, src, actions, limb, feet, k, root):
     still leaves the ground and a stand stays on it."""
     pb, sb = arm.pose.bones, src.pose.bones
     order = [b.name for b in arm.data.bones if b.name in limb]          # bones come parents first
+    # calibrate (four-legged bodies): each bone keeps its own rest where the template stands at its rest, and takes
+    # the template's turns from there. Pointing the bones exactly as the template's do bent a fitted cow's legs by
+    # the difference on every frame, 35-50 degrees at the ankles even in Idle, and tore the skin (Cow_Holstein,
+    # 2026-10-18). corr maps the template bone's rest frame onto this bone's, both in armature space.
+    corr = {}
+    if calibrate:
+        for n in order:
+            if n in src.data.bones:
+                corr[n] = arm.data.bones[n].matrix_local.to_3x3() @ src.data.bones[n].matrix_local.to_3x3().inverted()
     tops = {pb[n].parent.name for n in order if pb[n].parent and pb[n].parent.name not in limb}
     feet = [n for n in feet if n in pb]
     for act in actions:
@@ -838,7 +850,8 @@ def match_world(arm, src, actions, limb, feet, k, root):
                 par = mats[b.parent.name]
                 rest = b.parent.matrix_local.inverted() @ b.matrix_local
                 base = par @ rest                                  # where the bone would be with no turn of its own
-                m = Matrix.Translation(base.to_translation()) @ want[n].to_3x3().to_4x4()
+                aim = corr[n] @ want[n].to_3x3() if n in corr else want[n].to_3x3()
+                m = Matrix.Translation(base.to_translation()) @ aim.to_4x4()
                 basis = base.inverted() @ m
                 mats[n] = base @ basis
                 pb[n].rotation_mode = 'QUATERNION'
@@ -1018,6 +1031,146 @@ def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0):
     mod = mesh.modifiers.new("Armature", 'ARMATURE'); mod.object = arm
     bare = sum(1 for v in mesh.data.vertices if not v.groups)
     return unreached, bare, off, gated, used
+
+
+def side_rule(mesh, arm):
+    """Skin on one side of the body is never moved by the other side's bones. Bone heat on a voxel copy runs across
+    where two legs nearly touch (a cow's front legs, her hocks), so some of a left leg's skin followed the right leg
+    and a walk pulled sheets of skin between them (Cow_Holstein: 572 leg weights on the wrong side). A weight from a
+    _l bone on a vertex well to the right goes to the matching _r bone, and the other way round; a vertex near the
+    midline (chest, belly, tail) keeps both sides. Returns the vertices changed."""
+    pair = {}
+    for b in arm.data.bones:
+        m = re.match(r"^(.*)_([lr])$", b.name)
+        if m and b.name in mesh.vertex_groups:
+            other = m.group(1) + ("_r" if m.group(2) == "l" else "_l")
+            if other in mesh.vertex_groups: pair[b.name] = (m.group(2), other)
+    if not pair: return 0
+    xs = {"l": [], "r": []}
+    for b in arm.data.bones:
+        if b.name in pair: xs[pair[b.name][0]].append(b.head_local.x)
+    if not xs["l"] or not xs["r"]: return 0
+    lx, rx = sum(xs["l"]) / len(xs["l"]), sum(xs["r"]) / len(xs["r"])
+    if abs(lx - rx) < 1e-4: return 0
+    mid, margin = (lx + rx) / 2, abs(lx - rx) * 0.15      # inside the margin a vertex is on the midline
+    left_sign = 1 if lx > rx else -1
+    index = {mesh.vertex_groups[n].index: n for n in pair}
+    changed = 0
+    for v in mesh.data.vertices:
+        off = (v.co.x - mid) * left_sign
+        if abs(off) < margin: continue
+        side = "l" if off > 0 else "r"
+        moves = [(g.group, g.weight) for g in v.groups if g.group in index and pair[index[g.group]][0] != side and g.weight > 0]
+        for gi, w in moves:
+            name = index[gi]
+            mesh.vertex_groups[name].remove([v.index])
+            mesh.vertex_groups[pair[name][1]].add([v.index], w, 'ADD')
+        if moves: changed += 1
+    return changed
+
+
+def tail_rule(mesh, arm):
+    """The tail moves only the tail. A cow's tail hangs against the backs of her hind legs, and bone heat on a voxel
+    copy runs across where they touch, so the tail bones took the rump and the backs of the legs down to the hock
+    (Cow_Holstein: 512 vertices over 20 cm from the tail): every swish dragged that skin into a sheet. Tail weight on
+    a vertex farther from the tail than the tail is thick goes to the nearest other bone. Returns the vertices
+    changed."""
+    tail = [b for b in arm.data.bones if b.name.lower().startswith("tail") and b.name in mesh.vertex_groups]
+    others = [b for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups and b not in tail]
+    if not tail or not others: return 0
+    idx = {mesh.vertex_groups[b.name].index for b in tail}
+
+    def seg_dist(co, b):
+        h, t = b.head_local, b.tail_local
+        d = t - h
+        f = max(0.0, min(1.0, (co - h).dot(d) / max(d.length_squared, 1e-12)))
+        return (co - (h + d * f)).length
+
+    def near_tail(co): return min(seg_dist(co, b) for b in tail)
+    # how thick the tail is: the skin the tail owns most of, measured from its bones
+    own = sorted(near_tail(v.co) for v in mesh.data.vertices
+                 if v.groups and max(v.groups, key=lambda g: g.weight).group in idx)
+    if not own: return 0
+    reach = max(own[len(own) // 2] * 2.5, 0.02)
+    changed = 0
+    for v in mesh.data.vertices:
+        gs = [g for g in v.groups if g.group in idx and g.weight > 0]
+        if not gs or near_tail(v.co) <= reach: continue
+        for g in gs: g.weight = 0.0
+        if sum(g.weight for g in v.groups) < 0.05:
+            best = min(others, key=lambda b: seg_dist(v.co, b))
+            mesh.vertex_groups[best.name].add([v.index], 1.0, 'REPLACE')
+        changed += 1
+    return changed
+
+
+def unweld(mesh, arm, actions, top, grow=0.04, ratio=4.0, samples=8):
+    """Cuts the welds a generator leaves where two parts touch. A Tripo cow's tail tip is fused to her hock and the
+    insides of her front legs to her chest, so a few tiny faces join skin that moves apart: whatever the weights,
+    every step pulls them into a sheet (Cow_Holstein: edges of 1-2 cm stretched to 33 cm). Every clip is played on
+    the skinned mesh and a face is removed when one of its edges grows by more than grow x height and to more than
+    ratio x its length: skin round a bending joint stretches by half, a weld by ten or twenty times. What is left
+    is a small hole where the parts touched. Returns the faces removed."""
+    import bmesh
+    if not actions or not mesh.data.edges: return 0
+    me = mesh.data
+    ad = arm.animation_data or arm.animation_data_create()
+    was = ad.action
+    def where():
+        dg = bpy.context.evaluated_depsgraph_get()
+        e = mesh.evaluated_get(dg)
+        if len(e.data.vertices) != len(me.vertices): return None      # something else changed the topology
+        return [e.matrix_world @ v.co for v in e.data.vertices]
+    edges = [tuple(ed.vertices) for ed in me.edges]
+    arm.data.pose_position = 'REST'
+    rest = where()
+    arm.data.pose_position = 'POSE'
+    if rest is None: return 0
+    base = [(rest[a] - rest[b]).length for a, b in edges]
+    worst = [0.0] * len(edges)
+    for act in actions:
+        assign(arm, act)
+        fr = frames_of(act)
+        for i in range(samples):
+            at(fr[int(i * (len(fr) - 1) / max(1, samples - 1))])
+            now = where()
+            if now is None: continue
+            for k, (a, b) in enumerate(edges):
+                d = (now[a] - now[b]).length
+                if d > worst[k]: worst[k] = d
+    ad.action = was
+    for pb in arm.pose.bones: pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    torn = {k for k in range(len(edges)) if worst[k] - base[k] > top * grow and worst[k] > base[k] * ratio}
+    if not torn: return 0
+    bm = bmesh.new(); bm.from_mesh(me); bm.edges.ensure_lookup_table()
+    before = {f: len(piece) for piece in islands(bm.faces) for f in piece}     # face -> size of its part
+    faces = {f for k in torn for f in bm.edges[k].link_faces}
+    # a cut can leave a scrap of the weld hanging loose from it: a piece under 2% of the part it came off goes too
+    rest_faces = [f for f in bm.faces if f not in faces]
+    for piece in islands(rest_faces):
+        whole = before[next(iter(piece))]
+        if len(piece) < 0.02 * whole: faces |= piece
+    bmesh.ops.delete(bm, geom=list(faces), context='FACES')
+    bm.to_mesh(me); me.update(); bm.free()
+    return len(faces)
+
+
+def islands(faces):
+    """The faces in connected pieces (joined across shared edges), as a list of sets."""
+    faces = set(faces)
+    seen, pieces = set(), []
+    for f in faces:
+        if f in seen: continue
+        stack, piece = [f], set()
+        seen.add(f)
+        while stack:
+            g = stack.pop(); piece.add(g)
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h in faces and h not in seen: seen.add(h); stack.append(h)
+        pieces.append(piece)
+    return pieces
 
 
 def confine(mesh, arm, leg_of, shape, belly):
@@ -1329,7 +1482,7 @@ def run(a):
     limb_set.discard(root_bone)
     feet = [n for n in leg_of if not bones[n].children]
     if fam in ("human", "legged") and limb_set:
-        match_world(arm, rig0, actions, limb_set, feet, k, root_bone)
+        match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam == "legged" and a.limbs == "calibrated")
     else:
         scale_travel(actions, k)
     rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
@@ -1345,8 +1498,10 @@ def run(a):
 
     # the skin
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
-    after = (lambda: log.__setitem__("confined", confine(mesh, arm, leg_of, shape, A["belly"]))) \
-        if leg_of and fam in ("legged", "human") else None
+    def after():
+        if fam in ("legged", "human"): log["side_fixed"] = side_rule(mesh, arm)      # each side's bones, its own skin
+        if fam == "legged": log["tail_fixed"] = tail_rule(mesh, arm)                 # the tail moves only the tail
+        if leg_of and fam in ("legged", "human"): log["confined"] = confine(mesh, arm, leg_of, shape, A["belly"])
     t_skin = time.time()
     if method == "m2m":
         # Mesh2Motion's own: closest bone midpoint, its correctors and smoothing, on the fitted joints as they are
@@ -1355,6 +1510,7 @@ def run(a):
         gated, used = 0, None
     else:
         unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
+    log["unwelded"] = unweld(mesh, arm, actions, top)                              # the generator's welds, cut
     log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used,
                skin_seconds=round(time.time() - t_skin, 2))
 
