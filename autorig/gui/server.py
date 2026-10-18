@@ -26,6 +26,11 @@ except ImportError:
     import ai_api
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+M2M_DIR = os.path.join(HERE, "m2m")     # the built Mesh2Motion app (scripts/build_m2m.py)
+M2M_TYPES = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+             ".svg": "image/svg+xml", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".bin": "application/octet-stream",
+             ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".webm": "video/webm", ".mp4": "video/mp4",
+             ".json": "application/json", ".fbx": "application/octet-stream", ".wasm": "application/wasm"}
 PKG = os.path.dirname(HERE)
 REPO = os.path.dirname(PKG)
 CORE, STEPS, CLI = (os.path.join(PKG, d) for d in ("core", "steps", "cli"))
@@ -1099,6 +1104,11 @@ def make_handler(app):
                                   {"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
             if path == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
+            # ---- Mesh2Motion (third_party/mesh2motion-app, built by scripts/build_m2m.py): open-source pages
+            # and CC0 rigs and clips, so like /vendor/ they need only the Host check
+            if path == "/m2m" or path.startswith("/m2m/"):
+                if not self._host_ok(): return self._send(403, {"error": "bad host"})
+                return self.m2m_file(path)
             # ---- results viewer (gui/viewer_api.py): its code and vendored three.js need only the Host check
             if path in viewer_api.CODE or path.startswith("/vendor/"):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
@@ -1285,6 +1295,29 @@ def make_handler(app):
                         return
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 return
+
+        def m2m_file(self, path):
+            if path in ("/m2m", "/m2m/"):
+                return self._send(302, b"", "text/plain", {"Location": "/m2m/create.html"})
+            if not os.path.isdir(M2M_DIR):
+                return self._send(404, {"error": "Mesh2Motion is not built: run python scripts/build_m2m.py"})
+            rel = safe_rel(unquote(path[len("/m2m/"):]))
+            if not rel: return self._send(400, {"error": "bad path"})
+            p = os.path.realpath(os.path.join(M2M_DIR, *rel.split("/")))
+            root = os.path.realpath(M2M_DIR)
+            if os.path.commonpath([os.path.normcase(p), os.path.normcase(root)]) != os.path.normcase(root):
+                return self._send(403, {"error": "outside the Mesh2Motion folder"})
+            if os.path.isdir(p): p = os.path.join(p, "index.html")
+            if not os.path.isfile(p): return self._send(404, {"error": "no such file"})
+            ctype = M2M_TYPES.get(os.path.splitext(p)[1].lower()) or mimetypes.guess_type(p)[0] or "application/octet-stream"
+            if ctype.startswith("text/") or ctype.endswith("javascript"): ctype += "; charset=utf-8"
+            # pages are checked every time (a rebuild renames the code they load); assets/ names carry a content
+            # hash, so they never change; rigs, clips and icons may change with a rebuild
+            if p.lower().endswith(".html"): cache = "no-cache"
+            elif "/assets/" in rel and "/" not in rel.split("assets/", 1)[1]: cache = "public, max-age=31536000, immutable"
+            else: cache = "public, max-age=3600"
+            with open(p, "rb") as fh: data = fh.read()
+            self._send(200, data, ctype, {"Cache-Control": cache})
 
         def file(self, base, rel, versioned=False):
             root = layout.ROOT if base == "models" else layout.WORK

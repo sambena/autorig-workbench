@@ -35,3 +35,6 @@ __pycache__/
 # AI Assist settings (API keys) and its spend log, on this machine only.
 .autorig_ai.json
 .autorig_ai_usage.jsonl
+
+# Mesh2Motion build output (scripts/build_m2m.py); the source is the third_party/mesh2motion-app submodule.
+autorig/gui/m2m/
