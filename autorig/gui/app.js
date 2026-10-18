@@ -314,21 +314,22 @@ async function showInbox () {
     toast(e.message, true)
     return
   }
+  // nothing new: say so where it can't be missed (on a phone the list sits below the panel) and keep the library
+  if (!d.models.length) {
+    toast(`No new files on the server. Drop a file above, or copy it to ${d.inbox[0] || 'the server’s inbox folder'}.`)
+    return
+  }
   $('library').hidden = true
   const box = $('inbox')
   box.hidden = false
   const back = '<button class="link" id="inbox-back" type="button" style="grid-column:1/-1;justify-self:start">← Back to the library</button>'
-  if (!d.models.length) {
-    box.innerHTML = back + `<p class="hint" style="grid-column:1/-1">No new files. Copy models to ${d.inbox.map((x) => `<code>${esc(x)}</code>`).join(' or ') || 'the server’s inbox folder'}
-      (for example <code>scp Cow.glb autorig:incoming/</code>) and they show up here.</p>`
-  } else {
-    box.innerHTML = back + d.models.map((x, i) => `<button class="card" data-i="${i}" type="button">
-      <div class="thumb">${esc(x.ext.slice(1).toUpperCase())}</div>
-      <div class="meta"><span class="name" title="${esc(x.name)}">${esc(x.name)}</span>
-      <span class="sub">${(x.bytes / 1048576).toFixed(1)} MB · ${esc(new Date(x.modified * 1000).toLocaleDateString())}</span></div></button>`).join('')
-    for (const b of box.querySelectorAll('.card')) b.onclick = () => useServerPath(d.models[Number(b.dataset.i)].path)
-  }
+  box.innerHTML = back + d.models.map((x, i) => `<button class="card" data-i="${i}" type="button">
+    <div class="thumb">${esc(x.ext.slice(1).toUpperCase())}</div>
+    <div class="meta"><span class="name" title="${esc(x.name)}">${esc(x.name)}</span>
+    <span class="sub">${(x.bytes / 1048576).toFixed(1)} MB · ${esc(new Date(x.modified * 1000).toLocaleDateString())}</span></div></button>`).join('')
+  for (const b of box.querySelectorAll('.card')) b.onclick = () => useServerPath(d.models[Number(b.dataset.i)].path)
   $('inbox-back').onclick = closeInbox
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 async function useServerPath (path) {

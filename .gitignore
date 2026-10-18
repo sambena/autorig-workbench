@@ -45,3 +45,6 @@ autorig/gui/m2m/
 # AI generation settings (provider keys, caps) and its spend log, on this machine only (docs/GENERATE.md).
 .autorig_generate.json
 .autorig_generate_usage.jsonl
+
+# scripts/tripo_bridge.py saves received models here
+tripo_inbox/
