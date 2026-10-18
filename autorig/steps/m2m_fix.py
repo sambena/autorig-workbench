@@ -73,6 +73,8 @@ def main(name):
     with open(joints, "w", encoding="utf-8") as fh:
         json.dump({"template": m2m["template"], "joints": m2m["joints"]}, fh)
     common = ["--template", m2m["template"], "--joints", joints, "--no-preview", "--format", "glb"]
+    swing = ["--swing", "%g" % m2m["swing"]] if m2m.get("swing") not in (None, 1, 1.0) else []
+    common += swing
     if app: common += ["--m2m", app]
     if last.get("source"): common += ["--in", last["source"]]
     if last.get("height"): common += ["--height", str(last["height"])]
@@ -108,7 +110,7 @@ def main(name):
         return 0
 
     # the winner, into the model's own folder as Auto rig writes it (rig.json, card, preview, clips)
-    final = ["--model", name, "--template", m2m["template"]] + extra
+    final = ["--model", name, "--template", m2m["template"]] + extra + swing
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
         json.dump({"template": m2m["template"], "joints": m2m["joints"]}, fh)
         final += ["--joints", fh.name]

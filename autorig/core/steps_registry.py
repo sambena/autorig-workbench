@@ -159,6 +159,8 @@ TOOLS = {
                     opt("format", "outputs", default="glb,fbx"),
                     opt("skin", "skinning method: autorig or m2m (default: the template's)"),
                     opt("triangles", "triangle budget", type="integer", default=15000),
+                    opt("swing", "scale the legs' swing in the clips (1 as made; a cow ~0.75)", type="number", default=1),
+                    opt("tail-swing", "scale the tail's swing", type="number", default=0.4),
                     opt("archetype", "what it is, when the template is auto (quadruped, humanoid...)"),
                     opt("choose-only", "print the template auto would pick, and why, and stop", type="boolean")]},
     "m2m-quadruped": {

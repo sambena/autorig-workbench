@@ -1410,7 +1410,7 @@ def run(a):
 
     # rig.json, the card and the log
     m2m = {"template": t, "joints": joints, "axes": "gltf", "rest": rest, "clips": [c["m2m"] for c in clips], "skin": method,
-           "naming": a.naming, "target": a.target}
+           "naming": a.naming, "target": a.target, "swing": a.swing, "tail_swing": a.tail_swing}
     spec_dir = folder or a.out
     rel = (lambda p: os.path.relpath(p, spec_dir).replace(os.sep, "/"))
     merge_json(os.path.join(spec_dir, "rig.json"), {"schema": "autorig-spec/1",
