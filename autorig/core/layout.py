@@ -288,6 +288,34 @@ def is_prepared(path):
     return os.path.basename(os.path.dirname(os.path.normpath(path or ""))) == "prepared"
 
 
+def _model_json_files(folder):
+    """What the model's card says about its files: the source it names ("model_file", when it is there and is a
+    source export) and the game files the pipeline made from it ("game_files"), as normalised absolute paths.
+
+    A game file sits beside the source and carries its own textures (<name>.fbm/), so without this it outranked the
+    raw download: re-rigging Tornado Titans' Ice_Age26_Tripo rigged its previous rig's game export (IceAdult.fbx,
+    already posed to a T and decimated) instead of Ice_Age26_Tripo.glb, and came out far worse (2026-10-17).
+    """
+    try:
+        with open(os.path.join(folder, "model.json"), encoding="utf-8") as fh:
+            card = json.load(fh)
+    except (OSError, ValueError):
+        return None, set()
+    if not isinstance(card, dict):
+        return None, set()
+    games = set()
+    for g in card.get("game_files") or []:
+        if isinstance(g, str) and g.lower().endswith(SOURCE_EXTS):
+            games.add(os.path.normcase(os.path.abspath(os.path.join(folder, g))))
+    named = card.get("model_file")
+    if isinstance(named, str) and named.lower().endswith(SOURCE_EXTS):
+        path = os.path.abspath(os.path.join(folder, named))
+        inside = os.path.normcase(path).startswith(os.path.normcase(os.path.abspath(folder)) + os.sep)
+        if inside and os.path.isfile(path) and os.path.normcase(path) not in games:
+            return path, games
+    return None, games
+
+
 def raw_source(key):
     """The source export the user dropped, never one of the tool's own outputs (rigged*/, clips/, prepared/).
 
@@ -299,11 +327,18 @@ def raw_source(key):
 
     Folder depth, format (FBX, GLB, glTF, OBJ) and name break any remaining tie, and a choice is printed so an
     ambiguous folder is visible in the run log rather than settled silently.
+
+    A model card (model.json) settles it first: its "model_file" is the source when it exists, and nothing it lists
+    under "game_files" is ever taken for one (_model_json_files).
     """
+    folder = pack_dir(key)
+    named, games = _model_json_files(folder)
+    if named:
+        return named
     hits = [
         p for ext in SOURCE_EXTS
-        for p in glob.glob(os.path.join(glob.escape(pack_dir(key)), "**", "*" + ext), recursive=True)
-        if not _is_output(p, key)
+        for p in glob.glob(os.path.join(glob.escape(folder), "**", "*" + ext), recursive=True)
+        if not _is_output(p, key) and os.path.normcase(os.path.abspath(p)) not in games
     ]
     rank = lambda p: SOURCE_EXTS.index(os.path.splitext(p)[1].lower())
     hits.sort(key=lambda p: (not has_own_textures(p), p.count(os.sep), rank(p), p))
