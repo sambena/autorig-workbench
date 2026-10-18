@@ -3,6 +3,8 @@
 // It talks only to the HTTP API (/api/v1, docs/API.md) and to the embedded Mesh2Motion app through its
 // postMessage bridge (docs/M2M-BRIDGE.md).
 
+import { createViewer } from '/viewer.js'
+
 const TOKEN = document.querySelector('meta[name="autorig-token"]').content
 const $ = (id) => document.getElementById(id)
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -202,11 +204,20 @@ function renderLibrary () {
 }
 
 $('search').oninput = renderLibrary
-$('library').onclick = async (e) => {
+$('library').onclick = (e) => {
   const card = e.target.closest('.card')
-  if (!card) return
-  await selectModel(card.dataset.name)
+  if (card) openModel(card.dataset.name)
+}
+
+// a picked model shows at once: the Rig step comes up with the preview loading, the details fill in as they come
+async function openModel (name) {
+  state.model = name
+  state.details = state.skeleton = state.audit = null      // nothing of the last model shows while this one loads
+  $('model-chip').innerHTML = `Model: <b>${esc(name)}</b>`
   goStep('rig')
+  showPreviewLoading()
+  await selectModel(name)
+  if (state.step === 'rig') enterRig()
 }
 
 async function selectModel (name) {
@@ -286,64 +297,58 @@ function upload (file) {
     }
     panel.hidden = true
     toast(`Added ${data.model.name}`)
-    await loadLibrary()
-    await selectModel(data.model.name)
-    goStep('rig')
+    await openModel(data.model.name)
+    loadLibrary()
   }
   xhr.onerror = () => { $('upload-text').textContent = 'Upload failed: the connection dropped' }
   xhr.send(file)
 }
 
-// ---- picking a file that is already on the server (GET /api/v1/files): only folders the server allows
-const browser = { path: null }
-
-async function browse (path) {
+// ---- new files on the server: one card per model in the server's inbox folders (~/incoming on the box); the
+// server picks the best file of each (GLB before FBX) and skips texture folders, so there is nothing to dig through
+async function showInbox () {
   let d
   try {
-    d = await api('GET', '/files' + (path ? '?path=' + encodeURIComponent(path) : ''))
+    d = await api('GET', '/files/models')
   } catch (e) {
     toast(e.message, true)
     return
   }
-  browser.path = d.path
-  browser.parent = d.parent
   $('library').hidden = true
-  $('browser').hidden = false
-  $('browser-path').textContent = d.path || 'Folders on the server you may use'
-  $('browser-up').disabled = !d.path
-  $('browser-use').hidden = !d.path
-  $('browser-list').innerHTML = d.entries.length
-    ? d.entries.map((x, i) => `<button class="entry" data-i="${i}" type="button"><span class="ico">${x.type === 'dir' ? (x.model ? '◆' : '▸') : '◇'}</span>
-        <span class="nm">${esc(x.name)}</span><span class="sz">${x.model ? 'model folder' : x.bytes ? (x.bytes / 1048576).toFixed(1) + ' MB' : ''}</span></button>`).join('')
-    : '<p class="hint" style="padding:10px">No models or folders here.</p>'
-  for (const b of $('browser-list').querySelectorAll('.entry')) {
-    const x = d.entries[Number(b.dataset.i)]
-    b.onclick = () => (x.type === 'dir' ? browse(x.path) : useServerPath(x.path))   // a folder opens; Use this folder takes it
+  const box = $('inbox')
+  box.hidden = false
+  const back = '<button class="link" id="inbox-back" type="button" style="grid-column:1/-1;justify-self:start">← Back to the library</button>'
+  if (!d.models.length) {
+    box.innerHTML = back + `<p class="hint" style="grid-column:1/-1">No new files. Copy models to ${d.inbox.map((x) => `<code>${esc(x)}</code>`).join(' or ') || 'the server’s inbox folder'}
+      (for example <code>scp Cow.glb autorig:incoming/</code>) and they show up here.</p>`
+  } else {
+    box.innerHTML = back + d.models.map((x, i) => `<button class="card" data-i="${i}" type="button">
+      <div class="thumb">${esc(x.ext.slice(1).toUpperCase())}</div>
+      <div class="meta"><span class="name" title="${esc(x.name)}">${esc(x.name)}</span>
+      <span class="sub">${(x.bytes / 1048576).toFixed(1)} MB · ${esc(new Date(x.modified * 1000).toLocaleDateString())}</span></div></button>`).join('')
+    for (const b of box.querySelectorAll('.card')) b.onclick = () => useServerPath(d.models[Number(b.dataset.i)].path)
   }
+  $('inbox-back').onclick = closeInbox
 }
 
 async function useServerPath (path) {
   try {
     const r = await api('POST', '/models', { path })
     toast(r.existing ? `Opened ${r.model.name}` : `Added ${r.model.name}`)
-    closeBrowser()
-    await loadLibrary()
-    await selectModel(r.model.name)
-    goStep('rig')
+    closeInbox()
+    await openModel(r.model.name)
+    loadLibrary()
   } catch (e) {
     toast(e.message, true)
   }
 }
 
-function closeBrowser () {
-  $('browser').hidden = true
+function closeInbox () {
+  $('inbox').hidden = true
   $('library').hidden = false
 }
 
-$('server-pick').onclick = () => browse(null)
-$('browser-up').onclick = () => browse(browser.parent || null)
-$('browser-use').onclick = () => useServerPath(browser.path)
-$('browser-close').onclick = closeBrowser
+$('server-pick').onclick = showInbox
 
 // ---- the collection the page works on (GET /api/v1/collections): a picker in the header when there is a choice
 let cols = null
@@ -432,30 +437,100 @@ function note (el, html, isError = false) {
   el.hidden = !html
 }
 
+// Mesh2Motion's skeletons as pictures (its own reference images), Auto first; the model's current rig is marked
 function renderTemplates () {
-  const sel = $('template')
-  const keep = sel.value
-  sel.innerHTML = '<option value="auto">Auto: pick from the body</option>' +
-    state.templates.map((t) => `<option value="${esc(t.name)}">${esc(t.title || t.name)}</option>`).join('') +
-    '<option value="classic">Classic (our own skeleton, from rig.json)</option>'
-  if (keep) sel.value = keep
+  const current = state.skeleton?.template
+  if (!state.template) state.template = 'auto'
+  const tiles = [{ name: 'auto', title: 'Auto', clips: null }].concat(state.templates)
+  $('templates').innerHTML = tiles.map((t) => `<button class="tpl${t.name === current ? ' current' : ''}" type="button" data-t="${esc(t.name)}"
+      aria-pressed="${t.name === state.template}" title="${t.name === 'auto' ? 'Pick the skeleton from the body' : esc(t.title)}">
+      ${t.name === 'auto' ? '<div class="auto">✦</div>' : `<img src="/m2m/rigs/reference/${esc(t.name)}.png" alt="" loading="lazy">`}
+      <span>${esc((t.title || t.name).replace(/ \(.*\)$/, ''))}${t.clips ? `<small>${t.clips} clips</small>` : '<small>from the body</small>'}</span></button>`).join('')
+  for (const b of $('templates').querySelectorAll('.tpl')) {
+    b.onclick = () => { state.template = b.dataset.t; renderTemplates() }
+  }
+  $('auto-rig').textContent = state.template === 'auto' ? 'Auto rig' : `Rig as ${state.template}`
 }
 
-function rigPlaceholder () {
-  const x = state.models.find((y) => y.name === state.model)
-  const img = x?.thumbnail ? `<img src="${esc(withToken(x.thumbnail))}" alt="">` : ''
-  $('rig-placeholder').innerHTML = `<div>${img}<p>${state.skeleton
-    ? 'Adjust joints opens the Mesh2Motion editor here with our fitted skeleton.'
-    : 'Auto rig fits a Mesh2Motion skeleton to the model, skins it and audits it.'}</p></div>`
+// ---- the preview (viewer.js): the rigged model with its clips when there is one, else the source
+let viewer = null
+let previewKey = ''
+
+function viewerReady () {
+  if (!viewer) viewer = createViewer($('viewer'), { urlModifier: (u) => (u.includes('/api/v1/') && !u.includes('t=') ? withToken(u) : u) })
+  return viewer
 }
+
+function showPreviewLoading () {
+  $('rig-placeholder').hidden = true
+  $('preview').hidden = false
+  $('viewer-busy').hidden = false
+  $('viewer-busy').textContent = 'Loading the model…'
+}
+
+// what to show: m2m-rig's preview (rig and clips), else any rigged GLB or FBX, else the source
+function previewSource () {
+  const st = state.details?.status || {}
+  const files = state.details?.files || []
+  const rf = st.rig_folder || 'rigged'
+  const by = (p) => files.find((f) => f.path === p)
+  const ext = (f) => f.path.split('.').pop().toLowerCase()
+  const top = files.filter((f) => !f.path.includes('/'))
+  const pick =
+    by(`${rf}/preview.glb`) || by(`${rf}/${state.model}.glb`) ||
+    files.find((f) => f.path.startsWith(rf + '/') && ext(f) === 'glb' && !f.path.includes('/audit/')) ||
+    by(`${rf}/${state.model}.fbx`) ||
+    (st.source && ['.glb', '.fbx', '.gltf'].includes(st.source_ext) && by(st.source)) ||
+    top.find((f) => ext(f) === 'glb') || top.find((f) => ext(f) === 'fbx')
+  return pick ? { url: withToken(pick.url), kind: ext(pick), file: pick.path } : null
+}
+
+async function showPreview () {
+  const src = previewSource()
+  $('preview').hidden = false
+  $('rig-placeholder').hidden = true
+  if (!src) {
+    $('viewer-busy').hidden = false
+    $('viewer-busy').textContent = `No GLB or FBX to show (${state.details?.status?.source_ext || 'no source'}).`
+    return
+  }
+  const key = state.model + '|' + src.file + '|' + (state.details?.files || []).find((f) => f.path === src.file)?.bytes
+  if (key === previewKey) return
+  previewKey = key
+  $('viewer-busy').hidden = false
+  $('viewer-busy').textContent = 'Loading the model…'
+  let info
+  try {
+    info = await viewerReady().load(src.url, src.kind)
+  } catch (e) {
+    previewKey = ''
+    $('viewer-busy').textContent = 'Could not show it: ' + e.message
+    return
+  }
+  if (key !== previewKey) return                      // another model was picked meanwhile
+  $('viewer-busy').hidden = true
+  const what = state.skeleton ? `${state.skeleton.template} rig` : info.rigged ? 'rigged' : 'not rigged yet'
+  $('viewer-label').textContent = `${state.model} · ${what}${info.clips.length ? ` · ${info.clips.length} clip${info.clips.length > 1 ? 's' : ''}` : ''}`
+  const sel = $('viewer-clip')
+  sel.hidden = !info.clips.length
+  sel.innerHTML = info.clips.map((c) => `<option>${esc(c)}</option>`).join('')
+  const first = info.clips.find((c) => /idle/i.test(c)) || info.clips.find((c) => !/rest/i.test(c)) || info.clips[0]
+  if (first) { sel.value = first; viewer.play(first) }
+  $('viewer-bones-label').hidden = !info.rigged
+  $('viewer-bones').checked = false
+}
+
+$('viewer-clip').onchange = (e) => viewer?.play(e.target.value)
+$('viewer-bones').onchange = (e) => viewer?.showSkeleton(e.target.checked)
 
 function enterRig () {
   bridge.hide()
-  $('rig-placeholder').hidden = false
+  $('rig-placeholder').hidden = true
   setAdjusting(false)
   note($('rig-note'), '')
   renderGrade()
-  rigPlaceholder()
+  renderTemplates()
+  if (state.details) showPreview()
   $('adjust').disabled = !state.skeleton
   $('adjust').title = state.skeleton ? '' : 'Rig the model first'
 }
@@ -489,7 +564,8 @@ async function rigJobDone (view) {
   $('rig-job').hidden = false
 }
 
-$('auto-rig').onclick = () => runRig($('template').value)
+$('auto-rig').onclick = () => runRig(state.template || 'auto')
+$('classic-rig').onclick = () => runRig('classic')
 
 // The model Mesh2Motion opens: the rigged GLB m2m-rig wrote, whose coordinates the fitted joints are in (turned to
 // face the template's way, standing on the ground); the source itself only when there is no rigged GLB yet
@@ -511,6 +587,7 @@ function setAdjusting (on) {
 
 // Opens Mesh2Motion in a stage with our model and fitted skeleton, at `step` (edit or animate)
 async function openInM2M (stage, placeholder, step) {
+  if (stage.id === 'rig-stage') $('preview').hidden = true
   const model = m2mModelUrl()
   if (!model) throw new Error(`Mesh2Motion opens GLB or FBX; this model's source is ${state.details?.status?.source_ext || 'missing'}`)
   placeholder.hidden = true

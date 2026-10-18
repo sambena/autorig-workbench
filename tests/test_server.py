@@ -155,8 +155,14 @@ class ServerTest(unittest.TestCase):
             self.assertIn(b"/api/v1", r.read())
         # the old pages went with M5 (docs/OLD-UI.md maps them to the API and CLI)
         for old in ("/help.html", "/viewer.html", "/spec_editor.html", "/studio.html", "/workbench.js",
-                    "/viewer.js", "/spec_editor.js", "/vendor/three/build/three.module.js"):
+                    "/spec_editor.js"):
             self.assertEqual(self.status("GET", old), 404, old)
+        # the preview (gui/viewer.js) and its vendored three.js: served like /app.js, nothing outside vendor/
+        for ok in ("/viewer.js", "/vendor/three/build/three.module.js", "/vendor/three/examples/jsm/loaders/FBXLoader.js"):
+            with urllib.request.urlopen(self.base + ok) as r:
+                self.assertTrue(r.headers["Content-Type"].startswith("text/javascript"), ok)
+        for bad in ("/vendor/three/LICENSE", "/vendor/../server.py", "/vendor/%2e%2e/api_v1.py"):
+            self.assertIn(self.status("GET", bad), (400, 403, 404), bad)
 
     def test_1b_mesh2motion_static(self):
         """/m2m/ serves the built Mesh2Motion app without the token, and nothing outside its folder."""

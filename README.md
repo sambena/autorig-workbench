@@ -127,6 +127,10 @@ server, but only the folders the server allows: list them in `.autorig_server.js
 (`collections`, `browse`), or run your own copy with `--allow-any-folder` to open any folder. docs/API.md has the
 format. AI Assist (Fix this rig) is in the page's Advanced panel, with the cost shown before every request.
 
+**The page.** Pick a model from the library (or drop one, or take one from the server's inbox) and it shows at once in
+a 3D preview: its rig and clips when it has them. Mesh2Motion's nine skeletons are picture tiles beside it; Auto
+picks one from the body. three.js 0.186 is vendored for the preview (`autorig/gui/vendor/three/VERSION.txt`).
+
 **API.** Scripts, AI agents and Unity drive the workbench through `/api/v1` with a Bearer token: add a model, rig it on a
 Mesh2Motion skeleton, attach clips, export. [docs/API.md](docs/API.md) has examples; `/api/v1/openapi.json` describes
 every route. Every step and tool is listed once, in `autorig/core/steps_registry.py`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
@@ -205,6 +209,16 @@ AI is off until one is picked in its settings. Every request shows its worst-cas
 button before it runs. Paid AI stops at a monthly limit ($5 by default), and every call's cost is logged. Keys stay
 on this computer, in `.autorig_ai.json`, which git ignores. See [docs/AI-ASSIST.md](docs/AI-ASSIST.md), which also
 lists the next tools planned for it.
+
+## Generate
+
+`POST /api/v1/generate` makes a model with [Tripo](https://www.tripo3d.ai), [Meshy](https://www.meshy.ai) or
+[Hyper3D Rodin](https://hyper3d.ai) and drops it into the open collection; `POST /api/v1/pipeline` does that and then
+rigs and animates it. Every generation is priced first and spent only by a second call that confirms that price.
+Generation is off until the server's owner turns it on (`python scripts/generate_settings.py --on`), and each
+provider has a daily and monthly cap in its own credits. Keys stay in `.autorig_generate.json`, which git ignores. A
+model already made on one of those accounts imports by its task id, free. See [docs/GENERATE.md](docs/GENERATE.md),
+which also covers Tripo's DCC Bridge. The page's Generate tab is next.
 
 ## Model Studio
 

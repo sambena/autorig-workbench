@@ -34,15 +34,25 @@ class ApiV1Test(unittest.TestCase):
         column_obj(os.path.join(cls.other, "Rock", "Rock.obj"))
         column_obj(os.path.join(cls.inbox, "Post.obj"))
         with open(os.path.join(cls.inbox, "notes.txt"), "w") as fh: fh.write("not a model")
+        # a downloaded model as Tripo and others hand it over: the same model as FBX and GLB, a texture folder
+        os.makedirs(os.path.join(cls.inbox, "Dog", "Dog.fbm"))
+        for f in ("Dog/Dog.fbx", "Dog/Dog.glb", "Dog/Dog.fbm/skin.png"):
+            with open(os.path.join(cls.inbox, *f.split("/")), "wb") as fh: fh.write(b"x")
         config = os.path.join(cls.tmp, "server.json")
         with open(config, "w") as fh:
             json.dump({"collections": [{"name": "Other", "path": cls.other}], "browse": [cls.inbox]}, fh)
         env = {k: v for k, v in os.environ.items() if k not in (
-            "AUTORIG_ALLOW_ANY_FOLDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")}
+            "AUTORIG_ALLOW_ANY_FOLDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
+            "TRIPO_API_KEY", "MESHY_API_KEY", "HYPER3D_API_KEY")}
         env.update(AUTORIG_URL_FILE=url_file, AUTORIG_CONFIG=config,
                    AUTORIG_AI_FILE=os.path.join(cls.tmp, "ai.json"),
                    AUTORIG_AI_USAGE_FILE=os.path.join(cls.tmp, "ai_usage.jsonl"),
-                   AUTORIG_ROOTS_FILE=os.path.join(cls.tmp, "roots.json"))
+                   AUTORIG_ROOTS_FILE=os.path.join(cls.tmp, "roots.json"),
+                   # generation (tests/test_generate.py covers it): no keys, and no provider reachable
+                   AUTORIG_GENERATE_FILE=os.path.join(cls.tmp, "generate.json"),
+                   AUTORIG_GENERATE_USAGE_FILE=os.path.join(cls.tmp, "generate_usage.jsonl"),
+                   AUTORIG_TRIPO_URL="http://127.0.0.1:9", AUTORIG_MESHY_URL="http://127.0.0.1:9",
+                   AUTORIG_RODIN_URL="http://127.0.0.1:9")
         cls.proc = subprocess.Popen([sys.executable, "-m", "autorig", "--models", cls.models, "--port", "0",
                                      "--no-browser", "--token", TOKEN], cwd=REPO, env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -161,7 +171,7 @@ class ApiV1Test(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/v1/models/nothing")[0], 404)
         # JSON adds: https only; provider task ids come with generation (M8)
         self.assertEqual(self.req("POST", "/api/v1/models", body={"url": "http://example.com/a.glb"})[0], 400)
-        self.assertEqual(self.req("POST", "/api/v1/models", body={"provider": "tripo", "task_id": "x"})[0], 501)
+        self.assertEqual(self.req("POST", "/api/v1/models", body={"provider": "tripo", "task_id": "x"})[0], 412)  # no key
 
     def test_6_rig_animate_skeleton(self):
         if self.req("GET", "/api/v1/models/column")[0] == 404:
@@ -235,7 +245,13 @@ class ApiV1Test(unittest.TestCase):
         self.assertIn(os.path.realpath(self.inbox), roots)
         code, d = self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.inbox))
         self.assertEqual(code, 200)
-        self.assertEqual([e["name"] for e in d["entries"]], ["Post.obj"])        # models only, no notes.txt
+        self.assertEqual([e["name"] for e in d["entries"]], ["Dog", "Post.obj"])  # models and folders, no notes.txt
+        # the flat inbox: one entry per model, its best file (GLB over FBX), no texture folders, no collections
+        code, ib = self.req("GET", "/api/v1/files/models")
+        self.assertEqual(code, 200)
+        got = sorted((x["name"], x["ext"]) for x in ib["models"])
+        self.assertEqual(got, [("Dog", ".glb"), ("Post", ".obj")])
+        self.assertEqual([os.path.realpath(p) for p in ib["inbox"]], [os.path.realpath(self.inbox)])
         self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.tmp))[0], 403)
         self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(
             os.path.join(self.inbox, "..")))[0], 403)
