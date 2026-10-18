@@ -183,6 +183,15 @@ The fork adds an embedding bridge, so a workbench page can drive Mesh2Motion in 
 joints into a template, read back the joints the user edits, pick clips and return exports as a Blob. The protocol
 is in [docs/M2M-BRIDGE.md](docs/M2M-BRIDGE.md), and `/m2m/bridge-test.html` exercises every message.
 
+**Clips on Mixamo people.** A person already rigged on Mixamo can play Mesh2Motion's 178 human clips without being
+rigged again. The clips are written as takes into `<Name>_m2m.fbx`, beside the shipped file, which is left alone:
+
+    python autorig/cli/run.py m2m-clips TornadoTitans/Ice_Age26_Tripo --clips "Idle,Walk,Run"
+    python autorig/cli/run.py m2m-clips --list
+
+The feet stay planted (leg IK onto the clip's ankles). `clip-check` scores each take. Only `*_RM` clips travel, and
+only with `--root-motion`. See docs/PLAN.md, "M6 notes".
+
 ## Clip motion
 
 Clips are keyed, then planted feet are held where they land; `clip-check` scores foot skate. See

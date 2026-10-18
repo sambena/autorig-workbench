@@ -163,6 +163,16 @@ TOOLS = {
                     opt("out", "output folder", path="out", required=True),
                     opt("height", "height in metres", type="number"),
                     opt("clips", "Engine=clip pairs, e.g. Idle=idle,Walk=walk")]},
+    "m2m-clips": {
+        "title": "Mesh2Motion clips on a Mixamo person", "runner": "python", "script": "m2m_clips.py",
+        "help": "Mesh2Motion's human clips baked onto a Mixamo-rigged person as takes, beside the shipped file",
+        "options": [opt("clips", 'clip names, e.g. "Idle,Walk,Run" or "Idle_A,Walk,Jog,Roll_RM"', required=True),
+                    opt("rig", "Mixamo's download", path="in", required=True), opt("name", "game name", required=True),
+                    opt("source", "the GLB source, for its maps", path="in"),
+                    opt("out", "output folder", path="out", required=True),
+                    opt("root-motion", "*_RM clips keep their travel", type="boolean"),
+                    opt("replace", "write <Name>.fbx over the shipped file", type="boolean"),
+                    opt("fps", "frame rate", type="number", default=30)]},
     "game-prop": {
         "title": "Game prop", "runner": "blender", "script": "game_prop.py",
         "help": "a generated prop as a game prop: metres, facing, LODs, maps, wheels",

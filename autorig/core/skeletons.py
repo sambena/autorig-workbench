@@ -4,6 +4,10 @@
 # rerig.py and rerig_humanoid.py write describe()'s result into each model's QA log; publish.py copies it into the
 # card (model.json, "rig" > "skeleton"); make_clips.py and any engine importer read it there. A reader asks "the head", "the
 # left legs, front to back", "the tail", and gets bone names. It never parses a name to guess a role.
+#
+# The mesh2motion convention (Mesh2Motion's Human rig, static/rigs/rig-human.glb) was checked bone for bone against
+# Mesh2Motion's own Mixamo table, src/retarget/bone-automap/MixamoMapper.ts (MIT, (c) 2025 Scott Petrovic:
+# https://github.com/Mesh2Motion/mesh2motion-app); tests/test_m2m_clips.py repeats that check against the submodule.
 
 import re
 
@@ -153,6 +157,13 @@ CONVENTIONS = {
         "clavicle_l", "clavicle_r", "upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r",
         "hand_l", "hand_r", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r"
     },
+    # Mesh2Motion's Human rig: Unreal's names with one neck bone, a root above the pelvis and *_leaf end bones
+    "mesh2motion": {
+        "root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head", "head_leaf",
+        "clavicle_l", "clavicle_r", "upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r",
+        "hand_l", "hand_r", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r",
+        "ball_leaf_l", "ball_leaf_r"
+    },
     "valve": {
         "bip01_pelvis", "bip01_spine", "bip01_spine1", "bip01_spine2", "bip01_neck1", "bip01_head1",
         "bip01_l_clavicle", "bip01_r_clavicle", "bip01_l_upperarm", "bip01_r_upperarm",
@@ -172,6 +183,7 @@ CORE_ROLES = {
     # Neck / Head / Face
     "neck": "neck", "neck01": "neck", "neck1": "neck", "necktwist01": "neck", "spine004": "neck",
     "head": "head", "head1": "head", "spine005": "head", "spine006": "head", "skull": "head",
+    "headtopend": "headtop", "headtop": "headtop",
     "jaw": "jaw", "jawroot": "jaw", "mandible": "jaw", "chin": "jaw",
     # Shoulder / Clavicle / Girdle
     "clavicle": "shoulder", "shoulder": "shoulder", "scapula": "shoulder", "collar": "shoulder",
@@ -240,6 +252,16 @@ CONVENTION_ROLES = {
         "clavicle_l": "shoulder", "upperarm_l": "arm", "lowerarm_l": "forearm", "hand_l": "hand",
         "thigh_l": "thigh", "calf_l": "shin", "foot_l": "foot", "ball_l": "toe",
     }),
+    # Mesh2Motion's Human: root carries the travel of the *_RM clips only, pelvis is the hips; the *_leaf ends pair
+    # with Mixamo's end bones (HeadTop_End, Toe_End, the fingers' 4th), as MixamoMapper.ts pairs them
+    "mesh2motion": _sided({
+        "root": None, "pelvis": "hips", "spine_01": "spine", "spine_02": "spine1", "spine_03": "spine2",
+        "neck_01": "neck", "head": "head", "head_leaf": "headtop",
+        "clavicle_l": "shoulder", "upperarm_l": "arm", "lowerarm_l": "forearm", "hand_l": "hand",
+        "thigh_l": "thigh", "calf_l": "shin", "foot_l": "foot", "ball_l": "toe", "ball_leaf_l": "toetip",
+        **{"%s_%02d%s_l" % (f, i, "_leaf" if i == 4 else ""): "%s%d" % (f, i)
+           for f in ("thumb", "index", "middle", "ring", "pinky") for i in (1, 2, 3, 4)},
+    }),
 }
 
 
@@ -282,10 +304,17 @@ def detect_convention(bone_names):
     low = {n.lower() for n in bone_names}
     if {"spine_04", "spine_05", "pelvis"} <= low:
         return "unreal5", 1.0
+    # Mesh2Motion's Human: Unreal's names, told apart by its *_leaf end bones (UE4's mannequin has none, and a root
+    # bone too, so name counting alone would call a UE4 rig Mesh2Motion's)
+    if {"pelvis", "spine_03", "thigh_l"} <= low and "neck_02" not in low and \
+            any(n == "head_leaf" or n.endswith("_leaf_l") for n in low):
+        return "mesh2motion", 1.0
 
     scores = {}
     total = len(bone_names)
     for conv, key_set in CONVENTIONS.items():
+        if conv == "mesh2motion":                       # only by its signature above
+            continue
         matches = sided = 0
         for n in bone_names:
             clean = PREFIX_RE.sub("", n.strip()).lower()

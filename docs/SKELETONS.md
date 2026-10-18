@@ -255,13 +255,19 @@ When importing pre-rigged models, Autorig Workbench's semantic bone engine (`aut
 | **VRoid / VRM** | `J_Bip_C_Hips`, `J_Bip_L_UpperArm`, `J_Bip_L_UpperLeg` | `vrm` |
 | **Daz Genesis 8/9** | `hip`, `abdomenLower`, `lShldrBend`, `lThighBend` | `daz` |
 | **Unreal Engine 5 Mannequin** | `pelvis`, `spine_01` ... `spine_05`, `upperarm_l` | `unreal5` |
+| **Mesh2Motion Human** (`rig-human.glb`) | `root`, `pelvis`, `spine_01` ... `spine_03`, `neck_01`, `head_leaf`, `ball_leaf_l` | `mesh2motion` |
 
-For SMPL, VRM, Daz and UE5, the name guesser alone gets roles wrong. `CONVENTION_ROLES` therefore lists their
+For SMPL, VRM, Daz, UE5 and Mesh2Motion, the name guesser alone gets roles wrong. `CONVENTION_ROLES` therefore lists their
 exact names, and `canonical_roles()` uses that table first, for the retargeter and for imported rigs:
 
 - SMPL's `L_Shoulder` is the upper arm, and its `L_Collar` is the clavicle.
 - Daz's `...Bend` bones bend, but its `...Twist` bones play no role.
 - UE5's five spine bones map to three roles (`spine_01`, `spine_03`, `spine_05`), and its `root` stays root.
+- Mesh2Motion's Human is told from UE4 by its `*_leaf` end bones (UE4 has a `root` too, and `neck_02`). Its `root`
+  plays no role: it carries the travel of the `*_RM` clips only, and `pelvis` is the hips. The leaf ends pair with
+  Mixamo's end bones (`head_leaf` with `HeadTop_End`, `ball_leaf_l` with `LeftToe_End`, `index_04_leaf_l` with
+  `LeftHandIndex4`). `tests/test_m2m_clips.py` checks every pair against Mesh2Motion's own Mixamo table
+  (`src/retarget/bone-automap/MixamoMapper.ts`, MIT).
 - In autorig's own rigs, a bone named `root` gives the hips role to a `hips` or `pelvis` bone.
 
 The tables were checked against Rokoko Studio Live's retargeter (LGPL-3.0) and Expy Kit (GPL-3.0).
