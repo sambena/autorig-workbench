@@ -16,8 +16,8 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["tripo", "build", "placed", "humanoid", "custom"],
-          "description": "Rig builder type: 'tripo' (reuse joints), 'build' (trace mesh), 'placed' (hand-placed with rules), 'humanoid' (standard biped), or 'custom' (script)."
+          "enum": ["tripo", "build", "placed", "humanoid", "m2m", "custom"],
+          "description": "Rig builder type: 'tripo' (reuse joints), 'build' (trace mesh), 'placed' (hand-placed with rules), 'humanoid' (standard biped), 'm2m' (a Mesh2Motion skeleton fitted by steps/m2m_rig.py, see the m2m section), or 'custom' (script)."
         },
         "skeleton": {
           "type": "string",
@@ -303,6 +303,29 @@
         }
       },
       "required": ["kind"]
+    },
+    "m2m": {
+      "type": "object",
+      "description": "For kind 'm2m' (steps/m2m_rig.py): which Mesh2Motion skeleton, where its joints are, and what was baked.",
+      "properties": {
+        "template": {
+          "type": "string",
+          "enum": ["human", "fox", "horse", "bird", "dragon", "kaiju", "spider", "snake", "shark"],
+          "description": "The Mesh2Motion skeleton template (core/m2m_templates.py)."
+        },
+        "joints": {
+          "type": "object",
+          "description": "Every bone's head by Mesh2Motion's bone name, [x, y, z] in metres on the body as modelled (the rigged files' own coordinates, before a template rest straightens a snake or a fish), in the axes named by `axes`. The API's skeleton and the Mesh2Motion bridge use this shape; m2m_rig.py --joints takes it back to re-fit from edited joints.",
+          "additionalProperties": {"$ref": "#/$defs/vec3"}
+        },
+        "axes": {"type": "string", "enum": ["gltf", "blender"], "description": "The joints' axes: 'gltf' (Y up, facing +Z, as Mesh2Motion and three.js see it; the default) or 'blender' (Z up, facing -Y)."},
+        "rest": {"type": "string", "enum": ["template", "as-modelled"], "description": "The exported rest pose: the template's (snakes and fish are straightened along its line) or the body as modelled."},
+        "clips": {"type": "array", "items": {"type": "string"}, "description": "The Mesh2Motion clips baked, by their own names."},
+        "skin": {"type": "string", "enum": ["autorig"], "description": "The skinning method ('m2m' arrives with the skinning bake-off)."},
+        "naming": {"type": "string", "enum": ["default", "mixamo"], "description": "Bone names written: Mesh2Motion's own, or Mixamo's (human only)."},
+        "target": {"type": "string", "enum": ["unity", "generic"], "description": "FBX axes: Unity's (roots at rotation 0, scale 1) or Blender's exporter's."}
+      },
+      "required": ["template"]
     },
     "humanoid": {
       "type": "object",

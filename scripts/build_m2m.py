@@ -8,6 +8,8 @@ import argparse, os, shutil, subprocess, sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(REPO, "third_party", "mesh2motion-app")
 OUT = os.path.join(REPO, "autorig", "gui", "m2m")
+# our test page for the embedding bridge (docs/M2M-BRIDGE.md), served next to create.html at /m2m/bridge-test.html
+BRIDGE_TEST = os.path.join(REPO, "autorig", "gui", "m2m_bridge_test.html")
 
 
 def npm(*args):
@@ -29,6 +31,7 @@ def main():
     dist = os.path.join(APP, "dist")
     if os.path.isdir(OUT): shutil.rmtree(OUT)
     shutil.copytree(dist, OUT, ignore=shutil.ignore_patterns("*.map"))
+    shutil.copyfile(BRIDGE_TEST, os.path.join(OUT, "bridge-test.html"))
     print("build_m2m: Mesh2Motion built into", OUT)
 
 

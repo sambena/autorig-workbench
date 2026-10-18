@@ -142,6 +142,27 @@ binary FBX (a browser may still call it `.tmp`), gives it the source's full colo
 axes (unity_fbx, inside the folder with its `.fbm`, so the texture paths come out relative). In Unity, import the `.fbm`
 folder before the FBX.
 
+### Any body on a Mesh2Motion skeleton
+
+[Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app)'s clips (about 250, CC0) play only on its own nine
+skeletons, so `m2m-rig` fits one of those skeletons to the mesh instead of building one: the bones keep their names,
+parents and roll frames and move into the body, then the step skins, audits and bakes:
+
+```bash
+python autorig/cli/run.py m2m-rig --in Cow.glb --name CowHolstein --height 1.5 --out <folder>                # template picked
+python autorig/cli/run.py m2m-rig --model Ice_Age26_Tripo --height 1.8 --clips idle,walk,run --naming mixamo   # into the model's folder
+python autorig/cli/run.py m2m-rig --in Snake.glb --name Snake --template snake --clips all --out <folder>
+python autorig/cli/run.py m2m-rig --in Cow.glb --name CowHolstein --joints <folder>/rig.json --out <folder>      # after editing joints
+```
+
+It writes `<name>.glb` (each clip an animation), `<name>.fbx` (takes, Unity's axes unless `--target generic`),
+`<name>.blend`, `preview.glb`, `rig.json` (`rig.kind: "m2m"`, the template and every joint: docs/SPEC.md, "`m2m`"),
+the card (`model.json`, merged, the game's own fields kept) and `<name>_m2m.json`, and grades it with `audit.py`.
+`--clips` takes roles (`idle`, `walk`, `run`, `trot`, `fly`... per template), Mesh2Motion's own clip names, either
+with `=engine name`, or `all`. A body with no template (a floater, a prop) exits 3: rig it with `rerig.py` and
+`make_clips.py` as before. The Mesh2Motion files come from `--m2m`, else the `third_party/mesh2motion-app`
+submodule, `AUTORIG_M2M` or `~/src/mesh2motion-app`.
+
 ### Grades
 
 A pass limit of zero tears made nearly every rig a red FAIL, though one tear on one extreme bend and 150 across the

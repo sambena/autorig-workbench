@@ -12,7 +12,7 @@ pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch run
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The Mesh2Motion web app is built in and served at `/m2m/`, the first step of moving animation onto it (docs/PLAN.md, "M"). The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The Mesh2Motion web app is built in and served at `/m2m/`, the first step of moving animation onto it (docs/PLAN.md, "M"). `run.py m2m-rig` fits any of its nine skeletons to a mesh (picked from the body plan, or named), skins and audits it, and bakes its clips into GLB and FBX; the grades on generated meshes are still mostly FAIL, which the skinning bake-off (M2b) takes on. The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -62,7 +62,7 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
 
 `run.py game-prop` (a generated prop as a game prop: metres, facing, LODs, maps, a one-piece truck's tyres cut out),
 `run.py game-parts` (a game prop's moving parts, such as a pumpjack's beam or a windpump's fan, cut out of LOD0 as
-their own meshes at their pivots), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
+their own meshes at their pivots), `run.py m2m-rig` (any body on one of Mesh2Motion's nine skeletons, playing its clips: docs/PIPELINE.md), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
 `run.py crop-cards` (flat picture cards of plants for a foliage atlas). See [docs/GAME-TOOLS.md](docs/GAME-TOOLS.md).
 
 ## Working folder and model organiser
@@ -177,6 +177,11 @@ Then open `http://127.0.0.1:8765/m2m/`.
 Mesh2Motion skeleton, attach clips, export. [docs/API.md](docs/API.md) has examples; `/api/v1/openapi.json` describes
 every route. Every step and tool is listed once, in `autorig/core/steps_registry.py`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
 unaffected.
+
+The fork adds an embedding bridge, so a workbench page can drive Mesh2Motion in an iframe. URL parameters
+(`create.html?embed=1&model=...&template=...&skeleton=...&step=animate`) and `postMessage` requests load our fitted
+joints into a template, read back the joints the user edits, pick clips and return exports as a Blob. The protocol
+is in [docs/M2M-BRIDGE.md](docs/M2M-BRIDGE.md), and `/m2m/bridge-test.html` exercises every message.
 
 ## Clip motion
 
