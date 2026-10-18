@@ -1020,6 +1020,42 @@ def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0):
     return unreached, bare, off, gated, used
 
 
+def side_rule(mesh, arm):
+    """Skin on one side of the body is never moved by the other side's bones. Bone heat on a voxel copy runs across
+    where two legs nearly touch (a cow's front legs, her hocks), so some of a left leg's skin followed the right leg
+    and a walk pulled sheets of skin between them (Cow_Holstein: 572 leg weights on the wrong side). A weight from a
+    _l bone on a vertex well to the right goes to the matching _r bone, and the other way round; a vertex near the
+    midline (chest, belly, tail) keeps both sides. Returns the vertices changed."""
+    pair = {}
+    for b in arm.data.bones:
+        m = re.match(r"^(.*)_([lr])$", b.name)
+        if m and b.name in mesh.vertex_groups:
+            other = m.group(1) + ("_r" if m.group(2) == "l" else "_l")
+            if other in mesh.vertex_groups: pair[b.name] = (m.group(2), other)
+    if not pair: return 0
+    xs = {"l": [], "r": []}
+    for b in arm.data.bones:
+        if b.name in pair: xs[pair[b.name][0]].append(b.head_local.x)
+    if not xs["l"] or not xs["r"]: return 0
+    lx, rx = sum(xs["l"]) / len(xs["l"]), sum(xs["r"]) / len(xs["r"])
+    if abs(lx - rx) < 1e-4: return 0
+    mid, margin = (lx + rx) / 2, abs(lx - rx) * 0.15      # inside the margin a vertex is on the midline
+    left_sign = 1 if lx > rx else -1
+    index = {mesh.vertex_groups[n].index: n for n in pair}
+    changed = 0
+    for v in mesh.data.vertices:
+        off = (v.co.x - mid) * left_sign
+        if abs(off) < margin: continue
+        side = "l" if off > 0 else "r"
+        moves = [(g.group, g.weight) for g in v.groups if g.group in index and pair[index[g.group]][0] != side and g.weight > 0]
+        for gi, w in moves:
+            name = index[gi]
+            mesh.vertex_groups[name].remove([v.index])
+            mesh.vertex_groups[pair[name][1]].add([v.index], w, 'ADD')
+        if moves: changed += 1
+    return changed
+
+
 def confine(mesh, arm, leg_of, shape, belly):
     """Below the belly a leg bone only moves the skin of its own leg: its weight fades out past the leg's outline (so
     an udder or a belly between the legs isn't dragged by them), and skin left with no weight goes to the nearest
@@ -1345,8 +1381,9 @@ def run(a):
 
     # the skin
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
-    after = (lambda: log.__setitem__("confined", confine(mesh, arm, leg_of, shape, A["belly"]))) \
-        if leg_of and fam in ("legged", "human") else None
+    def after():
+        if fam in ("legged", "human"): log["side_fixed"] = side_rule(mesh, arm)      # each side's bones, its own skin
+        if leg_of and fam in ("legged", "human"): log["confined"] = confine(mesh, arm, leg_of, shape, A["belly"])
     t_skin = time.time()
     if method == "m2m":
         # Mesh2Motion's own: closest bone midpoint, its correctors and smoothing, on the fitted joints as they are
