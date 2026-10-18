@@ -5,6 +5,7 @@
 # GLB checked by steps/clip_check.py on three of the template's clips. Results: docs/SKIN-BAKEOFF.md.
 #
 #   python3 scripts/skin_bakeoff.py --out ~/bakeoff [--only Horse_Bay,human_sample] [--jobs 3] [--models <asset-packs>]
+#           [--methods autorig] [--rig-args "--blend 0.8"]       (one method only: quicker while working on it; the m2m run needs the autorig one)
 #
 # Run it on the autorig box (model work runs there). It writes nothing into asset-packs: every output goes under
 # --out, <out>/<label>/<method>/. The m2m run is given the autorig run's fitted joints (--joints), so both skin the
@@ -78,19 +79,19 @@ def tagged(log, tag):
     return None
 
 
-def one(row, models, out):
+def one(row, models, out, methods=METHODS, extra=()):
     label, t, src, height, what = row
     path = os.path.join(SAMPLES, src[7:]) if src.startswith("sample:") else os.path.join(models, src)
     res = {"label": label, "template": t, "source": src, "what": what, "methods": {}}
     if not os.path.exists(path):
         res["error"] = "source not found: " + path
         return res
-    for method in METHODS:
+    for method in methods:
         d = os.path.join(out, label, method)
         os.makedirs(d, exist_ok=True)
         argv = ["--in", path, "--name", label, "--out", d, "--template", t, "--height", str(height),
                 "--clips", clips_for(t), "--skin", method, "--format", "glb,fbx", "--target", "generic",
-                "--no-preview"]
+                "--no-preview"] + list(extra)
         if method != METHODS[0]:
             joints = os.path.join(out, label, METHODS[0], label + "_m2m.json")
             if os.path.exists(joints): argv += ["--joints", joints]
@@ -156,15 +157,22 @@ def main():
     p.add_argument("--models", default=os.environ.get("AUTORIG_MODELS") or os.path.expanduser("~/src/asset-packs"))
     p.add_argument("--only", default="")
     p.add_argument("--jobs", type=int, default=3)
+    p.add_argument("--methods", default=",".join(METHODS))
+    p.add_argument("--rig-args", dest="rig_args", default="", help="more m2m_rig arguments, e.g. \"--blend 0.8\"")
     a = p.parse_args()
+    methods = [m for m in METHODS if m in a.methods.split(",")]
     out = os.path.abspath(os.path.expanduser(a.out))
     os.makedirs(out, exist_ok=True)
     only = {s.strip() for s in a.only.split(",") if s.strip()}
     rows = [r for r in MODELS if not only or r[0] in only]
     with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
-        results = list(pool.map(lambda r: one(r, a.models, out), rows))
+        results = list(pool.map(lambda r: one(r, a.models, out, methods, a.rig_args.split()), rows))
     path = os.path.join(out, "results.json")
     old = json.load(open(path)) if os.path.exists(path) else []
+    for r in results:            # a method not run this time keeps its last result
+        prev = next((x for x in old if x["label"] == r["label"]), None)
+        if prev:
+            for m, v in prev.get("methods", {}).items(): r["methods"].setdefault(m, v)
     keep = [r for r in old if r["label"] not in {x["label"] for x in results}]
     order = [r[0] for r in MODELS]
     allr = sorted(keep + results, key=lambda r: order.index(r["label"]) if r["label"] in order else 999)
