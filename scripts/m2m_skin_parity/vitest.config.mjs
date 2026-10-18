@@ -11,6 +11,8 @@ const m2m = resolve(repo, 'third_party', 'mesh2motion-app')
 
 export default {
   root: repo,
+  // vite's caches go in the submodule's node_modules (git-ignored there), not a node_modules of ours
+  cacheDir: resolve(m2m, 'node_modules', '.vite-parity'),
   // one copy of three for this harness and the solvers, so instanceof Bone holds across them
   resolve: { alias: { three: resolve(m2m, 'node_modules', 'three', 'build', 'three.module.js') } },
   server: { fs: { allow: [repo] } },
