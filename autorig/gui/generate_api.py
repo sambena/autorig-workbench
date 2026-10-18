@@ -204,13 +204,15 @@ def _run(app, srv, api, j, ad, key, state, s, then):
                 if misses >= 10: raise
                 _update(srv, j, error="polling: %s (retrying)" % ex)
                 continue
-            _update(srv, j, state=status, progress=progress, error="")
+            # a final state is shown only once its ledger row is written and (for done) the model is placed
             if status == "failed":
                 ledger.add(j["provider"], -held, "released: the task failed", job=j["id"], task_id=j["task_id"])
-                _update(srv, j, credits_charged=0, error=why or "the generation failed", finished=time.time())
+                _update(srv, j, state="failed", progress=progress, credits_charged=0,
+                        error=why or "the generation failed", finished=time.time())
                 return
             if status == "done":
                 break
+            _update(srv, j, state=status, progress=progress, error="")
             if time.time() > deadline:
                 _update(srv, j, state="timed_out", finished=time.time(),
                         error="still not finished after %s minutes; when it is, import it: POST /api/v1/models "
