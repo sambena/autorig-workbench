@@ -34,6 +34,10 @@ class ApiV1Test(unittest.TestCase):
         column_obj(os.path.join(cls.other, "Rock", "Rock.obj"))
         column_obj(os.path.join(cls.inbox, "Post.obj"))
         with open(os.path.join(cls.inbox, "notes.txt"), "w") as fh: fh.write("not a model")
+        # a downloaded model as Tripo and others hand it over: the same model as FBX and GLB, a texture folder
+        os.makedirs(os.path.join(cls.inbox, "Dog", "Dog.fbm"))
+        for f in ("Dog/Dog.fbx", "Dog/Dog.glb", "Dog/Dog.fbm/skin.png"):
+            with open(os.path.join(cls.inbox, *f.split("/")), "wb") as fh: fh.write(b"x")
         config = os.path.join(cls.tmp, "server.json")
         with open(config, "w") as fh:
             json.dump({"collections": [{"name": "Other", "path": cls.other}], "browse": [cls.inbox]}, fh)
@@ -241,7 +245,13 @@ class ApiV1Test(unittest.TestCase):
         self.assertIn(os.path.realpath(self.inbox), roots)
         code, d = self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.inbox))
         self.assertEqual(code, 200)
-        self.assertEqual([e["name"] for e in d["entries"]], ["Post.obj"])        # models only, no notes.txt
+        self.assertEqual([e["name"] for e in d["entries"]], ["Dog", "Post.obj"])  # models and folders, no notes.txt
+        # the flat inbox: one entry per model, its best file (GLB over FBX), no texture folders, no collections
+        code, ib = self.req("GET", "/api/v1/files/models")
+        self.assertEqual(code, 200)
+        got = sorted((x["name"], x["ext"]) for x in ib["models"])
+        self.assertEqual(got, [("Dog", ".glb"), ("Post", ".obj")])
+        self.assertEqual([os.path.realpath(p) for p in ib["inbox"]], [os.path.realpath(self.inbox)])
         self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(self.tmp))[0], 403)
         self.assertEqual(self.req("GET", "/api/v1/files?path=" + urllib.parse.quote(
             os.path.join(self.inbox, "..")))[0], 403)

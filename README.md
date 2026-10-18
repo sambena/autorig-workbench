@@ -127,6 +127,10 @@ server, but only the folders the server allows: list them in `.autorig_server.js
 (`collections`, `browse`), or run your own copy with `--allow-any-folder` to open any folder. docs/API.md has the
 format. AI Assist (Fix this rig) is in the page's Advanced panel, with the cost shown before every request.
 
+**The page.** Pick a model from the library (or drop one, or take one from the server's inbox) and it shows at once in
+a 3D preview: its rig and clips when it has them. Mesh2Motion's nine skeletons are picture tiles beside it; Auto
+picks one from the body. three.js 0.186 is vendored for the preview (`autorig/gui/vendor/three/VERSION.txt`).
+
 **API.** Scripts, AI agents and Unity drive the workbench through `/api/v1` with a Bearer token: add a model, rig it on a
 Mesh2Motion skeleton, attach clips, export. [docs/API.md](docs/API.md) has examples; `/api/v1/openapi.json` describes
 every route. Every step and tool is listed once, in `autorig/core/steps_registry.py`. Without the build, `/m2m/` answers 404 and the rest of the workbench is

@@ -50,6 +50,8 @@ ROUTES = [
     ("POST", "/api/v1/collections", "add a collection (only when the server allows any folder): {path, name}",
      {"path": "/home/me/my-models", "name": "Mine"}),
     ("GET", "/api/v1/files", "list a folder on the server (?path=; none: the folders you may browse)", None),
+    ("GET", "/api/v1/files/models", "every model file in the server's inbox folders, one per model (the best file "
+                                    "picked: GLB, glTF, FBX, OBJ, ZIP), newest first", None),
     ("GET", "/api/v1/ai/{route}", "AI Assist: settings, status, estimate, todo, job, usage (docs/AI-ASSIST.md)", None),
     ("POST", "/api/v1/ai/{route}", "AI Assist: settings, start, apply, undo, run-steps. A start spends money: "
                                    "estimate first", {"task": "fix-rig", "model": "wolf", "message": "fix the tail"}),
@@ -142,6 +144,8 @@ def route(h, app, srv, method, path, q):
 
     if head == "files" and method == "GET" and len(parts) == 1:
         return list_files(srv, app, (q.get("path") or [""])[0])
+    if head == "files" and method == "GET" and parts[1:] == ["models"]:
+        return inbox_models(srv, app)
 
     if head == "ai" and len(parts) >= 2:                   # AI Assist (gui/ai_api.py), under the v1 token rules
         legacy = "/api/ai/" + "/".join(parts[1:])
@@ -530,6 +534,41 @@ def list_files(srv, app, p):
             entries.append({"name": n, "path": q, "type": "file", "bytes": os.path.getsize(q)})
         if len(entries) >= 2000: break
     return {"path": full, "parent": parent, "entries": entries}
+
+
+PREFER = (".glb", ".gltf", ".fbx", ".obj", ".zip")
+
+
+def inbox_models(srv, app):
+    """The model files in the browse folders that are not collections (the inbox: ~/incoming on the box), as one
+    entry per model: files with the same name in one folder are one model, and the best of them is the one shown
+    (GLB first). Texture folders (.fbm, textures/), hidden and _ folders are skipped; three levels deep at most."""
+    import server_config
+    roots, cfg = browse_roots(srv, app)
+    cols, _ = collection_list(srv, app)
+    inbox = [r for r in roots if not any(_same(r, c["path"]) for c in cols)]
+    best = {}
+    for root in inbox:
+        base = root.count(os.sep)
+        for d, dirs, files in os.walk(root):
+            dirs[:] = [x for x in dirs if not x.startswith((".", "_")) and not x.lower().endswith(".fbm")
+                       and x.lower() not in ("textures", "texture", "maps")]
+            if d.count(os.sep) - base >= 3: dirs[:] = []
+            for f in files:
+                stem, ext = os.path.splitext(f)
+                if ext.lower() not in PREFER: continue
+                key = (d, stem.lower())
+                rank = PREFER.index(ext.lower())
+                if key not in best or rank < best[key][0]:
+                    best[key] = (rank, os.path.join(d, f))
+    out = []
+    for (d, _), (_, p) in best.items():
+        st = os.stat(p)
+        out.append({"name": os.path.splitext(os.path.basename(p))[0], "path": p, "ext": os.path.splitext(p)[1].lower(),
+                    "bytes": st.st_size, "modified": st.st_mtime, "folder": os.path.relpath(d, next(r for r in inbox if server_config.inside(d, [r])))})
+        if len(out) >= 500: break
+    out.sort(key=lambda x: -x["modified"])
+    return {"inbox": inbox, "models": out}
 
 
 def add_from_server(srv, app, p, name=None, group=""):
