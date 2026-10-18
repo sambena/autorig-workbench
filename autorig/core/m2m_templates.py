@@ -51,6 +51,7 @@ TEMPLATES = {
               "family": "body", "roles": {"idle": "Idle", "walk": "Swim Horizontal", "swim": "Swim Horizontal",
                                           "attack": "Bite"}},
 }
+# M2b's bake-off (docs/SKIN-BAKEOFF.md, 2026-10-18): ours beat Mesh2Motion's skinning on all nine templates
 for _t in TEMPLATES.values():
     _t.setdefault("skin", "autorig")
 
