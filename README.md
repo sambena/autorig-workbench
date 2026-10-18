@@ -12,7 +12,7 @@ pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch run
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The Mesh2Motion web app is built in and served at `/m2m/`, the first step of moving animation onto it (docs/PLAN.md, "M"). The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -163,6 +163,17 @@ Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
 conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
 
+## Mesh2Motion
+
+The workbench is moving its animation onto [Mesh2Motion](https://github.com/Mesh2Motion) (docs/PLAN.md, "M"). Its
+web app is a git submodule (`third_party/mesh2motion-app`, our fork) that the server serves at `/m2m/`:
+
+    git submodule update --init third_party/mesh2motion-app
+    python scripts/build_m2m.py          (needs Node 24 and npm; writes autorig/gui/m2m/)
+
+Then open `http://127.0.0.1:8765/m2m/`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
+unaffected.
+
 ## Clip motion
 
 Clips are keyed, then planted feet are held where they land; `clip-check` scores foot skate. See
@@ -198,6 +209,8 @@ re-rig twice, the second run carrying the first one's audit as "before".
 
 GPL-3.0-or-later (LICENSE). The steps run inside Blender and import `bpy`, which is GPL; one licence keeps it simple.
 three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERSION.txt says where it came from).
+Mesh2Motion, under `third_party/mesh2motion-app/`, is MIT for its code and CC0 for its models, rigs and animations
+(`LICENSE-MIT.MD` and `LICENSE-CC0.MD` there), by Scott Petrovic and contributors.
 
 ## AI Assist
 
