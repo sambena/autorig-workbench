@@ -1,6 +1,6 @@
 GenMM: Example-based Motion Synthesis via Generative Motion Matching (ACM SIGGRAPH 2023)
 Copyright the GenMM authors: Weiyu Li, Xuelin Chen, Peizhuo Li, Olga Sorkine-Hornung, Baoquan Chen.
-https://github.com/liyuuuu98/GenMM (project page https://wyysf-98.github.io/GenMM), licensed under the Apache
+https://github.com/liyuuuu98/GenMM (project page https://weiyuli.xyz/GenMM/), licensed under the Apache
 License, Version 2.0 (LICENSE in this folder).
 
 Parts of nearest_neighbor/utils.py were borrowed upstream from Efficient-GPNN by Ariel Elnekave
