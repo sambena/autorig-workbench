@@ -73,7 +73,7 @@ def args(argv=None):
                    help="four-legged bodies: calibrated keeps each leg's fitted rest where the template stands at rest "
                         "and adds the template's turns (default); absolute points every leg bone as the template's")
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
-                   help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
+                   help="the rest pose: the template's (default for snakes) or the body as modelled")
     p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
     p.add_argument("--choose-only", dest="choose_only", action="store_true",
                    help="print the template choice (M2M_RIG {template, choice}) and stop")
@@ -1041,10 +1041,11 @@ def side_rule(mesh, arm):
     midline (chest, belly, tail) keeps both sides. Returns the vertices changed."""
     pair = {}
     for b in arm.data.bones:
-        m = re.match(r"^(.*)_([lr])$", b.name)
+        m = re.match(r"^(.*)_([lrLR])$", b.name)           # horse and dragon say _l, fox and human _L
         if m and b.name in mesh.vertex_groups:
-            other = m.group(1) + ("_r" if m.group(2) == "l" else "_l")
-            if other in mesh.vertex_groups: pair[b.name] = (m.group(2), other)
+            side = m.group(2)
+            other = m.group(1) + "_" + {"l": "r", "r": "l", "L": "R", "R": "L"}[side]
+            if other in mesh.vertex_groups: pair[b.name] = (side.lower(), other)
     if not pair: return 0
     xs = {"l": [], "r": []}
     for b in arm.data.bones:
@@ -1518,7 +1519,9 @@ def run(a):
     # rigged files' own coordinates, before a template rest straightens it): what the API's skeleton and the
     # bridge read and write, and what --joints takes back
     joints = {b.name: T.to_gltf(b.head_local) for b in arm.data.bones}
-    rest = a.rest or ("template" if fam == "body" else "as-modelled")
+    # a snake modelled in an S is straightened along the template's line; a shark is modelled near straight already,
+    # and straightening it with its weights pulled its head off the body (Tornado Titans' sharks, 2026-10-18)
+    rest = a.rest or ("template" if t == "snake" else "as-modelled")
     if rest == "template":
         log["reposed_offset"] = repose(arm, mesh, rest3)
     log["rest"] = rest
