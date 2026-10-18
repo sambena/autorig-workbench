@@ -38,9 +38,8 @@ def rig_script(model):
     """The script that rigs this model, or None when its spec cannot be rigged (no spec)."""
     spec = spec_store.SPECS.get(model)
     if spec is None: return None
-    if spec.get("kind") == "humanoid": return "rerig_humanoid.py"
-    if spec.get("kind") == "custom": return os.path.join(layout.pack_dir(model), spec["builder"])
-    return "rerig.py"
+    import steps_registry
+    return steps_registry.rig_script(spec, layout.pack_dir(model))
 
 
 def main():
