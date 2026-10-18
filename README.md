@@ -185,6 +185,10 @@ all going on past a model it cannot read.
 The spec test checks the rig.json writer (a hand-written file comes back byte for byte), the schema checks and the
 spec routes. With Blender, a generated model with a `bone_N` skeleton is re-rigged twice through them.
 
+The Tripo bridge test drives `scripts/tripo_bridge.py` with a fake Studio page: the handshake, pings, a file in
+chunks, refused Origins and Hosts, and bad chunks. The files go to a stub workbench, and the test checks that the
+token is never logged.
+
 The Blender parts are skipped when Blender is not installed.
 
 ## Licence
@@ -220,6 +224,13 @@ Generation is off until the server's owner turns it on (`python scripts/generate
 provider has a daily and monthly cap in its own credits. Keys stay in `.autorig_generate.json`, which git ignores. A
 model already made on one of those accounts imports by its task id, free. See [docs/GENERATE.md](docs/GENERATE.md),
 which also covers Tripo's DCC Bridge. The page's Generate tab is next.
+
+**From Tripo Studio, free:** run `python scripts/tripo_bridge.py --rig` on your own PC, with `AUTORIG_TOKEN` set
+(add `--server https://autorig.cougarcave.dev` for the hosted copy). Then, in [Tripo Studio](https://studio.tripo3d.ai),
+open **DCC Bridge**, pick **Godot**, connect, and send a model you've already made. The script stands in for Tripo's
+Godot plug-in on localhost:60650. It saves the model to `tripo_inbox/`, adds it to the workbench, and rigs and
+animates it. Models made in the web app come through without an API key. Only a Tripo Studio page may connect, and
+every connection attempt is logged. If nothing shows up, see "If nothing connects" in docs/GENERATE.md.
 
 ## Model Studio
 
