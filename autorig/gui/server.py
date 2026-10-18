@@ -56,6 +56,19 @@ def _quiet(fn, *a):
         return fn(*a)
 
 
+def code_version():
+    """A short hash of the page's own code (app.js, viewer.js): it changes with every deploy that changes them."""
+    import hashlib
+    h = hashlib.sha1()
+    for f in ("app.js", "viewer.js"):
+        try:
+            st = os.stat(os.path.join(HERE, f))
+            h.update(("%s:%d:%d;" % (f, st.st_size, st.st_mtime_ns)).encode())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
 def safe_rel(rel):
     """A relative path with no way out of the folder it is joined to, or None."""
     rel = rel.replace("\\", "/").strip("/")
@@ -902,6 +915,7 @@ def make_handler(app):
                                            "session token).</p>", "text/html; charset=utf-8")
                 with open(os.path.join(HERE, "index.html"), encoding="utf-8") as fh:
                     page = fh.read().replace("__AUTORIG_TOKEN__", app.token)
+                page = page.replace('src="/app.js"', 'src="/app.js?v=%s"' % code_version())
                 return self._send(200, page, "text/html; charset=utf-8",
                                   {"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
             if path == "/favicon.ico":
@@ -915,7 +929,13 @@ def make_handler(app):
             if path in ("/app.js", "/viewer.js"):                  # the page's code: static, like /m2m/
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 with open(os.path.join(HERE, path[1:]), "rb") as fh:
-                    return self._send(200, fh.read(), "text/javascript; charset=utf-8", {"Cache-Control": "no-cache"})
+                    code = fh.read()
+                # the page asks for /app.js?v=<version> and app.js for /viewer.js?v=<version>: a new version is a new
+                # address, so nothing in between (Cloudflare keeps .js four hours whatever we say) serves old code
+                code = code.replace(b"from '/viewer.js'", b"from '/viewer.js?v=" + code_version().encode() + b"'")
+                versioned = bool(q.get("v"))
+                return self._send(200, code, "text/javascript; charset=utf-8",
+                                  {"Cache-Control": "public, max-age=31536000, immutable" if versioned else "no-cache"})
             if path.startswith("/vendor/"):                       # three.js for the preview (vendor/three/VERSION.txt)
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 rel = safe_rel(unquote(path[len("/vendor/"):]))

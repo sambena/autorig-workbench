@@ -371,9 +371,12 @@ class GenerateApiTest(unittest.TestCase):
         self.assertEqual(code, 202, out)
         j = self.wait(out["job"]["id"])
         self.assertEqual((j["state"], j["model"]), ("done", "pony"), j)
-        self.assertTrue(j["rig_job"], j)                        # the rig is queued (it needs Blender to finish)
-        code, rj = self.req("GET", "/api/v1/jobs/%s" % j["rig_job"])
-        self.assertEqual((code, rj["step"], rj["model"]), (200, "m2m-rig", "pony"), rj)
+        if os.environ.get("AUTORIG_NO_BLENDER") == "1":       # no Blender: the model lands, the rig says why not
+            self.assertIn("Blender not found", j["error"] or "", j)
+        else:
+            self.assertTrue(j["rig_job"], j)                    # the rig is queued (it needs Blender to finish)
+            code, rj = self.req("GET", "/api/v1/jobs/%s" % j["rig_job"])
+            self.assertEqual((code, rj["step"], rj["model"]), (200, "m2m-rig", "pony"), rj)
         self.assertEqual(len(self.stub.creates()), before + 1)
 
     def test_overview(self):

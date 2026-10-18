@@ -8,7 +8,7 @@
 # uploaded (an OBJ written here, with its rig.json, in a zip) and every step runs through the API; a running step is
 # cancelled and its Blender process is gone; samples, the engine package, Mesh Doctor, batches and retarget uploads.
 # The Blender parts are skipped when Blender cannot be found.
-import io, json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse
+import io, json, math, os, re, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse
 import urllib.request, zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -149,7 +149,12 @@ class ServerTest(unittest.TestCase):
             self.assertIn("default-src 'self'", r.headers["Content-Security-Policy"])
         self.assertIn(TOKEN, page)
         self.assertNotIn("__AUTORIG_TOKEN__", page)
-        self.assertIn('src="/app.js"', page)
+        # the page's code is asked for at a versioned address, so no cache in between serves old code
+        m = re.search(r'src="(/app\.js\?v=[0-9a-f]+)"', page)
+        self.assertTrue(m, "app.js is not versioned in the page")
+        with urllib.request.urlopen(self.base + m.group(1)) as r:
+            self.assertIn("immutable", r.headers["Cache-Control"])
+            self.assertRegex(r.read().decode("utf-8"), r"from '/viewer\.js\?v=[0-9a-f]+'")
         with urllib.request.urlopen(self.base + "/app.js") as r:
             self.assertTrue(r.headers["Content-Type"].startswith("text/javascript"))
             self.assertIn(b"/api/v1", r.read())
