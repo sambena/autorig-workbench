@@ -39,10 +39,23 @@ class TestChoose(unittest.TestCase):
         self.assertEqual(T.choose("winged", {"feet": 2})[0], "bird")
         self.assertEqual(T.choose("winged", {"feet": 4})[0], "dragon")
 
-    def test_quadruped_by_size(self):
-        self.assertEqual(T.choose("quadruped", {"metres": 1.5, "feet": 4})[0], "horse")
-        self.assertEqual(T.choose("quadruped", {"metres": 0.5, "feet": 4})[0], "fox")
-        self.assertEqual(T.choose("quadruped")[0], "horse")          # size unknown
+    def test_quadruped_by_tail(self):
+        # tail reach measured on the box's Tripo animals at height 1 (m2m_templates.FOX_TAIL)
+        for reach in (0.37, 0.30, 0.41, 0.46, 0.28, 0.20):       # horse, cows, goat, pig, sheep
+            self.assertEqual(T.choose("quadruped", {"tail_reach": reach, "feet": 4})[0], "horse", reach)
+        for reach in (0.70, 0.71, 0.80, 0.69, 1.23):             # dogs, cat, rabbit, the fox template
+            self.assertEqual(T.choose("quadruped", {"tail_reach": reach, "feet": 4})[0], "fox", reach)
+        # Tripo's meshes are ~1 m whatever the animal: a size the caller did not give is never read
+        self.assertEqual(T.choose("quadruped", {"tail_reach": 0.37})[0], "horse")
+
+    def test_quadruped_height_only_breaks_the_band(self):
+        self.assertEqual(T.choose("quadruped", {"tail_reach": 0.37, "metres": 0.4})[0], "horse")   # shape wins
+        self.assertEqual(T.choose("quadruped", {"tail_reach": 0.75, "metres": 1.6})[0], "fox")
+        self.assertEqual(T.choose("quadruped", {"tail_reach": 0.55, "metres": 1.6})[0], "horse")   # in the band
+        self.assertEqual(T.choose("quadruped", {"tail_reach": 0.55, "metres": 0.4})[0], "fox")
+        self.assertEqual(T.choose("quadruped", {"metres": 1.5})[0], "horse")        # no shape: the height
+        self.assertEqual(T.choose("quadruped", {"metres": 0.5})[0], "fox")
+        self.assertEqual(T.choose("quadruped")[0], "horse")                         # nothing known
 
     def test_kaiju(self):
         self.assertEqual(T.choose("humanoid", {"tail": 0.8})[0], "kaiju")
