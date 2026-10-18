@@ -46,5 +46,3 @@ autorig/gui/m2m/
 .autorig_generate.json
 .autorig_generate_usage.jsonl
 
-# scripts/tripo_bridge.py saves received models here
-tripo_inbox/

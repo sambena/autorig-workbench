@@ -480,7 +480,7 @@ scripts, AI agents and Unity.
 | M5 | The new three-step page, replacing the old GUI ([OLD-UI.md](OLD-UI.md) maps the old features) | done |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans (`m2m-clips`) | done |
 | M7 | Docs, runbook, deploy | |
-| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | back end done ([GENERATE.md](GENERATE.md)): `/api/v1/generate` (estimate, confirm), import by task id, the pipeline; the page's Generate tab after M7; a Tripo DCC Bridge receiver proposed (M8b) |
+| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | back end done ([GENERATE.md](GENERATE.md)): `/api/v1/generate` (estimate, confirm), import by task id, the pipeline; the page's Generate tab after M7; the Tripo DCC Bridge was tried and abandoned (2026-10-18) |
 
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
