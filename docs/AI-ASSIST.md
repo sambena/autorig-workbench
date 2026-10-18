@@ -1,5 +1,7 @@
 # AI Assist
 
+> **Since M5:** the old page and its dialogs are gone ([OLD-UI.md](OLD-UI.md)). What this page describes in menus is now reached through the routes and the command line given in OLD-UI.md.
+
 **AI Assist** in the menu bar hands one of the workbench's tools to an AI: Claude, OpenAI, Google Gemini, or a model
 running on Ollama on your own machine. The AI looks at the model through read tools, tries changes with the
 workbench's own steps, and proposes a fix. Nothing changes until you apply the plan, and an applied plan can be

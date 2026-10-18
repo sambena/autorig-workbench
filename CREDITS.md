@@ -38,7 +38,7 @@ Code (or a close reimplementation of it) that lives in this repository.
 
 | Project | Licence | Where |
 |---|---|---|
-| [three.js](https://github.com/mrdoob/three.js) ([mrdoob](https://github.com/mrdoob) and contributors) | MIT | `autorig/gui/vendor/three/` (its LICENSE and VERSION.txt there) |
+| [three.js](https://github.com/mrdoob/three.js) ([mrdoob](https://github.com/mrdoob) and contributors) | MIT | Inside the Mesh2Motion app (its npm dependency). The copy vendored under `autorig/gui/vendor/three/` for the old 3D viewer went with it (M5). |
 | [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) | MIT / CC0 | `third_party/mesh2motion-app` (`LICENSE-MIT.MD`, `LICENSE-CC0.MD` there) |
 
 ## Programs and libraries used at run time (not bundled)

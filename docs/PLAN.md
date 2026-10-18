@@ -477,7 +477,7 @@ scripts, AI agents and Unity.
 | M2b | Skinning bake-off on the same fitted skeletons, Mesh2Motion's skinning against ours, graded by our audit; the winner is each template's default | port done (`core/m2m_skin.py`, matches the TypeScript exactly on M2M's samples); bake-off next (M2 is in) |
 | M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI; docs/API.md) and one step registry (`core/steps_registry.py`) for the server, the CLI, batches and the API | done |
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
-| M5 | The new three-step page, replacing the old GUI | |
+| M5 | The new three-step page, replacing the old GUI ([OLD-UI.md](OLD-UI.md) maps the old features) | done |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans (`m2m-clips`) | done |
 | M7 | Docs, runbook, deploy | |
 | M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | |
@@ -541,6 +541,17 @@ own Breathing Idle tears the same skin there, so the step fails a clip only when
 
 On Leon (Leon_Age10_Tripo, RadarKid: a child, the library scaled to 0.78) it was 0.45, 1.48 and 0.59, worst gap 14.3%
 on the jog. Both play cleanly in renders: knees bend forward, feet stay on the floor, nothing flies off.
+
+M5 notes: `gui/index.html` and `app.js` are the whole page:
+- **Load** adds a file (`POST /api/v1/models`) or picks from the library, which now lists each model's Mesh2Motion
+  template and a thumbnail where one exists.
+- **Rig** runs `POST .../rig` and follows its job over SSE. It shows the audit grade with a one-line reason.
+  **Adjust joints** loads `GET .../skeleton` into the Mesh2Motion editor through the bridge, and **Apply** sends
+  `PUT .../skeleton`.
+- **Animate** shows Mesh2Motion's clip list with our rig, and Export posts `.../animate`.
+- **Advanced** lists `GET /api/v1/steps` with a form per tool.
+- The old pages and the vendored three.js are deleted. Their JSON routes stay until M7, so nothing is lost before it
+  has a v1 route. A server without m2m-rig answers 501 to rig, Apply and Export, and the page then offers the classic rig.
 
 M4 notes: the bridge (fork folder `src/lib/bridge/`) takes URL parameters and postMessage protocol v1, documented
 in [M2M-BRIDGE.md](M2M-BRIDGE.md) and exercised by `/m2m/bridge-test.html`. A fitted skeleton is world joint

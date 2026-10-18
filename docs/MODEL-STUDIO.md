@@ -1,5 +1,7 @@
 # Model Studio
 
+> **Since M5:** the old page and its dialogs are gone ([OLD-UI.md](OLD-UI.md)). What this page describes in menus is now reached through the routes and the command line given in OLD-UI.md.
+
 Open **Model → Model Studio** in the workbench. Studio shares the existing model collection,
 session authentication and cancellable job queue. Settings live in each model's `studio.json`;
 outputs live in `<model>/_studio/<tool>/`. These folders are excluded from source discovery.

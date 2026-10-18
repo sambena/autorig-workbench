@@ -33,7 +33,7 @@ A model is named by its folder, and names are unique across the root.
 Every section is optional. A model with no `rig` section can still be surveyed and its facing rendered; the GUI greys
 out Rig and says why.
 
-**The spec editor** (Edit spec in the GUI, README) edits this file by clicking: bones on the source model's own
+**The spec checks** in `gui/spec_api.py` (behind the old spec editor, which went with the old page in M5) read this file. The editor edited it by clicking: bones on the source model's own
 skeleton, points on the model or on the flat views. Its form is built from the schema in `gui/spec_api.py`
 (`RIG_FIELDS`, with a label and help for each field below), which also checks a spec before it is saved: the
 `schema` line, each field's type and range, the source's own bone names (with the `<bone>_m` copies `mirror` makes),

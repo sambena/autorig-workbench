@@ -1063,37 +1063,10 @@ def make_handler(app):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 return self.m2m_file(path)
             if api_v1.handle(self, app, sys.modules[__name__], "GET", path, q): return
-            # ---- results viewer (gui/viewer_api.py): its code and vendored three.js need only the Host check
-            if path in viewer_api.CODE or path.startswith("/vendor/"):
+            if path == "/app.js":                                  # the page's code: static, like /m2m/
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
-                f = viewer_api.static_file(path)
-                return self._send(200, f[0], f[1]) if f else self._send(404, {"error": "not found"})
-            if path == "/spec_editor.js":                         # the spec editor (gui/spec_api.py)
-                if not self._host_ok(): return self._send(403, {"error": "bad host"})
-                f = spec_api.static_file(path)
-                return self._send(200, f[0], f[1]) if f else self._send(404, {"error": "not found"})
-            if path == "/spec_editor.html":
-                if not self._guard(q): return
-                return self._send(200, spec_api.page(app.token), "text/html; charset=utf-8",
-                                  {"Content-Security-Policy": spec_api.CSP})
-            if path == "/studio.html":
-                if not self._guard(q): return
-                with open(os.path.join(HERE,"studio.html"),encoding="utf-8") as fh:
-                    page=fh.read().replace("__AUTORIG_TOKEN__",app.token)
-                return self._send(200,page,"text/html; charset=utf-8",{"Content-Security-Policy":viewer_api.CSP})
-            if path == "/viewer.html":
-                if not self._guard(q): return
-                return self._send(200, viewer_api.page(app.token), "text/html; charset=utf-8",
-                                  {"Content-Security-Policy": viewer_api.CSP})
-            if path in ("/help.html", "/help"):
-                if not self._guard(q): return
-                help_path = os.path.join(HERE, "help.html")
-                if os.path.exists(help_path):
-                    with open(help_path, "r", encoding="utf-8") as fh:
-                        page = fh.read().replace("__AUTORIG_TOKEN__", app.token)
-                    return self._send(200, page, "text/html; charset=utf-8",
-                                      {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
-                return self._send(404, {"error": "help page not found"})
+                with open(os.path.join(HERE, "app.js"), "rb") as fh:
+                    return self._send(200, fh.read(), "text/javascript; charset=utf-8", {"Cache-Control": "no-cache"})
             if not self._guard(q): return
             try:
                 if studio_api.get(self,app,sys.modules[__name__],path,q): return
