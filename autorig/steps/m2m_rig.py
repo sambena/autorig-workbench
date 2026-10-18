@@ -1077,26 +1077,9 @@ def tail_rule(mesh, arm):
     a vertex farther from the tail than the tail is thick goes to the nearest other bone. Returns the vertices
     changed."""
     tail = [b for b in arm.data.bones if b.name.lower().startswith("tail") and b.name in mesh.vertex_groups]
-    return reach_rule(mesh, arm, tail)
-
-
-def leg_rule(mesh, arm, leg_of):
-    """Each leg moves only the leg, the tail rule for every leg. Bone heat gave a cat's thigh a third of the skin
-    half way along her side (Cat_Tabby_Tripo, the fox template), so each step slid her whole flank. Returns the
-    vertices changed."""
-    legs = {}
-    for n, g in leg_of.items():
-        if n in mesh.vertex_groups and arm.data.bones[n].use_deform: legs.setdefault(g, []).append(arm.data.bones[n])
-    return sum(reach_rule(mesh, arm, bones) for bones in legs.values())
-
-
-def reach_rule(mesh, arm, part, thick=2.5):
-    """The weight of a part's bones (a tail, a leg) on a vertex farther from them than thick x the part's own
-    thickness (the median distance of the skin it owns most of) goes to the nearest bone outside the part. Returns
-    the vertices changed."""
-    others = [b for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups and b not in part]
-    if not part or not others: return 0
-    idx = {mesh.vertex_groups[b.name].index for b in part}
+    others = [b for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups and b not in tail]
+    if not tail or not others: return 0
+    idx = {mesh.vertex_groups[b.name].index for b in tail}
 
     def seg_dist(co, b):
         h, t = b.head_local, b.tail_local
@@ -1104,15 +1087,16 @@ def reach_rule(mesh, arm, part, thick=2.5):
         f = max(0.0, min(1.0, (co - h).dot(d) / max(d.length_squared, 1e-12)))
         return (co - (h + d * f)).length
 
-    def near_part(co): return min(seg_dist(co, b) for b in part)
-    own = sorted(near_part(v.co) for v in mesh.data.vertices
+    def near_tail(co): return min(seg_dist(co, b) for b in tail)
+    # how thick the tail is: the skin the tail owns most of, measured from its bones
+    own = sorted(near_tail(v.co) for v in mesh.data.vertices
                  if v.groups and max(v.groups, key=lambda g: g.weight).group in idx)
     if not own: return 0
-    reach = max(own[len(own) // 2] * thick, 0.02)
+    reach = max(own[len(own) // 2] * 2.5, 0.02)
     changed = 0
     for v in mesh.data.vertices:
         gs = [g for g in v.groups if g.group in idx and g.weight > 0]
-        if not gs or near_part(v.co) <= reach: continue
+        if not gs or near_tail(v.co) <= reach: continue
         for g in gs: g.weight = 0.0
         if sum(g.weight for g in v.groups) < 0.05:
             best = min(others, key=lambda b: seg_dist(v.co, b))
@@ -1518,7 +1502,6 @@ def run(a):
     def after():
         if fam in ("legged", "human"): log["side_fixed"] = side_rule(mesh, arm)      # each side's bones, its own skin
         if fam == "legged": log["tail_fixed"] = tail_rule(mesh, arm)                 # the tail moves only the tail
-        if leg_of and fam == "legged": log["leg_fixed"] = leg_rule(mesh, arm, leg_of)  # and each leg only its leg
         if leg_of and fam in ("legged", "human"): log["confined"] = confine(mesh, arm, leg_of, shape, A["belly"])
     t_skin = time.time()
     if method == "m2m":
