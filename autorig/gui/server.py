@@ -19,11 +19,13 @@ try:
     from . import spec_api                        # the spec editor's routes (gui/spec_api.py)
     from . import studio_api
     from . import ai_api                          # AI Assist (gui/ai_api.py)
+    from . import api_v1                          # the HTTP API for scripts and agents (gui/api_v1.py)
 except ImportError:
     import viewer_api
     import spec_api
     import studio_api
     import ai_api
+    import api_v1
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 M2M_DIR = os.path.join(HERE, "m2m")     # the built Mesh2Motion app (scripts/build_m2m.py)
@@ -34,14 +36,15 @@ M2M_TYPES = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javas
 PKG = os.path.dirname(HERE)
 REPO = os.path.dirname(PKG)
 CORE, STEPS, CLI = (os.path.join(PKG, d) for d in ("core", "steps", "cli"))
+if CORE not in sys.path: sys.path.insert(0, CORE)
+import steps_registry                             # every step and tool (core/steps_registry.py): no folders needed
 
 # What may be brought into the models root: sources and their textures, archives, the model's own data.
 UPLOAD_EXTS = {".fbx", ".glb", ".gltf", ".bin", ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tif",
                ".tiff", ".webp", ".zip", ".json", ".py", ".bvh"}
 SKIP_FILES = {"model.json", "pack.json"}          # outputs: publish writes them again
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
-STEP_NAMES = ("prepare", "survey", "rig", "trim", "audit", "clips", "publish", "preview", "all",
-              "rebake-clips", "rebake_clips", "doctor-repair", "doctor-watertight")
+STEP_NAMES = steps_registry.MODEL_STEP_NAMES
 TAG = re.compile(r"^[A-Z][A-Z0-9_]+ ")
 
 layout = spec_store = blender = grades = exporter = None    # imported in main(), once the environment names the folders
@@ -450,71 +453,19 @@ def blender_cmd(script, *args):
 
 
 def commands(group, name, step, spec):
-    """The subprocesses one button runs, as (label, argv, prepare) - the only commands the server ever starts."""
-    work = layout.WORK
-    py = [sys.executable, "-u"]
-    rig = spec.get("rig") or {}
+    """The subprocesses one button runs, as (label, argv, prepare, model): the only commands the server ever starts.
+    Which scripts a step runs comes from core/steps_registry.py, as for the CLI, batches and the API."""
+    return [cmd_argv(c, name) for c in steps_registry.model_commands(
+        step, name, group, spec, layout.WORK, model_dir(group, name), spec_store=spec_store, rmtree=shutil.rmtree)]
 
-    def prepare_step():
-        return [("prepare", blender_cmd("prepare.py", "-only", name), None, name)]
 
-    def survey():
-        return [("survey", blender_cmd("survey.py", "-only", name), None, name),
-                ("facing views", blender_cmd("facing.py", "-only", name, "-out", os.path.join(work, "facing")), None, name)]
-
-    def rig_step():
-        if rig.get("kind") == "humanoid": script = "rerig_humanoid.py"
-        elif rig.get("kind") == "custom": script = os.path.join(model_dir(group, name), rig["builder"])
-        else: script = "rerig.py"
-        return [("rig (%s)" % (rig.get("kind") or "?"), blender_cmd(script, "-only", name, "-qa", os.path.join(work, "qa")), None, name)]
-
-    def trim():
-        return [("trim to budget", blender_cmd("decimate.py", "-only", name), None, name)]
-
-    def audit():
-        return [("audit", blender_cmd("audit.py", "-model", name, "-out", os.path.join(work, "audit")), None, name)]
-
-    def clips():
-        pv = os.path.join(work, "clips", name)
-        c_arch = (spec.get("clips") or (spec.get("rig") or {}).get("clips") or {}).get("archetype")
-        if not c_arch and spec_store:
-            c_arch = spec_store.infer_clip_archetype(spec)
-        args = ["make_clips.py", name, "--preview", pv]
-        if c_arch:
-            args.extend(["--archetype", c_arch])
-        return [("make clips (%s)" % (c_arch or "auto"),
-                 blender_cmd(*args), lambda: shutil.rmtree(pv, ignore_errors=True), name)]
-
-    def rebake_clips():
-        return clips() + preview()
-
-    def publish():
-        return [("publish card", py + [os.path.join(STEPS, "publish.py"), group or ".", "-only", name], None, name)]
-
-    def preview():                                                # results viewer: rigged/preview.glb
-        return [("preview for the viewer", blender_cmd("preview_glb.py", "-only", name), None, name)]
-
-    if step == "prepare": return prepare_step()
-    if step == "survey": return survey()
-    if step == "rig": return rig_step()
-    if step == "trim": return trim()
-    if step == "audit": return audit()
-    if step == "clips": return clips()
-    if step in ("rebake-clips", "rebake_clips"): return rebake_clips()
-    if step == "publish": return publish()
-    if step == "preview": return preview()
-    if step == "doctor-repair":                                   # Mesh Doctor's library fixes: copies in work/doctor
-        return [("mesh doctor: repair (PyMeshLab)", blender_cmd("mesh_doctor.py", name, "--repair"), None, name)]
-    if step == "doctor-watertight":
-        return [("mesh doctor: watertight (PyMeshFix), baked", blender_cmd("mesh_doctor.py", name, "--watertight",
-                                                                           "--bake", "1024"), None, name)]
-    if step == "all":
-        # the card goes before the clips (they read its size) and again after (it lists them)
-        out = rig_step() + trim() + audit() + publish()
-        if spec_store.infer_clip_archetype(spec):                 # as the Clips button: rig.json's or inferred
-            out += clips() + publish()
-        return out + preview()                                    # the viewer's copy, last: it carries the clips
-    raise ValueError(step)
+def cmd_argv(c, model=None):
+    """A registry Cmd as the Runner's (label, argv, prepare, model)."""
+    if c.runner == "blender":
+        argv = blender_cmd(c.script, *c.args)
+    else:
+        argv = [sys.executable, "-u", c.script if os.path.isabs(c.script) else os.path.join(STEPS, c.script)] + list(c.args)
+    return (c.label, argv, c.prepare, model)
 
 
 def mocap_ok(p):
@@ -1062,8 +1013,10 @@ def make_handler(app):
             return host in ("127.0.0.1", "localhost")
 
         def _token_ok(self, q):
-            t = self.headers.get("X-Autorig-Token") or (q.get("t") or [""])[0]
-            return secrets.compare_digest(t, app.token)
+            auth = self.headers.get("Authorization") or ""
+            bearer = auth[7:].strip() if auth[:7].lower() == "bearer " else ""
+            t = self.headers.get("X-Autorig-Token") or bearer or (q.get("t") or [""])[0]
+            return secrets.compare_digest(t.encode("utf-8"), app.token.encode("utf-8"))
 
         def _send(self, code, body, ctype="application/json; charset=utf-8", extra=None):
             try:
@@ -1109,6 +1062,7 @@ def make_handler(app):
             if path == "/m2m" or path.startswith("/m2m/"):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 return self.m2m_file(path)
+            if api_v1.handle(self, app, sys.modules[__name__], "GET", path, q): return
             # ---- results viewer (gui/viewer_api.py): its code and vendored three.js need only the Host check
             if path in viewer_api.CODE or path.startswith("/vendor/"):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
@@ -1339,9 +1293,21 @@ def make_handler(app):
             with open(p, "rb") as fh: data = fh.read()
             self._send(200, data, ctype, extra=extra)
 
+        # ---- PUT and DELETE: the API only (gui/api_v1.py)
+        def do_PUT(self):
+            u = urlparse(self.path)
+            if not api_v1.handle(self, app, sys.modules[__name__], "PUT", u.path, parse_qs(u.query)):
+                self._send(405, {"error": "method not allowed"})
+
+        def do_DELETE(self):
+            u = urlparse(self.path)
+            if not api_v1.handle(self, app, sys.modules[__name__], "DELETE", u.path, parse_qs(u.query)):
+                self._send(405, {"error": "method not allowed"})
+
         # ---- POST
         def do_POST(self):
             u = urlparse(self.path); q = parse_qs(u.query); path = u.path
+            if api_v1.handle(self, app, sys.modules[__name__], "POST", path, q): return
             if not self._guard(q): return
             try:
                 if path == "/api/upload":
