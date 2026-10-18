@@ -74,7 +74,7 @@ nothing. When the job ends, the list refreshes; ask again to carry on.
 | `autorig/core/ai_cost.py` | Settings, the price list, the worst-case estimate, the monthly gate and the spend log. Ported from Deal Hunter and Cougar Player. |
 | `autorig/core/ai_assist.py` | The loop: background requests the page polls, plans, apply and undo. It knows nothing about rigging; a *task* supplies the tools. |
 | `autorig/gui/ai_rig.py` | The first task, Fix this rig: its tools, its prompt, apply and undo. |
-| `autorig/gui/ai_api.py`, `ai_assist.js` | The routes (`/api/ai/*`) and the two dialogs. |
+| `autorig/gui/ai_api.py` | The routes, served as `/api/v1/ai/*` (gui/api_v1.py); the page's Advanced → AI Assist uses them. |
 
 To add a task, write a class like `FixRig` with:
 - `name`, `label` and `system` (the prompt);

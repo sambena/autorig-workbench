@@ -3,12 +3,13 @@
 #
 #   python -m unittest discover -s tests -v
 #
-# Starts the server (no browser) on a temporary models folder, then talks to it as the page does: the token is
-# required and files outside the served folders are refused; a model is uploaded (an OBJ written here, with its
-# rig.json) and every step runs through the API; a running step is cancelled and its Blender process is gone.
+# Starts the server (no browser) on a temporary models folder, then talks to its API (/api/v1) as the page does: the
+# token is required, files outside the served folders are refused and the old JSON routes are gone; a model is
+# uploaded (an OBJ written here, with its rig.json, in a zip) and every step runs through the API; a running step is
+# cancelled and its Blender process is gone; samples, the engine package, Mesh Doctor, batches and retarget uploads.
 # The Blender parts are skipped when Blender cannot be found.
-import json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse
-import urllib.request
+import io, json, math, os, secrets, shutil, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.parse
+import urllib.request, zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -54,6 +55,23 @@ SPEC = {
     "notes": {"rig": "a test column"},
 }
 
+BVH = b"""HIERARCHY
+ROOT Hips
+{
+  OFFSET 0.00 0.00 0.00
+  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation
+  End Site
+  {
+    OFFSET 0.00 1.00 0.00
+  }
+}
+MOTION
+Frames: 2
+Frame Time: 0.0333333
+0.0 0.0 0.0 0.0 0.0 0.0
+0.0 0.0 1.0 0.0 0.0 0.0
+"""
+
 
 class ServerTest(unittest.TestCase):
     @classmethod
@@ -79,45 +97,53 @@ class ServerTest(unittest.TestCase):
         cls.proc.wait()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def call(self, path, body=None, raw=None, token=TOKEN):
+    def call(self, method, path, body=None, raw=None, token=TOKEN):
+        """The API's JSON answer; an HTTP error raises."""
         data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
-        headers = {"Content-Type": "application/json"}
-        if token: headers["X-Autorig-Token"] = token
-        req = urllib.request.Request(self.base + path, data=data, method="POST" if data is not None else "GET",
-                                     headers=headers)
+        headers = {"Content-Type": "application/json" if raw is None else "application/octet-stream"}
+        if token: headers["Authorization"] = "Bearer " + token
+        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
         with urllib.request.urlopen(req, timeout=600) as r:
             return json.load(r)
 
-    def status(self, path, **kw):
+    def status(self, method, path, **kw):
         try:
-            self.call(path, **kw)
+            self.call(method, path, **kw)
             return 200
         except urllib.error.HTTPError as e:
             return e.code
 
+    def get(self, path):
+        return self.call("GET", path)
+
     def wait(self, job, timeout=600):
         t0 = time.time()
         while time.time() - t0 < timeout:
-            j = self.call("/api/jobs/%d" % job["id"])
+            j = self.get("/api/v1/jobs/%d?log=400" % job["id"])
             if j["state"] not in ("queued", "running"): return j
             time.sleep(0.5)
         self.fail("job %s did not finish" % job)
 
+    def models_by_name(self):
+        return {m["name"]: m for m in self.get("/api/v1/models")["models"]}
+
     # ---- no Blender needed
 
     def test_1_token_and_confinement(self):
-        self.assertEqual(self.status("/api/state", token=None), 403)
-        self.assertEqual(self.status("/api/state", token="wrong"), 403)
-        st = self.call("/api/state")
-        self.assertEqual(st["models"], [])
-        self.assertIn("blender_version", st)
-        self.assertIn(self.status("/files/models/../../etc/passwd"), (400, 403, 404))
-        self.assertIn(self.status("/samples/../../etc/passwd"), (400, 403, 404))
-        self.assertEqual(self.status("/api/run", body={"model": "x", "step": "rm -rf"}), 400)
-        self.assertEqual(self.status("/api/upload?batch=abcdefgh12&path=../evil.py", raw=b"x"), 400)
+        self.assertEqual(self.status("GET", "/api/v1/models", token=None), 401)
+        self.assertEqual(self.status("GET", "/api/v1/models", token="wrong"), 401)
+        self.assertEqual(self.get("/api/v1/models")["models"], [])
+        self.assertIn("blender_version", self.get("/api/v1/server"))
+        self.assertIn(self.status("GET", "/files/models/../../etc/passwd"), (400, 403, 404))
+        self.assertEqual(self.status("POST", "/api/v1/models/x/steps/rm%20-rf"), 404)
+        # the old page's JSON routes went in M7 (docs/OLD-UI.md maps them to /api/v1)
+        for method, old in (("GET", "/api/state"), ("POST", "/api/run"), ("POST", "/api/upload"), ("GET", "/api/samples"),
+                            ("GET", "/api/studio"), ("POST", "/api/ai/start"), ("GET", "/api/spec"), ("GET", "/samples/x.png"),
+                            ("POST", "/api/workspace/set-root"), ("POST", "/api/git/commit"), ("POST", "/api/clean")):
+            self.assertEqual(self.status(method, old, body={} if method == "POST" else None), 404, old)
 
         # the page needs the token and carries it for its API calls; its code is static
-        self.assertEqual(self.status("/", token=None), 403)
+        self.assertEqual(self.status("GET", "/", token=None), 403)
         with urllib.request.urlopen(self.base + "/?t=" + TOKEN) as r:
             page = r.read().decode("utf-8")
             self.assertIn("default-src 'self'", r.headers["Content-Security-Policy"])
@@ -130,13 +156,13 @@ class ServerTest(unittest.TestCase):
         # the old pages went with M5 (docs/OLD-UI.md maps them to the API and CLI)
         for old in ("/help.html", "/viewer.html", "/spec_editor.html", "/studio.html", "/workbench.js",
                     "/spec_editor.js"):
-            self.assertEqual(self.status(old), 404, old)
+            self.assertEqual(self.status("GET", old), 404, old)
         # the preview (gui/viewer.js) and its vendored three.js: served like /app.js, nothing outside vendor/
         for ok in ("/viewer.js", "/vendor/three/build/three.module.js", "/vendor/three/examples/jsm/loaders/FBXLoader.js"):
             with urllib.request.urlopen(self.base + ok) as r:
                 self.assertTrue(r.headers["Content-Type"].startswith("text/javascript"), ok)
         for bad in ("/vendor/three/LICENSE", "/vendor/../server.py", "/vendor/%2e%2e/api_v1.py"):
-            self.assertIn(self.status(bad), (400, 403, 404), bad)
+            self.assertIn(self.status("GET", bad), (400, 403, 404), bad)
 
     def test_1b_mesh2motion_static(self):
         """/m2m/ serves the built Mesh2Motion app without the token, and nothing outside its folder."""
@@ -167,25 +193,23 @@ class ServerTest(unittest.TestCase):
         os.makedirs(src)
         column_obj(os.path.join(src, "column.obj"))
         with open(os.path.join(src, "rig.json"), "w") as fh: json.dump(SPEC, fh)
-        batch = secrets.token_hex(8)
-        for f in ("column.obj", "rig.json"):
-            with open(os.path.join(src, f), "rb") as fh: data = fh.read()
-            r = self.call("/api/upload?batch=%s&path=column/%s" % (batch, f), raw=data)
-            self.assertTrue(r["stored"])
-        added = self.call("/api/upload/done", {"batch": batch, "group": "Props", "name": "column"})
-        self.assertEqual(sorted(added["files"]), ["column.obj", "rig.json"])
+        buf = io.BytesIO()                                 # a model with its rig.json comes as one zip
+        with zipfile.ZipFile(buf, "w") as z:
+            for f in ("column.obj", "rig.json"): z.write(os.path.join(src, f), f)
+        added = self.call("POST", "/api/v1/models?filename=column.zip&name=column&group=Props", raw=buf.getvalue())
+        self.assertEqual(added["model"]["name"], "column")
 
-        m = next(x for x in self.call("/api/state")["models"] if x["name"] == "column")
+        m = self.models_by_name()["column"]
         self.assertEqual((m["group"], m["kind"], m["source"]), ("Props", "build", "column.obj"))
         self.assertIsNone(m["steps"]["all"])
         self.assertIn("run Rig", m["steps"]["audit"])            # greyed out, and says why
 
-        survey = self.wait(self.call("/api/run", {"model": "column", "step": "survey"}))
+        survey = self.wait(self.call("POST", "/api/v1/models/column/steps/survey"))
         self.assertEqual(survey["state"], "done", "\n".join(survey["log"][-30:]))
-        job = self.wait(self.call("/api/run", {"model": "column", "step": "all"}))
+        job = self.wait(self.call("POST", "/api/v1/models/column/steps/all"))
         self.assertEqual(job["state"], "done", "\n".join(job["log"][-40:]))
 
-        d = self.call("/api/model?name=column")
+        d = self.get("/api/v1/models/column")
         self.assertEqual(d["survey"]["skeleton"], "none")
         self.assertEqual(len(d["facing"]), 4)
         self.assertIsNotNone(d["bend_test"])
@@ -199,21 +223,24 @@ class ServerTest(unittest.TestCase):
         card = d["card"]
         self.assertEqual((card["name"], card["group"], card["metres"], card["role"]), ("column", "Props", 2.0, "prop"))
         self.assertEqual((card["rig"]["audit"]["pass"], card["rig"]["audit"]["grade"]), (a["pass"], a["grade"]))
-        rows = self.call("/api/audits")["models"]
+        rows = self.get("/api/v1/audits")["models"]
         self.assertEqual([(r["model"], r["grade"]) for r in rows], [("column", a["grade"])])
+        full = self.get("/api/v1/models/column/audit")
+        self.assertIn("verdict", full["audit"])
+        self.assertIsInstance(full["bones"], list)
         req = urllib.request.Request(self.base + d["bend_test"] + "?t=" + TOKEN)
         with urllib.request.urlopen(req) as r:
             self.assertEqual(r.headers["Content-Type"], "image/png")
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_3_cancel_kills_only_its_process(self):
-        job = self.call("/api/run", {"model": "column", "step": "rig"})
+        job = self.call("POST", "/api/v1/models/column/steps/rig")
         pid = None
         for _ in range(200):
-            j = self.call("/api/jobs/%d" % job["id"])
+            j = self.get("/api/v1/jobs/%d" % job["id"])
             if j["pid"] or j["state"] not in ("queued", "running"): pid = j["pid"]; break
             time.sleep(0.02)
-        self.call("/api/cancel", {"job": job["id"]})
+        self.call("DELETE", "/api/v1/jobs/%d" % job["id"])
         j = self.wait(job)
         if j["state"] == "done":
             self.skipTest("the step finished before it could be cancelled")
@@ -223,12 +250,8 @@ class ServerTest(unittest.TestCase):
         self.assertFalse(alive(pid), "PID %d still running after Cancel" % pid)
 
     def test_4_samples_gallery_api(self):
-        data = self.call("/api/samples")
-        self.assertIn("samples", data)
-        samples = data["samples"]
-        self.assertEqual(len(samples), 5)
-        names = [s["name"] for s in samples]
-        self.assertEqual(sorted(names), ["beetle", "biped", "canine", "pedestal", "wyvern"])
+        samples = self.get("/api/v1/samples")["samples"]
+        self.assertEqual(sorted(s["name"] for s in samples), ["beetle", "biped", "canine", "pedestal", "wyvern"])
         for s in samples:
             self.assertTrue(s["title"])
             self.assertTrue(s["archetype"])
@@ -236,78 +259,42 @@ class ServerTest(unittest.TestCase):
             self.assertGreater(s["budget"], 0)
             self.assertTrue(s["description"])
             self.assertIn("installed", s)
-            self.assertIn("thumbnail", s)
-            if s["thumbnail"]:
-                req = urllib.request.Request(self.base + s["thumbnail"] + "?t=" + TOKEN)
-                with urllib.request.urlopen(req) as r:
-                    self.assertEqual(r.headers["Content-Type"], "image/png")
 
     def test_5_load_sample_model(self):
-        # invalid sample name fails with 400
-        self.assertEqual(self.status("/api/samples/load", body={"name": "nonexistent"}), 400)
+        self.assertEqual(self.status("POST", "/api/v1/samples/nonexistent"), 400)
+        res = self.call("POST", "/api/v1/samples/pedestal")
+        self.assertEqual((res["name"], res["loaded"], res["already_installed"]), ("pedestal", True, False))
+        self.assertEqual(res["model"]["name"], "pedestal")
+        self.assertTrue(os.path.isfile(os.path.join(self.models, "pedestal", "rig.json")))
+        self.assertTrue(self.models_by_name()["pedestal"]["spec"])
+        self.assertTrue(self.call("POST", "/api/v1/samples/pedestal")["already_installed"])
+        self.assertTrue(next(s for s in self.get("/api/v1/samples")["samples"] if s["name"] == "pedestal")["installed"])
 
-        # load pedestal
-        res = self.call("/api/samples/load", body={"name": "pedestal"})
-        self.assertTrue(res.get("loaded"))
-        self.assertEqual(res.get("name"), "pedestal")
-        self.assertFalse(res.get("already_installed"))
-
-        # verify files exist in models folder
-        pedestal_dir = os.path.join(self.models, "pedestal")
-        self.assertTrue(os.path.isdir(pedestal_dir))
-        self.assertTrue(os.path.isfile(os.path.join(pedestal_dir, "rig.json")))
-
-        # verify model appears in state
-        st = self.call("/api/state")
-        names = [m["name"] for m in st["models"]]
-        self.assertIn("pedestal", names)
-        pm = next(m for m in st["models"] if m["name"] == "pedestal")
-        self.assertTrue(pm["spec"])
-
-        # loading again reports already_installed: True
-        res2 = self.call("/api/samples/load", body={"name": "pedestal"})
-        self.assertTrue(res2.get("loaded"))
-        self.assertTrue(res2.get("already_installed"))
-
-    def test_6_export_api(self):
-        targets_res = self.call("/api/export/targets")
-        self.assertIn("targets", targets_res)
-        target_ids = {t["id"] for t in targets_res["targets"]}
-        self.assertEqual(target_ids, {"unreal", "unity", "godot", "web"})
-
-        # Export unreal package for pedestal
-        res = self.call("/api/export", body={"model": "pedestal", "target": "unreal"})
-        self.assertEqual(res.get("model"), "pedestal")
-        self.assertEqual(res.get("target"), "unreal")
-        self.assertIn("zip_rel", res)
-        self.assertGreater(res.get("zip_size", 0), 0)
-
-        # Download the zip archive through /files/work/...
-        req = urllib.request.Request(self.base + "/files/work/" + res["zip_rel"] + "?t=" + TOKEN)
-        with urllib.request.urlopen(req) as r:
-            self.assertEqual(r.status, 200)
-            self.assertEqual(r.headers.get("Content-Type"), "application/zip")
-            zip_bytes = r.read()
-            self.assertEqual(len(zip_bytes), res["zip_size"])
+    def test_6_engine_package(self):
+        # an engine package is Model Studio's package tool now (the old File > Export)
+        job = self.call("POST", "/api/v1/models/pedestal/studio/package",
+                        {"settings": {"target": "unreal", "include_lods": False}})
+        self.assertEqual(job["step"], "studio-package")
+        j = self.wait(job)
+        self.assertEqual(j["state"], "done", "\n".join(j["log"][-30:]))
+        arts = {a["path"]: a for a in self.get("/api/v1/models/pedestal/studio")["artifacts"]}
+        self.assertIn("_studio/package/package.json", arts)
+        z = next(a for p, a in arts.items() if p.endswith(".zip"))
+        with urllib.request.urlopen(self.base + z["url"] + "?t=" + TOKEN) as r:
+            self.assertEqual(len(r.read()), z["bytes"])
 
     def test_7_doctor_api(self):
-        diag = self.call("/api/doctor?model=pedestal")
-        self.assertIn("health_score", diag)
-        self.assertIn("grade", diag)
-        self.assertIn("verts", diag)
-        self.assertIn("faces", diag)
+        diag = self.get("/api/v1/models/pedestal/doctor")
+        for k in ("health_score", "grade", "verts", "faces"): self.assertIn(k, diag)
         self.assertIn(diag["grade"], ("HEALTHY", "WARN", "CRITICAL"))
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8_rig_all_api(self):
-        job = self.call("/api/rig-all", {})
+        job = self.call("POST", "/api/v1/batch/rig-all", {})
         self.assertEqual(job["step"], "rig-all")
-        self.assertEqual(job["model"], "(all rig-ready models)")
-        self.assertIn("total", job)
-        self.assertIn("passed", job)
-        self.assertIn("failed", job)
-        self.assertIn("last_result", job)
-        self.call("/api/cancel", {"job": job["id"]})
+        self.assertRegex(job["model"], r"^\(\d+ rig-ready models\)$")
+        for k in ("total", "passed", "failed", "last_result"): self.assertIn(k, job)
+        self.call("DELETE", "/api/v1/jobs/%d" % job["id"])
         self.wait(job)
 
     def test_9_abrupt_client_disconnect(self):
@@ -315,30 +302,30 @@ class ServerTest(unittest.TestCase):
         host, port = "127.0.0.1", int(self.base.split(":")[-1])
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((host, port))
-        req = f"GET /api/state?t={TOKEN} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
+        req = f"GET /api/v1/models?t={TOKEN} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
         s.sendall(req.encode("utf-8"))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
         s.close()
 
         time.sleep(0.1)
-        st = self.call("/api/state")
-        self.assertIn("models", st)
+        self.assertIn("models", self.get("/api/v1/models"))
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8b_source_all_api(self):
-        job = self.call("/api/source-all", {"missing_only": False})
+        job = self.call("POST", "/api/v1/batch/source-all", {"missing_only": False})
         self.assertEqual(job["step"], "source-all")
-        self.assertEqual(job["model"], "(all source views)")
-        self.call("/api/cancel", {"job": job["id"]})
+        self.assertRegex(job["model"], r"^\(\d+ source views\)$")
+        self.call("DELETE", "/api/v1/jobs/%d" % job["id"])
         self.wait(job)
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_8c_clips_all_api(self):
-        job = self.call("/api/clips-all", {})
-        self.assertEqual(job["step"], "rebake-all-clips")
-        self.assertEqual(job["model"], "(all rigged models)")
-        self.call("/api/cancel", {"job": job["id"]})
+        job = self.call("POST", "/api/v1/batch/clips-all", {"models": ["column"]})
+        self.assertEqual((job["step"], job["model"]), ("clips-all", "(1 selected models)"))
+        self.call("DELETE", "/api/v1/jobs/%d" % job["id"])
         self.wait(job)
+        self.assertEqual(self.status("POST", "/api/v1/batch/clips-all", body={"models": ["nobody"]}), 400)
+        self.assertEqual(self.status("POST", "/api/v1/batch/everything", body={}), 404)
 
     def test_8d_rebake_clips_endpoint_and_commands(self):
         import autorig.gui.server as server
@@ -356,7 +343,7 @@ class ServerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.commands(".", "test_creature", "rebake-clips", mock_spec)
 
-        # ensure pedestal has no clips section: /api/run with rebake-clips must fail with 409
+        # pedestal with no clips section: rebake-clips is refused with the reason (409)
         pedestal_rig = os.path.join(self.models, "pedestal", "rig.json")
         if os.path.exists(pedestal_rig):
             with open(pedestal_rig) as f:
@@ -364,61 +351,32 @@ class ServerTest(unittest.TestCase):
             p_spec.pop("clips", None)
             with open(pedestal_rig, "w") as f:
                 json.dump(p_spec, f)
-
-        st = self.call("/api/state")
-        pedestal = next((m for m in st["models"] if m["name"] == "pedestal"), None)
+        pedestal = self.models_by_name().get("pedestal")
         self.assertIsNotNone(pedestal)
         self.assertIsNotNone(pedestal["steps"].get("rebake-clips"))
-        self.assertEqual(self.status("/api/run", body={"model": "pedestal", "step": "rebake-clips"}), 409)
+        self.assertEqual(self.status("POST", "/api/v1/models/pedestal/steps/rebake-clips"), 409)
 
     def test_8e_retarget_endpoints(self):
-        # 1. upload a sample mocap BVH via /api/retarget/upload
-        bvh_data = b"""HIERARCHY
-ROOT Hips
-{
-  OFFSET 0.00 0.00 0.00
-  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation
-  End Site
-  {
-    OFFSET 0.00 1.00 0.00
-  }
-}
-MOTION
-Frames: 2
-Frame Time: 0.0333333
-0.0 0.0 0.0 0.0 0.0 0.0
-0.0 0.0 1.0 0.0 0.0 0.0
-"""
-        req = urllib.request.Request(self.base + "/api/retarget/upload?filename=test_motion.bvh&t=" + TOKEN,
-                                     data=bvh_data, method="POST", headers={"Content-Type": "application/octet-stream"})
-        with urllib.request.urlopen(req) as r:
-            up_res = json.load(r)
-        self.assertTrue(up_res.get("stored"))
-        self.assertTrue(os.path.isfile(up_res["file"]))
-        self.assertEqual(up_res["meta"]["format"], "BVH")
-        self.assertEqual(up_res["meta"]["frames"], 2)
+        up = self.call("POST", "/api/v1/mocap?filename=test_motion.bvh", raw=BVH)
+        self.assertEqual(up["file"], "test_motion.bvh")
+        self.assertTrue(os.path.isfile(up["path"]))
+        self.assertEqual((up["meta"]["format"], up["meta"]["frames"]), ("BVH", 2))
+        self.assertIn("test_motion.bvh", [f["file"] for f in self.get("/api/v1/mocap")["files"]])
 
-        # 2. inspect endpoint
-        insp = self.call("/api/retarget/inspect", body={"file": up_res["file"]})
-        self.assertEqual(insp.get("format"), "BVH")
-        self.assertEqual(insp.get("frames"), 2)
-
-        # 3. a mocap path outside the models root and the work folder is refused, as /files/ refuses it
+        # a mocap path outside the models root and the work folder is refused, as /files/ refuses it
         outside = os.path.join(tempfile.mkdtemp(prefix="autorig-outside-"), "elsewhere.bvh")
         with open(outside, "wb") as fh:
-            fh.write(bvh_data)
-        self.assertEqual(self.status("/api/retarget/inspect", body={"file": outside}), 400)
-        self.assertEqual(self.status("/api/retarget", body={"model": "pedestal", "file": outside}), 400)
-        self.assertEqual(self.status("/api/retarget/plan?model=pedestal&file=" + urllib.parse.quote(outside)), 400)
+            fh.write(BVH)
+        self.assertEqual(self.status("POST", "/api/v1/models/pedestal/retarget", body={"file": outside}), 404)
+        self.assertEqual(self.status("GET", "/api/v1/models/pedestal/retarget?file=" + urllib.parse.quote(outside)), 404)
+        # a model with no rig has nothing to retarget onto
+        if not os.path.exists(os.path.join(self.models, "pedestal", "rigged", "pedestal.blend")):
+            self.assertEqual(self.status("GET", "/api/v1/models/pedestal/retarget?file=test_motion.bvh"), 409)
 
-        # 4. an upload named to climb out of the mocap folder, or not a mocap file, is refused
-        for bad in ("..", "notes.txt", ".bvh"):
-            req = urllib.request.Request(self.base + "/api/retarget/upload?filename=%s&t=%s" % (urllib.parse.quote(bad), TOKEN),
-                                         data=bvh_data, method="POST", headers={"Content-Type": "application/octet-stream"})
-            with self.assertRaises(urllib.error.HTTPError) as cm:
-                urllib.request.urlopen(req)
-            self.assertEqual(cm.exception.code, 400)
-
+        # an upload named to climb out of the mocap folder, or not a mocap file, or not BVH inside, is refused
+        for bad, data in (("..", BVH), ("notes.txt", BVH), (".bvh", BVH), ("junk.bvh", b"not a bvh")):
+            self.assertEqual(self.status("POST", "/api/v1/mocap?filename=" + urllib.parse.quote(bad), raw=data), 400, bad)
+        self.assertNotIn("junk.bvh", [f["file"] for f in self.get("/api/v1/mocap")["files"]])
 
 
 def alive(pid):

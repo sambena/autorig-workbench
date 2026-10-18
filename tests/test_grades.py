@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Autorig Workbench: the audit's grades (autorig/core/grades.py) on made-up audit numbers, and the GUI server's
-# collection audit (/api/audits, /api/audit, /api/audit-all) on made-up audit files.
+# collection audit (/api/v1/audits, .../models/{m}/audit, /api/v1/batch/audit-all) on made-up audit files.
 #
 #   python -m unittest tests.test_grades -v
 #
@@ -152,7 +152,7 @@ class CollectionApi(unittest.TestCase):
     def call(self, path, body=None, token=TOKEN):
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
                                      method="POST" if body is not None else "GET",
-                                     headers={"Content-Type": "application/json", "X-Autorig-Token": token})
+                                     headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
         with urllib.request.urlopen(req, timeout=300) as r:
             return json.load(r)
 
@@ -162,57 +162,56 @@ class CollectionApi(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code
 
+    def wait(self, job):
+        t0 = time.time()
+        while time.time() - t0 < 300:
+            j = self.call("/api/v1/jobs/%d?log=400" % job["id"])
+            if j["state"] not in ("queued", "running"): return j
+            time.sleep(0.5)
+        self.fail("the job did not finish")
+
     def test_1_table_worst_first(self):
-        rows = self.call("/api/audits")["models"]
+        rows = self.call("/api/v1/audits")["models"]
         self.assertEqual([(r["model"], r["grade"]) for r in rows],
                          [("never", None), ("broken", FAIL), ("few", CHECK), ("clean", PASS)])
         few = rows[2]
         self.assertEqual((few["bend_tears"], few["worst_gap_pct"], few["worst_bone"], few["group"]), (2, 1.2, "leg_1.L", "Group"))
-        self.assertEqual(self.code("/api/audits", token="wrong"), 403)
+        self.assertEqual(self.code("/api/v1/audits", token="wrong"), 401)
 
     def test_2_badges_and_details(self):
-        st = {m["name"]: m["audit"] for m in self.call("/api/state")["models"]}
+        st = {m["name"]: m["audit"] for m in self.call("/api/v1/models")["models"]}
         self.assertEqual(st, {"broken": FAIL, "clean": PASS, "few": CHECK, "never": None})
-        a = self.call("/api/model?name=few")["audit"]
+        a = self.call("/api/v1/models/few")["audit"]
         self.assertEqual((a["grade"], a["pass"], a["tear_sites"]), (CHECK, False, 1))
         bend = next(c for c in a["checks"] if c["check"] == "bend_tears")
         self.assertEqual((bend["grade"], bend["limit"], bend["check_limit"]), (CHECK, 0, 12))
 
     def test_3_tear_sites_for_a_viewer(self):
-        full = self.call("/api/audit?name=broken")
+        full = self.call("/api/v1/models/broken/audit")["audit"]
         site = full["tear_sites"][0]
         self.assertEqual((site["pose"], site["bone"], len(site["clusters"][0]["at"])), ("bend", "leg_1.L", 3))
-        self.assertEqual(self.code("/api/audit?name=never"), 404)
-        self.assertEqual(self.code("/api/audit?name=../../etc"), 404)
+        self.assertEqual(self.code("/api/v1/models/never/audit"), 404)
+        self.assertEqual(self.code("/api/v1/models/..%2F..%2Fetc/audit"), 404)
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_4_audit_all_goes_on_past_a_broken_model(self):
-        job = self.call("/api/audit-all", {})
+        job = self.call("/api/v1/batch/audit-all", {})
         self.assertEqual(job["step"], "audit-all")
-        t0 = time.time()
-        while time.time() - t0 < 300:
-            j = self.call("/api/jobs/%d" % job["id"])
-            if j["state"] not in ("queued", "running"): break
-            time.sleep(0.5)
+        j = self.wait(job)
         self.assertEqual(j["state"], "failed")                 # none of these FBX files can be read
         started = [l for l in j["log"] if l.startswith("== audit ") and "/" in l and "done" not in l]
         self.assertEqual(len(started), 4, "\n".join(j["log"][-20:]))   # every model tried, one after another
         # an audit that did not finish leaves no grade behind, rather than the one before it
-        self.assertEqual({r["grade"] for r in self.call("/api/audits")["models"]}, {None})
+        self.assertEqual({r["grade"] for r in self.call("/api/v1/audits")["models"]}, {None})
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
     def test_5_audit_failed(self):
         audit_dir = os.path.join(self.models, "_autorig", "audit")
         with open(os.path.join(audit_dir, "broken.json"), "w") as fh:
             json.dump(fake_audit(20, 20, 15.0), fh)
-        job = self.call("/api/audit-failed", {})
-        self.assertEqual(job["step"], "audit-failed")
-        self.assertEqual(job["model"], "(all failed models)")
-        t0 = time.time()
-        while time.time() - t0 < 300:
-            j = self.call("/api/jobs/%d" % job["id"])
-            if j["state"] not in ("queued", "running"): break
-            time.sleep(0.5)
+        job = self.call("/api/v1/batch/audit-failed", {})
+        self.assertEqual((job["step"], job["model"]), ("audit-failed", "(1 failed models)"))
+        self.wait(job)
 
 
 if __name__ == "__main__":

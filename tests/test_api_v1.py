@@ -218,7 +218,18 @@ class ApiV1Test(unittest.TestCase):
                              body={"options": {"in": "Props/nothing.glb", "name": "Barn", "out": "Props/out"}})
         self.assertEqual(code, 404, out)
 
+    def idle(self):
+        """Cancels the jobs earlier tests started (a rig, with Blender and Mesh2Motion here) and waits for them:
+        switching collections and cleaning up wait for a quiet server."""
+        for j in self.req("GET", "/api/v1/jobs")[1]["jobs"]:
+            if j["state"] in ("queued", "running"): self.req("DELETE", "/api/v1/jobs/%d" % j["id"])
+        for _ in range(300):
+            if not any(j["state"] in ("queued", "running") for j in self.req("GET", "/api/v1/jobs")[1]["jobs"]): return
+            time.sleep(0.2)
+        self.fail("the jobs did not stop")
+
     def test_9_collections_and_server_files(self):
+        self.idle()
         if self.req("GET", "/api/v1/models/column")[0] == 404:
             self.test_5_add_model_and_files()
         code, c = self.req("GET", "/api/v1/collections")
@@ -285,6 +296,42 @@ class ApiV1Test(unittest.TestCase):
         self.assertEqual(self.req("DELETE", "/api/v1/jobs/999999")[0], 404)
         self.assertEqual(self.req("PUT", "/api/state", body={})[0], 405)
         self.assertEqual(self.req("GET", "/api/v1/nothing/here")[0], 404)
+
+    def test_9c_advanced_routes(self):
+        """The Advanced panel's routes (gui/api_manage.py) that need no Blender: in the openapi, and their refusals."""
+        self.idle()
+        paths = self.req("GET", "/api/v1/openapi.json", auth=None)[1]["paths"]
+        for p in ("/api/v1/models/{model}/rename", "/api/v1/batch/{action}", "/api/v1/mocap", "/api/v1/samples",
+                  "/api/v1/clean", "/api/v1/models/{model}/studio/{tool}", "/api/v1/models/{model}/spec"):
+            self.assertIn(p, paths)
+        code, s = self.req("GET", "/api/v1/server")
+        self.assertEqual(code, 200)
+        self.assertIn("step_timeouts", s)
+        code, c = self.req("GET", "/api/v1/clean")
+        self.assertEqual(code, 200)
+        self.assertIn("source", [k["key"] for k in c["kinds"]])
+        self.assertEqual(self.req("POST", "/api/v1/clean", body={"kinds": ["everything"]})[0], 400)
+        self.assertEqual(self.req("POST", "/api/v1/clean", body={})[0], 400)
+        self.assertIsInstance(self.req("GET", "/api/v1/groups")[1]["groups"], list)
+        self.assertEqual(self.req("GET", "/api/v1/audits")[0], 200)
+        for method, path in (("POST", "/api/v1/models/nobody/rename"), ("DELETE", "/api/v1/models/nobody?confirm=nobody"),
+                             ("GET", "/api/v1/models/nobody/studio"), ("GET", "/api/v1/models/nobody/spec")):
+            self.assertEqual(self.req(method, path, body={} if method == "POST" else None)[0], 404, path)
+
+    def test_9d_refused_body_closes_the_connection(self):
+        """A request refused before its body is read must not leave that body on a kept-alive connection, where it
+        would be read as the next request (the page's fetch() reuses connections)."""
+        import http.client
+        port = int(self.base.rsplit(":", 1)[1])
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        h = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+        conn.request("POST", "/api/v1/models/nobody/move", body=json.dumps({"group": "x" * 50}), headers=h)
+        r = conn.getresponse(); r.read()
+        self.assertEqual(r.status, 404)
+        conn.request("GET", "/api/v1/groups", headers=h)                     # reconnects when it was closed
+        r = conn.getresponse()
+        self.assertEqual(r.status, 200, r.read())
+        conn.close()
 
 
 class RegistryTest(unittest.TestCase):

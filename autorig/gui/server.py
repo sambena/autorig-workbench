@@ -15,17 +15,17 @@ import webbrowser, zipfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 try:
-    from . import viewer_api                      # the results viewer's routes (gui/viewer_api.py)
-    from . import spec_api                        # the spec editor's routes (gui/spec_api.py)
-    from . import studio_api
-    from . import ai_api                          # AI Assist (gui/ai_api.py)
-    from . import api_v1                          # the HTTP API for scripts and agents (gui/api_v1.py)
+    from . import viewer_api                      # audit digests (gui/viewer_api.py)
+    from . import spec_api                        # rig.json checks and writes (gui/spec_api.py)
+    from . import ai_api                          # AI Assist (gui/ai_api.py), under /api/v1/ai/
+    from . import api_v1                          # the HTTP API (gui/api_v1.py), the page's only back end
+    from . import api_manage                      # its Advanced panel's routes (gui/api_manage.py)
 except ImportError:
     import viewer_api
     import spec_api
-    import studio_api
     import ai_api
     import api_v1
+    import api_manage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 M2M_DIR = os.path.join(HERE, "m2m")     # the built Mesh2Motion app (scripts/build_m2m.py)
@@ -479,22 +479,11 @@ def mocap_ok(p):
             and _ret.inside(p, [layout.ROOT, layout.WORK]))
 
 
-def retarget_job(group, name, mocap_file, clip_name=None, source_action=None, root_motion=True):
-    """Retarget as a queued job like any other step: one at a time, streamed, cancellable. steps/retarget.py runs
-    under Python and starts Blender itself; --preview refreshes preview.glb so the viewer can play the new clip."""
-    argv = [sys.executable, "-u", os.path.join(STEPS, "retarget.py"), name, os.path.realpath(mocap_file), "--preview"]
-    if clip_name: argv += ["--clip-name", clean_name(clip_name) or "mocap_clip"]
-    if source_action: argv += ["--action", str(source_action)]
-    if not root_motion: argv.append("--no-root-motion")
-    return Job(name, group, "retarget", [("retarget %s" % os.path.basename(mocap_file), argv, None, name)])
-
-
 def default_thresholds():
     """The audit's pass limits before any allowance (core/grades.py, which audit.py grades with too)."""
     return dict(grades.THRESHOLDS)
 
 
-# ---- Audit all: every rigged model through audit.py, one Blender each, then a table worst first
 
 def rigged_models():
     out = []
@@ -516,88 +505,6 @@ def riggable_models():
     return out
 
 
-def rig_all_job():
-    ms = riggable_models()
-    if not ms: raise ValueError("no models with a valid rig spec to rig")
-    cmds = []
-    for k, (g, n) in enumerate(ms, 1):
-        model_cmds = commands(g, n, "rig", spec_store.model(n))
-        for item in model_cmds:
-            lbl, argv, prep = item[0], item[1], item[2]
-            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep, n))
-    job = Job("(all rig-ready models)", "", "rig-all", cmds)
-    job.keep_going = True
-    return job
-
-
-def source_all_job(missing_only=False):
-    work = os.path.join(layout.WORK, "source")
-    os.makedirs(work, exist_ok=True)
-    ms = []
-    for g, n in layout.all_models():
-        src = _quiet(layout.source_model, n)
-        if not src:
-            continue
-        if missing_only:
-            glb = os.path.join(work, n + ".glb")
-            meta = os.path.join(work, n + ".json")
-            if os.path.exists(glb) and os.path.exists(meta):
-                continue
-        ms.append((g, n))
-    if not ms:
-        msg = "no models missing source views" if missing_only else "no models with a source 3D file found"
-        raise ValueError(msg)
-    cmds = [("source view %d/%d: %s" % (k, len(ms), n), blender_cmd("source_preview.py", "-only", n, "-out", work), None, n)
-            for k, (g, n) in enumerate(ms, 1)]
-    title = "(missing source views)" if missing_only else "(all source views)"
-    job = Job(title, "", "source-all", cmds)
-    job.keep_going = True
-    return job
-
-
-def audit_all_job():
-    work = os.path.join(layout.WORK, "audit")
-    ms = rigged_models()
-    if not ms: raise ValueError("no rigged models yet: rig one first")
-    def forget(n):                                    # an audit that fails leaves no stale grade in the table
-        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
-    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
-            for k, (g, n) in enumerate(ms, 1)]
-    job = Job("(all rigged models)", "", "audit-all", cmds)
-    job.keep_going = True
-    return job
-
-
-def rig_selected_job(model_names):
-    names_set = set(model_names)
-    ms = [(g, n) for g, n in riggable_models() if n in names_set]
-    if not ms: raise ValueError("none of the selected models are ready to rig")
-    cmds = []
-    for k, (g, n) in enumerate(ms, 1):
-        model_cmds = commands(g, n, "rig", spec_store.model(n))
-        for item in model_cmds:
-            lbl, argv, prep = item[0], item[1], item[2]
-            cmds.append(("%d/%d: %s %s" % (k, len(ms), n, lbl), argv, prep, n))
-    job = Job("(%d selected models)" % len(ms), "", "rig-selected", cmds)
-    job.keep_going = True
-    return job
-
-
-def audit_selected_job(model_names):
-    names_set = set(model_names)
-    work = os.path.join(layout.WORK, "audit")
-    os.makedirs(work, exist_ok=True)
-    ms = [(g, n) for g, n in rigged_models() if n in names_set]
-    if not ms: raise ValueError("none of the selected models have a rigged FBX/blend")
-    def forget(n):
-        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
-    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
-            for k, (g, n) in enumerate(ms, 1)]
-    job = Job("(%d selected models)" % len(ms), "", "audit-selected", cmds)
-    job.keep_going = True
-    return job
-
-
 def _busy(app, *names):
     """ValueError when a job is running on one of these models (or on any, when no name is given)."""
     cur = app.runner.current
@@ -615,48 +522,6 @@ def _forget_grades(*names):
             _GRADES.pop(key, None)
 
 
-def organise(app, path, body):
-    """The model organiser's POST routes: switch the root, make groups, move, rename, duplicate, delete, batch steps.
-
-    Each answers with layout's summary of what it did; the page fetches /api/state again afterwards.
-    """
-    name = str(body.get("model") or "")
-    if path == "/api/workspace/set-root":
-        _busy(app)
-        out = layout.set_root(body.get("root", ""), body.get("work") or None)
-        _GRADES.clear()
-    elif path == "/api/open-root":
-        open_folder(layout.ROOT)
-        return {"opened": layout.ROOT}
-    elif path == "/api/group/create":
-        out = layout.create_group(body.get("group", ""))
-    elif path == "/api/model/move":
-        _busy(app, name)
-        out = layout.move_model(name, body.get("group", ""))
-    elif path == "/api/model/rename":
-        _busy(app, name)
-        out = layout.rename_model(name, body.get("new_name", ""))
-        _forget_grades(name)
-    elif path == "/api/model/duplicate":
-        out = layout.duplicate_model(name, body.get("new_name", ""))
-    elif path == "/api/model/delete":
-        _busy(app, name)
-        out = layout.delete_model(name)
-        _forget_grades(name)
-    else:                                                        # /api/batch/rig-selected, /api/batch/audit-selected
-        models = [str(m) for m in body.get("models") or []]
-        if not models: raise ValueError("no models selected")
-        _busy(app)
-        make = rig_selected_job if path.endswith("rig-selected") else audit_selected_job
-        return app.runner.submit(make(models)).info()
-    spec_store.reload()
-    return out
-
-
-ORGANISE = ("/api/workspace/set-root", "/api/open-root", "/api/group/create", "/api/model/move", "/api/model/rename",
-            "/api/model/duplicate", "/api/model/delete", "/api/batch/rig-selected", "/api/batch/audit-selected")
-
-
 def failed_models():
     """All models whose latest audit failed (grade is FAIL or verdict pass is False)."""
     out = []
@@ -664,31 +529,6 @@ def failed_models():
         if row.get("grade") == "FAIL" or row.get("pass") is False:
             out.append((row.get("group", ""), row["model"]))
     return out
-
-
-def git_commit_job(body):
-    """File > Commit to Git Repo…: commit the models folder's changes, push them and open a pull request. It is a
-    job, so it waits for a running step to finish and its git output shows in the log."""
-    message = " ".join(str(body.get("message") or "").split())
-    if not message: raise ValueError("a commit message is needed")
-    argv = [sys.executable, "-u", os.path.join(CORE, "git_commit.py"), "--root", layout.ROOT, "--message", message]
-    title = " ".join(str(body.get("title") or "").split())
-    if title: argv += ["--title", title]
-    return Job("(git)", "", "commit", [("commit, push and open a pull request", argv, None, None)])
-
-
-def audit_failed_job():
-    work = os.path.join(layout.WORK, "audit")
-    os.makedirs(work, exist_ok=True)
-    ms = failed_models()
-    if not ms: raise ValueError("no failed models to audit: all audited models pass or check")
-    def forget(n):
-        return lambda: os.path.exists(os.path.join(work, n + ".json")) and os.remove(os.path.join(work, n + ".json"))
-    cmds = [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), forget(n), n)
-            for k, (g, n) in enumerate(ms, 1)]
-    job = Job("(all failed models)", "", "audit-failed", cmds)
-    job.keep_going = True
-    return job
 
 
 def clippable_models():
@@ -703,23 +543,77 @@ def clippable_models():
     return out
 
 
-def rebake_all_clips_job():
-    """Re-bakes animation clips and viewer previews across all models with authored clip specs."""
-    ms = clippable_models()
-    if not ms: raise ValueError("no models with a clip archetype in rig.json: author clips on one first")
+def sourced_models(missing_only=False):
+    """Every model with a source mesh; with missing_only, those whose source view is not drawn yet."""
+    work = os.path.join(layout.WORK, "source")
+    out = []
+    for g, n in layout.all_models():
+        if not _quiet(layout.source_model, n): continue
+        if missing_only and all(os.path.exists(os.path.join(work, n + e)) for e in (".glb", ".json")): continue
+        out.append((g, n))
+    return out
+
+
+# ---- Batches over the collection (POST /api/v1/batch/{action}): one job, a step per model, going on past a
+# failure, so a run over many models says at the end which ones failed
+
+def _forgetting(work, n):                       # an audit that fails leaves no stale grade in the table
+    p = os.path.join(work, n + ".json")
+    return lambda: os.path.exists(p) and os.remove(p)
+
+
+def _audit_cmds(ms):
+    work = os.path.join(layout.WORK, "audit")
+    os.makedirs(work, exist_ok=True)
+    return [("audit %d/%d: %s" % (k, len(ms), n), blender_cmd("audit.py", "-model", n, "-out", work), _forgetting(work, n), n)
+            for k, (g, n) in enumerate(ms, 1)]
+
+
+def _rig_cmds(ms):
+    return [("%d/%d: %s %s" % (k, len(ms), n, c[0]), c[1], c[2], n)
+            for k, (g, n) in enumerate(ms, 1) for c in commands(g, n, "rig", spec_store.model(n))]
+
+
+def _clips_cmds(ms):
     cmds = []
     for k, (g, n) in enumerate(ms, 1):
         pv = os.path.join(layout.WORK, "clips", n)
-        cmds.append(("make clips %d/%d: %s" % (k, len(ms), n),
-                     blender_cmd("make_clips.py", n, "--preview", pv),
-                     lambda n=n, pv=pv: shutil.rmtree(pv, ignore_errors=True),
-                     n))
-        cmds.append(("preview %d/%d: %s" % (k, len(ms), n),
-                     blender_cmd("preview_glb.py", "-only", n),
-                     None,
-                     n))
-    job = Job("(all rigged models)", "", "rebake-all-clips", cmds)
-    job.keep_going = True
+        cmds.append(("make clips %d/%d: %s" % (k, len(ms), n), blender_cmd("make_clips.py", n, "--preview", pv),
+                     lambda pv=pv: shutil.rmtree(pv, ignore_errors=True), n))
+        cmds.append(("preview %d/%d: %s" % (k, len(ms), n), blender_cmd("preview_glb.py", "-only", n), None, n))
+    return cmds
+
+
+def _source_cmds(ms):
+    work = os.path.join(layout.WORK, "source")
+    os.makedirs(work, exist_ok=True)
+    return [("source view %d/%d: %s" % (k, len(ms), n), blender_cmd("source_preview.py", "-only", n, "-out", work), None, n)
+            for k, (g, n) in enumerate(ms, 1)]
+
+
+# action: (which models, as the job names them; picks them; their commands; why there are none)
+BATCHES = {
+    "audit-all": ("rigged models", lambda mo: rigged_models(), _audit_cmds, "no rigged models yet: rig one first"),
+    "rig-all": ("rig-ready models", lambda mo: riggable_models(), _rig_cmds, "no models with a valid rig spec to rig"),
+    "clips-all": ("models with clips", lambda mo: clippable_models(), _clips_cmds,
+                  "no rigged models with a clip archetype in rig.json"),
+    "audit-failed": ("failed models", lambda mo: failed_models(), _audit_cmds,
+                     "no failed models to audit: all audited models pass or check"),
+    "source-all": ("source views", sourced_models, _source_cmds, "no models with a source 3D file found"),
+}
+
+
+def batch_job(action, names=None, keep_going=True, missing_only=False):
+    what, pick, make, empty = BATCHES[action]
+    ms = pick(missing_only)
+    if names is not None:
+        want = {n.lower() for n in names}
+        ms = [(g, n) for g, n in ms if n.lower() in want]
+        if not ms: raise ValueError("none of those models is ready for %s (%s)" % (action, empty))
+    elif not ms:
+        raise ValueError(empty)
+    job = Job("(%d %s)" % (len(ms), what if names is None else "selected models"), "", action, make(ms))
+    job.keep_going = keep_going
     return job
 
 
@@ -830,40 +724,6 @@ def details(group, name):
 # Bringing models in
 # ---------------------------------------------------------------------------------------------------------------
 
-class Uploads:
-    """Files dropped on the page arrive one request each, grouped by a batch id, into a staging folder under the
-    work folder; the batch is then moved into <root>/<group>/<name>/ in one step, zips unpacked."""
-
-    def __init__(self):
-        self.lock = threading.Lock()
-
-    def stage_dir(self, batch):
-        return os.path.join(layout.WORK, "_incoming", batch)
-
-    def put(self, batch, rel, stream, length):
-        if not re.match(r"^[A-Za-z0-9]{8,40}$", batch): raise ValueError("bad batch id")
-        rel = safe_rel(rel)
-        if not rel: raise ValueError("bad path")
-        if not wanted(rel): return False
-        dest = os.path.join(self.stage_dir(batch), *rel.split("/"))
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        left = length
-        with open(dest, "wb") as fh:
-            while left > 0:
-                chunk = stream.read(min(1 << 20, left))
-                if not chunk: break
-                fh.write(chunk); left -= len(chunk)
-        return True
-
-    def finish(self, batch, group, name):
-        src = self.stage_dir(batch)
-        if not os.path.isdir(src): raise ValueError("nothing was uploaded")
-        try:
-            return place(src, group, name, move=True)
-        finally:
-            shutil.rmtree(src, ignore_errors=True)
-
-
 def collapse(dest):
     """A drop that is one folder holding everything (a zip's own top folder): lift its contents up a level."""
     entries = [e for e in os.listdir(dest) if not e.startswith(".")]
@@ -949,8 +809,6 @@ def sample_models_list():
         card = spec.get("card", {})
 
         is_installed = find_group(slug) is not None
-        thumb_rel = f"_autorig/qa/{slug}.png"
-        thumb_path = os.path.join(samples_dir, "_autorig", "qa", f"{slug}.png")
         out.append({
             "name": slug,
             "title": clips.get("display") or slug.capitalize(),
@@ -960,7 +818,6 @@ def sample_models_list():
             "description": notes.get("rig") or f"CC0 {slug} sample model",
             "category": clips.get("category") or "Creatures",
             "installed": is_installed,
-            "thumbnail": f"/samples/{thumb_rel}" if os.path.exists(thumb_path) else None,
         })
     return out
 
@@ -979,12 +836,6 @@ def load_sample_model(slug):
     return {"name": slug, "loaded": True, "already_installed": False, "group": res.get("group", "")}
 
 
-def open_folder(path):
-    if sys.platform.startswith("win"): os.startfile(path)                                   # noqa
-    elif sys.platform == "darwin": subprocess.Popen(["open", path])
-    else: subprocess.Popen(["xdg-open", path])
-
-
 # ---------------------------------------------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------------------------------------------
@@ -995,8 +846,6 @@ class App:
         self.port = port
         env = dict(os.environ, AUTORIG_MODELS=layout.ROOT, AUTORIG_WORK=layout.WORK, PYTHONUNBUFFERED="1")
         self.runner = Runner(env)
-        self.uploads = Uploads()
-        self.page = open(os.path.join(HERE, "index.html"), encoding="utf-8").read()
 
 
 def make_handler(app):
@@ -1077,128 +926,10 @@ def make_handler(app):
                 with open(p, "rb") as fh:
                     return self._send(200, fh.read(), "text/javascript; charset=utf-8", {"Cache-Control": "public, max-age=86400"})
             if not self._guard(q): return
-            try:
-                if studio_api.get(self,app,sys.modules[__name__],path,q): return
-                if ai_api.get(self, app, sys.modules[__name__], path, q): return
-                if path == "/api/previews":
-                    spec_store.reload()
-                    return self._send(200, {"models": viewer_api.previews(layout, _quiet)})
-                if path == "/api/state": return self._send(200, self.state())
-                if path == "/api/git/status":                       # File > Commit to Git Repo… (core/git_commit.py)
-                    import git_commit
-                    return self._send(200, git_commit.status(layout.ROOT, {n for _, n in layout.all_models()}))
-                if path == "/api/clean/scan":                       # File > Clean Up Generated Files… (core/clean_generated.py)
-                    import clean_generated
-                    return self._send(200, {"work": layout.WORK, "kinds": clean_generated.scan(layout.ROOT, layout.WORK)})
-                if path == "/api/workspace/roots":
-                    return self._send(200, {"root": layout.ROOT, "work": layout.WORK, "roots": layout.discover_roots()})
-                if path == "/api/samples":
-                    return self._send(200, {"samples": sample_models_list()})
-                if path == "/api/export/targets":
-                    try:
-                        import exporter as _exp
-                    except ImportError:
-                        from autorig.core import exporter as _exp
-                    return self._send(200, {"targets": _exp.list_presets()})
-                if path == "/api/doctor":
-                    name = (q.get("model") or q.get("name") or [""])[0]
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no model " + name})
-                    src = _quiet(layout.source_model, name)
-                    if not src: return self._send(404, {"error": "no source 3D model found"})
-                    return self._send(200, doctor_report(src, name))
-                if path == "/api/retarget/plan":
-                    name = clean_name((q.get("model") or q.get("name") or [""])[0])
-                    mocap_file = (q.get("file") or [""])[0].strip()
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no model " + name})
-                    if not mocap_ok(mocap_file):
-                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
-                    try:
-                        import retargeter as _ret
-                    except ImportError:
-                        from autorig.core import retargeter as _ret
-                    return self._send(200, _ret.plan_retarget(name, mocap_file, clip_name=(q.get("clip_name") or [None])[0]))
-                if path == "/api/watchdog/status":
-                    try:
-                        import autorig_watchdog as _wd
-                    except ImportError:
-                        from autorig.core import autorig_watchdog as _wd
-                    cur_pid = app.runner.current.pid if app.runner.current else None
-                    cur_mem = _wd.get_process_rss_mb(cur_pid) if cur_pid else 0.0
-                    return self._send(200, {
-                        "timeouts": _wd.DEFAULT_TIMEOUTS,
-                        "global_timeout": os.environ.get("AUTORIG_STEP_TIMEOUT"),
-                        "max_memory_mb": _wd.get_max_memory_mb(),
-                        "current_job_pid": cur_pid,
-                        "current_job_rss_mb": cur_mem,
-                    })
-                if path == "/api/audits":                           # the collection table (Audit all)
-                    spec_store.reload()
-                    return self._send(200, {"models": audit_table()})
-                if path == "/api/audit":                            # one model's whole audit: tear sites for a viewer
-                    name = (q.get("name") or [""])[0]
-                    a = audit_file(name) if find_group(name) is not None else None
-                    if not a: return self._send(404, {"error": "no audit for " + name})
-                    with open(a) as fh: return self._send(200, json.load(fh))
-                if spec_api.get(self, app, sys.modules[__name__], path, q): return
-                if path == "/api/model":
-                    name = (q.get("name") or [""])[0]
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no model " + name})
-                    spec_store.reload()
-                    return self._send(200, details(g, name))
-                m = re.match(r"^/api/jobs/(\d+)/events$", path)
-                if m:
-                    lei = self.headers.get("Last-Event-ID")          # a reconnect resumes after the last line seen
-                    start = int(lei) + 1 if lei and lei.isdigit() else int((q.get("from") or ["0"])[0])
-                    return self.events(int(m.group(1)), start)
-                m = re.match(r"^/api/jobs/(\d+)$", path)
-                if m:
-                    j = app.runner.jobs.get(int(m.group(1)))
-                    if not j: return self._send(404, {"error": "no such job"})
-                    return self._send(200, dict(j.info(), log=j.lines))
-                m = re.match(r"^/files/(models|work)/(.+)$", path)
-                if m: return self.file(m.group(1), unquote(m.group(2)), versioned=bool(q.get("v")))
-                m_sample = re.match(r"^/samples/(.+)$", path)
-                if m_sample:
-                    samples_root = os.path.join(REPO, "samples")
-                    rel = safe_rel(unquote(m_sample.group(1)))
-                    if not rel: return self._send(400, {"error": "bad path"})
-                    p = os.path.realpath(os.path.join(samples_root, *rel.split("/")))
-                    if os.path.commonpath([os.path.normcase(p), os.path.normcase(os.path.realpath(samples_root))]) != os.path.normcase(os.path.realpath(samples_root)):
-                        return self._send(403, {"error": "outside samples folder"})
-                    if not os.path.isfile(p): return self._send(404, {"error": "no such file"})
-                    ctype = mimetypes.guess_type(p)[0] or "application/octet-stream"
-                    with open(p, "rb") as fh:
-                        return self._send(200, fh.read(), ctype)
-                self._send(404, {"error": "not found"})
-            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-                return
-            except ValueError as e:                              # a reason for the user (e.g. no Blender), as POST
-                try:
-                    self._send(400, {"error": str(e)})
-                except Exception:
-                    pass
-            except Exception as e:
-                try:
-                    self._send(500, {"error": repr(e)})
-                except Exception:
-                    pass
-
-        def state(self):
-            spec_store.reload()
-            models = [status(g, n) for g, n in layout.all_models()]
-            cur = app.runner.current
-            b_path = blender.find(required=False)
-            return {"root": layout.ROOT, "work": layout.WORK,
-                    "root_name": os.path.basename(os.path.normpath(layout.ROOT)),
-                    "blender": b_path,
-                    "blender_version": blender.version_string(b_path) if b_path else None,
-                    "blender_warning": blender.version_warning(b_path) if b_path else None,
-                    "models": models, "groups": layout.groups(),
-                    "jobs": [j.info() for j in sorted(app.runner.jobs.values(), key=lambda j: -j.id)[:20]],
-                    "running": cur.info() if cur else None}
+            # the model's and the work folder's files, which GET /api/v1/models/{m} links to (renders, audits)
+            m = re.match(r"^/files/(models|work)/(.+)$", path)
+            if m: return self.file(m.group(1), unquote(m.group(2)), versioned=bool(q.get("v")))
+            self._send(404, {"error": "not found: the API is /api/v1 (GET /api/v1 lists its routes)"})
 
         def events(self, jid, start):
             job = app.runner.jobs.get(jid)
@@ -1290,151 +1021,8 @@ def make_handler(app):
         def do_POST(self):
             u = urlparse(self.path); q = parse_qs(u.query); path = u.path
             if api_v1.handle(self, app, sys.modules[__name__], "POST", path, q): return
-            if not self._guard(q): return
-            try:
-                if path == "/api/upload":
-                    n = int(self.headers.get("Content-Length") or 0)
-                    ok = app.uploads.put((q.get("batch") or [""])[0], (q.get("path") or [""])[0], self.rfile, n)
-                    return self._send(200, {"stored": ok})
-                if path == "/api/retarget/upload":
-                    n = int(self.headers.get("Content-Length") or 0)
-                    filename = (q.get("filename") or ["mocap.fbx"])[0]
-                    clean_fn = re.sub(r"[^A-Za-z0-9_\-\.]+", "_", os.path.basename(filename)).lstrip(".")
-                    if os.path.splitext(clean_fn)[1].lower() not in (".bvh", ".fbx") or not os.path.splitext(clean_fn)[0]:
-                        return self._send(400, {"error": "mocap must be a .bvh or .fbx file"})
-                    mocap_dir = os.path.join(layout.WORK, "mocap")
-                    os.makedirs(mocap_dir, exist_ok=True)
-                    dest = os.path.join(mocap_dir, clean_fn)
-                    left = n
-                    with open(dest, "wb") as fh:
-                        while left > 0:
-                            chunk = self.rfile.read(min(1 << 20, left))
-                            if not chunk: break
-                            fh.write(chunk); left -= len(chunk)
-                    try:
-                        import retargeter as _ret
-                    except ImportError:
-                        from autorig.core import retargeter as _ret
-                    meta = _ret.inspect_mocap_file(dest)
-                    return self._send(200, {"stored": True, "file": dest, "meta": meta})
-                body = self._json_body()
-                if studio_api.post(self,app,sys.modules[__name__],path,body): return
-                if ai_api.post(self, app, sys.modules[__name__], path, body): return
-                if path == "/api/upload/done":
-                    r = app.uploads.finish(body.get("batch", ""), body.get("group", ""), clean_name(body.get("name", "")))
-                    return self._send(200, r)
-                if path == "/api/import":
-                    paths = [p.strip().strip('"') for p in body.get("paths", []) if p.strip()]
-                    if not paths: return self._send(400, {"error": "no paths"})
-                    name = clean_name(body.get("name") or os.path.splitext(os.path.basename(paths[0].rstrip("/\\")))[0])
-                    return self._send(200, place([os.path.abspath(p) for p in paths], body.get("group", ""), name, move=False))
-                if spec_api.post(self, app, sys.modules[__name__], path, body): return
-                if path == "/api/run":
-                    name, step = body.get("model", ""), body.get("step", "")
-                    if step not in STEP_NAMES: return self._send(400, {"error": "unknown step"})
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no model " + name})
-                    spec_store.reload()
-                    st = status(g, name)
-                    if st["steps"].get(step): return self._send(409, {"error": st["steps"][step]})
-                    job = app.runner.submit(Job(name, g, step, commands(g, name, step, spec_store.model(name))))
-                    return self._send(200, job.info())
-                if path == "/api/source-all":
-                    if app.runner.current: return self._send(409, {"error": "a step is running"})
-                    missing_only = bool(body.get("missing_only", False))
-                    return self._send(200, app.runner.submit(source_all_job(missing_only=missing_only)).info())
-                if path == "/api/rig-all":
-                    if app.runner.current: return self._send(409, {"error": "a step is running"})
-                    return self._send(200, app.runner.submit(rig_all_job()).info())
-                if path == "/api/audit-all":
-                    if app.runner.current: return self._send(409, {"error": "a step is running"})
-                    return self._send(200, app.runner.submit(audit_all_job()).info())
-                if path in ("/api/clips-all", "/api/rebake-all-clips"):
-                    if app.runner.current: return self._send(409, {"error": "a step is running"})
-                    return self._send(200, app.runner.submit(rebake_all_clips_job()).info())
-                if path in ("/api/audit-failed", "/api/audit-all-failed"):
-                    if app.runner.current: return self._send(409, {"error": "a step is running"})
-                    return self._send(200, app.runner.submit(audit_failed_job()).info())
-                if path == "/api/cancel":
-                    j = app.runner.jobs.get(int(body.get("job", 0)))
-                    if not j: return self._send(404, {"error": "no such job"})
-                    app.runner.cancel(j)
-                    return self._send(200, j.info())
-                if path == "/api/open":
-                    g = find_group(body.get("model", ""))
-                    if g is None: return self._send(404, {"error": "no such model"})
-                    open_folder(model_dir(g, body["model"]))
-                    return self._send(200, {"opened": model_dir(g, body["model"])})
-                if path in ORGANISE:
-                    return self._send(200, organise(app, path, body))
-                if path == "/api/clean":
-                    if app.runner.current: return self._send(409, {"error": "a step is running: clean up when it is done"})
-                    import clean_generated
-                    return self._send(200, clean_generated.clean(layout.ROOT, layout.WORK, list(body.get("kinds") or [])))
-                if path == "/api/git/commit":
-                    return self._send(200, app.runner.submit(git_commit_job(body)).info())
-                if path == "/api/samples/load":
-                    slug = clean_name(body.get("name", ""))
-                    return self._send(200, load_sample_model(slug))
-                if path == "/api/export":
-                    name = clean_name(body.get("model", ""))
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no such model"})
-                    target = body.get("target", "all")
-                    try:
-                        import exporter as _exp
-                    except ImportError:
-                        from autorig.core import exporter as _exp
-                    try:
-                        res = _exp.create_export_package(name, target=target)
-                    except ValueError as e:              # a failed gate (export_passes.GateError), a bad target
-                        return self._send(422, {"error": str(e)})
-                    return self._send(200, res)
-                if path == "/api/retarget/inspect":
-                    mocap_file = body.get("file", "").strip()
-                    if not mocap_ok(mocap_file):
-                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
-                    try:
-                        import retargeter as _ret
-                    except ImportError:
-                        from autorig.core import retargeter as _ret
-                    meta = _ret.inspect_mocap_file(mocap_file)
-                    return self._send(200, meta)
-                if path == "/api/retarget":
-                    name = clean_name(body.get("model", ""))
-                    g = find_group(name)
-                    if g is None: return self._send(404, {"error": "no such model"})
-                    mocap_file = body.get("file", "").strip()
-                    if not mocap_ok(mocap_file):
-                        return self._send(400, {"error": "mocap file not found under the models or work folder"})
-                    if not blender.find(required=False):
-                        return self._send(503, {"error": "Blender not found: install it or set AUTORIG_BLENDER"})
-                    job = app.runner.submit(retarget_job(g, name, mocap_file, clip_name=body.get("clip_name"),
-                                                         source_action=body.get("source_action"),
-                                                         root_motion=body.get("root_motion", True)))
-                    return self._send(200, job.info())
-                if path == "/api/watchdog/reap":
-                    try:
-                        import autorig_watchdog as _wd
-                    except ImportError:
-                        from autorig.core import autorig_watchdog as _wd
-                    reaped = _wd.reap_orphaned_blender_processes()
-                    return self._send(200, {"reaped_pids": reaped, "count": len(reaped)})
-                self._send(404, {"error": "not found"})
-            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-                return
-            except Busy as e:
-                self._send(409, {"error": str(e)})
-            except ValueError as e:
-                try:
-                    self._send(400, {"error": str(e)})
-                except Exception:
-                    pass
-            except Exception as e:
-                try:
-                    self._send(500, {"error": repr(e)})
-                except Exception:
-                    pass
+            if self._guard(q):
+                self._send(404, {"error": "not found: the API is /api/v1 (GET /api/v1 lists its routes)"})
 
     return Handler
 

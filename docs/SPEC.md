@@ -264,8 +264,8 @@ The tool can propose a full `rig` spec and archetype automatically:
   also asks which way the model is a mirror image of itself, so a T-posed figure (as wide as it is tall) or a stick
   figure is not turned side-on, which used to pair its front with its back.
 - **Access**: Via CLI (`blender -b --python autorig/steps/suggest_step.py -- <model> [-no-vote]`, or
-  `python autorig/cli/run.py suggest <model>`), HTTP API (`POST /api/spec/suggest`), or the **Suggest skeleton**
-  button in the spec editor. The watch folder logs each suggestion's reasons (`WATCH_SUGGEST <model>: why: ...`).
+  `python autorig/cli/run.py suggest <model>`). The spec editor and its `POST /api/spec/suggest` went with the old
+  UI; the page edits rig.json in Advanced → rig.json (`GET`/`PUT /api/v1/models/{m}/spec`). The watch folder logs each suggestion's reasons (`WATCH_SUGGEST <model>: why: ...`).
 
 ### `card`
 

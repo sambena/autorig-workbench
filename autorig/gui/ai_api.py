@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: the AI Assist routes; called only after the server's Host/token guard.
+# Autorig Workbench: the AI Assist routes. They are served only as /api/v1/ai/... (gui/api_v1.py checks the token and
+# hands them over under these internal /api/ai/... names); the old /api/ai/ routes went in M7.
 #   GET  /api/ai/settings                 the settings (keys only as "saved" / "from <env var>"), the models and prices
 #   POST /api/ai/settings  {...}          change them; a key sent as "" keeps the saved one, "-" clears it
 #   GET  /api/ai/status                   whether AI is on, the model, this month's spend and limit

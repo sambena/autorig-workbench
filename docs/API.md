@@ -112,6 +112,29 @@ The FBX comes with Unity's axes (root rotation 0, scale 1) and one take per clip
 | POST | `/api/v1/collections` | `{path, name}`: add one (only with `allow_any_folder`) |
 | GET | `/api/v1/files?path=` | list a server folder (no path: the folders you may browse); folders and model files only |
 | GET/POST | `/api/v1/ai/{settings,status,estimate,todo,job,usage,start,apply,undo,run-steps}` | AI Assist ([AI-ASSIST.md](AI-ASSIST.md)). `start` spends money: call `estimate` first |
+| POST | `/api/v1/models/{model}/rename` | `{name}`: rename the model; its work files follow |
+| POST | `/api/v1/models/{model}/move` | `{group}`: move it to a group (`""` is the top; a new group is made) |
+| POST | `/api/v1/models/{model}/duplicate` | `{name}`: copy its sources and spec, unrigged |
+| DELETE | `/api/v1/models/{model}?confirm={model}` | delete it and its work files; `confirm` must repeat its name |
+| GET | `/api/v1/groups` | the collection's groups |
+| GET | `/api/v1/audits` | the audit table for the collection, worst first |
+| GET | `/api/v1/models/{model}/audit` | the whole audit (`audit`) and the bones it blames, worst first (`bones`) |
+| GET | `/api/v1/models/{model}/doctor` | Mesh Doctor's geometry report on the source; the file is not changed |
+| POST | `/api/v1/batch/{action}` | one job over the collection: `audit-all`, `rig-all`, `clips-all`, `audit-failed`, `source-all`; `{models?, keep_going?, missing_only?}` |
+| GET | `/api/v1/mocap` | the mocap clips uploaded for retargeting |
+| POST | `/api/v1/mocap?filename=` | upload a `.bvh` or `.fbx` clip as the body; answers its name and what is in it |
+| GET | `/api/v1/models/{model}/retarget?file=&clip_name=` | plan a retarget: the bones matched, the clip's frames, root motion |
+| POST | `/api/v1/models/{model}/retarget` | `{file, clip_name?, source_action?, root_motion?}`: retarget onto the rigged model (a job) |
+| GET | `/api/v1/models/{model}/studio` | Model Studio: each tool's settings (saved, and defaults) and the model's outputs |
+| POST | `/api/v1/models/{model}/studio/{tool}` | `{settings, save?}`: run a Studio tool as a job, or save its settings |
+| POST | `/api/v1/models/{model}/studio/import` | `{artifact, name, group?}`: copy a Studio output into a new model |
+| GET | `/api/v1/models/{model}/spec` | the classic rig's rig.json: `text`, `spec`, `base` (its hash), `errors`, `warnings` |
+| PUT | `/api/v1/models/{model}/spec` | `{spec, base, force?}`: check and save rig.json, the old one kept as rig.json.bak |
+| GET | `/api/v1/samples` | the bundled CC0 sample models |
+| POST | `/api/v1/samples/{name}` | copy a sample into the open collection |
+| GET | `/api/v1/clean` | generated files that could be deleted, by kind, with their sizes |
+| POST | `/api/v1/clean` | `{kinds}`: delete those kinds of generated file |
+| GET | `/api/v1/server` | Blender and its version, the folders, the running job, the step time limits |
 | GET | `/api/v1/jobs` | recent jobs |
 | GET | `/api/v1/jobs/{id}` | state, progress, `results`, and the last `?log=N` lines (default 40) |
 | GET | `/api/v1/jobs/{id}/events` | the log as Server-Sent Events |
@@ -149,6 +172,17 @@ page open and browse any folder: only for a copy you alone use. Paths outside th
 the price in the provider's credits. The second, `{"confirm": id}`, spends exactly that, once. Generation is off until
 the server's owner turns it on, and each provider has a daily and a monthly cap. The settings are readable, never
 writable, over the API.
+
+**Managing models and collections** (the page's Advanced panel; `gui/api_manage.py`)
+- A model a job is running on is not renamed, moved or deleted (409).
+- `DELETE` removes the model's folder and its work files for good, so it needs `?confirm=` with the model's name.
+- A batch runs one step per model in a single job and goes on past a failure unless `keep_going` is `false`. Give
+  `models` to run it on some of them only.
+- `rig.json` is saved only over the text you read: send the `base` hash `GET .../spec` gave. When the file changed
+  since, the answer is 409; `force: true` overwrites it.
+- A mocap `file` is the name an upload answered, or a path inside the models root or the work folder.
+- Model Studio's `generate` answers 501: it spends money, and comes with phase M8.
+- Commit to Git is not in the API: run `python autorig/core/git_commit.py` on the server.
 
 **Tools**
 - Tool paths may be relative (to the models root) or absolute.

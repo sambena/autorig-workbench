@@ -479,8 +479,8 @@ scripts, AI agents and Unity.
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
 | M5 | The new three-step page, replacing the old GUI ([OLD-UI.md](OLD-UI.md) maps the old features) | done |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans (`m2m-clips`) | done |
-| M7 | Docs, runbook, deploy | |
-| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | back end done ([GENERATE.md](GENERATE.md)): `/api/v1/generate` (estimate, confirm), import by task id, the pipeline; the page's Generate tab after M7; a Tripo DCC Bridge receiver proposed (M8b) |
+| M7 | The old UI's last features on `/api/v1` and the page's Advanced panel (model manager, batches, retarget, Model Studio, samples, clean up, rig.json); the legacy JSON routes and the code only they used deleted; docs, runbook, deploy | done |
+| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | back end done ([GENERATE.md](GENERATE.md)): `/api/v1/generate` (estimate, confirm), import by task id, the pipeline; the page's Generate tab next; a Tripo DCC Bridge receiver proposed (M8b) |
 
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
@@ -552,6 +552,31 @@ M5 notes: `gui/index.html` and `app.js` are the whole page:
 - **Advanced** lists `GET /api/v1/steps` with a form per tool.
 - The old pages and the vendored three.js are deleted. Their JSON routes stay until M7, so nothing is lost before it
   has a v1 route. A server without m2m-rig answers 501 to rig, Apply and Export, and the page then offers the classic rig.
+
+M7 notes: the old page's remaining features have `/api/v1` routes in `gui/api_manage.py` and compact sections in the
+page's collapsed Advanced panel, under **This model** (Manage, Retarget a mocap clip, Model Studio, rig.json) and
+**Collection** (Batch with the audit table, Samples, Clean up generated files). The Load → Rig → Animate flow is
+unchanged. [OLD-UI.md](OLD-UI.md) says where each old feature went.
+- Deleting a model asks again on the page, and the API wants its name repeated (`DELETE .../models/{m}?confirm={m}`).
+- The batches are one table in `gui/server.py` (`BATCHES`, `batch_job`): audit-all, rig-all, clips-all, audit-failed,
+  source-all, each optionally on a list of models (the old rig-selected and audit-selected), going on past a failure
+  unless `keep_going` is false.
+- Model Studio's tools run as before through `steps/studio_job.py`, except **generate**, which spends money: it
+  answers 501 until M8 brings generation with its cost shown first.
+- Gone with the routes: `/api/state`, `/api/run`, `/api/cancel`, `/api/jobs/*`, `/api/upload*`, `/api/import`,
+  `/api/spec*`, `/api/anim/*`, `/api/studio*`, `/api/ai/*` (the handlers stay, under `/api/v1/ai/`),
+  `/api/workspace/*`, `/api/group/create`, `/api/model/*`, `/api/batch/*`, the `*-all` routes, `/api/audits`,
+  `/api/audit`, `/api/model`, `/api/previews`, `/api/doctor`, `/api/export*`, `/api/retarget*`, `/api/samples*`,
+  `/samples/`, `/api/git/*`, `/api/clean*`, `/api/open*` and `/api/watchdog/*`. So are `gui/studio_api.py`, the
+  server's upload batches, organiser and per-batch job builders, the spec editor's routes and bundle
+  (`gui/spec_api.py` keeps the schema, `check()` and the safe writer) and the viewer's previews list
+  (`gui/viewer_api.py` keeps `worst_bones()`). `/files/` stays: model details link to renders through it.
+- Commit to Git is CLI-only now (`python autorig/core/git_commit.py --root <models> --message ...`): on the hosted
+  copy it would push from the box with the box's credentials. Opening a folder on the desktop (`/api/open`) and
+  reaping stray Blender processes (`/api/watchdog/reap`) have no place on a hosted server either.
+- The API's error answers now close the connection when the request had a body: a request refused before its body
+  was read left that body on a kept-alive connection, where the server took it for the next request (the page saw a
+  501 after a refused move).
 
 M4 notes: the bridge (fork folder `src/lib/bridge/`) takes URL parameters and postMessage protocol v1, documented
 in [M2M-BRIDGE.md](M2M-BRIDGE.md) and exercised by `/m2m/bridge-test.html`. A fitted skeleton is world joint

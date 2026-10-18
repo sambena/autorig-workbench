@@ -202,8 +202,7 @@ works with, who made it, what was taken and under which licence, with links to e
 
 ## AI Assist
 
-AI Assist's dialogs went with the old page (docs/OLD-UI.md). Its routes (`/api/ai/*`) remain until it has a place on
-the new page. It lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
+AI Assist is in the page's Advanced panel, and its routes are `/api/v1/ai/*` (docs/OLD-UI.md, docs/API.md). It lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
 tools. The first one is **Fix this rig**: the AI reads the model's audit and QA pictures, tries candidate `rig.json`
 files on a scratch copy (rigging and auditing them on this computer), and proposes the best one. You apply it, which
 saves `rig.json` and re-rigs, or not; an applied fix can be undone. When it needs a decision it asks with answer

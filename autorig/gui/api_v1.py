@@ -13,8 +13,13 @@
 #
 # Every step and tool the CLI has is reachable too (GET /api/v1/steps lists them with their options): a model step
 # with POST /api/v1/models/{m}/steps/{step}, a tool with POST /api/v1/tools/{tool}. Tool paths are kept inside the
-# models root and the work folder. docs/API.md has examples.
+# models root and the work folder. docs/API.md has examples. The Advanced panel's routes (model manager, batches,
+# retarget, Model Studio, samples, clean up, rig.json) are in gui/api_manage.py.
 import json, os, re, secrets, shutil, sys, tempfile, time, urllib.parse, urllib.request
+try:
+    from . import api_manage
+except ImportError:
+    import api_manage
 
 VERSION = "1"
 MAX_DOWNLOAD = 1 << 30                                 # 1 GB: a generated model with its textures fits easily
@@ -60,6 +65,7 @@ ROUTES = [
     ("GET", "/api/v1/jobs/{id}/events", "the job's log as Server-Sent Events, ending with event: end", None),
     ("DELETE", "/api/v1/jobs/{id}", "cancel a job", None),
 ]
+ROUTES[-4:-4] = api_manage.ROUTES                      # before the jobs
 
 
 try:
@@ -91,21 +97,30 @@ def handle(h, app, srv, method, path, q):
         h._send(401, {"error": "missing or wrong token: send Authorization: Bearer <token>"},
                 extra={"WWW-Authenticate": "Bearer"})
         return True
+    def fail(code, message):
+        # refused before its body was read, a request leaves that body on the connection, where it would be taken
+        # for the next request: close the connection instead
+        extra = None
+        if int(h.headers.get("Content-Length") or 0):
+            h.close_connection = True
+            extra = {"Connection": "close"}
+        h._send(code, {"error": message}, extra=extra)
+
     try:
         out = route(h, app, srv, method, path, q)
         if out is not None:
             code, body = out if isinstance(out, tuple) else (200, out)
             h._send(code, body)
     except ApiError as e:
-        h._send(e.code, {"error": str(e)})
+        fail(e.code, str(e))
     except srv.Busy as e:
-        h._send(409, {"error": str(e)})
+        fail(409, str(e))
     except ValueError as e:
-        h._send(400, {"error": str(e)})
+        fail(400, str(e))
     except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
         pass
     except Exception as e:                                   # noqa: a reason, not a dropped connection
-        h._send(500, {"error": repr(e)})
+        fail(500, repr(e))
     return True
 
 
@@ -116,6 +131,9 @@ def route(h, app, srv, method, path, q):
         return {"version": VERSION, "docs": "/api/docs", "openapi": "/api/v1/openapi.json",
                 "routes": [{"method": m, "path": p, "summary": s} for m, p, s, _ in ROUTES]}
     head = parts[0] if parts else ""
+    out = api_manage.route(h, app, srv, method, parts, q)
+    if out is not api_manage.NOT_OURS:
+        return out
 
     if head == "steps" and method == "GET" and len(parts) == 1:
         return reg.step_info()

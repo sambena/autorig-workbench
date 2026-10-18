@@ -166,7 +166,7 @@ class OrganiseTest(LayoutTestCase):
 
 
 class ServerOrganiseTest(unittest.TestCase):
-    """The routes take what workbench.js sends."""
+    """The model manager's routes (/api/v1, gui/api_manage.py), as the page's Advanced > Manage sends them."""
 
     @classmethod
     def setUpClass(cls):
@@ -177,7 +177,11 @@ class ServerOrganiseTest(unittest.TestCase):
         cls.other = os.path.join(cls.tmp, "other")
         _model(cls.other, "Props", "crate")
         url_file = os.path.join(cls.tmp, "url.txt")
-        env = dict(os.environ, AUTORIG_URL_FILE=url_file, AUTORIG_ROOTS_FILE=os.path.join(cls.tmp, "roots.json"))
+        config = os.path.join(cls.tmp, "server.json")       # the second collection the server offers
+        with open(config, "w") as fh:
+            json.dump({"collections": [{"name": "other", "path": cls.other}]}, fh)
+        env = dict(os.environ, AUTORIG_URL_FILE=url_file, AUTORIG_ROOTS_FILE=os.path.join(cls.tmp, "roots.json"),
+                   AUTORIG_CONFIG=config)
         cls.proc = subprocess.Popen([sys.executable, "-m", "autorig", "--models", cls.models, "--port", "0",
                                      "--no-browser", "--token", cls.token], cwd=REPO, env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -197,39 +201,47 @@ class ServerOrganiseTest(unittest.TestCase):
         cls.proc.wait()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def call(self, path, body=None):
+    def call(self, method, path, body=None):
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(self.base + path, data=data, method="POST" if data is not None else "GET",
-                                     headers={"Content-Type": "application/json", "X-Autorig-Token": self.token})
+        req = urllib.request.Request(self.base + path, data=data, method=method,
+                                     headers={"Content-Type": "application/json", "Authorization": "Bearer " + self.token})
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.load(r)
 
+    def code(self, method, path, body=None):
+        try:
+            self.call(method, path, body); return 200
+        except urllib.error.HTTPError as e:
+            return e.code
+
     def names(self):
-        return {m["name"]: m["group"] for m in self.call("/api/state")["models"]}
+        return {m["name"]: m["group"] for m in self.call("GET", "/api/v1/models")["models"]}
 
-    def test_organise_then_switch_root(self):
-        roots = self.call("/api/workspace/roots")
-        self.assertTrue(any(r["current"] and r["models"] == 1 for r in roots["roots"]))
-
-        self.call("/api/group/create", {"group": "Champions"})
-        self.assertTrue(self.call("/api/model/move", {"model": "hero", "group": "Champions"})["moved"])
+    def test_organise_then_switch_collection(self):
+        r = self.call("POST", "/api/v1/models/hero/move", {"group": "Champions"})
+        self.assertTrue(r["moved"])
+        self.assertEqual(r["model"]["group"], "Champions")
         self.assertEqual(self.names(), {"hero": "Champions"})
+        self.assertIn("Champions", self.call("GET", "/api/v1/groups")["groups"])
+        self.assertEqual(self.code("POST", "/api/v1/models/hero/move", {"group": "../up"}), 400)
 
-        self.assertEqual(self.call("/api/model/duplicate", {"model": "hero", "new_name": "villain"})["name"], "villain")
-        self.call("/api/model/rename", {"model": "villain", "new_name": "boss"})
+        self.assertEqual(self.call("POST", "/api/v1/models/hero/duplicate", {"name": "villain"})["model"]["name"], "villain")
+        r = self.call("POST", "/api/v1/models/villain/rename", {"name": "boss"})
+        self.assertEqual((r["new_name"], r["model"]["name"]), ("boss", "boss"))
         self.assertEqual(self.names(), {"hero": "Champions", "boss": "Champions"})
+        self.assertEqual(self.code("POST", "/api/v1/models/boss/rename", {"name": "hero"}), 400)
+        self.assertEqual(self.code("POST", "/api/v1/models/nobody/rename", {"name": "x"}), 404)
 
-        with self.assertRaises(urllib.error.HTTPError) as e:
-            self.call("/api/model/rename", {"model": "boss", "new_name": "hero"})
-        self.assertEqual(e.exception.code, 400)
-
-        self.call("/api/model/delete", {"model": "boss"})
+        # deleting wants the name repeated
+        self.assertEqual(self.code("DELETE", "/api/v1/models/boss"), 400)
+        self.assertEqual(self.code("DELETE", "/api/v1/models/boss?confirm=hero"), 400)
+        self.assertEqual(self.names(), {"hero": "Champions", "boss": "Champions"})
+        self.call("DELETE", "/api/v1/models/boss?confirm=boss")
         self.assertEqual(self.names(), {"hero": "Champions"})
+        self.assertEqual(self.code("DELETE", "/api/v1/models/boss?confirm=boss"), 404)
 
-        info = self.call("/api/workspace/set-root", {"root": self.other})
-        self.assertEqual((info["name"], info["models"]), ("other", 1))
-        st = self.call("/api/state")
-        self.assertEqual(st["root_name"], "other")
+        info = self.call("POST", "/api/v1/collections/select", {"path": self.other})
+        self.assertTrue(os.path.samefile(info["current"], self.other))
         self.assertEqual(self.names(), {"crate": "Props"})
 
 

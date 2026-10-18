@@ -120,6 +120,10 @@
   .adv-pane td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
   #ai-log div { padding: 4px 0; border-bottom: 1px dashed var(--line); }
   #ai-log .err { color: var(--fail); } #ai-log .you { color: var(--accent2); }
+  .adv-pane td.FAIL { color: var(--fail); } .adv-pane td.CHECK { color: var(--check); } .adv-pane td.PASS { color: var(--ok); }
+  .adv-pane textarea#studio-settings { min-height: 120px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+  .confirm { border-left: 3px solid var(--fail); background: #e0556114; padding: 8px 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+  button.danger { border-color: var(--fail); color: var(--fail); }
 
   #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; max-width: min(560px, 92vw); box-shadow: 0 6px 24px #0008; z-index: 10; }
   #toast.err { border-color: var(--fail); }
@@ -244,7 +248,46 @@
           <div id="ai-log"></div>
           <div id="ai-plan"></div>
         </div></details>
-      <h3>Steps on this model</h3><div class="adv-steps" id="adv-steps"></div><h3>Tools</h3><div id="adv-tools"></div></div>
+      <h3>This model</h3><div class="adv-steps" id="adv-steps"></div>
+      <details class="adv-item" id="adv-manage"><summary><b>Manage</b><span class="help">rename, move to a group, duplicate or delete the model</span></summary>
+        <div class="adv-pane" id="manage-pane"><span class="hint">Pick a model first.</span></div></details>
+      <details class="adv-item" id="adv-retarget"><summary><b>Retarget a mocap clip</b><span class="help">a BVH or FBX clip moved onto the rigged model</span></summary>
+        <form class="adv-form" id="retarget-form">
+          <label for="mocap-file">Clip file</label><input type="file" id="mocap-file" accept=".bvh,.fbx">
+          <label for="mocap-pick">or uploaded</label><select id="mocap-pick"><option value="">(choose)</option></select>
+          <label for="mocap-name">Clip name</label><input type="text" id="mocap-name" placeholder="from the file">
+          <label for="mocap-root">Root motion</label><input type="checkbox" id="mocap-root" checked>
+          <div class="wide row"><button type="button" id="retarget-plan">Plan</button><button class="primary" id="retarget-run">Retarget</button></div>
+          <div class="wide hint" id="retarget-out"></div>
+        </form></details>
+      <details class="adv-item" id="adv-studio"><summary><b>Model Studio</b><span class="help">LODs, vehicle, reference sheet, materials, foliage, clip check, engine package and FBX</span></summary>
+        <div class="adv-pane">
+          <div class="row"><label for="studio-tool">Tool</label><select id="studio-tool"></select></div>
+          <textarea id="studio-settings" spellcheck="false" aria-label="Tool settings (JSON)"></textarea>
+          <div class="row"><button class="primary" id="studio-run" type="button">Run</button><button id="studio-save" type="button">Save settings</button><button id="studio-reset" type="button">Defaults</button></div>
+          <div id="studio-out"></div>
+        </div></details>
+      <details class="adv-item" id="adv-spec"><summary><b>rig.json</b><span class="help">the classic rig's spec (docs/SPEC.md)</span></summary>
+        <div class="adv-pane">
+          <textarea id="spec-text" spellcheck="false" aria-label="rig.json" style="min-height:180px;font-family:ui-monospace,Consolas,monospace;font-size:12px"></textarea>
+          <div class="row"><button class="primary" id="spec-save" type="button">Save</button><button id="spec-reload" type="button">Reload</button><span class="hint" id="spec-msg"></span></div>
+        </div></details>
+      <h3>Collection</h3>
+      <details class="adv-item" id="adv-batch"><summary><b>Batch</b><span class="help">one job over every model in the open collection</span></summary>
+        <div class="adv-pane">
+          <div class="adv-steps">
+            <button type="button" data-batch="audit-all">Audit all</button><button type="button" data-batch="rig-all">Rig all (classic)</button>
+            <button type="button" data-batch="clips-all">Re-bake clips for all</button><button type="button" data-batch="audit-failed">Audit the failed ones</button>
+            <button type="button" data-batch="source-all">Source views</button></div>
+          <label class="row"><input type="checkbox" id="batch-keep" checked>Keep going past a failure</label>
+          <div class="row"><button class="link" id="audit-table-show" type="button">Show the audit table (worst first)</button></div>
+          <div id="audit-table"></div>
+        </div></details>
+      <details class="adv-item" id="adv-samples"><summary><b>Samples</b><span class="help">bundled CC0 models to try the tool on</span></summary>
+        <div class="adv-pane" id="samples-pane"><span class="hint">Loading…</span></div></details>
+      <details class="adv-item" id="adv-clean"><summary><b>Clean up generated files</b><span class="help">free space; the tool rebuilds these when it needs them</span></summary>
+        <div class="adv-pane" id="clean-pane"><span class="hint">Loading…</span></div></details>
+      <h3>Tools</h3><div id="adv-tools"></div></div>
     <div><h3>Job</h3><div class="job" id="adv-job"><span class="hint">Nothing run yet.</span></div></div>
   </div>
 </details>
