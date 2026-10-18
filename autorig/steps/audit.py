@@ -16,6 +16,8 @@
 #               2x ("tear edges"), the widest gap they open, and surface outside the bone's subtree that moves
 #               ("collateral")
 #   combined    every joint at once (limbs 30, spine 12, tail 14): the pose the old bend test only showed as a picture
+#   stand       humanoids: both upper arms hanging 12 degrees off vertical, as a game stands a person; folds per
+#               10k triangles (faces whose crease angle changes over 60 degrees), graded as stand_folds
 # Writes <out>/<slug>.json with a "verdict" block (grade, pass, checks), "tears" (per bone) and "tear_sites" (where the
 # tear edges are, clustered, for a viewer to mark), and (unless -render 0) <slug>_skin.png and <slug>_bend.png.
 #
@@ -36,7 +38,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 # a gap far under a pixel at any normal camera distance; tear_edges_raw keeps the plain 2x count.
 from grades import GAP, THRESHOLDS, grade_audit
 import placed_rules
-from deformation import metrics as deformation_metrics, seam_pairs
+from deformation import metrics as deformation_metrics, seam_pairs, fold_edges
 SITE_CAP = 12        # tear clusters kept per pose
 POINT_CAP = 40       # tear edges kept per pose (the widest), for a viewer to mark one by one
 CLUSTER_R = 0.05     # tear edges closer than this x the model's size are one site
@@ -458,6 +460,49 @@ def pose_combined():
     if site: tear_sites.insert(0, site)
     return ratio
 
+# ---------------------------------------------------------------- standing pose (humanoids; graded)
+# A person in a game spends most of the time standing with the arms down, which none of the bends above tries: the
+# combined pose bends every joint 30 degrees about its own X, a single bend 40. A Tripo character rigged in a T (or
+# an A) and then stood with the arms by its sides squashes and folds the jacket at the shoulders without tearing
+# anything, and passed this audit at 44 tears (Tornado Titans' cast, 2026-10-17). Here each upper arm is swung down
+# to hang 12 degrees off vertical, and the folds (fold_edges) and squashed edges are counted. Graded as folds per
+# 10,000 triangles ("stand_folds"), so a dense mesh is not penalised for its density. Calibrated on that cast, each
+# rigged both ways: autorig's rigs folded 8-32 per 10k (the crumpled jackets Sam saw), Mixamo's 1-13.
+UPPER_ARM = re.compile(r"^(left|right)_?arm$|^upper_?arm[._]?[lr]$|^[lr][._]?upper_?arm$|^arm[._][lr]$|^(left|right)_?upper_?arm$")
+def stand_bones():
+    """The upper-arm bones of a humanoid, by name (Mixamo, UE, Blender-rigify style), when there is one on each side."""
+    found = [n for n in BN if UPPER_ARM.match(n.split(":")[-1].lower())]
+    return found if len(found) == 2 else []
+STAND = stand_bones() if arm is not None else []
+def pose_stand():
+    """Poses the arms down, measures it into result["stand_pose"], returns the folded edges (vertex pairs)."""
+    from mathutils import Matrix
+    clear_pose(); bpy.context.view_layer.update()
+    mw = arm.matrix_world
+    cx = float(np.mean(P[:, 0])) if NV else 0.0
+    for n in STAND:
+        pb = arm.pose.bones[n]
+        m = mw @ pb.matrix
+        h = m.to_translation()
+        d = (m.to_3x3() @ Vector((0, 1, 0))).normalized()
+        side = 1.0 if h.x >= cx else -1.0
+        hang = Vector((side * math.sin(math.radians(12)), 0, -math.cos(math.radians(12))))
+        r = d.rotation_difference(hang)
+        pb.matrix = mw.inverted() @ Matrix.Translation(h) @ r.to_matrix().to_4x4() @ Matrix.Translation(-h) @ m
+        bpy.context.view_layer.update()
+    Q = posed_coords()
+    L, ratio, tear, gap = tears_in(Q)
+    folds, fold_pairs = fold_edges(P, Q, TRIANGLES)
+    detail = deformation_metrics(P, Q, E, TRIANGLES, SEAM_PAIRS, S)
+    per10k = round(folds * 10000.0 / max(len(TRIANGLES), 1), 1)
+    result["stand_pose"] = dict(bones=STAND, hang_deg=12, fold_edges=folds, folds_per_10k_triangles=per10k,
+                                tear_edges=int(tear.sum()),
+                                compressed_edges=detail["compressed_edges"],
+                                collapsed_triangles=detail.get("collapsed_triangles", 0),
+                                worst_gap_pct=gap_pct(tear, gap))
+    clear_pose(); bpy.context.view_layer.update()
+    return fold_pairs
+
 # ---------------------------------------------------------------- rest pose
 def find_bone(*cands):
     for c in cands:
@@ -635,8 +680,11 @@ single = [b for b in bends if b["mode"] == "bend"]
 bend_tears = max([b["tear_edges"] for b in single] or [0])
 bend_gap = max([b["worst_gap_pct"] for b in single] or [0.0])
 twist_tears = max([b["tear_edges"] for b in bends if b["mode"] == "twist"] or [0])
+if STAND and "stand_pose" not in result:
+    pose_stand()
+stand_folds = result["stand_pose"]["folds_per_10k_triangles"] if STAND else None
 values = {"bleed_pct": bleed_total, "combined_tears": result["combined_pose"]["tear_edges"], "bend_tears": bend_tears,
-          "head_pct": round(head_pct, 2) if has_head else None, "max_influences": max_inf}
+          "head_pct": round(head_pct, 2) if has_head else None, "max_influences": max_inf, "stand_folds": stand_folds}
 graded = grade_audit(values, SPEC_AUDIT, {"combined_tears": result["combined_pose"]["worst_gap_pct"], "bend_tears": bend_gap})
 # per bone: how many edges each bone's own bend and twist tear, and the widest gap each opens
 by_bone = {}

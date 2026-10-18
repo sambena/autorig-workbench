@@ -17,17 +17,21 @@ RANK = {PASS: 0, CHECK: 1, FAIL: 2}
 GAP = 0.004
 
 # The pass limits. A model's spec can move them with audit={...} (same keys), and says why in notes["rig.audit"].
-THRESHOLDS = {"bleed_pct": 2.0, "combined_tears": 0, "bend_tears": 0, "head_pct": 2.5, "max_influences": 4}
+THRESHOLDS = {"bleed_pct": 2.0, "combined_tears": 0, "bend_tears": 0, "head_pct": 2.5, "max_influences": 4,
+              "stand_folds": 8.0}
 
 # How far past its pass limit a value may go and still be CHECK. An allowance moves the band with it: a model allowed
 # 8 combined tears is CHECK up to 8 + 12. Influences have no band: an engine takes four, and a fifth is dropped.
-CHECK_BAND = {"bleed_pct": 1.0, "combined_tears": 12, "bend_tears": 12, "head_pct": 1.0, "max_influences": 0}
+CHECK_BAND = {"bleed_pct": 1.0, "combined_tears": 12, "bend_tears": 12, "head_pct": 1.0, "max_influences": 0, "stand_folds": 12.0}
 
 # Tears past the limit are CHECK only while the widest gap they open (how much the worst edge grows) stays under
 # this, in % of the model's size (its longest side). Past it they FAIL, however few. The combined pose bends every
 # joint at once, so it gets more room than one joint's 40-degree bend. Calibrated on a real collection: rigs with a
 # handful of tears opened 1-3.5% on a single bend and 5.5-7% in the combined pose; rigs with dozens, 9-15%.
 GAP_CHECK_PCT = {"combined_tears": 8.0, "bend_tears": 5.0}
+
+# stand_folds: a humanoid stood with its arms down (audit.py's stand pose), folds per 10,000 triangles; None (PASS)
+# for anything without two upper arms. Calibrated 2026-10-17 on Tornado Titans' cast: autorig 8-32, Mixamo 1-13.
 
 HIGHER_IS_BETTER = {"head_pct"}
 TEAR_CHECKS = ("combined_tears", "bend_tears")
@@ -120,6 +124,6 @@ def summary(model, audit, allowances=None):
     return {"model": model, "grade": grade_of(v, allowances), "pass": v.get("pass"),
             "combined_tears": c.get("combined_tears"), "bend_tears": c.get("bend_tears"),
             "worst_gap_pct": t.get("worst_gap_pct"), "bleed_pct": c.get("bleed_pct"), "head_pct": c.get("head_pct"),
-            "max_influences": c.get("max_influences"), "worst_bone": t.get("worst_bone"),
+            "max_influences": c.get("max_influences"), "stand_folds": c.get("stand_folds"), "worst_bone": t.get("worst_bone"),
             "bones_tearing": t.get("bones_tearing"),
             "failing": [k for k, x in (v.get("checks") or {}).items() if x.get("grade", PASS if x.get("ok") else FAIL) != PASS]}

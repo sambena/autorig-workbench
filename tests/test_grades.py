@@ -29,6 +29,17 @@ class Grades(unittest.TestCase):
         self.assertEqual((v["grade"], v["pass"]), (PASS, True))
         self.assertTrue(all(c["ok"] and c["grade"] == PASS for c in v["checks"].values()))
 
+    def test_standing_folds(self):
+        # no upper arms to lower: the check does not apply
+        self.assertEqual(grade(stand_folds=None)["grade"], PASS)
+        # Tornado Titans' cast: Mixamo's rigs fold 1-13 per 10k triangles with the arms down, autorig's 8-32
+        self.assertEqual(grade(stand_folds=1.3)["grade"], PASS)
+        self.assertEqual(grade(stand_folds=8.0)["grade"], PASS)
+        self.assertEqual(grade(stand_folds=11.3)["grade"], CHECK)
+        self.assertEqual(grade(stand_folds=32.0)["grade"], FAIL)
+        # a model can be allowed more, and says why in its spec
+        self.assertEqual(grade({"stand_folds": 12}, stand_folds=11.3)["grade"], PASS)
+
     def test_tears_counts_and_gaps(self):
         small = {"bend_tears": 1.0, "combined_tears": 1.0}
         # one tear on one bend, a small gap: look at it, not broken
