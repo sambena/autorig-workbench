@@ -205,6 +205,31 @@ For a viewer to mark them, the audit JSON also carries:
 
 The GUI's `/api/audit?name=<model>` serves the whole JSON.
 
+## Mesh2Motion's skinning (M2b)
+
+`autorig/core/m2m_skin.py` is a NumPy port of [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app)'s
+skin-weight solver (Scott Petrovic and contributors, MIT), kept so the M2b bake-off can skin one fitted skeleton both
+ways and let the audit choose each template's default. It is faithful on purpose, quirks included:
+
+1. each vertex goes wholly to the bone whose midpoint (halfway to its first child) is nearest, never the root or a
+   `leaf`/`tip` bone; on a human, a hips or pelvis bone is ignored above the crotch depth (a ray straight down from
+   the pelvis to the mesh, plus 10%);
+2. a vertex behind a finger or toe bone's start joint goes back to its parent (knuckles stay with the hand);
+3. optional arm plane: arm weights inboard of the shoulder joint's |x| (plus an offset) go to the nearest non-arm bone;
+4. smoothing at boundaries between bones: torso 50% at the seam, then 25% and 10% one and two rings out; limbs blend
+   only the child's side; extremity-extremity seams not at all; the rest 50/50;
+5. weights summed back to 1, then the optional head plane (above a height, arm weights become the head's).
+
+It works in M2M's frame (glTF axes, Y up, world space); `autorig/core/m2m_skin_blender.py` converts a Blender mesh and
+armature, writes the weights as vertex groups with an Armature modifier, and returns what `m2m_rig.skin()` returns, so
+`steps/audit.py` grades the result like our own skinning. The M2 step calls it for `--skin m2m`.
+
+    python scripts/m2m_skin_parity.py           the port against the TypeScript (Node, vitest) on M2M's 9 samples
+
+The parity run needs `npm ci` in `third_party/mesh2motion-app`; it builds its fixtures fresh each time (nothing is
+committed) and has matched exactly (max weight difference 0) on all nine templates, with the planes off, at M2M's
+defaults and moved. `tests/test_m2m_skin.py` runs it when Node is there.
+
 ## Known rough edges
 
 - Paper-thin loose strips (ribbons, fins) follow the nearest chain; give them chains of their own if they must move.
