@@ -123,6 +123,25 @@ zero: the combined pose puts both arms overhead on an arched back, where linear-
 blades on any humanoid. Bleed counts a vertex owned by a bone that is neither its nearest, next to it, nor upstream
 of it; `bleed_legacy_pct` also counts upstream ownership.
 
+### Clothed people: rigging on Mixamo
+
+For a generated person in clothes (a Tripo multi-view character), Mixamo's auto-rigger keeps the shoulders far
+cleaner than bone heat when the arms come down: Tornado Titans' five story characters folded 1-13 per 10k triangles
+standing on Mixamo's rigs, 8-32 on autorig's (2026-10-17). The upload and the marker placement happen on mixamo.com on
+the user's own account; the rest is two steps:
+
+```bash
+python autorig/cli/run.py mixamo-upload --in Ice.glb --out up/IceAdult.fbx --height 1.8      # then rig it on mixamo.com
+python autorig/cli/run.py mixamo-import --rig <download>.fbx --source Ice.glb --name IceAdult --out <game folder>
+```
+
+`mixamo-upload` joins, welds and cleans the mesh (Mixamo silently bounces a mesh it cannot rig back to the marker
+screen), decimates it, stands it in metres facing -Y, and embeds a small JPEG of the base colour. On Mixamo: download
+**FBX Binary, Original Pose** (keeping the sculpt's A-pose as the rest). `mixamo-import` checks the download is a whole
+binary FBX (a browser may still call it `.tmp`), gives it the source's full colour and normal maps (fbx-maps) and Unity's
+axes (unity_fbx, inside the folder with its `.fbm`, so the texture paths come out relative). In Unity, import the `.fbm`
+folder before the FBX.
+
 ### Grades
 
 A pass limit of zero tears made nearly every rig a red FAIL, though one tear on one extreme bend and 150 across the
