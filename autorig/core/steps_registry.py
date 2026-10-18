@@ -154,7 +154,9 @@ TOOLS = {
                     opt("target", "engine axes", default="unity", choices=("unity", "generic")),
                     opt("format", "outputs", default="glb,fbx"),
                     opt("skin", "skinning method: autorig or m2m (default: the template's)"),
-                    opt("triangles", "triangle budget", type="integer", default=15000)]},
+                    opt("triangles", "triangle budget", type="integer", default=15000),
+                    opt("archetype", "what it is, when the template is auto (quadruped, humanoid...)"),
+                    opt("choose-only", "print the template auto would pick, and why, and stop", type="boolean")]},
     "m2m-quadruped": {
         "title": "Four-legged animal on Mesh2Motion", "runner": "blender", "script": "m2m_quadruped.py",
         "help": "the first Mesh2Motion fit: horse, fox or bird skeleton on a four-legged mesh (m2m-rig supersedes it)",
@@ -163,6 +165,16 @@ TOOLS = {
                     opt("out", "output folder", path="out", required=True),
                     opt("height", "height in metres", type="number"),
                     opt("clips", "Engine=clip pairs, e.g. Idle=idle,Walk=walk")]},
+    "m2m-clips": {
+        "title": "Mesh2Motion clips on a Mixamo person", "runner": "python", "script": "m2m_clips.py",
+        "help": "Mesh2Motion's human clips baked onto a Mixamo-rigged person as takes, beside the shipped file",
+        "options": [opt("clips", 'clip names, e.g. "Idle,Walk,Run" or "Idle_A,Walk,Jog,Roll_RM"', required=True),
+                    opt("rig", "Mixamo's download", path="in", required=True), opt("name", "game name", required=True),
+                    opt("source", "the GLB source, for its maps", path="in"),
+                    opt("out", "output folder", path="out", required=True),
+                    opt("root-motion", "*_RM clips keep their travel", type="boolean"),
+                    opt("replace", "write <Name>.fbx over the shipped file", type="boolean"),
+                    opt("fps", "frame rate", type="number", default=30)]},
     "game-prop": {
         "title": "Game prop", "runner": "blender", "script": "game_prop.py",
         "help": "a generated prop as a game prop: metres, facing, LODs, maps, wheels",

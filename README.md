@@ -1,18 +1,21 @@
 # Autorig Workbench
 
-Auto-rigging for sculpted and generated models, run headless in Blender, with a local GUI. Drop in a model, press
-**Run all**, and see whether the rig is good: the tool surveys the source, builds a named skeleton and skins it, trims
-it to an engine budget, audits the rig (PASS / CHECK / FAIL, with pictures), authors clips for its archetype, and writes a model
-card an engine importer can read. Blender never opens a window.
+Auto-rigging for sculpted and generated models, run headless in Blender, with a local web page. Load a model,
+rig it, animate it: the tool fits a skeleton and skins it, audits the rig (PASS / CHECK / FAIL), attaches clips and
+exports a game-ready GLB or FBX. Animation comes from [Mesh2Motion](https://github.com/Mesh2Motion), whose editor is
+built into the page. Blender never opens a window.
 
-**Status: early (alpha).** The pipeline, the GUI, the 3D results viewer and the spec editor work: pick bones in
-3D, Save and re-rig, and see the audit before and after. Audits are graded PASS / CHECK / FAIL, and **Audit all**
-grades the whole collection. Click-to-place joints for models with no skeleton has started in the editor. A repair
+**Status: early (alpha).** The page is new (phase M5 of docs/PLAN.md): three steps, Load → Rig → Animate, on the
+HTTP API and the embedded Mesh2Motion app. The old page, its 3D viewer and its spec editor are gone;
+[docs/OLD-UI.md](docs/OLD-UI.md) says where each of their features went. A repair
 pass is under way (docs/PLAN.md, "R"): R1 (retarget, the watch folder, batch runs, Cancel, auto-tune), R2
 (skeletons: rolls, IK, joint placement, naming, detection, skeleton checks in the audit), R3 (the skin passes:
 fixed, gated to the body plans they are for, each switchable) and R4 (clips without pops, root motion, gallop,
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
-Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. The Mesh2Motion web app is built in and served at `/m2m/`, the first step of moving animation onto it (docs/PLAN.md, "M"). `run.py m2m-rig` fits any of its nine skeletons to a mesh (picked from the body plan, or named), skins and audits it, and bakes its clips into GLB and FBX; the grades on generated meshes are still mostly FAIL, which the skinning bake-off (M2b) takes on. The model list works on one folder at a time (a collection, a pack or a group) and the Model Manager moves, renames, duplicates and deletes models. Expect rough edges; issues and pull requests are welcome.
+Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. `run.py m2m-rig` (M2) fits
+any of Mesh2Motion's nine skeletons to a mesh (picked from the body plan, or named), skins and audits it, and bakes
+its clips into GLB and FBX; the grades on generated meshes are still mostly FAIL, which the skinning bake-off (M2b)
+takes on. Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start
@@ -30,33 +33,31 @@ the processes it started. Raise one for big models with `AUTORIG_TIMEOUT_<STEP>`
 all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's memory where the platform reports it
 (Linux, macOS; 4096 by default, 0 for none).
 
-1. **Add a model**: drop an FBX with its `.fbm` folder, a GLB, glTF, OBJ, a zip, or a whole model folder on the page;
-   or choose files or a folder; or paste paths on this computer (copied, never moved). It lands in
-   `<models>/<group>/<name>/`.
-2. **Prepare** (Pipeline menu, optional) writes a cleaned copy before anything else: transforms applied, feet on
-   the floor, facing -Y, with a check for stretched UVs and for thin loops at the knees, hips, elbows and shoulders.
-   The file you dropped stays as it is. Later steps read the copy while it is newer than that file.
-3. **Survey** shows what the source holds and renders four views to read its facing from.
-4. Press **Edit spec** to make or fix its **`rig.json`** by clicking (below), or write it by hand (docs/SPEC.md).
-5. **Run all**: rig, trim, audit, publish, clips if the spec names a clip archetype, and the viewer's preview. Or press the steps one at a
-   time. A greyed-out button says what it is missing. **Cancel** stops the running step (its own process and the ones it started, nothing else).
-6. Read the **results**: the audit table and its sheets, the bend test, one strip of frames per clip, the survey, the
-   spec and the card. **Open output folder** shows the files. The model list's badge is the audit's grade: **PASS**
-   (green) within every limit, **CHECK** (amber) past a limit but inside its warn band, so look at it in the viewer,
-   **FAIL** (red) clearly broken (docs/PIPELINE.md, "Grades").
-7. **Audit all** (above the model list) audits every rigged model one after another, with the live log and Cancel,
-   then shows a table worst first: grade, tears, the widest gap, bleed, head share, the worst bone. A row opens its
-   model; **Table** shows the last results again.
-8. **View results** opens the 3D viewer (`viewer.html`) on the model, and every other rigged model: the rig on a stage
-   beside a 1.8 m figure, side-on facing +X as a side-on game shows it (or free orbit), both always framed whole
-   whatever the model's size; its clips with a scrub bar (drag to any frame; it pauses while you drag); a skeleton /
-   bone names / weights / bleed overlay; the audit's verdict and its worst bones, tinted red (a failed check) or
-   amber (a warning) on the skeleton and listed to click; in the weights view, every loose part of the mesh and the
-   bone that carries it, flagged when it rides the wrong one; and checks (real height, facing, bones, clips, the
-   audit). Keys: Left/Right model, Up/Down clip, Space play, R overlay, [ ] bone, V view, F frame, L loop, `,` `.`
-   step, Home/End. A gamepad (standard mapping: Xbox or PlayStation): D-pad or left stick model/clip, A play, Y
-   overlay, X view, B frame, LB/RB bone, LT/RT step. It reads `<rig folder>/preview.glb`, which **Preview** writes
-   (a model without one says "run Preview first"), and the audit from `<AUTORIG_WORK>/audit/<model>.json`.
+The page has three steps, and about ten controls:
+
+1. **Load.** Drop a GLB, FBX, glTF, OBJ or ZIP on the page (or choose a file), or pick a model from the library,
+   with search and a picture where the model has one. A new model lands in `<models>/<name>/`.
+2. **Rig.**
+   - **Auto rig** fits one of Mesh2Motion's nine skeletons (human, fox, horse, bird, dragon, kaiju, spider, snake,
+     shark), picked from the body plan or chosen in the menu. It then skins the model and audits it, with the live
+     log and Cancel.
+   - The result is the audit's grade: **PASS** (within every limit), **CHECK** (past a limit, inside its warn band)
+     or **FAIL**, with the reason in a sentence (docs/PIPELINE.md, "Grades").
+   - **Adjust joints** opens the Mesh2Motion editor on the page with our fitted skeleton. Move joints there, then
+     **Apply** to re-skin.
+   - **Classic** in the menu runs our own skeleton from `rig.json` instead ([SPEC.md](docs/SPEC.md)).
+3. **Animate.** Mesh2Motion's clip list plays on the rigged model. Tick clips, choose GLB or FBX, Unity or other
+   engines, and Mesh2Motion or Mixamo bone names, then **Export**. The files land in the model's folder, with
+   download links.
+
+**Advanced**, at the foot of the page and closed by default, lists every step and tool the workbench has:
+- **Steps on the current model:** prepare, survey, classic rig, trim, audit, clips, publish, preview, Mesh Doctor
+  and run all.
+- **Tools:** game-prop, fbx-maps, the Mixamo steps and the rest, each with a form made from its options.
+- **Job log:** for whatever is running.
+
+On a server without Mesh2Motion rigging (`m2m-rig`, phase M2), Auto rig, Apply and Export say so, and offer the
+classic rig instead.
 
 ## Game tools
 
@@ -65,60 +66,11 @@ all of them with `AUTORIG_STEP_TIMEOUT`. `AUTORIG_MAX_MEMORY_MB` caps a step's m
 their own meshes at their pivots), `run.py m2m-rig` (any body on one of Mesh2Motion's nine skeletons, playing its clips: docs/PIPELINE.md), `run.py tripo-clips` (idle/walk/trot/gallop on a Tripo-rigged animal's own skeleton, after mending its GLB) and
 `run.py crop-cards` (flat picture cards of plants for a foliage atlas). See [docs/GAME-TOOLS.md](docs/GAME-TOOLS.md).
 
-## Working folder and model organiser
+## Working folder
 
-The model list shows one **working folder** (the models root) at a time. The folder button at the left of the
-toolbar (or **File → Choose Working Folder…**) lists the current folder and its groups, the collection above it,
-recent folders, the bundled samples, and collections beside this repo (a folder with an `autorig.json` or an
-`_autorig` work folder) with their packs, each with its model count. Pick a pack or a single group to see only
-those models, or type a path: a full one, or a short one found under the current folder or beside this repo
-(`asset-packs/Heartroot`). A pack shares its collection's `_autorig` when it has none of its own, so its audits
-and logs stay where they were. The GUI opens on the last folder picked (kept in `.autorig_roots.json`, which git
-ignores); `--models` or `AUTORIG_MODELS` overrides it for that run. Switching waits until no step is running.
-
-Beside it, the **group** menu and the **search** box narrow the list further (name, group, format or clip
-archetype). **Model → Model Manager** (Ctrl+M) is a table of every model in the folder with the same filters,
-a sort, and per model **Move** (to another group; a new name makes the group), **Rename** (the folder, the rig
-outputs named after it and its work files), **Duplicate** (the source and `rig.json` only, so the copy starts
-unrigged), and **Delete** (the folder and its work files, after a confirm). Tick models to rig, audit or move them
-together. Specs and work files are keyed on the model's name, so moving between groups changes nothing else.
-
-## Documentation and help guide
-
-The local GUI server includes a comprehensive, interactive HTML guide with diagrams, button walkthroughs, bone placement instructions, and troubleshooting tips:
-
-- Open via the **Help & Guide ↗** button in the workbench top bar, or visit `/help.html` (served with session token).
-- **Button breakdown**: Detailed reference for every action (`Prepare`, `Survey`, `Edit spec`, `Rig`, `Trim`, `Audit`, `Make clips`, `Publish`, `Preview`, `Run all`, `Audit all`, `Table`, `Open output folder`, `Cancel`).
-- **How to place bones**: Coordinate system conventions (0..1 bounding box space facing -Y), 1-click **Suggest skeleton**, raycast click-to-place ("points in the middle"), and constructive build chains (`slice`, `tube`, `tip`, `points`).
-- **How to fix rigs & audits**: Diagnostic guide for reversed facing vectors, combined and single-bend mesh tears, weight bleed (> 2%), low head share (< 2.5%), rip welds, rigid piece assignment, and audit allowances.
-- **Visual reference gallery**: Includes rendered QA bend test sheets and skin ownership audit sheets from sample models.
-
-## The spec editor
-
-**Edit spec** (on a model, and in its Spec and card tab) opens `spec_editor.html`: the source model as it came, with its
-own skeleton drawn over it and every bone named (the first time, a few seconds' Blender step makes that view), and
-the spec as a form beside it. Nothing needs Blender or JSON:
-
-- **Click a bone** to see what it is and what the spec makes of it, with one-click jobs: make it the head or the hips,
-  a leg, throw it away (with everything under it), mirror a one-sided limb from it, or start a chain (wing, leg,
-  tail...) at it. The chains the spec makes are coloured on the skeleton the way the rig step will read them; limbs
-  it would only guess are grey.
-- **Pick** beside a field, then click bones (Head bone, Chains, Legs, Mirror...) or points on the model (a head line,
-  a jaw, a limb's tip, the corners of a rigid part). A point lands halfway through the part under the mouse. The
-  **Flat views** tab draws the side, front and top of the model on the 0..1 grid with the rig the draft would build,
-  and clicks there set points exactly.
-- Every change is checked (a bone the source does not have, the head and hips the same bone, an audit allowance
-  with no reason); the **Changes** tab shows the diff. **Save** writes rig.json beside the model (the old one kept as
-  `rig.json.bak`; fields the form does not know are kept). **Undo** and **Revert** take changes back.
-- **Suggest skeleton**: One click proposes an archetype and placed bone chains from geodesic extremities (`probe_tips`),
-  symmetry, and proportions for boneless models, or maps existing Tripo and Mixamo joint hierarchies. With the
-  `trimesh` and `open-clip` extras it also weighs the mesh's body plan (feet on the ground, wing sheets, a solid base)
-  and a picture vote over four renders, and says why it picked what it picked (docs/SPEC.md).
-- **Placed builder (`kind: "placed"`)**: Body-part rules (allowed/denied bones), join blending radii, weld seam ripping
-  to prevent stretch between limbs, distance gradient wing membranes with flank cutoffs, jaw hinges, and rigid islands.
-- **Save and re-rig** saves, then runs rig, trim, audit, clips and preview with the live log, and shows the new audit
-  next to the one before, value by value; the red balls in the view are where the audit's bends tore, each with the
-  source bone it came from. **View results** opens the 3D viewer.
+The server works on one models root: `--models` or `AUTORIG_MODELS` (default `samples/`). A model is a folder with
+a source export, at the root or one level down in a group. Specs and work files are keyed on the model's name, so a
+model can move between groups with nothing else changing.
 
 ## Command line
 
@@ -126,8 +78,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
     python autorig/cli/pipeline.py wolf,moth           rig -> trim -> audit, with a graded table
     python autorig/cli/run.py audit-all                 audit every rigged model, worst first (exit 1 on any FAIL)
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
-    python autorig/cli/run.py preview wolf              rigged/preview.glb for the 3D viewer (pipeline.py -preview too)
-    blender -b --python autorig/steps/source_preview.py -- -only wolf    the spec editor's view of the source
+    python autorig/cli/run.py preview wolf              rigged/preview.glb, a GLB of the rig and its clips
     blender -b --python autorig/steps/suggest_step.py -- -only wolf           suggest archetype and skeleton
     python autorig/cli/run.py help                      every step by name, for a launcher in the collection
 
@@ -139,29 +90,27 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 
 ## Layout
 
-    autorig/gui/     server.py  index.html                 the local GUI
-                     viewer.html  viewer.js  viewer_logic.js  viewer_api.py
-                                                           the 3D results viewer
-                     spec_editor.html  .js  spec_api.py    the spec editor
-                     vendor/three/                         three.js 0.186.0 (MIT), vendored so it works offline
+    autorig/gui/     server.py  index.html  app.js         the local server and the page (Load, Rig, Animate)
+                     api_v1.py                             the HTTP API (docs/API.md)
+                     m2m/                                  the built Mesh2Motion app (scripts/build_m2m.py)
     autorig/core/    layout  spec_store  blender  source_io  geo  skeletons  grades  suggest  placed_rules
     autorig/steps/   survey  facing  measure  probe_tips    inspect   (run inside Blender)
                      rerig  rerig_humanoid  run_builder     rig
                      decimate  audit  make_clips  suggest   trim, check, animate, suggest
-                     preview_glb                           the viewer's GLB copy of a rig and its clips
-                     source_preview                        the editor's GLB of the source and its own skeleton
+                     preview_glb                           a GLB copy of a rig and its clips
                      publish                                cards     (plain Python)
     autorig/cli/     pipeline  audit_all  qa_sheets  qa_overview
     docs/            PIPELINE  SPEC  FORMATS  SKELETONS  EXPORT  PLAN  CI  rig.schema.json
-    tests/           test_server.py  test_viewer.py  test_grades.py  test_spec_editor.py
+    tests/           test_server.py  test_api_v1.py  test_viewer.py  test_grades.py  test_spec_editor.py
                      test_suggest.py  test_placed_rules.py  test_blender_version.py
-                     test_audit_thresholds_ci.py  test_json_schema.py  viewer_logic_test.mjs
+                     test_audit_thresholds_ci.py  test_json_schema.py
     ci/              ci.yml                                GitHub Actions Linux workflow
     samples/         the default models root
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
-conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [API](docs/API.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md), [CREDITS](CREDITS.md).
+conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [API](docs/API.md),
+[M2M-BRIDGE](docs/M2M-BRIDGE.md), [OLD-UI](docs/OLD-UI.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md), [CREDITS](CREDITS.md).
 
 ## Mesh2Motion
 
@@ -183,6 +132,15 @@ The fork adds an embedding bridge, so a workbench page can drive Mesh2Motion in 
 joints into a template, read back the joints the user edits, pick clips and return exports as a Blob. The protocol
 is in [docs/M2M-BRIDGE.md](docs/M2M-BRIDGE.md), and `/m2m/bridge-test.html` exercises every message.
 
+**Clips on Mixamo people.** A person already rigged on Mixamo can play Mesh2Motion's 178 human clips without being
+rigged again. The clips are written as takes into `<Name>_m2m.fbx`, beside the shipped file, which is left alone:
+
+    python autorig/cli/run.py m2m-clips TornadoTitans/Ice_Age26_Tripo --clips "Idle,Walk,Run"
+    python autorig/cli/run.py m2m-clips --list
+
+The feet stay planted (leg IK onto the clip's ankles). `clip-check` scores each take. Only `*_RM` clips travel, and
+only with `--root-motion`. See docs/PLAN.md, "M6 notes".
+
 ## Clip motion
 
 Clips are keyed, then planted feet are held where they land; `clip-check` scores foot skate. See
@@ -201,23 +159,28 @@ cuts in game-parts and wheel carving ([docs/GAME-TOOLS.md](docs/GAME-TOOLS.md), 
 
     python -m unittest discover -s tests -v
 
-The server test starts the GUI's server with no browser against a temporary models folder, uploads a generated OBJ
-model with its `rig.json` the way the page does, runs every step through the API, cancels a running step, and checks
-the audit and the card. The viewer test checks the viewer's page, code and vendored three.js (token and Host rules,
-no way out of the folder), the list of previews with its audit digest, the worst bones an audit blames, and runs the
-preview step on a generated two-bone rig with two actions, reading the GLB back: one skin, both clips as animations.
-With Node it also runs `tests/viewer_logic_test.mjs`: gamepad mapping and deadzone, the scrub bar, the bleed rule and
-mesh islands. The Blender and Node parts are skipped when either is not installed. The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old
-audits), and the collection endpoints on made-up audit files: the table worst first, the badges, the tear sites, and
-Audit all going on past a model it cannot read. The spec editor test checks the rig.json writer (a hand-written file comes back byte for byte) and
-the schema checks, then the editor's API: the token, the diff, a stale or broken save refused, `.bak` and unknown
-fields kept; with Blender, a generated model with a `bone_N` skeleton goes through the source view and Save and
-re-rig twice, the second run carrying the first one's audit as "before".
+The server test starts the server with no browser against a temporary models folder. It checks the page and its
+code (token and Host rules) and that the old pages are gone. It uploads a generated OBJ model with its `rig.json`,
+runs every step through the API, cancels a running step, and checks the audit and the card. The API test covers
+`/api/v1`: tokens, OpenAPI, steps, templates and clips, adding models with their files and thumbnails, rig,
+skeleton, tools and jobs.
+
+The viewer test checks the previews list with its audit digest and the worst bones an audit blames. It also runs the
+preview step on a generated two-bone rig with two actions, and reads the GLB back: one skin, both clips as
+animations.
+
+The grades test checks PASS / CHECK / FAIL on made-up audit numbers (bands, gaps, allowances, old audits). It also
+checks the collection endpoints on made-up audit files: the table worst first, the badges, the tear sites, and Audit
+all going on past a model it cannot read.
+
+The spec test checks the rig.json writer (a hand-written file comes back byte for byte), the schema checks and the
+spec routes. With Blender, a generated model with a `bone_N` skeleton is re-rigged twice through them.
+
+The Blender parts are skipped when Blender is not installed.
 
 ## Licence
 
 GPL-3.0-or-later (LICENSE). The steps run inside Blender and import `bpy`, which is GPL; one licence keeps it simple.
-three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERSION.txt says where it came from).
 Mesh2Motion, under `third_party/mesh2motion-app/`, is MIT for its code and CC0 for its models, rigs and animations
 (`LICENSE-MIT.MD` and `LICENSE-CC0.MD` there), by Scott Petrovic and contributors.
 
@@ -226,21 +189,22 @@ works with, who made it, what was taken and under which licence, with links to e
 
 ## AI Assist
 
-**AI Assist** in the menu bar lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
+AI Assist's dialogs went with the old page (docs/OLD-UI.md). Its routes (`/api/ai/*`) remain until it has a place on
+the new page. It lets an AI (Claude, OpenAI, Gemini, or Ollama on your own machine) drive the workbench's
 tools. The first one is **Fix this rig**: the AI reads the model's audit and QA pictures, tries candidate `rig.json`
 files on a scratch copy (rigging and auditing them on this computer), and proposes the best one. You apply it, which
 saves `rig.json` and re-rigs, or not; an applied fix can be undone. When it needs a decision it asks with answer
 buttons, and the dialog lists the steps the model is missing (survey, suggest a skeleton, rig, audit, clips, preview)
 as buttons in order, with **Fix all**: the workbench's own steps, free.
 
-AI is off until you pick one in **AI Assist > AI settings & spending**. Every request shows its worst-case cost on the
+AI is off until one is picked in its settings. Every request shows its worst-case cost on the
 button before it runs. Paid AI stops at a monthly limit ($5 by default), and every call's cost is logged. Keys stay
 on this computer, in `.autorig_ai.json`, which git ignores. See [docs/AI-ASSIST.md](docs/AI-ASSIST.md), which also
 lists the next tools planned for it.
 
 ## Model Studio
 
-Open **Model → Model Studio** for static/skinned LOD exports, one merged engine LOD FBX (static, skinned with
+Model Studio (from the command line since the old page went) makes static/skinned LOD exports, one merged engine LOD FBX (static, skinned with
 its clips, or vehicle parts on wheel pivots), vehicle wheel pivots and a spin preview, reference comparison sheets, Poly Haven materials, seeded foliage/card generation, resumable Hyper3D
 jobs and per-clip animation quality checks. Settings stay with the model in `studio.json`; derived files
 stay in `_studio/`, outside source discovery. Image tools optionally need Pillow; paid generation is
@@ -254,8 +218,8 @@ only submitted when explicitly started. See [Model Studio](docs/MODEL-STUDIO.md)
 
 ## Engine export
 
-**File > Export** (or `python autorig/steps/export.py <model> --target unreal|unity|godot|web|all`) writes a zipped
-package per engine. Unity's FBX is rewritten so every root imports with rotation (0,0,0) and scale 1, and checked by
+`python autorig/steps/export.py <model> --target unreal|unity|godot|web|all` writes a zipped package per engine
+(the page's Export covers GLB and Unity FBX). Unity's FBX is rewritten so every root imports with rotation (0,0,0) and scale 1, and checked by
 reading the file back. Web and Godot GLBs go through gltfpack and the Khronos glTF-Validator when those are
 installed (`run.py extras install gltfpack gltf-validator`); a GLB with validator errors stops the export. Each
 package lists its passes in `export_report.json`. See [docs/EXPORT.md](docs/EXPORT.md).

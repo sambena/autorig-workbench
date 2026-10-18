@@ -28,7 +28,7 @@ ROUTES = [
     ("GET", "/api/v1/steps", "every model step and tool, with its options (the page's Advanced menu)", None),
     ("GET", "/api/v1/templates", "Mesh2Motion's skeleton templates and how many clips each has", None),
     ("GET", "/api/v1/templates/{template}/clips", "one template's clips: name, duration, root motion", None),
-    ("GET", "/api/v1/models", "every model in the collection, with its state", None),
+    ("GET", "/api/v1/models", "every model in the collection, with its state, Mesh2Motion template and thumbnail", None),
     ("POST", "/api/v1/models", "add a model: a raw file body (?filename=&name=&group=), or JSON {url, name, group}",
      {"url": "https://example.com/Cow.glb", "name": "Cow", "group": "Farm"}),
     ("GET", "/api/v1/models/{model}", "one model: state, audit, clips, files", None),
@@ -118,7 +118,7 @@ def route(h, app, srv, method, path, q):
         if len(parts) == 1:
             if method == "GET":
                 srv.spec_store.reload()
-                return {"models": [srv.status(g, n) for g, n in srv.layout.all_models()]}
+                return {"models": [listed(srv, g, n) for g, n in srv.layout.all_models()]}
             if method == "POST":
                 m = add_model(h, srv, q)
                 return 201, {"model": srv.status(m["group"], m["name"])}
@@ -392,6 +392,25 @@ def incoming(srv):
 def safe_filename(s):
     s = re.sub(r"[^A-Za-z0-9_\-.]+", "_", s).lstrip(".")
     return s[:120] or "model"
+
+
+THUMBNAILS = ("thumbnail.png", "thumbnail.jpg", "preview.png", "rigged/{name}_qa.png")
+
+
+def listed(srv, g, name):
+    """A model as GET /api/v1/models lists it: its state, the Mesh2Motion template it is rigged on (or None), and
+    a picture where one exists (the page's library cards)."""
+    out = srv.status(g, name)
+    sk = skeleton(srv, name)
+    out["m2m_template"] = sk["template"] if sk else None
+    out["thumbnail"] = None
+    d = srv.model_dir(g, name)
+    for rel in THUMBNAILS:
+        rel = rel.format(name=name)
+        if os.path.isfile(os.path.join(d, *rel.split("/"))):
+            out["thumbnail"] = "/api/v1/models/%s/files/%s" % (urllib.parse.quote(name), urllib.parse.quote(rel))
+            break
+    return out
 
 
 def model_files(srv, g, name):

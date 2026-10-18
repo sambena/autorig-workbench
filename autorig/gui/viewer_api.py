@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: the results viewer's side of the local server (gui/server.py routes to it).
+# Autorig Workbench: preview and audit digests for rigged models (gui/server.py routes to it). The 3D viewer page
+# that used them went with the old UI (M5); scripts can still read the same data here.
 #
-#   GET /viewer.html?model=<name>&t=<token>   the 3D viewer page (token required, as for the main page)
-#   GET /viewer.js, /viewer_logic.js,
-#       /vendor/...                           the viewer's code and the vendored three.js: static files from gui/,
-#                                             no user data, so no token (a module import cannot carry a header);
-#                                             the Host check still applies
 #   GET /api/previews                         every rigged model, with its preview.glb (when it has one), the
 #                                             preview.json the preview step wrote beside it, and a digest of its
 #                                             audit (<AUTORIG_WORK>/audit/<model>.json): the verdict, the worst
@@ -13,38 +9,6 @@
 #
 # preview.glb itself is served through the ordinary /files/models/... route, under the token.
 import json, os, re
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-CODE = ("/viewer.js", "/viewer_logic.js", "/workbench.js", "/studio.js", "/ai_assist.js")
-STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-                ".html": "text/html; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
-# The viewer's page: three.js loads GLB textures through blob: URLs.
-CSP = ("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; "
-       "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
-
-
-def static_file(path):
-    """(bytes, content type) for a viewer file under gui/ (viewer.js, viewer_logic.js or vendor/...), or None."""
-    rel = path.lstrip("/")
-    if not ("/" + rel in CODE or rel.startswith("vendor/")):
-        return None
-    parts = [p for p in rel.split("/") if p]
-    if any(p in ("..", ".") or p.startswith(".") or ":" in p or "\\" in p for p in parts):
-        return None
-    p = os.path.realpath(os.path.join(HERE, *parts))
-    if os.path.commonpath([os.path.normcase(p), os.path.normcase(os.path.realpath(HERE))]) != os.path.normcase(os.path.realpath(HERE)):
-        return None
-    ext = os.path.splitext(p)[1].lower()
-    if ext not in STATIC_TYPES or not os.path.isfile(p):
-        return None
-    with open(p, "rb") as fh:
-        return fh.read(), STATIC_TYPES[ext]
-
-
-def page(token):
-    with open(os.path.join(HERE, "viewer.html"), encoding="utf-8") as fh:
-        return fh.read().replace("__AUTORIG_TOKEN__", token)
-
 
 def _mtime(p):
     return os.path.getmtime(p) if p and os.path.exists(p) else 0

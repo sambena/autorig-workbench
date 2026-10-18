@@ -116,12 +116,21 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.status("/api/run", body={"model": "x", "step": "rm -rf"}), 400)
         self.assertEqual(self.status("/api/upload?batch=abcdefgh12&path=../evil.py", raw=b"x"), 400)
 
-        # /help.html requires token and serves HTML guide
-        self.assertEqual(self.status("/help.html", token=None), 403)
-        req = urllib.request.Request(self.base + "/help.html?t=" + TOKEN)
-        with urllib.request.urlopen(req) as r:
-            self.assertEqual(r.status, 200)
-            self.assertIn("Autorig Workbench", r.read().decode("utf-8"))
+        # the page needs the token and carries it for its API calls; its code is static
+        self.assertEqual(self.status("/", token=None), 403)
+        with urllib.request.urlopen(self.base + "/?t=" + TOKEN) as r:
+            page = r.read().decode("utf-8")
+            self.assertIn("default-src 'self'", r.headers["Content-Security-Policy"])
+        self.assertIn(TOKEN, page)
+        self.assertNotIn("__AUTORIG_TOKEN__", page)
+        self.assertIn('src="/app.js"', page)
+        with urllib.request.urlopen(self.base + "/app.js") as r:
+            self.assertTrue(r.headers["Content-Type"].startswith("text/javascript"))
+            self.assertIn(b"/api/v1", r.read())
+        # the old pages went with M5 (docs/OLD-UI.md maps them to the API and CLI)
+        for old in ("/help.html", "/viewer.html", "/spec_editor.html", "/studio.html", "/workbench.js",
+                    "/viewer.js", "/spec_editor.js", "/vendor/three/build/three.module.js"):
+            self.assertEqual(self.status(old), 404, old)
 
     def test_1b_mesh2motion_static(self):
         """/m2m/ serves the built Mesh2Motion app without the token, and nothing outside its folder."""

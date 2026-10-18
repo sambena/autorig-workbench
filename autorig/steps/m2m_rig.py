@@ -6,7 +6,7 @@
 #           [--clips walk,idle | Walk=walk,Trot | all] [--m2m <mesh2motion-app>] [--joints joints.json]
 #           [--naming default|mixamo] [--target unity|generic] [--format glb,fbx] [--skin autorig|m2m]
 #           [--triangles 15000] [--facing auto|+x|-x|+y|-y] [--swing 1] [--tail-swing 0.4] [--voxel 0]
-#           [--no-audit] [--no-preview]
+#           [--no-audit] [--no-preview] [--choose-only]
 #   blender -b --python autorig/steps/m2m_rig.py -- --model Cow_Holstein_Tripo [the options above]
 #   python autorig/cli/run.py m2m-rig <the same arguments>
 #
@@ -72,6 +72,8 @@ def args(argv=None):
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
                    help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
     p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
+    p.add_argument("--choose-only", dest="choose_only", action="store_true",
+                   help="print the template choice (M2M_RIG {template, choice}) and stop")
     p.add_argument("--no-audit", dest="audit", action="store_false")
     p.add_argument("--no-preview", dest="preview", action="store_false")
     a = p.parse_args(argv)
@@ -221,6 +223,22 @@ def body_measures(points, top):
         low[c] = min(low.get(c, 1e9), p.z)
     ground = sum(1 for z in low.values() if z < top * 0.06) / max(len(low), 1)
     return {"ground": round(ground, 3), "slender": round(sy / max(sx, top, 1e-6), 3), "stand": round(top / sy, 3)}
+
+
+def tail_reach(points):
+    """How far a four-legged body reaches back past its hind feet, over the distance between its front and hind
+    feet, read along its long horizontal axis with the head at the taller end (as the animal fit turns it): a fox,
+    dog or cat carries its tail out behind it, a horse, cow or goat lets it hang (core/m2m_templates.FOX_TAIL)."""
+    co = [p.copy() for p in points]
+    ext = [max(c[i] for c in co) - min(c[i] for c in co) for i in range(2)]
+    axis = 0 if ext[0] > ext[1] else 1
+    sign = head_end(co, axis)
+    yaw = {(0, 1): -math.pi / 2, (0, -1): math.pi / 2, (1, 1): math.pi, (1, -1): 0.0}[(axis, sign)]
+    R = Matrix.Rotation(yaw, 3, 'Z')
+    co = [R @ c for c in co]
+    L = landmarks(co, 2)
+    span = abs(L["back"] - L["front"])
+    return round((L["tail"] - L["back"]) / span, 3) if span > 1e-6 else None
 
 
 def tail_share(points, top):
@@ -1209,7 +1227,9 @@ def run(a):
         meas = dict(body_measures(pts, top), tail=round(tail_share(pts, top), 3))
         if plan and (plan.get("feet") or {}).get("count") is not None: meas["feet"] = plan["feet"]["count"]
         if plan and (plan.get("wings") or {}).get("both"): meas["wings"] = True
-        if a.height or a.model: meas["metres"] = round(top, 3)
+        if a.height: meas["metres"] = round(top, 3)     # a real height only: Tripo's come out ~1 m whatever they are
+        r = tail_reach(pts)
+        if r is not None: meas["tail_reach"] = r
         t, why = T.choose(arch, meas)
         log["choice"] = {"archetype": arch, "measures": meas, "why": why}
         if t is None:
@@ -1233,6 +1253,10 @@ def run(a):
     log["template"] = t
     log["family"] = fam
     log["height"] = round(top, 3)
+    if a.choose_only:                       # what auto would pick, and why, without rigging anything
+        print("M2M_RIG " + json.dumps({"name": a.name, "template": t, "choice": log["choice"], "suggest": log.get("suggest"),
+                                       "facing": log.get("facing"), "height": log["height"]}))
+        return 0
     info = T.TEMPLATES[t]
     method = a.skin or info["skin"]
     if method not in T.SKIN_METHODS: raise SystemExit("m2m_rig: skinning %r is not available yet" % method)
