@@ -22,12 +22,14 @@ try:
     import spec_store
     import grades
     import exporter
+    import steps_registry
 except ImportError:
     from autorig.core import blender
     from autorig.core import layout
     from autorig.core import spec_store
     from autorig.core import grades
     from autorig.core import exporter
+    from autorig.core import steps_registry
 
 
 DEFAULT_STEPS = ["rig", "trim", "audit"]
@@ -141,11 +143,9 @@ def run_model_pipeline(model, steps=None, auto_tune=False, export_target=None, d
                 if kind == "custom":
                     if not rig.get("builder"):
                         raise ValueError(f"'{model}' is kind custom but rig.json names no rig.builder")
-                    script = os.path.join(pack_d, rig["builder"])      # FORMATS.md: the builder is rig.builder
-                    if not os.path.isfile(script):
+                    if not os.path.isfile(os.path.join(pack_d, rig["builder"])):   # FORMATS.md: rig.builder
                         raise ValueError(f"custom builder {rig['builder']} is not in the model folder")
-                else:
-                    script = "rerig_humanoid.py" if kind == "humanoid" else "rerig.py"
+                script = steps_registry.rig_script(rig, pack_d)                 # as the GUI and the CLI pick it
                 r = blender.run(script, "-only", model, "-qa", layout.work_dir("qa"))
                 if r.returncode != 0:
                     raise RuntimeError(f"rig step failed ({os.path.basename(script)}): {_tail(r)}")

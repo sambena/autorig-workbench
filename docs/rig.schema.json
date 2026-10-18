@@ -315,20 +315,10 @@
         },
         "joints": {
           "type": "object",
-          "description": "Every bone's head and tail on the body as modelled (turned to face the template's way, stood on the ground), in the axes named. m2m_rig.py --joints takes this back to re-fit from edited joints.",
-          "properties": {
-            "axes": {"type": "string", "enum": ["gltf", "blender"], "description": "'gltf' (Y up, facing +Z, as Mesh2Motion and three.js see it) or 'blender' (Z up, facing -Y)."},
-            "bones": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {"head": {"$ref": "#/$defs/vec3"}, "tail": {"$ref": "#/$defs/vec3"}},
-                "required": ["head"]
-              }
-            }
-          },
-          "required": ["bones"]
+          "description": "Every bone's head by Mesh2Motion's bone name, [x, y, z] in metres on the body as modelled (the rigged files' own coordinates, before a template rest straightens a snake or a fish), in the axes named by `axes`. The API's skeleton and the Mesh2Motion bridge use this shape; m2m_rig.py --joints takes it back to re-fit from edited joints.",
+          "additionalProperties": {"$ref": "#/$defs/vec3"}
         },
+        "axes": {"type": "string", "enum": ["gltf", "blender"], "description": "The joints' axes: 'gltf' (Y up, facing +Z, as Mesh2Motion and three.js see it; the default) or 'blender' (Z up, facing -Y)."},
         "rest": {"type": "string", "enum": ["template", "as-modelled"], "description": "The exported rest pose: the template's (snakes and fish are straightened along its line) or the body as modelled."},
         "clips": {"type": "array", "items": {"type": "string"}, "description": "The Mesh2Motion clips baked, by their own names."},
         "skin": {"type": "string", "enum": ["autorig"], "description": "The skinning method ('m2m' arrives with the skinning bake-off)."},

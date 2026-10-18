@@ -1,0 +1,170 @@
+<!doctype html>
+<!-- Test page for the Mesh2Motion embedding bridge (docs/M2M-BRIDGE.md). scripts/build_m2m.py copies it into the
+     built app, so it is served at /m2m/bridge-test.html, the same origin as /m2m/create.html. It drives every message
+     and logs every reply; window.bridgeLog holds them all for scripted checks. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M2M bridge test</title>
+<style>
+  body { margin: 0; font: 13px system-ui, sans-serif; display: grid; grid-template-columns: 340px 1fr; height: 100vh; background: #1d1f23; color: #ddd; }
+  #side { overflow-y: auto; padding: 8px; border-right: 1px solid #444; }
+  fieldset { border: 1px solid #444; margin: 0 0 8px; padding: 6px; }
+  legend { color: #9cf; }
+  label { display: block; margin: 3px 0; }
+  input[type=text], textarea, select { width: 100%; box-sizing: border-box; background: #111; color: #ddd; border: 1px solid #555; }
+  textarea { height: 60px; font: 11px monospace; }
+  button { margin: 2px 2px 2px 0; }
+  #main { display: grid; grid-template-rows: 1fr 200px; min-width: 0; }
+  iframe { width: 100%; height: 100%; border: 0; background: #000; }
+  #log { overflow-y: auto; margin: 0; padding: 4px; font: 11px monospace; border-top: 1px solid #444; white-space: pre-wrap; }
+  .out { color: #8c8; } .in { color: #cc8; } .err { color: #f88; }
+</style>
+</head>
+<body>
+<div id="side">
+  <fieldset><legend>Frame</legend>
+    <label>URL <input type="text" id="src" value="create.html?embed=1"></label>
+    <button id="reload">Reload frame</button>
+    <button id="url-load">Reload with URL params from Load below</button>
+  </fieldset>
+  <fieldset><legend>load</legend>
+    <label>model <input type="text" id="model" value="models/model-human.glb"></label>
+    <label>template <select id="template">
+      <option>human</option><option>fox</option><option>horse</option><option>bird</option><option>dragon</option>
+      <option>kaiju</option><option>spider</option><option>snake</option><option>shark</option></select></label>
+    <label>step <select id="step"><option value="">(none: stop at edit)</option><option>edit</option><option selected>animate</option></select></label>
+    <label>skeleton (URL, or JSON {"template":..,"joints":{..}}, or empty) <textarea id="skeleton"></textarea></label>
+    <button id="load">load</button>
+  </fieldset>
+  <fieldset><legend>steps and joints</legend>
+    <button id="goto-edit">goto edit</button><button id="goto-animate">goto animate</button><br>
+    <button id="get-joints">getJoints</button>
+    <button id="nudge">setJoints: head +5 cm up</button>
+  </fieldset>
+  <fieldset><legend>clips</legend>
+    <label>names (comma separated) <input type="text" id="clip-names" placeholder="from the clips message"></label>
+    <button id="select-clips">selectClips</button>
+    <button id="select-first">selectClips: first two</button>
+  </fieldset>
+  <fieldset><legend>export</legend>
+    <label>format <select id="format"><option>glb</option><option>fbx</option></select></label>
+    <label>naming <select id="naming"><option>default</option><option>mixamo</option></select></label>
+    <label>fbxPreset <select id="fbx-preset"><option>unity</option><option>unreal</option></select></label>
+    <label><input type="checkbox" id="mirror"> mirror (adds a mirrored copy of each clip)</label>
+    <label><input type="checkbox" id="use-names" checked> clips = names above (else the current selection)</label>
+    <button id="export">export</button>
+    <div id="export-result"></div>
+  </fieldset>
+  <fieldset><legend>errors</legend>
+    <button id="bad-version">v:2 message</button><button id="bad-type">unknown type</button>
+  </fieldset>
+</div>
+<div id="main">
+  <iframe id="frame" title="Mesh2Motion"></iframe>
+  <pre id="log"></pre>
+</div>
+<script>
+const frame = document.getElementById('frame')
+const $ = id => document.getElementById(id)
+const logEl = $('log')
+window.bridgeLog = []          // every message from the app, newest last
+let nextId = 1
+let lastJoints = null
+let lastClips = null
+
+function log (cls, text) {
+  const line = document.createElement('div')
+  line.className = cls
+  line.textContent = new Date().toLocaleTimeString() + ' ' + text
+  logEl.appendChild(line)
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+function summarize (m) {
+  const copy = { ...m }
+  if (copy.blob instanceof Blob) copy.blob = `Blob(${copy.blob.size} bytes)`
+  if (copy.joints) copy.joints = `{${Object.keys(copy.joints).length} joints}`
+  if (copy.available) copy.available = `[${copy.available.length} clips]`
+  return JSON.stringify(copy)
+}
+
+function send (msg) {
+  const full = { v: 1, id: nextId++, ...msg }
+  frame.contentWindow.postMessage(full, location.origin)
+  log('out', '→ ' + JSON.stringify(full))
+  return full.id
+}
+
+window.addEventListener('message', async (event) => {
+  if (event.origin !== location.origin || event.source !== frame.contentWindow) return
+  const m = event.data
+  window.bridgeLog.push(m)
+  log(m.type === 'error' ? 'err' : 'in', '← ' + summarize(m))
+  if (m.type === 'joints') lastJoints = m
+  if (m.type === 'clips') {
+    lastClips = m
+    if ($('clip-names').value === '' && m.available.length > 0) $('clip-names').value = m.available.slice(0, 2).map(c => c.name).join(', ')
+  }
+  if (m.type === 'exported') {
+    const head = new Uint8Array(await m.blob.slice(0, 4).arrayBuffer())
+    const magic = String.fromCharCode(...head)
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(m.blob)
+    a.download = m.filename
+    a.textContent = `${m.filename} (${m.blob.size} bytes, starts "${magic}")`
+    $('export-result').replaceChildren(a)
+  }
+})
+
+function names () { return $('clip-names').value.split(',').map(s => s.trim()).filter(Boolean) }
+
+function skeletonValue () {
+  const text = $('skeleton').value.trim()
+  if (text === '') return undefined
+  return text.startsWith('{') ? JSON.parse(text) : text
+}
+
+$('reload').onclick = () => { frame.src = $('src').value }
+$('url-load').onclick = () => {
+  const p = new URLSearchParams({ embed: '1', model: $('model').value, template: $('template').value })
+  if ($('step').value) p.set('step', $('step').value)
+  const sk = $('skeleton').value.trim()
+  if (sk && !sk.startsWith('{')) p.set('skeleton', sk)
+  $('src').value = 'create.html?' + p.toString()
+  frame.src = $('src').value
+}
+$('load').onclick = () => {
+  const msg = { type: 'load', model: $('model').value, template: $('template').value }
+  if ($('step').value) msg.step = $('step').value
+  const sk = skeletonValue()
+  if (sk !== undefined) msg.skeleton = sk
+  send(msg)
+}
+$('goto-edit').onclick = () => send({ type: 'goto', step: 'edit' })
+$('goto-animate').onclick = () => send({ type: 'goto', step: 'animate' })
+$('get-joints').onclick = () => send({ type: 'getJoints' })
+$('nudge').onclick = () => {
+  if (!lastJoints) { log('err', 'getJoints first'); return }
+  const name = Object.keys(lastJoints.joints).find(n => /head/i.test(n)) ?? Object.keys(lastJoints.joints)[0]
+  const [x, y, z] = lastJoints.joints[name]
+  send({ type: 'setJoints', joints: { [name]: [x, y + 0.05, z] } })
+}
+$('select-clips').onclick = () => send({ type: 'selectClips', names: names() })
+$('select-first').onclick = () => {
+  if (!lastClips) { log('err', 'no clips message yet'); return }
+  send({ type: 'selectClips', names: lastClips.available.slice(0, 2).map(c => c.name) })
+}
+$('export').onclick = () => {
+  const msg = { type: 'export', format: $('format').value, naming: $('naming').value, fbxPreset: $('fbx-preset').value, mirror: $('mirror').checked }
+  if ($('use-names').checked) msg.clips = names()
+  send(msg)
+}
+$('bad-version').onclick = () => { frame.contentWindow.postMessage({ v: 2, id: nextId++, type: 'getJoints' }, location.origin) }
+$('bad-type').onclick = () => send({ type: 'explode' })
+
+frame.src = $('src').value
+</script>
+</body>
+</html>

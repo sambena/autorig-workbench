@@ -39,9 +39,11 @@ class TestSelfFit(unittest.TestCase):
         self.assertEqual(sorted(c["name"] for c in T.gltf_clips(g)), ["idle", "walk"])
         self.assertEqual(log["bare_vertices"], 0)
         names = [n for n, _ in T.bones(t, ROOT)]
-        joints = json.load(open(os.path.join(out, "rig.json")))["m2m"]["joints"]
-        self.assertEqual(joints["axes"], "gltf")
-        self.assertEqual(sorted(joints["bones"]), sorted(names))
+        m2m = json.load(open(os.path.join(out, "rig.json")))["m2m"]
+        self.assertEqual(m2m["axes"], "gltf")
+        joints = m2m["joints"]                                  # {bone: [x, y, z]}, as the API and the bridge read it
+        self.assertEqual(sorted(joints), sorted(names))
+        self.assertTrue(all(len(v) == 3 for v in joints.values()))
         return out, log, joints
 
     def test_fox(self):
@@ -53,29 +55,27 @@ class TestSelfFit(unittest.TestCase):
         spec = json.load(open(os.path.join(out, "rig.json")))
         self.assertEqual(spec["rig"]["kind"], "m2m")
         self.assertEqual(spec["m2m"]["template"], "fox")
-        # edited joints come back: the left front knee moved 4 cm
-        j = spec["m2m"]["joints"]
+        # edited joints come back, in the API's {template, joints} shape: the left front knee moved 4 cm
         name = "Front_Leg_Lower_L"
-        moved = [c for c in j["bones"][name]["head"]]
+        moved = list(spec["m2m"]["joints"][name])
         moved[2] += 0.04
-        j["bones"][name]["head"] = moved
         jf = os.path.join(out, "edit.json")
-        json.dump(j, open(jf, "w"))
+        json.dump({"template": "fox", "joints": dict(spec["m2m"]["joints"], **{name: moved})}, open(jf, "w"))
         out2 = tempfile.mkdtemp(prefix="m2m_fox_edit_")
         code, log2 = rig("--in", T.files("fox", ROOT)[1][0], "--name", "Fox", "--out", out2, "--template", "fox",
                          "--m2m", ROOT, "--joints", jf, "--no-preview", "--no-audit")
         self.assertEqual(code, 0, log2)
-        got = json.load(open(os.path.join(out2, "rig.json")))["m2m"]["joints"]["bones"][name]["head"]
+        got = json.load(open(os.path.join(out2, "rig.json")))["m2m"]["joints"][name]
         self.assertLess(max(abs(a - b) for a, b in zip(got, moved)), 1e-3)
 
     def test_human(self):
         out, log, joints = self.check("human")
-        b = joints["bones"]
+        b = joints
         # standing: the head over the hips over the feet, the left hand out to +x (glTF x is Blender's)
-        self.assertGreater(b["head"]["head"][1], b["pelvis"]["head"][1])
-        self.assertGreater(b["pelvis"]["head"][1], b["foot_l"]["head"][1])
-        self.assertGreater(b["hand_l"]["head"][0], b["upperarm_l"]["head"][0])
-        self.assertGreater(b["upperarm_l"]["head"][0], 0)
+        self.assertGreater(b["head"][1], b["pelvis"][1])
+        self.assertGreater(b["pelvis"][1], b["foot_l"][1])
+        self.assertGreater(b["hand_l"][0], b["upperarm_l"][0])
+        self.assertGreater(b["upperarm_l"][0], 0)
 
     def test_snake(self):
         out, log, joints = self.check("snake")

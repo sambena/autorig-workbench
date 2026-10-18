@@ -663,16 +663,23 @@ def write_bones(arm, heads, tails, scale, tol, rolls=None):
 
 
 def read_joints(path):
-    """{bone: (head, tail or None)} in Blender's axes, from rig.json's m2m.joints (axes "gltf" by default) or a plain
-    {bone: [x, y, z]} / {bone: {"head", "tail"}}, a file or the JSON itself."""
+    """{bone: (head, tail or None)} in Blender's axes, from a file or the JSON itself, in any of the shapes that
+    carry them: rig.json ({"m2m": {"joints": ...}}), the API's and the bridge's {"template", "joints"}, or the joints
+    alone. Joints are {bone: [x, y, z]} (the head; what rig.json and the bridge use) or {bone: {"head", "tail"}},
+    optionally under "bones"; glTF's axes (Y up, facing +Z) unless "axes" says "blender"."""
     data = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else json.loads(path)
-    if "m2m" in data: data = data["m2m"].get("joints", {})
-    axes = data.get("axes", "gltf") if isinstance(data.get("axes"), str) else "gltf"
+    axes = "gltf"
+    for key in ("m2m", "joints"):
+        if isinstance(data.get(key), dict):
+            if isinstance(data.get("axes"), str): axes = data["axes"]
+            data = data[key]
+    if isinstance(data.get("joints"), dict): data = data["joints"]
+    if isinstance(data.get("axes"), str): axes = data["axes"]
     bones = data.get("bones", data)
     conv = T.from_gltf if axes == "gltf" else (lambda p: [float(c) for c in p])
     out = {}
     for n, v in bones.items():
-        if n == "axes": continue
+        if n == "axes" or v is None: continue
         if isinstance(v, dict):
             out[n] = (Vector(conv(v["head"])), Vector(conv(v["tail"])) if v.get("tail") else None)
         else:
@@ -1318,10 +1325,10 @@ def run(a):
     unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
     log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used)
 
-    # the joints as fitted (Mesh2Motion's names, glTF axes, on the body as modelled: what the browser edits, and
-    # what --joints takes back)
-    joints = {"axes": "gltf", "bones": {b.name: {"head": T.to_gltf(b.head_local), "tail": T.to_gltf(b.tail_local)}
-                                        for b in arm.data.bones}}
+    # the joints as fitted: each bone's head by Mesh2Motion's name, in glTF's axes, on the body as modelled (the
+    # rigged files' own coordinates, before a template rest straightens it): what the API's skeleton and the
+    # bridge read and write, and what --joints takes back
+    joints = {b.name: T.to_gltf(b.head_local) for b in arm.data.bones}
     rest = a.rest or ("template" if fam == "body" else "as-modelled")
     if rest == "template":
         log["reposed_offset"] = repose(arm, mesh, rest3)
@@ -1369,7 +1376,7 @@ def run(a):
              for w, _ in wanted if w in acts]
 
     # rig.json, the card and the log
-    m2m = {"template": t, "joints": joints, "rest": rest, "clips": [c["m2m"] for c in clips], "skin": method,
+    m2m = {"template": t, "joints": joints, "axes": "gltf", "rest": rest, "clips": [c["m2m"] for c in clips], "skin": method,
            "naming": a.naming, "target": a.target}
     spec_dir = folder or a.out
     rel = (lambda p: os.path.relpath(p, spec_dir).replace(os.sep, "/"))

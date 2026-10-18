@@ -161,7 +161,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
-conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md), [CREDITS](CREDITS.md).
+conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [API](docs/API.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md), [CREDITS](CREDITS.md).
 
 ## Mesh2Motion
 
@@ -171,8 +171,17 @@ web app is a git submodule (`third_party/mesh2motion-app`, our fork) that the se
     git submodule update --init third_party/mesh2motion-app
     python scripts/build_m2m.py          (needs Node 24 and npm; writes autorig/gui/m2m/)
 
-Then open `http://127.0.0.1:8765/m2m/`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
+Then open `http://127.0.0.1:8765/m2m/`.
+
+**API.** Scripts, AI agents and Unity drive the workbench through `/api/v1` with a Bearer token: add a model, rig it on a
+Mesh2Motion skeleton, attach clips, export. [docs/API.md](docs/API.md) has examples; `/api/v1/openapi.json` describes
+every route. Every step and tool is listed once, in `autorig/core/steps_registry.py`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
 unaffected.
+
+The fork adds an embedding bridge, so a workbench page can drive Mesh2Motion in an iframe. URL parameters
+(`create.html?embed=1&model=...&template=...&skeleton=...&step=animate`) and `postMessage` requests load our fitted
+joints into a template, read back the joints the user edits, pick clips and return exports as a Blob. The protocol
+is in [docs/M2M-BRIDGE.md](docs/M2M-BRIDGE.md), and `/m2m/bridge-test.html` exercises every message.
 
 ## Clip motion
 

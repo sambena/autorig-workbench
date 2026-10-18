@@ -194,7 +194,8 @@ picked for:
 | Field | Meaning |
 |---|---|
 | `template` | the Mesh2Motion skeleton: `human`, `fox`, `horse`, `bird`, `dragon`, `kaiju`, `spider`, `snake`, `shark` (`core/m2m_templates.py`) |
-| `joints` | `{"axes": "gltf", "bones": {bone: {"head": [x, y, z], "tail": [x, y, z]}}}`: every bone of the fit on the body as modelled (turned to face the template's way and stood on the ground, in metres), in glTF's axes (Y up, facing +Z, as Mesh2Motion and three.js see it; `"axes": "blender"` for Z up, facing -Y). Edit a joint and pass the file back with `--joints` to fit again from it: the bones named take the edited places, the rest the measured ones. A plain `{bone: [x, y, z]}` works too |
+| `joints` | `{bone: [x, y, z]}`: every bone's head by Mesh2Motion's name, in metres on the body as modelled (the rigged files' own coordinates: turned to face the template's way and stood on the ground; before a template rest straightens a snake or a fish). The shape the API's `/skeleton` and the Mesh2Motion bridge (docs/M2M-BRIDGE.md) use. Edit a joint and pass it back with `--joints` (rig.json itself, `{"template", "joints"}`, or the joints alone; `{bone: {"head", "tail"}}` works too) to fit again: the bones named take the edited places, the rest the measured ones |
+| `axes` | the joints' axes: `"gltf"` (Y up, facing +Z, as Mesh2Motion and three.js see it; the default) or `"blender"` (Z up, facing -Y) |
 | `rest` | `"template"`: the exported rest pose is the template's (snakes and fish are straightened along its line, their default); `"as-modelled"`: the body as it was modelled (the default for the others) |
 | `clips` | the Mesh2Motion clips baked, by their own names (the files carry the engine names given with `--clips`) |
 | `skin` | `"autorig"`: bone heat on a watertight voxel copy, carried back by nearest face, then the nearest-bone gate, smoothing and the leg confine. Mesh2Motion's own skinning arrives with the bake-off (docs/PLAN.md, M2b) |

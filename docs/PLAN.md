@@ -475,11 +475,12 @@ scripts, AI agents and Unity.
 | M1 | Mesh2Motion as a submodule (our fork `sambena/mesh2motion-app`, branch `workbench-bridge`), built by `scripts/build_m2m.py`, served at `/m2m/` | done |
 | M2 | `steps/m2m_rig.py`: auto-fit any Mesh2Motion template (human, fox, horse, bird, dragon, kaiju, spider, snake, shark), our skinning, audit, clips, GLB/FBX | done |
 | M2b | Skinning bake-off on the same fitted skeletons, Mesh2Motion's skinning against ours, graded by our audit; the winner is each template's default | |
-| M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI) and one step registry for the server, the CLI and batches | |
-| M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back | |
+| M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI; docs/API.md) and one step registry (`core/steps_registry.py`) for the server, the CLI, batches and the API | done |
+| M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
 | M5 | The new three-step page, replacing the old GUI | |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans | |
 | M7 | Docs, runbook, deploy | |
+| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | |
 
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
@@ -516,6 +517,11 @@ What it took, on the box's Tripo models (2026-10-18):
 
 The clips look right in renders of every one; the grades are the skinning's, which M2b compares against
 Mesh2Motion's own. For scale, the cow's shipped Tripo rig grades FAIL too (61 / 36, bleed 9.8%).
+
+M4 notes: the bridge (fork folder `src/lib/bridge/`) takes URL parameters and postMessage protocol v1, documented
+in [M2M-BRIDGE.md](M2M-BRIDGE.md) and exercised by `/m2m/bridge-test.html`. A fitted skeleton is world joint
+positions keyed by Mesh2Motion bone name. The bridge scales the template to the fit (median bone-length ratio), then
+translates each bone to its joint, parents first, keeping the template's rest rotations.
 
 M1 notes: the fork fixes two things upstream would want. Its Vite config baked the whole build environment into the
 page (any token or key set where it was built), and its asset paths only worked at a site root (upstream issue #59).

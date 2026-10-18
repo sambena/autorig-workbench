@@ -35,10 +35,12 @@
 #                                                   a generated character cleaned and packed for Mixamo's auto-rigger
 #   python autorig/cli/run.py mixamo-import --rig <download>.fbx --source Ice.glb --name IceAdult --out <folder>
 #                                                   the Mixamo rig with full maps and Unity's axes, as a game file
-#   python autorig/cli/run.py m2m-rig --in Cow.glb --name Cow --out <folder> [--template auto|horse|...] [--clips walk,idle]
-#                                                   a mesh on a Mesh2Motion skeleton, skinned, audited, playing its clips
-#   python autorig/cli/run.py m2m-quadruped --in Cow.glb --rig horse-animations.glb --name Cow --height 1.6 --out <folder>
-#                                                   the older four-legged form of m2m-rig (same step)
+#   python autorig/cli/run.py m2m-rig --model Cow_Holstein_Tripo [--template auto] [--clips all] [--joints j.json]
+#                                                   fit a Mesh2Motion skeleton, skin, audit, attach its clips
+#   python autorig/cli/run.py m2m-quadruped --in Cow.glb --name Cow --rig horse-animations.glb --out <folder>
+#                                                   the first Mesh2Motion fit, four-legged only
+#
+# Every tool and step is listed in autorig/core/steps_registry.py (the GUI, batches and the API read it too).
 #
 # Folders come from AUTORIG_MODELS and AUTORIG_WORK, as everywhere else.
 import os, subprocess, sys
@@ -88,14 +90,17 @@ def main(argv):
         arch = watch_daemon.suggest_spec(name)
         print("SUGGEST %s: %s" % (name, ("rig.json written (%s)" % arch) if arch else "no spec could be suggested"))
         return 0 if arch else 1
-    if cmd in ("game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "smoke-flipbook", "mixamo-upload",
-               "m2m-rig", "m2m-quadruped"):
-        script = {"game-prop": "game_prop.py", "game-parts": "game_parts.py", "tripo-clips": "tripo_clips.py",
-                  "crop-cards": "crop_cards.py", "fbx-maps": "fbx_maps.py", "smoke-flipbook": "smoke_flipbook.py",
-                  "mixamo-upload": "mixamo_upload.py", "m2m-rig": "m2m_rig.py", "m2m-quadruped": "m2m_quadruped.py"}[cmd]
-        return blender_step(script, *rest)
-    if cmd == "mixamo-import":
-        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "mixamo_import.py")] + rest)
+    import steps_registry
+    if cmd in steps_registry.TOOLS or cmd in steps_registry.CLI_ONLY:   # files in, files out (core/steps_registry.py)
+        try:
+            runner, script = steps_registry.tool_script(cmd)
+        except ValueError as e:
+            print("RUN %s" % e); return 2
+        if cmd.startswith("m2m-") and not os.environ.get("AUTORIG_M2M") and steps_registry.m2m_app():
+            os.environ["AUTORIG_M2M"] = steps_registry.m2m_app()     # the Mesh2Motion submodule's rigs and clips
+        if runner == "blender":
+            return blender_step(script, *rest)
+        return subprocess.call([sys.executable, script] + rest)
     if cmd == "studio":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "studio_job.py")] + rest)
     if cmd == "publish":
@@ -145,10 +150,6 @@ def main(argv):
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "batch.py")] + rest)
     if cmd == "watch" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "watch.py")] + rest)
-    if cmd == "smpl-to-bvh" and rest:                         # EDGE / SMPL dance -> BVH for retarget
-        return blender_step("smpl_to_bvh.py", *rest)
-    if cmd == "clip-check" and rest:                          # does it move, do seams hold, where are the hands
-        return blender_step("clip_check.py", *rest)
     if cmd == "retarget" and rest:
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "retarget.py")] + rest)
     if cmd == "rig" and rest:
@@ -170,7 +171,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("suggest", "smoke-flipbook", "mixamo-upload", "mixamo-import", "m2m-rig", "m2m-quadruped", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "m2m-rig", "m2m-quadruped", "smoke-flipbook", "mixamo-upload", "mixamo-import", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 
