@@ -174,6 +174,11 @@ web app is a git submodule (`third_party/mesh2motion-app`, our fork) that the se
 Then open `http://127.0.0.1:8765/m2m/`. Without the build, `/m2m/` answers 404 and the rest of the workbench is
 unaffected.
 
+The fork adds an embedding bridge, so a workbench page can drive Mesh2Motion in an iframe. URL parameters
+(`create.html?embed=1&model=...&template=...&skeleton=...&step=animate`) and `postMessage` requests load our fitted
+joints into a template, read back the joints the user edits, pick clips and return exports as a Blob. The protocol
+is in [docs/M2M-BRIDGE.md](docs/M2M-BRIDGE.md), and `/m2m/bridge-test.html` exercises every message.
+
 ## Clip motion
 
 Clips are keyed, then planted feet are held where they land; `clip-check` scores foot skate. See
