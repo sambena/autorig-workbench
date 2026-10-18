@@ -37,6 +37,8 @@ DEFAULT_TIMEOUTS = {
     "retarget": 0.0,
     "auto_tune": 0.0,
     "studio": 2100.0,
+    "m2m_rig": 1800.0,               # the fit, the skin, the audit and the preview in one step
+    "m2m_quadruped": 1800.0,
     "default": 600.0,
 }
 
