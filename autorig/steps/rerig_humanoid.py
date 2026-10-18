@@ -366,10 +366,11 @@ def chains_for(J, digits=False):
 
 
 def straighten(arm, size, arms="t-pose"):
-    """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. With `arms` "as-modelled" (rig.json
-    "rest_arms") the upper arms keep the slope they were modelled at and only the forearms and hands are lined up
-    with them: an A-pose sculpt's clothes are not stretched up to a T at the shoulders, so an engine lowering the arms
-    to the sides bends them half as far (Tornado Titans' cast, 2026-10-17: a T-pose rest crumpled their jackets)."""
+    """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
+    arms: "as-modelled" keeps the upper arms' modelled slope and lines the forearms and hands up with them; a number
+    rests them straight that many degrees below horizontal (0-80). An engine that stands a character with its arms down
+    then bends the shoulders that much less (Tornado Titans' cast, 2026-10-17: a T-pose rest crumpled their jackets);
+    see docs/SPEC.md for what it costs the raised-arm bends."""
     rerig.select_only(arm)
     bpy.ops.object.mode_set(mode='POSE')
     down, fwd = Vector((0, 0, -1)), Vector((0, -1, 0))
@@ -403,7 +404,13 @@ def straighten(arm, size, arms="t-pose"):
         for side, sx in (("Left", 1), ("Right", -1)):
             aim(side + "UpLeg", down); aim(side + "Leg", down)
             aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
-            if arms == "as-modelled" and side + "Arm" in arm.pose.bones:
+            if isinstance(arms, (int, float)) and not isinstance(arms, bool):
+                # the arms rest straight, `arms` degrees below horizontal
+                down = math.radians(max(0.0, min(80.0, float(arms))))
+                along = Vector((sx * math.cos(down), 0, -math.sin(down)))
+                for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
+                    aim(side + b, along)
+            elif arms == "as-modelled" and side + "Arm" in arm.pose.bones:
                 # along the upper arm as modelled, flattened front to back so the arm hangs in the body's plane
                 ua = arm.matrix_world @ arm.pose.bones[side + "Arm"].matrix
                 d = ua.to_3x3() @ Vector((0, 1, 0))
