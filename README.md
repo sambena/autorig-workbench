@@ -122,6 +122,11 @@ web app is a git submodule (`third_party/mesh2motion-app`, our fork) that the se
 
 Then open `http://127.0.0.1:8765/m2m/`.
 
+**Collections and server files.** The page can switch collections (models roots) and pick files already on the
+server, but only the folders the server allows: list them in `.autorig_server.json` next to the tool
+(`collections`, `browse`), or run your own copy with `--allow-any-folder` to open any folder. docs/API.md has the
+format. AI Assist (Fix this rig) is in the page's Advanced panel, with the cost shown before every request.
+
 **API.** Scripts, AI agents and Unity drive the workbench through `/api/v1` with a Bearer token: add a model, rig it on a
 Mesh2Motion skeleton, attach clips, export. [docs/API.md](docs/API.md) has examples; `/api/v1/openapi.json` describes
 every route. Every step and tool is listed once, in `autorig/core/steps_registry.py`. Without the build, `/m2m/` answers 404 and the rest of the workbench is

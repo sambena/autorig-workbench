@@ -23,7 +23,7 @@ are kept so that no feature is lost before it has an `/api/v1` route, and they g
 
 | Old UI | Now: page | Now: API | Now: CLI |
 |---|---|---|---|
-| Drop or choose a model, paste paths | Load: drop or choose a file | `POST /api/v1/models` (file body, or JSON `{url}`) | copy it into `<models>/<group>/<name>/` |
+| Drop or choose a model, paste paths | Load: drop or choose a file, or **Pick a file on the server** | `POST /api/v1/models` (file body, or JSON `{url}` or `{path}`); `GET /api/v1/files` | copy it into `<models>/<group>/<name>/` |
 | Model list, search, group menu | Load: library with search and thumbnails | `GET /api/v1/models` | `run.py help`, the folder itself |
 | Prepare, Survey, Rig, Trim, Audit, Make clips, Publish, Preview, Re-bake clips, Mesh Doctor, Run all | Advanced → Steps on this model (a greyed button says what is missing) | `POST /api/v1/models/{m}/steps/{step}` | `run.py <step> <model>`, `run.py <model>` (rig → trim → audit) |
 | Cancel | Cancel on the job panel | `DELETE /api/v1/jobs/{id}` | Ctrl+C |
@@ -35,10 +35,10 @@ are kept so that no feature is lost before it has an `/api/v1` route, and they g
 | Export (File → Export) | Animate: Export (GLB / FBX, Unity or other engines, Mixamo names) | `POST .../animate`, `POST /api/v1/tools/{tool}` | `python autorig/steps/export.py <model> --target unity\|unreal\|godot\|web\|all` |
 | Retarget a mocap clip | (none yet) | legacy `/api/retarget*` | `run.py retarget <model> <clip>` |
 | Model Studio (LODs, reference, engine FBX, materials) | (none yet) | legacy `/api/studio/*` | `run.py studio <tool> <model>` |
-| AI Assist (Fix this rig) | (none yet) | legacy `/api/ai/*` | none yet ([AI-ASSIST.md](AI-ASSIST.md)) |
+| AI Assist (Fix this rig, settings, spend) | Advanced → AI Assist (the cost shown before every request) | `/api/v1/ai/*` | none yet ([AI-ASSIST.md](AI-ASSIST.md)) |
 | Game tools (game-prop, game-parts, tripo-clips, crop-cards, fbx-maps, Mixamo steps, smoke flipbook) | Advanced → Tools (a form from each tool's options) | `POST /api/v1/tools/{tool}` | `run.py <tool> ...` |
 | Model Manager (move, rename, duplicate, delete) | (none yet) | legacy `/api/model/move` etc. | move or rename the folder (work files are keyed on the name) |
-| Working folder switch | (one folder per server) | legacy `/api/workspace/*` | `--models` or `AUTORIG_MODELS` |
+| Working folder switch | the collection picker in the header, and Advanced → Collections and folders (only the folders the server's `.autorig_server.json` lists, or any with `--allow-any-folder`) | `GET /api/v1/collections`, `POST /api/v1/collections/select` | `--models` or `AUTORIG_MODELS` |
 | Samples gallery | (none yet) | legacy `/api/samples` | `samples/` is the default models root |
 | Commit to Git, Clean up generated files | (none yet) | legacy `/api/git/*`, `/api/clean*` | `git`, `autorig/core/clean_generated.py` |
 | Help & Guide (`help.html`) | (none) | `GET /api/docs`, `/api/v1/openapi.json` | README and `docs/` |
