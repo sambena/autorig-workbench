@@ -1144,10 +1144,33 @@ def unweld(mesh, arm, actions, top, grow=0.04, ratio=4.0, samples=8):
     torn = {k for k in range(len(edges)) if worst[k] - base[k] > top * grow and worst[k] > base[k] * ratio}
     if not torn: return 0
     bm = bmesh.new(); bm.from_mesh(me); bm.edges.ensure_lookup_table()
+    before = {f: len(piece) for piece in islands(bm.faces) for f in piece}     # face -> size of its part
     faces = {f for k in torn for f in bm.edges[k].link_faces}
+    # a cut can leave a scrap of the weld hanging loose from it: a piece under 2% of the part it came off goes too
+    rest_faces = [f for f in bm.faces if f not in faces]
+    for piece in islands(rest_faces):
+        whole = before[next(iter(piece))]
+        if len(piece) < 0.02 * whole: faces |= piece
     bmesh.ops.delete(bm, geom=list(faces), context='FACES')
     bm.to_mesh(me); me.update(); bm.free()
     return len(faces)
+
+
+def islands(faces):
+    """The faces in connected pieces (joined across shared edges), as a list of sets."""
+    faces = set(faces)
+    seen, pieces = set(), []
+    for f in faces:
+        if f in seen: continue
+        stack, piece = [f], set()
+        seen.add(f)
+        while stack:
+            g = stack.pop(); piece.add(g)
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h in faces and h not in seen: seen.add(h); stack.append(h)
+        pieces.append(piece)
+    return pieces
 
 
 def confine(mesh, arm, leg_of, shape, belly):
