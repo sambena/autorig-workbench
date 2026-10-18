@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Autorig Workbench: Mesh2Motion's skeleton templates and their clips, and which template suits which body plan.
 #
-# Mesh2Motion (https://mesh2motion.org; app MIT, rigs and animations CC0) ships nine skeletons and about 250 clips
+# Mesh2Motion (https://github.com/Mesh2Motion/mesh2motion-app, Scott Petrovic and contributors; app MIT, rigs and
+# animations CC0; CREDITS.md) ships nine skeletons and about 250 clips
 # made for them. A clip plays only on the skeleton it was made for, so steps/m2m_rig.py fits one of these skeletons
 # to a mesh (the bones moved into the body, names and hierarchy kept) and the clips play as they are.
 #
@@ -15,7 +16,8 @@
 #   resolve_clips(t, spec)        "walk,idle" / "Walk=walk" / "all" -> [(clip, engine name)]
 #
 # The M2M folder is the app checkout (static/rigs, static/animations), asset-packs' _mesh2motion copy (rigs/,
-# animations/) or anything else laid out either way: m2m_root() looks in --m2m, AUTORIG_M2M, then the usual places.
+# animations/) or anything else laid out either way: m2m_root() looks in --m2m, the third_party/mesh2motion-app
+# submodule, AUTORIG_M2M, ~/src/mesh2motion-app, then the collection's _mesh2motion.
 import json, os, struct
 
 # Per template: its files under static/, the one bone (besides the root) whose position the clips keep
@@ -149,8 +151,7 @@ def _choose(a, m):
 def m2m_root(given=None, models=None):
     """The first folder that holds Mesh2Motion's rigs and animations, or None."""
     here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    cands = [given, os.environ.get("AUTORIG_M2M"),
-             os.path.join(here, "third_party", "mesh2motion-app"),
+    cands = [given, os.path.join(here, "third_party", "mesh2motion-app"), os.environ.get("AUTORIG_M2M"),
              os.path.expanduser("~/src/mesh2motion-app"),
              os.path.join(models or os.environ.get("AUTORIG_MODELS") or "", "_mesh2motion") if (models or os.environ.get("AUTORIG_MODELS")) else None,
              os.path.expanduser("~/src/asset-packs/_mesh2motion")]

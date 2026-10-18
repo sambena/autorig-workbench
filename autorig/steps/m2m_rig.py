@@ -10,11 +10,11 @@
 #   blender -b --python autorig/steps/m2m_rig.py -- --model Cow_Holstein_Tripo [the options above]
 #   python autorig/cli/run.py m2m-rig <the same arguments>
 #
-# Mesh2Motion (https://mesh2motion.org; app MIT, rigs and animations CC0) has nine skeletons and about 250 clips made
-# for them. A clip plays only on its own skeleton, so this fits the skeleton itself to the mesh: every bone keeps its
+# Mesh2Motion (https://github.com/Mesh2Motion/mesh2motion-app, Scott Petrovic and contributors; app MIT, rigs and
+# animations CC0; CREDITS.md) has nine skeletons and about 250 clips made for them. A clip plays only on its own skeleton, so this fits the skeleton itself to the mesh: every bone keeps its
 # name, parent and roll frame and moves into the body, and the clips play as authored. core/m2m_templates.py holds
-# what is known about each template; the files come from the app's static/rigs and static/animations (--m2m, or
-# AUTORIG_M2M). For each model:
+# what is known about each template; the files come from the app's static/rigs and static/animations (--m2m, else
+# the third_party/mesh2motion-app submodule, else AUTORIG_M2M or ~/src/mesh2motion-app). For each model:
 #   1. the source mesh alone (any rig it came with is dropped), joined, welded, decimated to --triangles, turned to
 #      face -Y as the templates do, stood on z=0 at --height metres (default: as it is);
 #   2. the template: --template, or picked from the body plan (core/suggest.py: the tips, core/body_plan.py's
@@ -126,6 +126,8 @@ def source_mesh(path, name, triangles):
             o.shape_key_clear()
     for o in list(bpy.data.objects):
         if o not in meshes: bpy.data.objects.remove(o)
+    for act in list(bpy.data.actions):        # its own clips (a Mesh2Motion GLB's would clash with the template's)
+        bpy.data.actions.remove(act)
     bpy.ops.object.select_all(action='DESELECT')
     for o in meshes: o.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
