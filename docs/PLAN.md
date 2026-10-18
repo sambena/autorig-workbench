@@ -473,7 +473,7 @@ scripts, AI agents and Unity.
 | Phase | What | State |
 |---|---|---|
 | M1 | Mesh2Motion as a submodule (our fork `sambena/mesh2motion-app`, branch `workbench-bridge`), built by `scripts/build_m2m.py`, served at `/m2m/` | done |
-| M2 | `steps/m2m_rig.py`: auto-fit any Mesh2Motion template (human, fox, horse, bird, dragon, kaiju, spider, snake, shark), our skinning, audit, clips, GLB/FBX | next |
+| M2 | `steps/m2m_rig.py`: auto-fit any Mesh2Motion template (human, fox, horse, bird, dragon, kaiju, spider, snake, shark), our skinning, audit, clips, GLB/FBX | done |
 | M2b | Skinning bake-off on the same fitted skeletons, Mesh2Motion's skinning against ours, graded by our audit; the winner is each template's default | |
 | M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI) and one step registry for the server, the CLI and batches | |
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back | |
@@ -484,6 +484,38 @@ scripts, AI agents and Unity.
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
 `foot_contact`, anti-slide) carry on, now on Mesh2Motion clips played on fitted rigs.
+
+M2 notes (`steps/m2m_rig.py`, `core/m2m_templates.py`, docs/SPEC.md "`m2m`"). Three fits: a person's joints
+measured as `rerig_humanoid` measures them, the hands following the wrist; legged bodies by the shape fit from the
+`m2m-fit-by-shape` work, now for any number of leg pairs (each leg level by level, the body slice by slice, a
+hanging tail down its strand); snakes and fish along the body's own centre line (the surface's two farthest ends,
+binned by distance along it, so a coiled serpent's coils are followed), then straightened to the template's rest.
+What it took, on the box's Tripo models (2026-10-18):
+- The cow walk the WIP left broken: pointing every leg bone the template's way also turned the shoulder blade,
+  upper arm and thigh, which sit inside the body, and pushed the cow's front legs a fifth of a metre out of its skin.
+  Only bones below the belly are rebaked now; the feet stand where the template's stand (scaled), not always on
+  the ground, so a jump still leaves it.
+- The skin: girdle bones (scapula, pelvis, collars, ribcage helpers) carry none; a nearest-bone gate cut bleed
+  across gaps the voxel copy closed (the cow's mouth owned skin on its front foot; bleed 5.4% to 1.2%); six passes
+  of smoothing; bone heat retried on coarser copies and then the mesh itself when its solver gives up.
+- Facing and the line: a fish's or snake's back turned over when the least turn met a line running the other way;
+  the mesh is turned to the template's heading first and every joint keeps its back up.
+- Wings: the bird's rest has them spread, so its walk opened a hen's folded wings like a cape; wings keep the
+  clip's turns, at 0.3 of their swing on the ground.
+- Picking: the tips called Tripo's hen and shark quadrupeds and the sea serpent rigid; the body measures overrule
+  that. The fox and horse sample meshes have the same build, so size picks between them.
+
+| Model (box, Tripo) | Template | Grade | Bleed % | Combined / bend tears | Clips in preview.glb |
+|---|---|---|---|---|---|
+| Ice_Age26 (person) | human | FAIL | 0.01 | 121 / 119 (stand folds 66.7) | idle, walk |
+| Horse_Bay | horse | FAIL | 0.14 | 30 / 21 | idle, walk |
+| Cow_Holstein | horse | FAIL | 1.23 | 234 / 143 | idle, walk |
+| Chicken_Hen | bird | FAIL | 3.13 | 2845 / 1288 | idle, walk, fly |
+| glass_eel (snake) | snake | FAIL | 1.35 | 5 / 3 (head 0%: the snake's head bone is a stub) | idle, walk |
+| Shark | shark | FAIL | 4.61 | 34 / 14 | idle, walk |
+
+The clips look right in renders of every one; the grades are the skinning's, which M2b compares against
+Mesh2Motion's own. For scale, the cow's shipped Tripo rig grades FAIL too (61 / 36, bleed 9.8%).
 
 M1 notes: the fork fixes two things upstream would want. Its Vite config baked the whole build environment into the
 page (any token or key set where it was built), and its asset paths only worked at a site root (upstream issue #59).
