@@ -41,3 +41,7 @@ autorig/gui/m2m/
 
 # Which folders the page may open and browse (core/server_config.py): set per server, never committed.
 .autorig_server.json
+
+# AI generation settings (provider keys, caps) and its spend log, on this machine only (docs/GENERATE.md).
+.autorig_generate.json
+.autorig_generate_usage.jsonl

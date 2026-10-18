@@ -75,7 +75,7 @@ Code (or a close reimplementation of it) that lives in this repository.
 
 These run on other people's servers, under their own terms. Some cost money.
 
-- **3D generation:** [Tripo](https://www.tripo3d.ai), [Hyper3D Rodin](https://hyper3d.ai) and [Meshy](https://www.meshy.ai). Model Studio and game-prop work with their output.
+- **3D generation:** [Tripo](https://www.tripo3d.ai), [Hyper3D Rodin](https://hyper3d.ai) and [Meshy](https://www.meshy.ai). Model Studio and game-prop work with their output. `autorig/core/generators/` calls their official HTTP APIs, written from their docs: [Tripo API v3](https://developers.tripo3d.com/en/docs/introduction) ([H3.1 prices](https://developers.tripo3d.com/en/models/v3-1)), [Meshy API](https://docs.meshy.ai/en/api) ([pricing](https://docs.meshy.ai/en/api/pricing)) and [Rodin Gen-2.5](https://docs.hyper3d.ai/en/api-specification/rodin-gen2-5) ([quick start](https://docs.hyper3d.ai/en/get-started/quick-start)). The DCC Bridge notes in docs/GENERATE.md describe the protocol of Tripo's own [bridge plug-ins](https://studio.tripo3d.ai) (Blender, Unity, Godot); none of their code is copied.
 - **Rigging:** [Mixamo](https://www.mixamo.com) (Adobe). `mixamo-upload` and `mixamo-import` prepare files for it and read them back.
 - **Textures:** [Poly Haven](https://polyhaven.com), CC0. Model Studio fetches materials from it.
 - **AI Assist:** [Anthropic](https://www.anthropic.com) (Claude), [OpenAI](https://openai.com), [Google Gemini](https://ai.google.dev), or a local [Ollama](https://ollama.com).

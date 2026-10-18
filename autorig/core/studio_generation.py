@@ -36,6 +36,19 @@ def command(args):
     return json.loads(result.stdout)
 
 
+OUTPUT_EXTS = (".glb", ".gltf", ".bin", ".obj", ".mtl", ".fbx", ".png", ".jpg", ".jpeg", ".webp")
+
+
+def check_output(name, url, allow_http=False):
+    """A file a generator returned: a plain file name of a known type, fetched over HTTPS (core/generators too)."""
+    if not isinstance(name, str) or not name or Path(name).name != name or "\\" in name or ":" in name or name.startswith("."):
+        raise ValueError("unsafe generation filename")
+    if Path(name).suffix.lower() not in OUTPUT_EXTS:
+        raise ValueError("unsupported generation output: " + name)
+    if not isinstance(url, str) or not (url.startswith("https://") or (allow_http and url.startswith("http://"))):
+        raise ValueError("generation download must use HTTPS")
+
+
 def generate(settings, model_dir, out):
     images = photo_set(studio.input_folder(settings["folder"], model_dir))
     fingerprint = hashlib.sha256(json.dumps({"tier": settings["tier"], "quality": settings["quality"],
@@ -63,11 +76,7 @@ def generate(settings, model_dir, out):
         result = command(["result", gid]); names = []
         for f in result.get("files", []):
             name = f["name"]
-            if not isinstance(name, str) or not name or Path(name).name != name or "\\" in name or ":" in name or name.startswith("."):
-                raise ValueError("unsafe generation filename")
-            if Path(name).suffix.lower() not in (".glb", ".gltf", ".bin", ".obj", ".mtl", ".fbx", ".png", ".jpg", ".jpeg", ".webp"):
-                raise ValueError("unsupported generation output: " + name)
-            if not f["url"].startswith("https://"): raise ValueError("generation download must use HTTPS")
+            check_output(name, f["url"])
             dest = folder / name; temp = folder / (name + ".tmp")
             if not dest.exists():
                 with urllib.request.urlopen(f["url"], timeout=600) as response, temp.open("wb") as stream:
