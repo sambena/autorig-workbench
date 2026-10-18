@@ -154,7 +154,9 @@ TOOLS = {
                     opt("target", "engine axes", default="unity", choices=("unity", "generic")),
                     opt("format", "outputs", default="glb,fbx"),
                     opt("skin", "skinning method (default: the template's)"),
-                    opt("triangles", "triangle budget", type="integer", default=15000)]},
+                    opt("triangles", "triangle budget", type="integer", default=15000),
+                    opt("archetype", "what it is, when the template is auto (quadruped, humanoid...)"),
+                    opt("choose-only", "print the template auto would pick, and why, and stop", type="boolean")]},
     "m2m-quadruped": {
         "title": "Four-legged animal on Mesh2Motion", "runner": "blender", "script": "m2m_quadruped.py",
         "help": "the first Mesh2Motion fit: horse, fox or bird skeleton on a four-legged mesh (m2m-rig supersedes it)",

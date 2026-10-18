@@ -97,5 +97,29 @@ class TestSelfFit(unittest.TestCase):
         self.assertIsNone(log["template"])
 
 
+
+def tripo(name):
+    """A Tripo animal's source GLB in the collection (AUTORIG_MODELS), or None."""
+    root = os.environ.get("AUTORIG_MODELS") or os.path.expanduser("~/src/asset-packs")
+    p = os.path.join(root, "TornadoTitans", name, name + ".glb")
+    return p if os.path.exists(p) else None
+
+
+@unittest.skipUnless(HAVE_BLENDER and ROOT and tripo("Horse_Bay_Tripo"), "Blender, Mesh2Motion or the Tripo animals not found")
+class TestTripoChoice(unittest.TestCase):
+    """template auto on Tripo's animals as they come (about 1 m tall whatever they are, no --height): a horse or cow
+    on the horse, a dog or cat on the fox. The API's first live rig put Horse_Bay on the fox by its height."""
+    CASES = {"Horse_Bay_Tripo": "horse", "Cow_Holstein_Tripo": "horse", "Dog_BlackTan_Tripo": "fox",
+             "Cat_Tabby_Tripo": "fox"}
+
+    def test_choice(self):
+        for name, want in self.CASES.items():
+            src = tripo(name)
+            if src is None: continue
+            code, log = rig("--in", src, "--name", name, "--out", tempfile.mkdtemp(), "--m2m", ROOT, "--choose-only")
+            self.assertEqual(code, 0, log)
+            self.assertEqual(log["template"], want, "%s: %s" % (name, log["choice"]))
+
+
 if __name__ == "__main__":
     unittest.main()
