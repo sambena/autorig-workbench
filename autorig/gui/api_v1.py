@@ -184,7 +184,9 @@ def route(h, app, srv, method, path, q):
         rest = parts[2:]
         if not rest and method == "GET":
             srv.spec_store.reload()
-            return dict(srv.details(g, name), name=name, group=g, files=model_files(srv, g, name))
+            import lessons
+            return dict(srv.details(g, name), name=name, group=g, files=model_files(srv, g, name),
+                        lessons=lessons.for_model(name))
         if rest and rest[0] == "files" and method == "GET" and len(rest) > 1:
             h.file("models", "/".join(([g] if g else []) + [name] + rest[1:]))
             return None
@@ -199,15 +201,22 @@ def route(h, app, srv, method, path, q):
             sk = skeleton(srv, name) or {}
             tmpl = body.get("template") or sk.get("template")
             if not tmpl: raise ValueError("template is needed: this model has no fitted skeleton yet")
-            return submit(app, srv, g, name, "m2m-rig", m2m_args(srv, name, template=tmpl, joints=joints))
+            swing = body.get("swing", sk.get("swing"))
+            return submit(app, srv, g, name, "m2m-rig", m2m_args(srv, name, template=tmpl, joints=joints, swing=swing))
         if rest == ["rig"] and method == "POST":
             body = h._json_body()
             if body.get("template") == "classic":
                 return run_model_step(app, srv, g, name, "all")
-            return submit(app, srv, g, name, "m2m-rig", m2m_args(
+            import lessons
+            swing = body.get("swing")
+            if swing is None:
+                swing = lessons.for_model(name).get("swing")        # what fixing this kind of model taught us
+            out = submit(app, srv, g, name, "m2m-rig", m2m_args(
                 srv, name, template=body.get("template") or "auto", height=body.get("height"),
                 clips=body.get("clips"), naming=body.get("naming"), target=body.get("target"),
-                fmt=body.get("format")))
+                fmt=body.get("format"), swing=swing))
+            if body.get("swing") is not None: lessons.learn_swing(name, body["swing"])
+            return out
         if rest == ["animate"] and method == "POST":
             body = h._json_body()
             sk = skeleton(srv, name)
@@ -216,7 +225,8 @@ def route(h, app, srv, method, path, q):
             if not clips: raise ValueError("clips: the clip names to attach (GET /api/v1/templates/%s/clips)" % sk["template"])
             return submit(app, srv, g, name, "m2m-rig", m2m_args(
                 srv, name, template=sk["template"], joints=sk.get("joints"), clips=clips,
-                naming=body.get("naming"), target=body.get("target"), fmt=body.get("format")))
+                naming=body.get("naming"), target=body.get("target"), fmt=body.get("format"),
+                swing=body.get("swing", sk.get("swing"))))
         if len(rest) == 2 and rest[0] == "steps" and method == "POST":
             return run_model_step(app, srv, g, name, rest[1])
 
@@ -329,10 +339,12 @@ def skeleton(srv, name):
         return None
     m = spec.get("m2m") or (spec.get("rig") or {}).get("m2m")
     if not m or not m.get("template"): return None
-    return {"model": name, "template": m["template"], "joints": m.get("joints") or {}}
+    return {"model": name, "template": m["template"], "joints": m.get("joints") or {},
+            "swing": m.get("swing", 1.0), "tail_swing": m.get("tail_swing", 0.4)}
 
 
-def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=None, target=None, fmt=None):
+def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=None, target=None, fmt=None,
+             swing=None):
     reg = srv.steps_registry
     if template not in ("auto",) + reg.M2M_TEMPLATES:
         raise ValueError("template is auto, classic or one of %s" % ", ".join(reg.M2M_TEMPLATES))
@@ -350,6 +362,10 @@ def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=N
         with open(p, "w", encoding="utf-8") as fh:
             json.dump({"template": template, "joints": joints}, fh)
         args += ["--joints", p]
+    if swing not in (None, ""):
+        if isinstance(swing, bool) or not isinstance(swing, (int, float)) or not 0.2 <= swing <= 1.5:
+            raise ValueError("swing scales the legs' swing: 0.2 to 1.5 (1 as the clips were made)")
+        args += ["--swing", "%g" % swing]
     if clips:
         if isinstance(clips, list):
             if not all(isinstance(c, str) and c.strip() for c in clips): raise ValueError("clips are names")

@@ -180,6 +180,9 @@
     <div class="side">
       <h2>Rig</h2>
       <div id="templates" role="group" aria-label="Skeleton"></div>
+      <div class="row" id="swing-row" hidden title="How far the legs swing in the clips: lower it for heavy, short-legged animals (a cow ~0.75)">
+        <label for="swing">Leg swing</label><input type="range" id="swing" min="0.5" max="1" step="0.05" value="1" style="flex:1">
+        <span id="swing-value" class="hint">1.00</span></div>
       <button class="primary" id="auto-rig">Auto rig</button>
       <button class="link" id="classic-rig" type="button" title="Our own skeleton from rig.json, for shapes Mesh2Motion has no skeleton for">Use the classic rig instead</button>
       <div id="rig-note" hidden></div>

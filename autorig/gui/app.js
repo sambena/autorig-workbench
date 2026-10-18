@@ -500,6 +500,25 @@ function note (el, html, isError = false) {
   el.hidden = !html
 }
 
+// Leg swing: only for the skeletons whose legs it scales (four-legged and winged); it starts at the rig's own
+const LEGGED = new Set(['fox', 'horse', 'bird', 'dragon', 'kaiju'])
+
+function swingValue () {
+  return $('swing-row').hidden ? undefined : Number($('swing').value)
+}
+
+function renderSwing () {
+  const t = state.template && state.template !== 'auto' ? state.template : state.skeleton?.template
+  $('swing-row').hidden = !LEGGED.has(t)
+  if (state.swingFor !== state.model && state.details) {      // once the model's details (and lessons) are in
+    state.swingFor = state.model
+    $('swing').value = String(state.skeleton?.swing ?? state.details?.lessons?.swing ?? 1)    // the rig's, else the lesson for its kind
+  }
+  $('swing-value').textContent = Number($('swing').value).toFixed(2)
+}
+
+$('swing').oninput = () => { $('swing-value').textContent = Number($('swing').value).toFixed(2) }
+
 // Mesh2Motion's skeletons as pictures (its own reference images), Auto first; the model's current rig is marked
 function renderTemplates () {
   const current = state.skeleton?.template
@@ -513,6 +532,7 @@ function renderTemplates () {
     b.onclick = () => { state.template = b.dataset.t; renderTemplates() }
   }
   $('auto-rig').textContent = state.template === 'auto' ? 'Auto rig' : `Rig as ${state.template}`
+  renderSwing()
 }
 
 // ---- the preview (viewer.js): the rigged model with its clips when there is one, else the source
@@ -602,7 +622,7 @@ async function runRig (template) {
   note($('rig-note'), '')
   let job
   try {
-    job = await api('POST', m(state.model) + '/rig', { template })
+    job = await api('POST', m(state.model) + '/rig', template === 'classic' ? { template } : { template, swing: swingValue() })
   } catch (e) {
     if (e.status === 501) {
       note($('rig-note'), `Mesh2Motion rigging arrives with M2 (it isn't on this server yet).
@@ -687,7 +707,7 @@ $('apply').onclick = async () => {
   $('apply').disabled = true
   try {
     const { template, joints } = await bridge.call({ type: 'getJoints' })
-    const job = await api('PUT', m(state.model) + '/skeleton', { template, joints })
+    const job = await api('PUT', m(state.model) + '/skeleton', { template, joints, swing: swingValue() })
     await rigJobDone(await followJob($('rig-job'), job, 'Re-skin with the edited joints'))
   } catch (e) {
     note($('rig-note'), e.status === 501 ? 'Re-skinning edited joints arrives with M2 (not on this server yet).' : esc(e.message), true)
@@ -732,6 +752,7 @@ $('export').onclick = async () => {
   let job
   try {
     job = await api('POST', m(state.model) + '/animate', {
+      swing: swingValue(),
       clips: state.picked, format: $('format').value, target: $('target').value, naming: $('naming').value
     })
   } catch (e) {
