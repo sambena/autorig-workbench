@@ -198,11 +198,7 @@ def route(h, app, srv, method, path, q):
             body = h._json_body()
             joints = body.get("joints")
             if not isinstance(joints, dict) or not joints: raise ValueError("joints is {bone: [x, y, z]}")
-            sk = skeleton(srv, name) or {}
-            tmpl = body.get("template") or sk.get("template")
-            if not tmpl: raise ValueError("template is needed: this model has no fitted skeleton yet")
-            swing = body.get("swing", sk.get("swing"))
-            return submit(app, srv, g, name, "m2m-rig", m2m_args(srv, name, template=tmpl, joints=joints, swing=swing))
+            return submit(app, srv, g, name, "m2m-rig", reskin_args(srv, name, body))
         if rest == ["rig"] and method == "POST":
             body = h._json_body()
             if body.get("template") == "classic":
@@ -343,8 +339,35 @@ def skeleton(srv, name):
             "swing": m.get("swing", 1.0), "tail_swing": m.get("tail_swing", 0.4)}
 
 
+def saved_m2m(srv, name):
+    """rig.json's m2m section as m2m-rig wrote it (template, joints, clips, swing...), or {}."""
+    try:
+        spec = srv.spec_store.model(name) or {}
+    except Exception:
+        return {}
+    return spec.get("m2m") or (spec.get("rig") or {}).get("m2m") or {}
+
+
+def reskin_args(srv, name, body):
+    """m2m-rig's arguments for PUT .../skeleton: the edited joints, and everything else as the model was rigged
+    (rig.json m2m: clips, swing, tail swing, naming, target), so re-skinning keeps its clips. Swing falls back to the
+    lesson for the model's kind, as POST .../rig does."""
+    joints = body.get("joints")
+    if not isinstance(joints, dict) or not joints: raise ValueError("joints is {bone: [x, y, z]}")
+    m = saved_m2m(srv, name)
+    tmpl = body.get("template") or m.get("template")
+    if not tmpl: raise ValueError("template is needed: this model has no fitted skeleton yet")
+    swing = body.get("swing", m.get("swing"))
+    if swing is None:
+        import lessons
+        swing = lessons.for_model(name).get("swing")
+    return m2m_args(srv, name, template=tmpl, joints=joints, clips=body.get("clips", m.get("clips")),
+                    naming=body.get("naming", m.get("naming")), target=body.get("target", m.get("target")),
+                    swing=swing, tail_swing=body.get("tail_swing", m.get("tail_swing")))
+
+
 def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=None, target=None, fmt=None,
-             swing=None):
+             swing=None, tail_swing=None):
     reg = srv.steps_registry
     if template not in ("auto",) + reg.M2M_TEMPLATES:
         raise ValueError("template is auto, classic or one of %s" % ", ".join(reg.M2M_TEMPLATES))
@@ -366,6 +389,10 @@ def m2m_args(srv, name, template, joints=None, height=None, clips=None, naming=N
         if isinstance(swing, bool) or not isinstance(swing, (int, float)) or not 0.2 <= swing <= 1.5:
             raise ValueError("swing scales the legs' swing: 0.2 to 1.5 (1 as the clips were made)")
         args += ["--swing", "%g" % swing]
+    if tail_swing not in (None, ""):
+        if isinstance(tail_swing, bool) or not isinstance(tail_swing, (int, float)) or not 0 <= tail_swing <= 1.5:
+            raise ValueError("tail_swing scales the tail's swing: 0 to 1.5")
+        args += ["--tail-swing", "%g" % tail_swing]
     if clips:
         if isinstance(clips, list):
             if not all(isinstance(c, str) and c.strip() for c in clips): raise ValueError("clips are names")

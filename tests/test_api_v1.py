@@ -361,6 +361,54 @@ class RegistryTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             steps_registry.model_commands("explode", "x", "", {}, "/w", "/m/x")
 
+    def test_skeleton_reskin_keeps_clips(self):
+        """PUT .../skeleton re-skins with the clips, swing and tail swing the model was rigged with (rig.json m2m),
+        not m2m-rig's defaults: a cow rigged with Idle, Walk and Trot keeps Trot and its 0.75 swing."""
+        sys.path.insert(0, os.path.join(REPO, "autorig", "gui"))
+        import api_v1, lessons
+        work = tempfile.mkdtemp(prefix="autorig-reskin-")
+        self.addCleanup(shutil.rmtree, work, True)
+        m2m = {"template": "fox", "joints": {"root": [0, 0, 0]}, "clips": ["Idle", "Walk", "Trot"],
+               "naming": "mixamo", "target": "unity", "swing": 0.75, "tail_swing": 0.3}
+
+        class FakeJob:
+            def __init__(self, model, group, step, argvs):
+                self.model, self.step, self.argvs, self.id, self.lines = model, step, argvs, 1, []
+            def info(self): return {"id": 1, "model": self.model, "step": self.step}
+
+        class Srv:
+            steps_registry = steps_registry
+            layout = type("L", (), {"WORK": work})
+            Job = FakeJob
+            spec = {"rig": {"kind": "m2m", "m2m": m2m}}
+            spec_store = type("S", (), {"model": lambda _s, name: Srv.spec})()
+            def cmd_argv(self, c, model): return [c.script] + list(c.args)
+
+        submitted = []
+        app = type("A", (), {"runner": type("R", (), {"submit": lambda _r, job: submitted.append(job) or job})()})()
+
+        def argv(body):
+            api_v1.submit(app, Srv(), "g", "Cow_Test", "m2m-rig", api_v1.reskin_args(Srv(), "Cow_Test", body))
+            a = submitted[-1].argvs[0]
+            return {f: a[a.index(f) + 1] for f in ("--template", "--clips", "--swing", "--tail-swing", "--naming",
+                                                     "--joints") if f in a}
+
+        got = argv({"joints": {"root": [0, 0.1, 0]}})
+        self.assertEqual((got["--template"], got["--clips"], got["--swing"], got["--tail-swing"], got["--naming"]),
+                         ("fox", "Idle,Walk,Trot", "0.75", "0.3", "mixamo"))
+        with open(got["--joints"], encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["joints"], {"root": [0, 0.1, 0]})
+        got = argv({"joints": {"root": [0, 0, 0]}, "swing": 0.9, "clips": ["Idle"]})      # the body wins
+        self.assertEqual((got["--clips"], got["--swing"]), ("Idle", "0.9"))
+        # no swing saved: the lesson for the model's kind, as POST .../rig does
+        Srv.spec = {"m2m": {k: v for k, v in m2m.items() if k != "swing"}}
+        orig = lessons.for_model
+        lessons.for_model = lambda name: {"swing": 0.7} if lessons.kind(name) == "cow" else {}
+        self.addCleanup(setattr, lessons, "for_model", orig)
+        self.assertEqual(argv({"joints": {"root": [0, 0, 0]}})["--swing"], "0.7")
+        with self.assertRaises(ValueError):
+            api_v1.reskin_args(Srv(), "Cow_Test", {"joints": {"root": [0, 0, 0]}, "tail_swing": 9})
+
     def test_tool_script(self):
         runner, script = steps_registry.tool_script("game-prop")
         self.assertEqual((runner, script), ("blender", "game_prop.py"))
