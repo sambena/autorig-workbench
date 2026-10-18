@@ -991,6 +991,66 @@ class TestBarrierFadesNotCuts(unittest.TestCase):
         self.assertTrue(0.5 < w[2, 0] < 0.8)
         self.assertTrue(np.allclose(placed_rules.soft_nearest(np.array([[0.2, 0.1]]), 0.0), [[0.0, 1.0]]))
 
+    def test_freed_weight_follows_distance_when_the_vertex_has_only_a_trace(self):
+        # a row of vertices across the seam between two torso bones; each holds a trace of torso weight whose ratio
+        # flips halfway (0.01 of bone 0 against 0.002 of bone 1, then the other way round), and 0.9 to hand over
+        n = 41
+        x = np.linspace(-0.2, 0.2, n)
+        D = np.stack([np.abs(x + 0.1), np.abs(x - 0.1)], axis=1)          # bone 0 at -0.1, bone 1 at +0.1
+        T = np.where((x < 0)[:, None], [[0.010, 0.002]], [[0.002, 0.010]])
+        add = placed_rules.share_freed(T, np.full(n, 0.9), D, 0.05)
+        self.assertTrue(np.allclose(add.sum(1), 0.9))                     # all of it handed over
+        total = T + add
+        self.assertLess(np.abs(np.diff(total[:, 0])).max(), 0.15)         # no flip at the seam
+        # what the vertex already has keeps its say: half its weight on bone 1 and a little to hand over stays there
+        keep = placed_rules.share_freed(np.array([[0.0, 0.5]]), np.array([0.05]), np.array([[0.0, 1.0]]), 0.05)
+        self.assertGreater(keep[0, 1], 0.04)
+
+    def test_root_fade_is_never_shorter_than_a_torso_bone(self):
+        # a limb whose first bone is 2 cm long, on a body whose torso bones are 30 cm: the fade spans the torso bone
+        s = np.linspace(-0.05, 0.15, 201)
+        w = placed_rules.root_fade(s, 0.02, 0.3)
+        self.assertAlmostEqual(w[0], 0.0)
+        self.assertAlmostEqual(w[-1], 1.0)
+        self.assertLess(np.abs(np.diff(w)).max(), 0.02)                    # 1 mm apart, never a step
+        self.assertTrue(np.all(np.diff(w) >= -1e-12))
+        # a long first bone keeps its own length
+        self.assertAlmostEqual(float(placed_rules.root_fade(np.array([0.5]), 1.5, 0.3)[0]),
+                               float(placed_rules._smooth(-0.15, 0.5, np.array([0.5]))[0]))
+
+
+@unittest.skipUnless(HAVE_NUMPY, "numpy not installed in system Python (available in Blender)")
+class TestFlankBarrierFades(unittest.TestCase):
+    """The flank barrier hands the front limbs' weight off over a band across the middle of the body."""
+    NAMES = ["hips", "spine_1", "chest", "leg_front.L", "leg_hind.L"]
+    HEADS = {"hips": [0, 0.5, 0.5], "spine_1": [0, 0.0, 0.5], "chest": [0, -0.5, 0.5],
+             "leg_front.L": [0.2, -0.5, 0.3], "leg_hind.L": [0.2, 0.5, 0.3]}
+    TAILS = {"hips": [0, 0.0, 0.5], "spine_1": [0, -0.5, 0.5], "chest": [0, -0.7, 0.5],
+             "leg_front.L": [0.2, -0.5, 0.0], "leg_hind.L": [0.2, 0.5, 0.0]}
+
+    def flank(self, P, W, tails=True):
+        return placed_rules.apply_longitudinal_flank_barrier(W, P, self.NAMES, bone_heads=self.HEADS,
+                                                             front_bones=["leg_front.L"], hind_bones=["leg_hind.L"],
+                                                             bone_tails=self.TAILS if tails else None)
+
+    def test_front_weight_fades_out_along_the_body(self):
+        ys = np.linspace(-0.5, 0.5, 101)                     # from the front legs to the hind legs, 1 cm apart
+        P = np.stack([np.full_like(ys, 0.2), ys, np.full_like(ys, 0.4)], axis=1)
+        W = np.zeros((len(ys), len(self.NAMES))); W[:, 3] = 0.5; W[:, 1] = 0.5
+        front = self.flank(P, W)[:, 3]
+        self.assertAlmostEqual(front[0], 0.5)                # the front leg keeps its own
+        self.assertAlmostEqual(front[-1], 0.0)               # and none of the hindquarters
+        self.assertTrue(np.all(np.diff(front) <= 1e-12))
+        self.assertLess(np.abs(np.diff(front)).max(), 0.05)  # no step: the old rule dropped 0.5 to 0 at one line
+
+    def test_freed_weight_goes_to_the_torso_bone_beside_it(self):
+        P = np.array([[0.0, 0.45, 0.5]])                     # at the rump, on the hips bone
+        W = np.zeros((1, len(self.NAMES))); W[0, 3] = 0.6; W[0, 0] = 0.4
+        out = self.flank(P, W)
+        self.assertAlmostEqual(out[0, 3], 0.0)
+        self.assertGreater(out[0, 0], 0.95)                  # the hips, not the chest at the far end
+        self.assertTrue(np.allclose(out.sum(1), 1.0))
+
 
 if __name__ == "__main__":
     clean_argv = [sys.argv[0]]
