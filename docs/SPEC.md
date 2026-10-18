@@ -198,7 +198,7 @@ picked for:
 | `axes` | the joints' axes: `"gltf"` (Y up, facing +Z, as Mesh2Motion and three.js see it; the default) or `"blender"` (Z up, facing -Y) |
 | `rest` | `"template"`: the exported rest pose is the template's (snakes and fish are straightened along its line, their default); `"as-modelled"`: the body as it was modelled (the default for the others) |
 | `clips` | the Mesh2Motion clips baked, by their own names (the files carry the engine names given with `--clips`) |
-| `skin` | `"autorig"`: bone heat on a watertight voxel copy, carried back by nearest face, then the nearest-bone gate, smoothing and the leg confine. Mesh2Motion's own skinning arrives with the bake-off (docs/PLAN.md, M2b) |
+| `skin` | `"autorig"`: bone heat on a watertight voxel copy, carried back by nearest face, then the nearest-bone gate, smoothing and the leg confine; or `"m2m"`: Mesh2Motion's own closest-bone skinning (core/m2m_skin.py). Each template's default comes from the bake-off (docs/SKIN-BAKEOFF.md) |
 | `naming` | `"default"` (Mesh2Motion's bone names) or `"mixamo"` (Mixamo's, without the namespace: human only) |
 | `target` | `"unity"` (the FBX rewritten as `unity_fbx.py` does: roots at rotation 0, scale 1) or `"generic"` |
 

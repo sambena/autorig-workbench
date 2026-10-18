@@ -4,7 +4,7 @@
 #   blender -b --python autorig/steps/m2m_rig.py -- --in Cow.glb --name CowHolstein --out <folder> [--height 1.6]
 #           [--template auto|human|fox|horse|bird|dragon|kaiju|spider|snake|shark] [--archetype quadruped]
 #           [--clips walk,idle | Walk=walk,Trot | all] [--m2m <mesh2motion-app>] [--joints joints.json]
-#           [--naming default|mixamo] [--target unity|generic] [--format glb,fbx] [--skin autorig]
+#           [--naming default|mixamo] [--target unity|generic] [--format glb,fbx] [--skin autorig|m2m]
 #           [--triangles 15000] [--facing auto|+x|-x|+y|-y] [--swing 1] [--tail-swing 0.4] [--voxel 0]
 #           [--no-audit] [--no-preview]
 #   blender -b --python autorig/steps/m2m_rig.py -- --model Cow_Holstein_Tripo [the options above]
@@ -26,8 +26,9 @@
 #   4. the clips: position tracks dropped but the tracking bone's (and the root's on a root-motion clip, "... RM"),
 #      the travel scaled by the leg-length change; the limbs (legs, arms, wings) rebaked to point the way the
 #      template's do frame by frame, the body keeping the clip's own turns, the feet grounded as the template's are;
-#   5. skinned (bone heat on a watertight voxel copy, carried back by nearest face; below the belly a leg only moves
-#      its own leg), at most four influences;
+#   5. skinned (--skin, default the template's): "autorig", bone heat on a watertight voxel copy, carried back by
+#      nearest face (below the belly a leg only moves its own leg), at most four influences; or "m2m", Mesh2Motion's
+#      own closest-bone skinning (core/m2m_skin.py, ported from its solvers);
 #   6. written: <name>.glb (every clip an animation), <name>.fbx (takes; Unity's axes unless --target generic),
 #      <name>.blend, preview.glb, rig.json (rig.kind "m2m", m2m: template, joints), the card (model.json) and
 #      <name>_m2m.json; graded by steps/audit.py.
@@ -60,7 +61,7 @@ def args(argv=None):
     p.add_argument("--naming", default="default", choices=("default", "mixamo"))
     p.add_argument("--target", default="unity", choices=("unity", "generic"))
     p.add_argument("--format", default="glb,fbx")
-    p.add_argument("--skin", default="", help="skinning method (default: the template's)")
+    p.add_argument("--skin", default="", help="skinning method: autorig or m2m (default: the template's)")
     p.add_argument("--triangles", type=int, default=15000)
     p.add_argument("--facing", default="auto", help="which way the source's head points: +x, -x, +y, -y or auto")
     p.add_argument("--swing", type=float, default=1.0, help="scale the legs' swing (1 as made; a cow ~0.75)")
@@ -1322,8 +1323,16 @@ def run(a):
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
     after = (lambda: log.__setitem__("confined", confine(mesh, arm, leg_of, shape, A["belly"]))) \
         if leg_of and fam in ("legged", "human") else None
-    unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
-    log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used)
+    t_skin = time.time()
+    if method == "m2m":
+        # Mesh2Motion's own: closest bone midpoint, its correctors and smoothing, on the fitted joints as they are
+        import m2m_skin_blender
+        unreached, bare, off = m2m_skin_blender.skin(mesh, arm, t)
+        gated, used = 0, None
+    else:
+        unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
+    log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used,
+               skin_seconds=round(time.time() - t_skin, 2))
 
     # the joints as fitted: each bone's head by Mesh2Motion's name, in glTF's axes, on the body as modelled (the
     # rigged files' own coordinates, before a template rest straightens it): what the API's skeleton and the
