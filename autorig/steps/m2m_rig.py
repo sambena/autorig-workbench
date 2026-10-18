@@ -1104,6 +1104,52 @@ def tail_rule(mesh, arm):
     return changed
 
 
+def unweld(mesh, arm, actions, top, grow=0.04, ratio=4.0, samples=8):
+    """Cuts the welds a generator leaves where two parts touch. A Tripo cow's tail tip is fused to her hock and the
+    insides of her front legs to her chest, so a few tiny faces join skin that moves apart: whatever the weights,
+    every step pulls them into a sheet (Cow_Holstein: edges of 1-2 cm stretched to 33 cm). Every clip is played on
+    the skinned mesh and a face is removed when one of its edges grows by more than grow x height and to more than
+    ratio x its length: skin round a bending joint stretches by half, a weld by ten or twenty times. What is left
+    is a small hole where the parts touched. Returns the faces removed."""
+    import bmesh
+    if not actions or not mesh.data.edges: return 0
+    me = mesh.data
+    ad = arm.animation_data or arm.animation_data_create()
+    was = ad.action
+    def where():
+        dg = bpy.context.evaluated_depsgraph_get()
+        e = mesh.evaluated_get(dg)
+        if len(e.data.vertices) != len(me.vertices): return None      # something else changed the topology
+        return [e.matrix_world @ v.co for v in e.data.vertices]
+    edges = [tuple(ed.vertices) for ed in me.edges]
+    arm.data.pose_position = 'REST'
+    rest = where()
+    arm.data.pose_position = 'POSE'
+    if rest is None: return 0
+    base = [(rest[a] - rest[b]).length for a, b in edges]
+    worst = [0.0] * len(edges)
+    for act in actions:
+        assign(arm, act)
+        fr = frames_of(act)
+        for i in range(samples):
+            at(fr[int(i * (len(fr) - 1) / max(1, samples - 1))])
+            now = where()
+            if now is None: continue
+            for k, (a, b) in enumerate(edges):
+                d = (now[a] - now[b]).length
+                if d > worst[k]: worst[k] = d
+    ad.action = was
+    for pb in arm.pose.bones: pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    torn = {k for k in range(len(edges)) if worst[k] - base[k] > top * grow and worst[k] > base[k] * ratio}
+    if not torn: return 0
+    bm = bmesh.new(); bm.from_mesh(me); bm.edges.ensure_lookup_table()
+    faces = {f for k in torn for f in bm.edges[k].link_faces}
+    bmesh.ops.delete(bm, geom=list(faces), context='FACES')
+    bm.to_mesh(me); me.update(); bm.free()
+    return len(faces)
+
+
 def confine(mesh, arm, leg_of, shape, belly):
     """Below the belly a leg bone only moves the skin of its own leg: its weight fades out past the leg's outline (so
     an udder or a belly between the legs isn't dragged by them), and skin left with no weight goes to the nearest
@@ -1441,6 +1487,7 @@ def run(a):
         gated, used = 0, None
     else:
         unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
+    log["unwelded"] = unweld(mesh, arm, actions, top)                              # the generator's welds, cut
     log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used,
                skin_seconds=round(time.time() - t_skin, 2))
 
