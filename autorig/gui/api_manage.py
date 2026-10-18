@@ -77,9 +77,9 @@ def route(h, app, srv, method, parts, q):
         if method == "GET":
             return {"work": srv.layout.WORK, "kinds": clean_generated.scan(srv.layout.ROOT, srv.layout.WORK)}
         if method == "POST":
-            srv._busy(app)
             kinds = h._json_body().get("kinds")
             if not isinstance(kinds, list) or not kinds: raise ValueError("kinds: the kinds of file to delete (GET /api/v1/clean)")
+            srv._busy(app)
             return clean_generated.clean(srv.layout.ROOT, srv.layout.WORK, [str(k) for k in kinds])
     if head == "server" and method == "GET" and len(parts) == 1:
         return server_info(app, srv)

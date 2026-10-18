@@ -218,7 +218,18 @@ class ApiV1Test(unittest.TestCase):
                              body={"options": {"in": "Props/nothing.glb", "name": "Barn", "out": "Props/out"}})
         self.assertEqual(code, 404, out)
 
+    def idle(self):
+        """Cancels the jobs earlier tests started (a rig, with Blender and Mesh2Motion here) and waits for them:
+        switching collections and cleaning up wait for a quiet server."""
+        for j in self.req("GET", "/api/v1/jobs")[1]["jobs"]:
+            if j["state"] in ("queued", "running"): self.req("DELETE", "/api/v1/jobs/%d" % j["id"])
+        for _ in range(300):
+            if not any(j["state"] in ("queued", "running") for j in self.req("GET", "/api/v1/jobs")[1]["jobs"]): return
+            time.sleep(0.2)
+        self.fail("the jobs did not stop")
+
     def test_9_collections_and_server_files(self):
+        self.idle()
         if self.req("GET", "/api/v1/models/column")[0] == 404:
             self.test_5_add_model_and_files()
         code, c = self.req("GET", "/api/v1/collections")
@@ -288,6 +299,7 @@ class ApiV1Test(unittest.TestCase):
 
     def test_9c_advanced_routes(self):
         """The Advanced panel's routes (gui/api_manage.py) that need no Blender: in the openapi, and their refusals."""
+        self.idle()
         paths = self.req("GET", "/api/v1/openapi.json", auth=None)[1]["paths"]
         for p in ("/api/v1/models/{model}/rename", "/api/v1/batch/{action}", "/api/v1/mocap", "/api/v1/samples",
                   "/api/v1/clean", "/api/v1/models/{model}/studio/{tool}", "/api/v1/models/{model}/spec"):
