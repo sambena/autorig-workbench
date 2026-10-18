@@ -475,11 +475,12 @@ scripts, AI agents and Unity.
 | M1 | Mesh2Motion as a submodule (our fork `sambena/mesh2motion-app`, branch `workbench-bridge`), built by `scripts/build_m2m.py`, served at `/m2m/` | done |
 | M2 | `steps/m2m_rig.py`: auto-fit any Mesh2Motion template (human, fox, horse, bird, dragon, kaiju, spider, snake, shark), our skinning, audit, clips, GLB/FBX | next |
 | M2b | Skinning bake-off on the same fitted skeletons, Mesh2Motion's skinning against ours, graded by our audit; the winner is each template's default | |
-| M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI) and one step registry for the server, the CLI and batches | |
+| M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI; docs/API.md) and one step registry (`core/steps_registry.py`) for the server, the CLI, batches and the API | done |
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
 | M5 | The new three-step page, replacing the old GUI | |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans | |
 | M7 | Docs, runbook, deploy | |
+| M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | |
 
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
