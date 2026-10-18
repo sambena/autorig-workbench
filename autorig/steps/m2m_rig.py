@@ -1069,6 +1069,41 @@ def side_rule(mesh, arm):
     return changed
 
 
+def tail_rule(mesh, arm):
+    """The tail moves only the tail. A cow's tail hangs against the backs of her hind legs, and bone heat on a voxel
+    copy runs across where they touch, so the tail bones took the rump and the backs of the legs down to the hock
+    (Cow_Holstein: 512 vertices over 20 cm from the tail): every swish dragged that skin into a sheet. Tail weight on
+    a vertex farther from the tail than the tail is thick goes to the nearest other bone. Returns the vertices
+    changed."""
+    tail = [b for b in arm.data.bones if b.name.lower().startswith("tail") and b.name in mesh.vertex_groups]
+    others = [b for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups and b not in tail]
+    if not tail or not others: return 0
+    idx = {mesh.vertex_groups[b.name].index for b in tail}
+
+    def seg_dist(co, b):
+        h, t = b.head_local, b.tail_local
+        d = t - h
+        f = max(0.0, min(1.0, (co - h).dot(d) / max(d.length_squared, 1e-12)))
+        return (co - (h + d * f)).length
+
+    def near_tail(co): return min(seg_dist(co, b) for b in tail)
+    # how thick the tail is: the skin the tail owns most of, measured from its bones
+    own = sorted(near_tail(v.co) for v in mesh.data.vertices
+                 if v.groups and max(v.groups, key=lambda g: g.weight).group in idx)
+    if not own: return 0
+    reach = max(own[len(own) // 2] * 2.5, 0.02)
+    changed = 0
+    for v in mesh.data.vertices:
+        gs = [g for g in v.groups if g.group in idx and g.weight > 0]
+        if not gs or near_tail(v.co) <= reach: continue
+        for g in gs: g.weight = 0.0
+        if sum(g.weight for g in v.groups) < 0.05:
+            best = min(others, key=lambda b: seg_dist(v.co, b))
+            mesh.vertex_groups[best.name].add([v.index], 1.0, 'REPLACE')
+        changed += 1
+    return changed
+
+
 def confine(mesh, arm, leg_of, shape, belly):
     """Below the belly a leg bone only moves the skin of its own leg: its weight fades out past the leg's outline (so
     an udder or a belly between the legs isn't dragged by them), and skin left with no weight goes to the nearest
@@ -1396,6 +1431,7 @@ def run(a):
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
     def after():
         if fam in ("legged", "human"): log["side_fixed"] = side_rule(mesh, arm)      # each side's bones, its own skin
+        if fam == "legged": log["tail_fixed"] = tail_rule(mesh, arm)                 # the tail moves only the tail
         if leg_of and fam in ("legged", "human"): log["confined"] = confine(mesh, arm, leg_of, shape, A["belly"])
     t_skin = time.time()
     if method == "m2m":
