@@ -65,7 +65,12 @@ def args(argv=None):
     p.add_argument("--facing", default="auto", help="which way the source's head points: +x, -x, +y, -y or auto")
     p.add_argument("--swing", type=float, default=1.0, help="scale the legs' swing (1 as made; a cow ~0.75)")
     p.add_argument("--tail-swing", dest="tail_swing", type=float, default=0.4, help="scale the tail's swing")
+    p.add_argument("--wing-swing", dest="wing_swing", type=float, default=0.3,
+                   help="scale the wings' swing in clips on the ground (walk, idle); flying clips swing as made")
     p.add_argument("--voxel", type=float, default=0.0, help="proxy voxel size in metres (default: height / 70)")
+    p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
+                   help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
+    p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
     p.add_argument("--no-audit", dest="audit", action="store_false")
     p.add_argument("--no-preview", dest="preview", action="store_false")
     a = p.parse_args(argv)
@@ -197,6 +202,22 @@ def suggest_archetype(mesh, name, log):
     log["suggest"] = {"archetype": res.get("archetype"), "confidence": res.get("confidence"),
                       "reasons": (res.get("reasons") or [])[:4]}
     return res.get("archetype"), plan
+
+
+def body_measures(points, top):
+    """What the template choice needs beyond the archetype (core/m2m_templates.choose): ground (the share of the
+    footprint whose underside touches the ground: a few feet on a legged body, most of it on a snake or a fish lying
+    on its belly), slender (length over the larger of width and height), stand (height over length)."""
+    xs, ys = [p.x for p in points], [p.y for p in points]
+    x0, y0 = min(xs), min(ys)
+    sx, sy = max(max(xs) - x0, 1e-6), max(max(ys) - y0, 1e-6)
+    n = 24
+    low = {}
+    for p in points:
+        c = (min(n - 1, int((p.x - x0) / sx * n)), min(n - 1, int((p.y - y0) / sy * n)))
+        low[c] = min(low.get(c, 1e9), p.z)
+    ground = sum(1 for z in low.values() if z < top * 0.06) / max(len(low), 1)
+    return {"ground": round(ground, 3), "slender": round(sy / max(sx, top, 1e-6), 3), "stand": round(top / sy, 3)}
 
 
 def tail_share(points, top):
@@ -436,6 +457,133 @@ def fit_shape(arm, R, A, rig_surface, animal_surface, family):
     return heads, tails, found, leg_of, tail, SA
 
 
+def mesh_line(mesh, bins=40):
+    """The body's own centre line, head end first: the two ends farthest apart along the surface, the vertices
+    binned by their distance along it from one end, each bin's middle a point. A coiled snake's line follows the
+    coils (straight slices across one would cut three coils at once). The head end is the thicker one."""
+    import geo
+    s = geo.Surface(mesh)
+    co = s.co
+    c = sum(co, Vector()) / len(co)
+    seed = max(range(len(co)), key=lambda i: (co[i] - c).length)
+    d0 = s.distances([seed])
+    a = max(range(len(co)), key=lambda i: d0[i] if d0[i] < float("inf") else -1)
+    da = s.distances([a])
+    far = max(d for d in da if d < float("inf"))
+    groups = [[] for _ in range(bins)]
+    for i, d in enumerate(da):
+        if d < float("inf"): groups[min(bins - 1, int(d / max(far, 1e-9) * bins))].append(co[i])
+    pts, rad = [], []
+    for g in groups:
+        if not g: continue
+        m = sum(g, Vector()) / len(g)
+        pts.append(m); rad.append(sum((p - m).length for p in g) / len(g))
+    # a little smoothing: a bin's middle wobbles where a fin or a jaw joins it
+    sm = [pts[0]] + [(pts[i - 1] + pts[i] * 2 + pts[i + 1]) / 4 for i in range(1, len(pts) - 1)] + [pts[-1]]
+    n = max(1, len(rad) // 6)
+    if sum(rad[-n:]) > sum(rad[:n]):
+        sm.reverse(); rad.reverse()
+    return sm, rad
+
+
+def polyline_param(line, p):
+    """(u along the polyline 0..1, the closest point, the segment index) for a point."""
+    cum = [0.0]
+    for i in range(1, len(line)): cum.append(cum[-1] + (line[i] - line[i - 1]).length)
+    best = (1e18, 0.0, line[0], 0)
+    for i in range(len(line) - 1):
+        a, b = line[i], line[i + 1]
+        d = b - a
+        f = max(0.0, min(1.0, (p - a).dot(d) / max(d.length_squared, 1e-12)))
+        q = a + d * f
+        dist = (p - q).length
+        if dist < best[0]: best = (dist, (cum[i] + d.length * f) / max(cum[-1], 1e-12), q, i)
+    return best[1], best[2], best[3]
+
+
+def polyline_at(line, u):
+    """The point at share u of the polyline's length, and the direction there."""
+    cum = [0.0]
+    for i in range(1, len(line)): cum.append(cum[-1] + (line[i] - line[i - 1]).length)
+    x = max(0.0, min(1.0, u)) * cum[-1]
+    for i in range(len(line) - 1):
+        if x <= cum[i + 1] or i == len(line) - 2:
+            seg = max(cum[i + 1] - cum[i], 1e-12)
+            f = (x - cum[i]) / seg
+            return line[i].lerp(line[i + 1], f), (line[i + 1] - line[i]).normalized()
+    return line[-1], (line[-1] - line[-2]).normalized()
+
+
+def frame(d, hint=Vector((0, 0, 1))):
+    """A turn whose Y is d and whose Z is as near hint as d allows (a body's back stays up as it bends)."""
+    y = d.normalized()
+    z = hint - y * hint.dot(y)
+    if z.length < 1e-4:
+        z = Vector((0, 1, 0)) - y * y.y
+    z.normalize()
+    x = y.cross(z)
+    return Matrix((x, y, z)).transposed()
+
+
+def fit_line(arm, mesh, log):
+    """heads, tails and rolls for a body with no legs to stand on (snake, shark): the template's line from its front
+    tip to its back tip laid along the body's own centre line, every joint at the same share of the length; a joint
+    off the line (a fin, the jaw) keeps its offset from it, turned with the line there (back kept up) and scaled by
+    the length change. The mesh is first turned about Z so it heads the template's way, so nothing turns over."""
+    mw = arm.matrix_world
+    bones = arm.data.bones
+    leaves = [b for b in bones if not b.children]
+    front = min(leaves, key=lambda b: (mw @ b.tail_local).y)
+    back = max(leaves, key=lambda b: (mw @ b.tail_local).y)
+    fu, bu = up(front), up(back)
+    common = next(b for b in fu if b in bu)
+    # front tip to the fork walking each bone tail to head, then the fork down to the back tip head to tail
+    walk = [(b, ("tail", "head")) for b in fu[:fu.index(common)]] +            [(b, ("head", "tail")) for b in reversed(bu[:bu.index(common)])]
+    tl = [mw @ front.tail_local]
+    for b, ends in walk:
+        for e in ends:
+            p = mw @ (b.tail_local if e == "tail" else b.head_local)
+            if (p - tl[-1]).length > 1e-5: tl.append(p)
+    ml, rad = mesh_line(mesh)
+    flat = lambda v: Vector((v.x, v.y, 0.0))
+    ht, hm = flat(tl[0] - tl[-1]), flat(ml[0] - ml[-1])
+    yaw = 0.0
+    if ht.length > 1e-6 and hm.length > 1e-6:
+        yaw = math.atan2(ht.y, ht.x) - math.atan2(hm.y, hm.x)
+        R = Matrix.Rotation(yaw, 4, 'Z')
+        turn(mesh, yaw)
+        ml = [R @ p for p in ml]
+        co = [v.co for v in mesh.data.vertices]
+        c = Vector(((min(p.x for p in co) + max(p.x for p in co)) / 2, (min(p.y for p in co) + max(p.y for p in co)) / 2, 0))
+        mesh.data.transform(Matrix.Translation(-c)); mesh.data.update()
+        ml = [p - c for p in ml]
+    tlen = sum((tl[i] - tl[i - 1]).length for i in range(1, len(tl)))
+    mlen = sum((ml[i] - ml[i - 1]).length for i in range(1, len(ml)))
+    k = mlen / max(tlen, 1e-9)
+
+    def turn_at(p):
+        u, q, i = polyline_param(tl, p)
+        d_t = (tl[min(i + 1, len(tl) - 1)] - tl[i])
+        at, d_m = polyline_at(ml, u)
+        return at, q, frame(d_m) @ frame(d_t).inverted()
+
+    def place(p):
+        at, q, r = turn_at(p)
+        return at + r @ ((p - q) * k)
+
+    heads = {b.name: place(mw @ b.head_local) for b in bones}
+    tails = {b.name: place(mw @ b.tail_local) for b in bones}
+    for b in bones:
+        if b.parent is None:            # the root: on the ground under the middle of the body, not off the line
+            mid, _ = polyline_at(ml, 0.5)
+            heads[b.name] = Vector((mid.x, mid.y, 0.0))
+            tails[b.name] = heads[b.name] + (mw.to_3x3() @ (b.tail_local - b.head_local)) * k
+    rolls = {b.name: turn_at(mw @ b.head_local.lerp(b.tail_local, 0.5))[2] @ (mw.to_3x3() @ b.z_axis) for b in bones}
+    log["line"] = {"template_m": round(tlen, 3), "mesh_m": round(mlen, 3), "points": len(ml),
+                   "front": front.name, "back": back.name, "turned_deg": round(math.degrees(yaw), 1)}
+    return heads, tails, rolls, k
+
+
 def fit_human(arm, mesh, spec_h, log):
     """heads and tails for Mesh2Motion's human from the joints rerig_humanoid measures (cross-sections at the
     humanoid section's heights); the fingers follow the hand (turned and scaled with the wrist to the knuckles)."""
@@ -483,7 +631,7 @@ def fit_human(arm, mesh, spec_h, log):
     return heads, tails, s, J
 
 
-def write_bones(arm, heads, tails, scale, tol):
+def write_bones(arm, heads, tails, scale, tol, rolls=None):
     """Moves every bone to its new head; its tail is the head of a child that started where it ended, else the new
     tail given, else its old vector scaled. Each bone's frame is turned the least way onto its new direction, so the
     clips (rotations in those frames) bend the same joints the same way."""
@@ -501,7 +649,8 @@ def write_bones(arm, heads, tails, scale, tol):
         else: nt = nh + (ot - oh) * scale
         if (nt - nh).length < 1e-4: nt = nh + (ot - oh) * scale
         q = (ot - oh).rotation_difference(nt - nh)
-        plan[b.name] = (inv @ nh, inv @ nt, q @ (mw.to_3x3() @ b.z_axis))
+        z = rolls[b.name] if rolls and b.name in rolls else q @ (mw.to_3x3() @ b.z_axis)
+        plan[b.name] = (inv @ nh, inv @ nt, z)
     for b in arm.data.edit_bones:
         b.use_connect = False
     for b in arm.data.edit_bones:
@@ -719,35 +868,120 @@ def load_template(t, root, wanted, log):
 # ---------------------------------------------------------------- skinning
 
 LEAF = re.compile(r"(^|[_.])(leaf|tip)([_.]|$)", re.I)
+# bones buried in an animal's body (a shoulder blade, a pelvis bone, a collar, the ribcage helpers): they turn the
+# legs hung from them, but skin of their own tore 20-30% gaps across a cow's flank in the audit's bends
+GIRDLE = re.compile(r"scapula|pelvis|collar|anchor|ribcage|leg_shoulder", re.I)
 
 
-def skin(mesh, arm, voxel, after_transfer=None):
-    """Bone heat on a watertight voxel copy, carried back to the mesh by nearest face. The root and the leaf and tip
-    bones at the ends of chains carry no skin."""
+def gate(mesh, arm, reach=1.8):
+    """Each vertex keeps weight only from its nearest bone, the bones joined to that one, and bones nearly as near
+    (within reach x the nearest distance). A voxel copy closes gaps a few voxels wide, so bone heat crosses them: a
+    cow's mouth owned skin on its front foot, the tail the hocks it hangs beside. What is cut goes to what stays."""
+    import numpy as np
+    names = [b.name for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups]
+    if not names: return 0
+    bi = {n: i for i, n in enumerate(names)}
+    H = np.array([arm.data.bones[n].head_local[:] for n in names]); Tl = np.array([arm.data.bones[n].tail_local[:] for n in names])
+    near = np.eye(len(names), dtype=bool)
+    for n in names:
+        b = arm.data.bones[n]
+        for o in ([b.parent] if b.parent else []) + list(b.children):
+            if o.name in bi: near[bi[n], bi[o.name]] = near[bi[o.name], bi[n]] = True
+    me = mesh.data
+    n = len(me.vertices)
+    P = np.empty(n * 3); me.vertices.foreach_get("co", P); P = P.reshape(n, 3)
+    D = np.empty((n, len(names)))
+    for j in range(len(names)):
+        d = Tl[j] - H[j]
+        f = np.clip(((P - H[j]) @ d) / max(float(d @ d), 1e-12), 0.0, 1.0)
+        D[:, j] = np.linalg.norm(P - (H[j] + f[:, None] * d), axis=1)
+    best = D.argmin(1)
+    dmin = D[np.arange(n), best]
+    keep = near[best] | (D <= dmin[:, None] * reach + 1e-6)
+    gi = {mesh.vertex_groups[nm].index: bi[nm] for nm in names}
+    cut = 0
+    for v in me.vertices:
+        drop = [g for g in v.groups if g.group in gi and not keep[v.index, gi[g.group]] and g.weight > 1e-4]
+        if not drop: continue
+        cut += 1
+        if sum(g.weight for g in v.groups if g.group in gi and keep[v.index, gi[g.group]]) < 1e-3:
+            mesh.vertex_groups[names[best[v.index]]].add([v.index], 1.0, 'REPLACE')
+        for g in drop: g.weight = 0.0
+    return cut
+
+
+def fill_bare(mesh):
+    """Vertices bone heat left with no weight take their nearest weighted neighbour's."""
+    from mathutils import kdtree
+    vs = mesh.data.vertices
+    good = [v for v in vs if any(g.weight > 1e-4 for g in v.groups)]
+    bare = [v.index for v in vs if not any(g.weight > 1e-4 for g in v.groups)]
+    if not good or not bare: return 0
+    kd = kdtree.KDTree(len(good))
+    for i, v in enumerate(good): kd.insert(v.co, i)
+    kd.balance()
+    for vi in bare:
+        _, gi, _ = kd.find(vs[vi].co)
+        for g in good[gi].groups:
+            if g.weight > 1e-4: mesh.vertex_groups[g.group].add([vi], g.weight, 'REPLACE')
+    return len(bare)
+
+
+def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0):
+    """Bone heat on a watertight voxel copy, carried back to the mesh by nearest face. The root, the leaf and tip
+    bones at the ends of chains and (girdles) the girdle bones carry no skin; smooth: passes of weight smoothing
+    after the transfer."""
     off = []
     for b in arm.data.bones:
-        if b.parent is None or (not b.children and LEAF.search(b.name)):
+        if b.parent is None or (not b.children and LEAF.search(b.name)) or (girdles and GIRDLE.search(b.name)):
             if b.use_deform: off.append(b.name)
             b.use_deform = False
-    bpy.ops.object.select_all(action='DESELECT')
-    proxy = mesh.copy(); proxy.data = mesh.data.copy(); proxy.name = mesh.name + "_proxy"
-    bpy.context.scene.collection.objects.link(proxy)
-    rem = proxy.modifiers.new("remesh", 'REMESH'); rem.mode = 'VOXEL'; rem.voxel_size = voxel
-    bpy.context.view_layer.objects.active = proxy
-    bpy.ops.object.modifier_apply(modifier=rem.name)
-    proxy.select_set(True); arm.select_set(True); bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-    unreached = sum(1 for v in proxy.data.vertices if not v.groups)
-    bpy.ops.object.select_all(action='DESELECT')
+    def heat(obj):
+        obj.vertex_groups.clear()
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True); arm.select_set(True); bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        obj.parent = None
+        for m in [m for m in obj.modifiers if m.type == 'ARMATURE']: obj.modifiers.remove(m)
+        return sum(1 for v in obj.data.vertices if not v.groups)
+    # bone heat's solver gives up on a fine voxel copy of some meshes (every vertex unreached): coarser copies,
+    # then the mesh itself, until one is reached nearly everywhere
+    unreached, used = None, None
+    for vx in (voxel, voxel * 1.7, voxel * 2.8):
+        proxy = mesh.copy(); proxy.data = mesh.data.copy(); proxy.name = mesh.name + "_proxy"
+        bpy.context.scene.collection.objects.link(proxy)
+        proxy.vertex_groups.clear()
+        rem = proxy.modifiers.new("remesh", 'REMESH'); rem.mode = 'VOXEL'; rem.voxel_size = vx
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = proxy
+        bpy.ops.object.modifier_apply(modifier=rem.name)
+        unreached = heat(proxy)
+        if unreached <= len(proxy.data.vertices) * 0.05:
+            used = round(vx, 4); break
+        bpy.data.objects.remove(proxy); proxy = None
     for b in arm.data.bones:
         if b.use_deform and b.name not in mesh.vertex_groups: mesh.vertex_groups.new(name=b.name)
-    dt = mesh.modifiers.new("weights", 'DATA_TRANSFER')
-    dt.object = proxy; dt.use_vert_data = True; dt.data_types_verts = {'VGROUP_WEIGHTS'}
-    dt.vert_mapping = 'POLYINTERP_NEAREST'; dt.layers_vgroup_select_src = 'ALL'; dt.layers_vgroup_select_dst = 'NAME'
+    if proxy is not None:
+        dt = mesh.modifiers.new("weights", 'DATA_TRANSFER')
+        dt.object = proxy; dt.use_vert_data = True; dt.data_types_verts = {'VGROUP_WEIGHTS'}
+        dt.vert_mapping = 'POLYINTERP_NEAREST'; dt.layers_vgroup_select_src = 'ALL'; dt.layers_vgroup_select_dst = 'NAME'
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = mesh
+        mesh.select_set(True)
+        bpy.ops.object.modifier_apply(modifier=dt.name)
+        bpy.data.objects.remove(proxy)
+    else:
+        unreached = heat(mesh); used = "mesh"
+        for b in arm.data.bones:
+            if b.use_deform and b.name not in mesh.vertex_groups: mesh.vertex_groups.new(name=b.name)
+    fill_bare(mesh)
+    bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = mesh
     mesh.select_set(True)
-    bpy.ops.object.modifier_apply(modifier=dt.name)
-    bpy.data.objects.remove(proxy)
+    gated = gate(mesh, arm)
+    if smooth:
+        import rerig
+        rerig.smooth_weights(mesh, int(smooth))
     if after_transfer: after_transfer()
     # at most four influences, normalised, as an engine takes them
     bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
@@ -755,7 +989,7 @@ def skin(mesh, arm, voxel, after_transfer=None):
     mesh.parent = arm
     mod = mesh.modifiers.new("Armature", 'ARMATURE'); mod.object = arm
     bare = sum(1 for v in mesh.data.vertices if not v.groups)
-    return unreached, bare, off
+    return unreached, bare, off, gated, used
 
 
 def confine(mesh, arm, leg_of, shape, belly):
@@ -800,6 +1034,43 @@ def confine(mesh, arm, leg_of, shape, belly):
             if sum(g.weight for g in v.groups) < 0.05:
                 mesh.vertex_groups[nearest_body(v.co)].add([v.index], 1.0, 'REPLACE')
     return moved
+
+
+def repose(arm, mesh, rest3):
+    """Poses every bone the way the template's rest has it (its frame, so its direction and roll) and makes that the
+    rest pose, mesh and all, standing on z=0 over the origin. For bodies whose clips are shapes rather than turns
+    from where the model happens to be: a snake modelled rising in an S would side-wind as an S thrashing about,
+    where straightened along the template's line its clips play as made. The weights were made on the body as
+    modelled, before it is straightened."""
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='POSE')
+    for b in arm.data.bones:                                   # parents first
+        if b.name not in rest3: continue
+        pb = arm.pose.bones[b.name]
+        bpy.context.view_layer.update()
+        pb.matrix = Matrix.Translation(pb.matrix.to_translation()) @ rest3[b.name].to_4x4()
+    bpy.context.view_layer.update()
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = mesh
+    mesh.select_set(True)
+    mod = next(m for m in mesh.modifiers if m.type == 'ARMATURE')
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode='POSE')
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    co = [v.co for v in mesh.data.vertices]
+    lo = Vector([min(c[i] for c in co) for i in range(3)]); hi = Vector([max(c[i] for c in co) for i in range(3)])
+    off = Matrix.Translation(Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
+    mesh.data.transform(off); mesh.data.update()
+    arm.data.transform(off)
+    m2 = mesh.modifiers.new("Armature", 'ARMATURE'); m2.object = arm
+    return [round(x, 3) for x in off.to_translation()]
 
 
 # ---------------------------------------------------------------- writing it out
@@ -925,15 +1196,15 @@ def run(a):
         plan = None
         if not arch: arch, plan = suggest_archetype(mesh, a.name, log)
         pts = [v.co for v in mesh.data.vertices]
-        meas = {"tail": round(tail_share(pts, top), 3)}
+        meas = dict(body_measures(pts, top), tail=round(tail_share(pts, top), 3))
         if plan and (plan.get("feet") or {}).get("count") is not None: meas["feet"] = plan["feet"]["count"]
-        if arch in ("quadruped",):
-            L = landmarks(pts, 2)
-            meas["leg_ratio"] = round(L["belly"] / max(abs(L["back"] - L["front"]), 1e-6), 3)
+        if plan and (plan.get("wings") or {}).get("both"): meas["wings"] = True
+        if a.height or a.model: meas["metres"] = round(top, 3)
         t, why = T.choose(arch, meas)
         log["choice"] = {"archetype": arch, "measures": meas, "why": why}
         if t is None:
-            print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "why": why, "fallback": "rerig.py + make_clips.py"}))
+            print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "choice": log["choice"], "suggest": log.get("suggest"),
+                                           "fallback": "rerig.py + make_clips.py"}))
             return 3
         fam = T.TEMPLATES[t]["family"]
         if fam in ("legged", "body") and t not in ("bird", "dragon"):
@@ -987,6 +1258,10 @@ def run(a):
         leg_of, _ = chains(arm, 1)
         k = J["hip"].z / max(bones[tracking].head_local.z, 1e-6) if tracking in bones else scale
         found = {"legs": 1, "leg_bones": len(leg_of)}
+    elif fam == "body":
+        heads, tails, rolls, k = fit_line(arm, mesh, log)
+        scale, leg_of, found = k, {}, {"line": True}
+        animal = [v.co.copy() for v in mesh.data.vertices]
     else:
         heads, tails, found, leg_of, tail_names, shape = fit_shape(arm, R, A, rig_surface, animal, fam)
         scale = A["top"] / max(R["top"], 1e-6)
@@ -999,7 +1274,7 @@ def run(a):
                 heads[n] = h
                 if tl is not None: tails[n] = tl
         log["joints_edited"] = sorted(n for n in edits if n in heads)
-    write_bones(arm, heads, tails, scale, max(1e-3, rtop * 0.012))
+    write_bones(arm, heads, tails, scale, max(1e-3, rtop * 0.012), rolls if fam == "body" else None)
     log["fit"] = found
     log["landmarks"] = {"mesh": {k_: round(v, 3) for k_, v in A.items() if isinstance(v, float)},
                         "template": {k_: round(v, 3) for k_, v in R.items() if isinstance(v, float)}}
@@ -1007,11 +1282,14 @@ def run(a):
 
     # the clips
     log["position_tracks_dropped"] = prune(actions, tracking, root_bone)
-    # the limbs: the legs; a person's arms from the upper arm down; a bird's or dragon's wings; a kaiju's arms
-    limb_set = set(leg_of)
+    # the limbs: the legs (an animal's below the belly: the shoulder blade, upper arm and thigh sit inside the body,
+    # and pointing them the template's way pushed a cow's legs a fifth of a metre out of its own skin); a person's
+    # arms from the upper arm down; a kaiju's arms. Not wings: the bird's rest has them spread, and pointing a hen's
+    # folded wings that way opened them out behind her like a cape on every walking step. They keep the clip's turns
+    # from the wings as modelled.
+    limb_set = set(n for n in leg_of if fam == "human" or bones[n].head_local.z < A["belly"])
     for b in bones:
-        if (fam == "human" and b.name.startswith("upperarm_")) or (fam == "legged" and (
-                b.name.lower().startswith(("wing_", "shoulder_")) or b.name.startswith("Front_Leg_Upper"))):
+        if (fam == "human" and b.name.startswith("upperarm_")) or (fam == "legged" and b.name.startswith("Front_Leg_Upper")):
             limb_set.add(b.name)
             limb_set.update(c.name for c in b.children_recursive)
     limb_set.discard(root_bone)
@@ -1020,21 +1298,32 @@ def run(a):
         match_world(arm, rig0, actions, limb_set, feet, k, root_bone)
     else:
         scale_travel(actions, k)
+    rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
     bpy.data.objects.remove(rig0)
     if tail_names and fam == "legged": damp(actions, set(tail_names), a.tail_swing)
     if a.swing != 1.0: damp(actions, set(leg_of), a.swing)
+    # wings on the ground: the template's walk and idle turn its wings from their spread rest, and the same turns
+    # open a bird's folded wings out from her sides; off the ground (flap, glide, fly) they swing as made
+    wings = {b.name for b in bones if b.name.lower().startswith(("wing_", "shoulder_"))}
+    grounded = [act for act in actions if not re.search(r"fly|flap|glide", act.name, re.I)]
+    if wings and grounded and a.wing_swing != 1.0: damp(grounded, wings, a.wing_swing)
     log["limbs_rebaked"] = len(limb_set) if fam in ("human", "legged") else 0
 
     # the skin
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
     after = (lambda: log.__setitem__("confined", confine(mesh, arm, leg_of, shape, A["belly"]))) \
         if leg_of and fam in ("legged", "human") else None
-    unreached, bare, off = skin(mesh, arm, voxel, after)
-    log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), voxel=round(voxel, 4))
+    unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
+    log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used)
 
-    # the joints as fitted (Mesh2Motion's names, glTF axes: what the browser edits)
+    # the joints as fitted (Mesh2Motion's names, glTF axes, on the body as modelled: what the browser edits, and
+    # what --joints takes back)
     joints = {"axes": "gltf", "bones": {b.name: {"head": T.to_gltf(b.head_local), "tail": T.to_gltf(b.tail_local)}
                                         for b in arm.data.bones}}
+    rest = a.rest or ("template" if fam == "body" else "as-modelled")
+    if rest == "template":
+        log["reposed_offset"] = repose(arm, mesh, rest3)
+    log["rest"] = rest
     # the clips under the engine's names, each a take of its own
     arm.animation_data_create()
     engine = dict(wanted)
@@ -1055,6 +1344,7 @@ def run(a):
     export_fbx(tmp_fbx, mesh, arm)
     if "glb" in fmts:
         out["glb"] = os.path.join(a.out, a.name + ".glb"); export_glb(out["glb"], mesh, arm)
+    bpy.context.preferences.filepaths.save_version = 0          # no .blend1 beside it
     bpy.ops.wm.save_as_mainfile(filepath=blend)
     out["blend"] = blend
     if a.audit:
@@ -1077,7 +1367,7 @@ def run(a):
              for w, _ in wanted if w in acts]
 
     # rig.json, the card and the log
-    m2m = {"template": t, "joints": joints, "clips": [c["m2m"] for c in clips], "skin": method,
+    m2m = {"template": t, "joints": joints, "rest": rest, "clips": [c["m2m"] for c in clips], "skin": method,
            "naming": a.naming, "target": a.target}
     spec_dir = folder or a.out
     rel = (lambda p: os.path.relpath(p, spec_dir).replace(os.sep, "/"))

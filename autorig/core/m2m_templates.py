@@ -55,10 +55,13 @@ for _t in TEMPLATES.values():
 DEFAULT_ROLES = ("idle", "walk")
 SKIN_METHODS = ("autorig",)            # "m2m" arrives with P2b (core/m2m_skin.py)
 
-# quadruped: the horse's legs are long under a short body, the fox's short under a long one. Leg length (the belly's
-# height) over the body's length between the front and back feet, read the same way off each template's own sample
-# mesh (fox 0.53, horse 0.88); a cow (0.70) and anything above the midpoint stand on the horse.
-HORSE_LEGS = 0.68
+# quadruped: Horse or Fox by size. Their sample meshes have the same build (legs 0.64 and 0.63 of the body between
+# the feet), so the shape cannot tell a cow from a dog; standing this tall or more (metres) is a horse's size.
+HORSE_HEIGHT = 0.9
+# a body whose underside lies on the ground over this share of its footprint has no legs to stand on: a snake if
+# it is this slender (length over width and height), a fish otherwise
+LYING = 0.3
+SERPENT_SLENDER = 5.0
 # a biped with a tail longer than this share of its height, reaching back behind it, is a kaiju, not a person
 KAIJU_TAIL = 0.3
 
@@ -76,23 +79,54 @@ def is_root_motion(name):
 
 def choose(archetype, measures=None):
     """(template, reason) for an archetype, or (None, reason) when Mesh2Motion has none for it. measures, all optional:
-       leg_ratio   leg length over the body's length between the outermost foot groups (quadrupeds)
-       feet        feet touching the ground (body_plan)
-       tail        tail length over height (0 for none)
-       wings       True when wings were found"""
+       metres      its standing height, when the height is real (quadrupeds: Horse or Fox)
+       feet        feet touching the ground (core/body_plan.py)
+       ground      the share of its footprint lying on the ground (m2m_rig.body_measures)
+       slender     length over the larger of width and height
+       stand       height over length
+       tail        how far it reaches back past a person's depth, over its height (a kaiju's tail)
+       wings       True when wings were found
+    The body's measures overrule the archetype where they plainly disagree: a body lying on the ground is a snake or
+    a fish whatever the tips said (the sea serpent's tips read "rigid"), and two feet are not a quadruped's."""
     m = measures or {}
     a = (archetype or "").lower()
+    why = ""
+    if (m.get("ground") or 0) >= LYING and a not in ("humanoid", "biped", "human"):
+        if (m.get("slender") or 0) >= SERPENT_SLENDER:
+            return "snake", "lies on the ground (%.0f%% of its footprint), slender %.1f: Snake (was %s)" % (
+                100 * m["ground"], m["slender"], a or "unknown")
+        return "shark", "lies on the ground (%.0f%% of its footprint), not slender: Shark (was %s)" % (
+            100 * m["ground"], a or "unknown")
+    if m.get("wings") and a not in ("winged", "bird", "dragon"):
+        why = " (wings: was %s)" % a; a = "winged"
+    elif a in ("quadruped", "", "rigid", "creature") and m.get("feet") == 2:
+        if (m.get("stand") or 1) < 0.5:
+            why = " (long and low on two contact patches, a body resting on fins: was %s)" % (a or "unknown")
+            a = "swimmer"
+        elif (m.get("stand") or 0) >= 1.6:
+            why = " (two feet under an upright body: was %s)" % (a or "unknown"); a = "humanoid"
+        else:
+            why = " (two feet under a long body: was %s)" % (a or "unknown"); a = "winged"
+    elif a in ("", "rigid", "creature") and (m.get("feet") or 0) >= 5:
+        a = "octopod"
+    elif a in ("", "rigid", "creature") and m.get("feet") == 4:
+        a = "quadruped"
+    t, reason = _choose(a, m)
+    return t, reason + why
+
+
+def _choose(a, m):
     if a in ("humanoid", "biped", "human"):
         if (m.get("tail") or 0) > KAIJU_TAIL:
             return "kaiju", "a biped with a tail %.2f of its height: Kaiju" % m["tail"]
         return "human", "humanoid: Human"
     if a in ("quadruped", "canine", "feline", "equine", "bovine"):
-        r = m.get("leg_ratio")
-        if r is None:
-            return "horse", "quadruped, leg length unknown: Horse"
-        if r >= HORSE_LEGS:
-            return "horse", "quadruped with legs %.2f of its body (Horse from %.2f): Horse" % (r, HORSE_LEGS)
-        return "fox", "quadruped with legs %.2f of its body (under %.2f): Fox" % (r, HORSE_LEGS)
+        h = m.get("metres")
+        if h is None:
+            return "horse", "quadruped of unknown size: Horse"
+        if h >= HORSE_HEIGHT:
+            return "horse", "quadruped %.2f m tall (Horse from %.1f m): Horse" % (h, HORSE_HEIGHT)
+        return "fox", "quadruped %.2f m tall (under %.1f m): Fox" % (h, HORSE_HEIGHT)
     if a in ("winged", "bird", "dragon", "flyer"):
         if (m.get("feet") or 0) >= 4 or a == "dragon":
             return "dragon", "winged on four feet: Dragon"
@@ -107,7 +141,7 @@ def choose(archetype, measures=None):
         return "kaiju", "kaiju"
     if a in TEMPLATES:
         return a, "named template"
-    return None, "no Mesh2Motion template for %r: rerig.py and make_clips.py" % (archetype or "nothing")
+    return None, "no Mesh2Motion template for %r: rerig.py and make_clips.py" % (a or "nothing")
 
 
 # ---------------------------------------------------------------- the M2M files
