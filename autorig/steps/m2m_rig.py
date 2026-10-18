@@ -69,6 +69,9 @@ def args(argv=None):
     p.add_argument("--wing-swing", dest="wing_swing", type=float, default=0.3,
                    help="scale the wings' swing in clips on the ground (walk, idle); flying clips swing as made")
     p.add_argument("--voxel", type=float, default=0.0, help="proxy voxel size in metres (default: height / 70)")
+    p.add_argument("--limbs", default="calibrated", choices=("calibrated", "absolute"),
+                   help="four-legged bodies: calibrated keeps each leg's fitted rest where the template stands at rest "
+                        "and adds the template's turns (default); absolute points every leg bone as the template's")
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
                    help="the rest pose: the template's (default for snakes and fish) or the body as modelled")
     p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
@@ -798,7 +801,7 @@ def tip(mat, length):
     return (mat @ Matrix.Translation((0, length, 0))).to_translation()
 
 
-def match_world(arm, src, actions, limb, feet, k, root):
+def match_world(arm, src, actions, limb, feet, k, root, calibrate=False):
     """Rebakes the limbs so each limb bone points the way the template's own does, frame by frame, and stands the
     feet as the template's stand (scaled by k, the leg-length change), with the clips' travel scaled by k too.
     A clip is turns from the rest pose; a cow's legs stand straight where the horse's rest pose is angled, a T-posed
@@ -809,6 +812,15 @@ def match_world(arm, src, actions, limb, feet, k, root):
     still leaves the ground and a stand stays on it."""
     pb, sb = arm.pose.bones, src.pose.bones
     order = [b.name for b in arm.data.bones if b.name in limb]          # bones come parents first
+    # calibrate (four-legged bodies): each bone keeps its own rest where the template stands at its rest, and takes
+    # the template's turns from there. Pointing the bones exactly as the template's do bent a fitted cow's legs by
+    # the difference on every frame, 35-50 degrees at the ankles even in Idle, and tore the skin (Cow_Holstein,
+    # 2026-10-18). corr maps the template bone's rest frame onto this bone's, both in armature space.
+    corr = {}
+    if calibrate:
+        for n in order:
+            if n in src.data.bones:
+                corr[n] = arm.data.bones[n].matrix_local.to_3x3() @ src.data.bones[n].matrix_local.to_3x3().inverted()
     tops = {pb[n].parent.name for n in order if pb[n].parent and pb[n].parent.name not in limb}
     feet = [n for n in feet if n in pb]
     for act in actions:
@@ -838,7 +850,8 @@ def match_world(arm, src, actions, limb, feet, k, root):
                 par = mats[b.parent.name]
                 rest = b.parent.matrix_local.inverted() @ b.matrix_local
                 base = par @ rest                                  # where the bone would be with no turn of its own
-                m = Matrix.Translation(base.to_translation()) @ want[n].to_3x3().to_4x4()
+                aim = corr[n] @ want[n].to_3x3() if n in corr else want[n].to_3x3()
+                m = Matrix.Translation(base.to_translation()) @ aim.to_4x4()
                 basis = base.inverted() @ m
                 mats[n] = base @ basis
                 pb[n].rotation_mode = 'QUATERNION'
@@ -1365,7 +1378,7 @@ def run(a):
     limb_set.discard(root_bone)
     feet = [n for n in leg_of if not bones[n].children]
     if fam in ("human", "legged") and limb_set:
-        match_world(arm, rig0, actions, limb_set, feet, k, root_bone)
+        match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam == "legged" and a.limbs == "calibrated")
     else:
         scale_travel(actions, k)
     rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
