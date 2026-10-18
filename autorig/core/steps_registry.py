@@ -54,6 +54,8 @@ MODEL_STEPS = [
     {"name": "rebake-clips", "title": "Re-bake clips", "help": "make clips, then the preview again"},
     {"name": "doctor-repair", "title": "Mesh Doctor: repair", "help": "PyMeshLab repairs on a copy in work/doctor"},
     {"name": "doctor-watertight", "title": "Mesh Doctor: watertight", "help": "one watertight surface (PyMeshFix), maps baked"},
+    {"name": "fix-skin", "title": "Fix skin", "help": "re-skin a Mesh2Motion rig several ways on its fitted skeleton "
+                                                     "and keep the one the audit grades best"},
     {"name": "all", "title": "Run all (classic)", "help": "rig, trim, audit, publish, clips when it has an archetype, preview"},
 ]
 MODEL_STEP_NAMES = tuple(s["name"] for s in MODEL_STEPS) + ("rebake_clips",)      # the old spelling is still taken
@@ -123,6 +125,8 @@ def model_commands(step, name, group, spec, work, model_dir, spec_store=None, rm
     if step == "doctor-watertight":
         return [Cmd("mesh doctor: watertight (PyMeshFix), baked", "blender", "mesh_doctor.py",
                     [name, "--watertight", "--bake", "1024"], None)]
+    if step == "fix-skin":
+        return [Cmd("fix skin (try four skins, keep the best)", "python", "m2m_fix.py", [name], None)]
     if step == "all":
         # the card goes before the clips (they read its size) and again after (it lists them)
         out = rig_step() + trim() + audit() + publish()

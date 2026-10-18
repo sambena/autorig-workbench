@@ -39,6 +39,7 @@
 #                                                   fit a Mesh2Motion skeleton, skin, audit, attach its clips
 #   python autorig/cli/run.py m2m-clips <model> --clips "Idle,Walk,Run" [--root-motion] [--out <folder>] [--replace]
 #                                                   Mesh2Motion's human clips on a Mixamo-rigged person, as takes
+#   python autorig/cli/run.py fix-skin <model>       re-skin a Mesh2Motion rig several ways, keep the best (Advanced -> Fix skin)
 #   python autorig/cli/run.py m2m-quadruped --in Cow.glb --name Cow --rig horse-animations.glb --out <folder>
 #                                                   the first Mesh2Motion fit, four-legged only
 #
@@ -148,6 +149,8 @@ def main(argv):
         if {"--heal", "--repair", "--watertight"} & set(rest):  # these need Blender's mesh tools
             return blender_step("mesh_doctor.py", *rest)
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "mesh_doctor.py")] + rest)
+    if cmd == "fix-skin" and rest:                            # re-skin a Mesh2Motion rig, keep the best (steps/m2m_fix.py)
+        return subprocess.call([sys.executable, os.path.join(PKG, "steps", "m2m_fix.py")] + rest)
     if cmd == "batch":
         return subprocess.call([sys.executable, os.path.join(PKG, "steps", "batch.py")] + rest)
     if cmd == "watch" and rest:
@@ -173,7 +176,7 @@ def main(argv):
 
 
 # Subcommands that do nothing useful without arguments (batch, clips, audit-all and studio handle their own)
-NEEDS_ARGS = ("suggest", "m2m-rig", "m2m-quadruped", "smoke-flipbook", "mixamo-upload", "mixamo-import", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
+NEEDS_ARGS = ("suggest", "fix-skin", "m2m-rig", "m2m-quadruped", "smoke-flipbook", "mixamo-upload", "mixamo-import", "game-prop", "game-parts", "tripo-clips", "crop-cards", "fbx-maps", "rig", "prepare", "survey", "trim", "facing", "audit", "measure", "preview", "probe", "auto-tune",
               "export", "package", "doctor", "watch", "smpl-to-bvh", "clip-check", "retarget")
 
 

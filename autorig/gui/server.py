@@ -453,6 +453,8 @@ def availability(st, spec, d):
     why["publish"] = None if st["rigged_fbx"] else "no rigged FBX yet: run Rig"
     why["preview"] = None if (st["rigged"] or st["rigged_fbx"]) else "no rig yet: run Rig"     # results viewer
     why["all"] = why["rig"]
+    m2m = (spec.get("m2m") or rig.get("m2m") or {}) if isinstance(spec, dict) else {}
+    why["fix-skin"] = None if m2m.get("template") else "rig it on a Mesh2Motion skeleton first (Auto rig)"
     return why
 
 
