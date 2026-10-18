@@ -477,7 +477,7 @@ scripts, AI agents and Unity.
 | M2b | Skinning bake-off on the same fitted skeletons, Mesh2Motion's skinning against ours, graded by our audit; the winner is each template's default | |
 | M3 | API v1 (`/api/v1/...`, Bearer token, OpenAPI; docs/API.md) and one step registry (`core/steps_registry.py`) for the server, the CLI, batches and the API | done |
 | M4 | A postMessage bridge in the fork: load our fit, hand edited joints and exports back ([M2M-BRIDGE.md](M2M-BRIDGE.md)) | done |
-| M5 | The new three-step page, replacing the old GUI | |
+| M5 | The new three-step page, replacing the old GUI ([OLD-UI.md](OLD-UI.md) maps the old features) | done |
 | M6 | Mesh2Motion clips on existing Mixamo-rigged humans | |
 | M7 | Docs, runbook, deploy | |
 | M8 | Generate in the workbench (Tripo, Meshy, Rodin; cost shown and confirmed every time), then one click to rig and animate | |
@@ -485,6 +485,17 @@ scripts, AI agents and Unity.
 Clip policy from M2 on: models that fit a Mesh2Motion template use its clips, not `make_clips`; `make_clips` stays
 for shapes with no template (floaters, rigid props, turrets, machines). The clip checks (`clip_quality`,
 `foot_contact`, anti-slide) carry on, now on Mesh2Motion clips played on fitted rigs.
+
+M5 notes: `gui/index.html` and `app.js` are the whole page:
+- **Load** adds a file (`POST /api/v1/models`) or picks from the library, which now lists each model's Mesh2Motion
+  template and a thumbnail where one exists.
+- **Rig** runs `POST .../rig` and follows its job over SSE. It shows the audit grade with a one-line reason.
+  **Adjust joints** loads `GET .../skeleton` into the Mesh2Motion editor through the bridge, and **Apply** sends
+  `PUT .../skeleton`.
+- **Animate** shows Mesh2Motion's clip list with our rig, and Export posts `.../animate`.
+- **Advanced** lists `GET /api/v1/steps` with a form per tool.
+- The old pages and the vendored three.js are deleted. Their JSON routes stay until M7, so nothing is lost before it
+  has a v1 route. Until M2 lands, rig, Apply and Export answer 501, and the page offers the classic rig.
 
 M4 notes: the bridge (fork folder `src/lib/bridge/`) takes URL parameters and postMessage protocol v1, documented
 in [M2M-BRIDGE.md](M2M-BRIDGE.md) and exercised by `/m2m/bridge-test.html`. A fitted skeleton is world joint

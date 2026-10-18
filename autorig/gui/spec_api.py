@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: the spec editor's side of the local server (gui/server.py routes to it).
+# Autorig Workbench: rig.json checking and saving on the local server (gui/server.py routes to it). The spec editor
+# page that drove these went with the old UI (M5); the routes stay for scripts, and `run.py` covers the same steps.
 #
-#   GET  /spec_editor.html?model=<name>&t=<token>   the editor page (token required)
-#   GET  /spec_editor.js                            its code (static, Host check only, like viewer.js)
 #   GET  /api/spec?name=<model>                     everything the editor needs: rig.json (text and parsed), the
 #                                                   schema, the source view (steps/source_preview.py), the rig
 #                                                   step's record of which new bone came from which source joint,
@@ -21,9 +20,6 @@
 import difflib, hashlib, json, math, os, re, shutil, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC_TYPES = {".js": "text/javascript; charset=utf-8"}
-CSP = ("default-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; "
-       "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 SCHEMA_ID = "autorig-spec/1"
 KINDS = ("tripo", "build", "placed", "humanoid", "custom")
 ARCHETYPES = ("quadruped", "hexapod", "octopod", "serpent", "winged", "floater", "rigid", "humanoid")
@@ -789,17 +785,6 @@ class Conflict(Exception):
 # ---------------------------------------------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------------------------------------------
-
-def static_file(path):
-    if path != "/spec_editor.js": return None
-    with open(os.path.join(HERE, "spec_editor.js"), "rb") as fh:
-        return fh.read(), STATIC_TYPES[".js"]
-
-
-def page(token):
-    with open(os.path.join(HERE, "spec_editor.html"), encoding="utf-8") as fh:
-        return fh.read().replace("__AUTORIG_TOKEN__", token)
-
 
 def get(h, app, srv, path, q):
     """GET routes under the token. True when handled."""

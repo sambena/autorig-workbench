@@ -311,14 +311,8 @@ class EditorServer(unittest.TestCase):
             time.sleep(0.5)
         self.fail("job did not finish")
 
-    def test_1_page_and_code(self):
-        with self.assertRaises(urllib.error.HTTPError):
-            self.raw("/spec_editor.html?model=flat")
-        ctype, body = self.raw("/spec_editor.html?model=flat&t=" + TOKEN)
-        self.assertIn(TOKEN.encode(), body)
-        ctype, body = self.raw("/spec_editor.js")
-        self.assertTrue(ctype.startswith("text/javascript"))
-        self.assertIn(b"layoutTripo", body)
+    def test_1_routes_need_the_token(self):
+        # the editor page went with the old UI (M5); its routes stay for scripts
         self.assertEqual(self.status("/api/spec?name=flat", token=None), 403)
 
     def test_2_bundle_check_and_save(self):

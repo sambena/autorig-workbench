@@ -1,6 +1,6 @@
 # Engine export packages
 
-**File > Export** in the GUI, or on the command line:
+On the command line (the old GUI's File > Export went with it, docs/OLD-UI.md; the page's Export covers GLB and Unity FBX):
 
     python autorig/steps/export.py wolf --target unity          # unreal | unity | godot | web | all (default)
     python autorig/steps/export.py wolf --target web --no-optimise --no-validate
@@ -19,7 +19,7 @@ Each package is a folder in `<work>/export/<model>/<target>/` and a zip, `<work>
 ## Passes
 
 Every package runs its passes before it is zipped, and lists what each did in `export_report.json` (also printed as
-`PASS` lines and shown under the File > Export dialog). A pass whose program is not installed says
+`PASS` lines and in the job log). A pass whose program is not installed says
 **skipped** and why; the package is otherwise exactly what it was without it.
 
 | Pass | Packages | What it does | Needs |

@@ -126,7 +126,14 @@ class ApiV1Test(unittest.TestCase):
         code, again = self.req("POST", "/api/v1/models?filename=column.obj&name=Column", raw=data)
         self.assertEqual(code, 400)                     # names are unique
         code, ms = self.req("GET", "/api/v1/models")
-        self.assertIn("column", [x["name"] for x in ms["models"]])
+        listed = {x["name"]: x for x in ms["models"]}
+        self.assertIsNone(listed["column"]["thumbnail"])            # the page's library cards
+        self.assertIsNone(listed["column"]["m2m_template"])
+        with open(os.path.join(self.models, "Props", "column", "thumbnail.png"), "wb") as fh: fh.write(b"PNG")
+        code, ms = self.req("GET", "/api/v1/models")
+        thumb = {x["name"]: x for x in ms["models"]}["column"]["thumbnail"]
+        self.assertEqual(thumb, "/api/v1/models/column/files/thumbnail.png")
+        self.assertEqual(self.req("GET", thumb)[0], 200)
         code, d = self.req("GET", "/api/v1/models/column")
         self.assertEqual(code, 200)
         self.assertIn("column.obj", [f["path"] for f in d["files"]])

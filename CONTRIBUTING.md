@@ -29,7 +29,7 @@ Autorig Workbench provides automated rigging, skinning, decimation, and quality 
 
 - **Python**: 3.9 or higher (standard library).
 - **Blender**: 5.2 LTS (tested range). Accessible via `blender` on `PATH`, `/usr/bin/blender`, `/snap/bin/blender`, or the `AUTORIG_BLENDER` environment variable.
-- **Node.js**: 18+ (used for testing the gamepad and viewer logic in [`tests/viewer_logic_test.mjs`](tests/viewer_logic_test.mjs)).
+- **Node.js**: 24 with npm, to build the Mesh2Motion app (`python scripts/build_m2m.py`) and run its tests (`npx vitest run` in `third_party/mesh2motion-app`).
 
 ---
 
@@ -74,8 +74,8 @@ python3 -m unittest discover -s tests -v
 #     "C:\Program Files\Blender Foundation\Blender 5.2\5.2\python\bin\python.exe" -m unittest discover -s tests
 # AUTORIG_NO_BLENDER=1 makes either run behave as if Blender were not installed (its headless tests skip).
 
-# 2. Viewer & Gamepad Node logic tests
-node tests/viewer_logic_test.mjs
+# 2. Mesh2Motion fork tests (the embedding bridge and the rest), in third_party/mesh2motion-app
+(cd third_party/mesh2motion-app && npx vitest run)
 
 # 3. Headless Blender audit pipeline verification
 python3 scripts/ci_audit_thresholds.py
@@ -89,7 +89,7 @@ All 48+ Python tests, 10 Node tests, and the headless Blender pipeline check mus
 
 - [`autorig/core/`](autorig/core/): Pure-Python utilities (`layout`, `spec_store`, `blender`, `grades`, `suggest`, `placed_rules`). Kept free of `bpy` and `numpy` imports where possible so GUI server and tests remain fast.
 - [`autorig/steps/`](autorig/steps/): Pipeline steps executed inside Blender (`survey.py`, `rerig.py`, `decimate.py`, `audit.py`, `make_clips.py`, `preview_glb.py`, `suggest_step.py`).
-- [`autorig/gui/`](autorig/gui/): Local HTTP server (`server.py`), 3D results viewer (`viewer.html`, `viewer.js`), and spec editor (`spec_editor.html`, `spec_editor.js`, `spec_api.py`).
+- [`autorig/gui/`](autorig/gui/): Local HTTP server (`server.py`), the page (`index.html`, `app.js`, three steps on `/api/v1`), the API (`api_v1.py`), and the back ends of the old pages (`spec_api.py`, `viewer_api.py`, `studio_api.py`, `ai_api.py`; see docs/OLD-UI.md).
 - [`autorig/cli/`](autorig/cli/): Command-line drivers (`run.py`, `pipeline.py`, `audit_all.py`).
 - [`docs/`](docs/): Architecture guides ([`PLAN.md`](docs/PLAN.md), [`PIPELINE.md`](docs/PIPELINE.md)), specs ([`SPEC.md`](docs/SPEC.md), [`FORMATS.md`](docs/FORMATS.md)), CI ([`CI.md`](docs/CI.md)), and formal schema ([`rig.schema.json`](docs/rig.schema.json)).
 - [`samples/`](samples/): Freely licensed CC0/CC-BY sample models for testing.

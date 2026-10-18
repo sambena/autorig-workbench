@@ -4,10 +4,9 @@
 #   python -m unittest discover -s tests -v
 #
 # Starts the server (no browser) on a temporary models folder holding two "rigged" models made here: one with a
-# preview.glb, its preview.json and an audit, one without. Checks the token and the Host rules on the viewer's page,
-# its code and the vendored three.js, the /api/previews list with its audit digest, the worst bones an audit
-# blames, and that the GLB is served. With Node, runs tests/viewer_logic_test.mjs (gamepads, the scrub bar, the
-# bleed rule, islands). With Blender, a two-bone rig with two actions is built in a .blend and preview_glb.py
+# preview.glb, its preview.json and an audit, one without. Checks the /api/previews list with its audit digest, the
+# worst bones an audit blames, and that the GLB is served (the viewer page itself went with the old UI, M5). With
+# Blender, a two-bone rig with two actions is built in a .blend and preview_glb.py
 # turns it into a GLB with a skin and both clips as animations.
 import json, os, secrets, shutil, struct, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
 
@@ -19,7 +18,6 @@ import viewer_api  # noqa: E402
 
 TOKEN = "test-" + secrets.token_hex(4)
 HAVE_BLENDER = blender.find(required=False) is not None
-NODE = shutil.which("node")
 
 # An audit as steps/audit.py writes it, cut down to what the viewer reads. The bend tears check failed; the
 # bleed and head checks passed.
@@ -119,29 +117,6 @@ class ViewerTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()
 
-    def test_page_needs_the_token(self):
-        self.assertEqual(self.get("/viewer.html?model=shown", token=None)[0], 403)
-        code, headers, body = self.get("/viewer.html?model=shown&t=" + TOKEN, token=None)
-        self.assertEqual(code, 200)
-        self.assertIn(TOKEN.encode(), body)                      # the page carries it for its API calls
-        self.assertNotIn(b"__AUTORIG_TOKEN__", body)
-        self.assertIn("blob:", headers["Content-Security-Policy"])
-        self.assertIn(b"importmap", body)
-
-    def test_code_and_vendor_are_static(self):
-        for path in ("/viewer.js", "/vendor/three/build/three.module.js", "/vendor/three/build/three.core.js",
-                     "/vendor/three/examples/jsm/loaders/GLTFLoader.js",
-                     "/vendor/three/examples/jsm/controls/OrbitControls.js",
-                     "/vendor/three/examples/jsm/renderers/CSS2DRenderer.js"):
-            code, headers, _ = self.get(path, token=None)
-            self.assertEqual(code, 200, path)
-            self.assertTrue(headers["Content-Type"].startswith("text/javascript"), path)
-        self.assertEqual(self.get("/vendor/three/LICENSE", token=None)[0], 404)       # only code types are served
-        for bad in ("/vendor/../server.py", "/vendor/%2e%2e/server.py", "/vendor/three/../../viewer_api.py",
-                    "/vendor/three/build/../../../server.py"):
-            self.assertIn(self.get(bad, token=None)[0], (400, 403, 404), bad)
-        self.assertEqual(self.get("/viewer.js", token=None, host="evil.example")[0], 403)
-
     def test_previews_list(self):
         self.assertEqual(self.get("/api/previews", token=None)[0], 403)
         code, _, body = self.get("/api/previews")
@@ -169,13 +144,6 @@ class ViewerTest(unittest.TestCase):
         self.assertIn("immutable", headers.get("Cache-Control", ""))                 # versioned: cacheable
         self.assertEqual(self.get(s["preview"], token=None)[0], 403)
 
-    def test_viewer_logic_is_static(self):
-        code, headers, body = self.get("/viewer_logic.js", token=None)
-        self.assertEqual(code, 200)
-        self.assertTrue(headers["Content-Type"].startswith("text/javascript"))
-        self.assertIn(b"export function padStep", body)
-        self.assertEqual(self.get("/viewer_api.py", token=None)[0], 403)            # the rest of gui/ is not
-
     def test_worst_bones(self):
         rows = {r["bone"]: r for r in viewer_api.worst_bones(AUDIT)}
         # bend tears failed: the bone that tears is red, first
@@ -200,13 +168,6 @@ class ViewerTest(unittest.TestCase):
         self.assertIn("owns only 0.4%", " ".join(rows["head"]["reasons"]))
         self.assertEqual(len(viewer_api.worst_bones(AUDIT, limit=2)), 2)
         self.assertEqual(viewer_api.worst_bones({}), [])
-
-    @unittest.skipUnless(NODE, "Node not found")
-    def test_viewer_logic_under_node(self):
-        r = subprocess.run([NODE, os.path.join(REPO, "tests", "viewer_logic_test.mjs")], capture_output=True, text=True,
-                           timeout=120)
-        self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-3000:])
-        self.assertIn("passed", r.stdout)
 
     def test_state_offers_the_preview_step(self):
         code, _, body = self.get("/api/state")
