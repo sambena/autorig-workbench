@@ -162,5 +162,53 @@ class PreparedSourceTest(unittest.TestCase):
         self.assertFalse(layout.is_prepared(self.raw))
 
 
+class ModelCardSourceTest(unittest.TestCase):
+    """A model card names the source and the game files; a game export beside the download is never rigged."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="autorig-test-card-")
+        self.old_root, self.old_work = layout.ROOT, layout.WORK
+        layout.ROOT = self.tmp
+        layout.WORK = os.path.join(self.tmp, "_autorig")
+        self.model = os.path.join(self.tmp, "Ice_Tripo")
+        os.makedirs(os.path.join(self.model, "IceAdult.fbm"))
+        self.glb = self._touch("Ice_Tripo.glb")
+        self.game = self._touch("IceAdult.fbx")   # textured: its .fbm folder is beside it
+
+    def tearDown(self):
+        layout.ROOT, layout.WORK = self.old_root, self.old_work
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _touch(self, name):
+        path = os.path.join(self.model, name)
+        with open(path, "wb") as fh:
+            fh.write(b"x")
+        return path
+
+    def _card(self, **fields):
+        with open(os.path.join(self.model, "model.json"), "w", encoding="utf-8") as fh:
+            json.dump(fields, fh)
+
+    def same(self, a, b):
+        self.assertEqual(os.path.normcase(os.path.abspath(a)), os.path.normcase(os.path.abspath(b)))
+
+    def test_without_a_card_the_textured_game_file_wins_as_before(self):
+        self.same(layout.raw_source("Ice_Tripo"), self.game)
+
+    def test_the_cards_model_file_is_the_source(self):
+        self._card(model_file="Ice_Tripo.glb", game_files=["IceAdult.fbx", "IceAdult.fbm/"])
+        self.same(layout.raw_source("Ice_Tripo"), self.glb)
+
+    def test_game_files_are_never_a_source(self):
+        self._card(game_files=["IceAdult.fbx", "IceAdult.fbm/"])
+        self.same(layout.raw_source("Ice_Tripo"), self.glb)
+
+    def test_a_missing_or_outside_model_file_falls_back(self):
+        self._card(model_file="../elsewhere.glb", game_files=["IceAdult.fbx"])
+        self.same(layout.raw_source("Ice_Tripo"), self.glb)
+        self._card(model_file="gone.glb", game_files=["IceAdult.fbx"])
+        self.same(layout.raw_source("Ice_Tripo"), self.glb)
+
+
 if __name__ == "__main__":
     unittest.main()
