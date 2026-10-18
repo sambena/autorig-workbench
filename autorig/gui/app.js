@@ -50,6 +50,7 @@ const state = {
   models: [],
   model: null, // name
   details: null, // GET /api/v1/models/{model}
+  audit: null, // the model's audit verdict: grade and checks
   skeleton: null, // GET .../skeleton, or null
   templates: [],
   picked: [], // clip names picked in Mesh2Motion
@@ -232,6 +233,24 @@ async function refreshModel () {
   } catch {
     state.skeleton = null
   }
+  state.audit = state.details?.audit || await m2mAudit()
+}
+
+// m2m-rig keeps its audit beside the rig (<rig folder>/audit/<name>.json) rather than in the work folder
+async function m2mAudit () {
+  const st = state.details?.status
+  const f = (state.details?.files || []).find((x) => x.path === `${st?.rig_folder || 'rigged'}/audit/${state.model}.json`)
+  if (!f) return null
+  try {
+    const r = await fetch(f.url, { headers: { Authorization: 'Bearer ' + TOKEN } })
+    const v = (await r.json()).verdict
+    return {
+      grade: v.grade,
+      checks: Object.entries(v.checks || {}).map(([check, c]) => ({ check, value: c.value, limit: c.limit, grade: c.grade || (c.ok ? 'PASS' : 'FAIL') }))
+    }
+  } catch {
+    return null
+  }
 }
 
 // dropping or choosing a file adds it (POST /api/v1/models with the file as the body)
@@ -304,7 +323,7 @@ function gradeReason (audit) {
 
 function renderGrade () {
   const el = $('grade')
-  const audit = state.details?.audit
+  const audit = state.audit
   if (!audit || !audit.grade) {
     const st = state.details?.status
     el.innerHTML = state.skeleton
@@ -384,10 +403,14 @@ async function rigJobDone (view) {
 
 $('auto-rig').onclick = () => runRig($('template').value)
 
-function sourceUrl () {
+// The model Mesh2Motion opens: the rigged GLB m2m-rig wrote, whose coordinates the fitted joints are in (turned to
+// face the template's way, standing on the ground); the source itself only when there is no rigged GLB yet
+function m2mModelUrl () {
   const st = state.details?.status
-  if (!st?.source) return null
-  if (!['.glb', '.fbx'].includes(st.source_ext)) return null
+  const files = state.details?.files || []
+  const rigged = files.find((f) => f.path === `${st?.rig_folder || 'rigged'}/${state.model}.glb`)
+  if (rigged) return withToken(rigged.url)
+  if (!st?.source || !['.glb', '.fbx'].includes(st.source_ext)) return null
   return withToken(`/api/v1${m(state.model)}/files/${st.source.split('/').map(encodeURIComponent).join('/')}`)
 }
 
@@ -400,7 +423,7 @@ function setAdjusting (on) {
 
 // Opens Mesh2Motion in a stage with our model and fitted skeleton, at `step` (edit or animate)
 async function openInM2M (stage, placeholder, step) {
-  const model = sourceUrl()
+  const model = m2mModelUrl()
   if (!model) throw new Error(`Mesh2Motion opens GLB or FBX; this model's source is ${state.details?.status?.source_ext || 'missing'}`)
   placeholder.hidden = true
   await bridge.show(stage)
@@ -477,7 +500,9 @@ $('export').onclick = async () => {
   }
   const view = await followJob($('animate-job'), job, 'Export')
   if (view.state !== 'done') note($('animate-note'), 'The export failed: see the log above.', true)
-  state.lastExport = view.results?.M2M_RIG?.files || null
+  const out = view.results?.M2M_RIG?.out || {}
+  state.lastExport = ['glb', 'fbx'].map((k) => out[k]).filter(Boolean)
+  if (state.lastExport.length === 0) state.lastExport = null
   await refreshModel()
   renderFiles()
 }
@@ -485,8 +510,8 @@ $('export').onclick = async () => {
 function renderFiles () {
   const files = state.details?.files || []
   const wanted = state.lastExport
-    ? files.filter((f) => state.lastExport.some((p) => String(p).replace(/\\/g, '/').endsWith(f.path)))
-    : files.filter((f) => /\.(glb|fbx)$/i.test(f.path) && !f.path.startsWith('prepared/') && f.path !== state.details?.status?.source)
+    ? files.filter((f) => state.lastExport.some((p) => String(p).replace(/\\/g, '/').endsWith('/' + f.path)))
+    : files.filter((f) => /\.(glb|fbx)$/i.test(f.path) && !/(^|\/)(prepared\/|preview\.glb$)/.test(f.path) && f.path !== state.details?.status?.source)
   $('files').innerHTML = wanted.length === 0
     ? ''
     : '<span class="hint">Files</span>' + wanted.map((f) =>

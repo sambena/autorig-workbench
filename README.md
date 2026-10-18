@@ -56,7 +56,7 @@ The page has three steps, and about ten controls:
 - **Tools:** game-prop, fbx-maps, the Mixamo steps and the rest, each with a form made from its options.
 - **Job log:** for whatever is running.
 
-Mesh2Motion rigging (`m2m-rig`) arrives with phase M2. Until it does, Auto rig, Apply and Export say so, and offer the
+On a server without Mesh2Motion rigging (`m2m-rig`, phase M2), Auto rig, Apply and Export say so, and offer the
 classic rig instead.
 
 ## Game tools
