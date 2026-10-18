@@ -25,6 +25,7 @@
 #      X, palms down - and that pose applied as the rest, mesh and all. Generated sculpts arrive mid-stride or
 #      with forearms swept forward; a Humanoid avatar and any retarget read the rest pose as the zero
 #      of every clip, so a crooked rest is a crooked character in every animation;
+#      rig.json "rest_arms": "as-modelled" keeps an A-pose's arm slope instead (docs/SPEC.md);
 #   4. stood on z=0 with the hips over the origin, facing -Y; saved and exported as rerig.py does.
 import bpy, sys, os, json, time
 import numpy as np
@@ -364,8 +365,12 @@ def chains_for(J, digits=False):
     return ch
 
 
-def straighten(arm, size):
-    """Pose the limbs into a clean T-pose and make it the rest pose, mesh included."""
+def straighten(arm, size, arms="t-pose"):
+    """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
+    arms: "as-modelled" keeps the upper arms' modelled slope and lines the forearms and hands up with them; a number
+    rests them straight that many degrees below horizontal (0-80). An engine that stands a character with its arms down
+    then bends the shoulders that much less (Tornado Titans' cast, 2026-10-17: a T-pose rest crumpled their jackets);
+    see docs/SPEC.md for what it costs the raised-arm bends."""
     rerig.select_only(arm)
     bpy.ops.object.mode_set(mode='POSE')
     down, fwd = Vector((0, 0, -1)), Vector((0, -1, 0))
@@ -399,8 +404,24 @@ def straighten(arm, size):
         for side, sx in (("Left", 1), ("Right", -1)):
             aim(side + "UpLeg", down); aim(side + "Leg", down)
             aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
-            for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
-                aim(side + b, (sx, 0, 0))
+            if isinstance(arms, (int, float)) and not isinstance(arms, bool):
+                # the arms rest straight, `arms` degrees below horizontal
+                down = math.radians(max(0.0, min(80.0, float(arms))))
+                along = Vector((sx * math.cos(down), 0, -math.sin(down)))
+                for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
+                    aim(side + b, along)
+            elif arms == "as-modelled" and side + "Arm" in arm.pose.bones:
+                # along the upper arm as modelled, flattened front to back so the arm hangs in the body's plane
+                ua = arm.matrix_world @ arm.pose.bones[side + "Arm"].matrix
+                d = ua.to_3x3() @ Vector((0, 1, 0))
+                along = Vector((d.x, 0, d.z))
+                along = along.normalized() if along.length > 1e-6 else Vector((sx, 0, 0))
+                aim(side + "Arm", along)
+                for b in ("ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
+                    aim(side + b, along)
+            else:
+                for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
+                    aim(side + b, (sx, 0, 0))
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh = next(o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm)
     rerig.select_only(mesh)
@@ -512,7 +533,9 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         rerig.keep_joints_inside(chains, bvh, size, log)
     arm, _ = rerig.build_armature(key, chains, size)
     if not rerig.skin(mesh, arm, chains, spec, size, log): return log
-    log["rest_offset"] = straighten(arm, size)
+    rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "t-pose"))
+    log["rest_arms"] = rest_arms
+    log["rest_offset"] = straighten(arm, size, arms=rest_arms)
     if spec.get("twist_bones", False):
         try:
             import twist_bones
