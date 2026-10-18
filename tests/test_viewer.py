@@ -4,8 +4,8 @@
 #   python -m unittest discover -s tests -v
 #
 # Starts the server (no browser) on a temporary models folder holding two "rigged" models made here: one with a
-# preview.glb, its preview.json and an audit, one without. Checks the /api/previews list with its audit digest, the
-# worst bones an audit blames, and that the GLB is served (the viewer page itself went with the old UI, M5). With
+# preview.glb, its preview.json and an audit, one without. Checks the model's audit route with the bones it blames,
+# the worst bones an audit blames, and that the GLB is served (the viewer page itself went with the old UI, M5). With
 # Blender, a two-bone rig with two actions is built in a .blend and preview_glb.py
 # turns it into a GLB with a skin and both clips as animations.
 import json, os, secrets, shutil, struct, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
@@ -108,7 +108,7 @@ class ViewerTest(unittest.TestCase):
 
     def get(self, path, token=TOKEN, host=None):
         headers = {}
-        if token: headers["X-Autorig-Token"] = token
+        if token: headers["Authorization"] = "Bearer " + token
         if host: headers["Host"] = host
         req = urllib.request.Request(self.base + path, headers=headers)
         try:
@@ -117,32 +117,24 @@ class ViewerTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()
 
-    def test_previews_list(self):
-        self.assertEqual(self.get("/api/previews", token=None)[0], 403)
-        code, _, body = self.get("/api/previews")
+    def test_audit_and_preview(self):
+        self.assertEqual(self.get("/api/v1/models/shown/audit", token=None)[0], 401)
+        code, _, body = self.get("/api/v1/models/shown/audit")
         self.assertEqual(code, 200)
-        by = {m["name"]: m for m in json.loads(body)["models"]}
-        self.assertEqual(set(by), {"shown", "unseen"})
-        s, u = by["shown"], by["unseen"]
-        self.assertEqual((s["group"], s["rig_folder"], s["stale"]), ("Things", "rigged", False))
-        self.assertRegex(s["preview"], r"^/files/models/Things/shown/rigged/preview\.glb\?v=\d+-\d+$")
-        self.assertEqual(s["info"]["metres"], 1.5)
-        self.assertIsNone(u["preview"])
-        self.assertIsNone(u["info"])
-        self.assertIsNone(u["audit"])
-        a = s["audit"]
-        self.assertIs(a["pass"], False)
-        self.assertFalse(a["checks"]["bend_tears"]["ok"])
-        self.assertEqual(a["bleed_pairs"][0], ["leg_2.L", "neck", 0.9])
-        self.assertEqual((a["islands"], a["rigid_islands"]), (3, 1))
-        self.assertEqual(a["worst_bone"], "leg_1.L")
+        a = json.loads(body)
+        self.assertIs(a["audit"]["verdict"]["pass"], False)
+        self.assertEqual(a["audit"]["bleed_pairs"][0], ["leg_2.L", "neck", 0.9])
         self.assertEqual(a["bones"][0]["bone"], "leg_1.L")                     # the failed check's bone, first
         self.assertEqual(a["bones"][0]["level"], "bad")
-        code, headers, data = self.get(s["preview"])
+        self.assertEqual(self.get("/api/v1/models/unseen/audit")[0], 404)
+        files = {f["path"]: f for f in json.loads(self.get("/api/v1/models/shown")[2])["files"]}
+        code, headers, data = self.get(files["rigged/preview.glb"]["url"])
         self.assertEqual(code, 200)
         self.assertEqual(data[:4], b"glTF")
+        self.assertEqual(self.get(files["rigged/preview.glb"]["url"], token=None)[0], 401)
+        code, headers, data = self.get("/files/models/Things/shown/rigged/preview.glb?v=1")
         self.assertIn("immutable", headers.get("Cache-Control", ""))                 # versioned: cacheable
-        self.assertEqual(self.get(s["preview"], token=None)[0], 403)
+        self.assertEqual(self.get("/files/models/Things/shown/rigged/preview.glb", token=None)[0], 403)
 
     def test_worst_bones(self):
         rows = {r["bone"]: r for r in viewer_api.worst_bones(AUDIT)}
@@ -170,7 +162,7 @@ class ViewerTest(unittest.TestCase):
         self.assertEqual(viewer_api.worst_bones({}), [])
 
     def test_state_offers_the_preview_step(self):
-        code, _, body = self.get("/api/state")
+        code, _, body = self.get("/api/v1/models")
         by = {m["name"]: m for m in json.loads(body)["models"]}
         self.assertTrue(by["shown"]["preview"])
         self.assertFalse(by["unseen"]["preview"])

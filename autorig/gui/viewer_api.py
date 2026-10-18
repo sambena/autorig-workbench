@@ -1,74 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: preview and audit digests for rigged models (gui/server.py routes to it). The 3D viewer page
-# that used them went with the old UI (M5); scripts can still read the same data here.
-#
-#   GET /api/previews                         every rigged model, with its preview.glb (when it has one), the
-#                                             preview.json the preview step wrote beside it, and a digest of its
-#                                             audit (<AUTORIG_WORK>/audit/<model>.json): the verdict, the worst
-#                                             bones and why, the bleed pairs and the islands
-#
-# preview.glb itself is served through the ordinary /files/models/... route, under the token.
-import json, os, re
-
-def _mtime(p):
-    return os.path.getmtime(p) if p and os.path.exists(p) else 0
-
-
-def previews(layout, quiet):
-    """Every rigged model (a .blend or FBX in its rig folder), in the models list's order, with its preview."""
-    out = []
-    for group, name in layout.all_models():
-        rd = quiet(layout.rigged_dir, name)
-        blend, fbx = (os.path.join(rd, name + ext) for ext in (".blend", ".fbx"))
-        if not (os.path.exists(blend) or os.path.exists(fbx)):
-            continue
-        glb = os.path.join(rd, "preview.glb")
-        clips_blend = os.path.join(layout.pack_dir(name), "clips", name + "_clips.blend")
-        item = {"name": name, "group": group, "rig_folder": os.path.basename(rd), "preview": None, "info": None,
-                "stale": False}
-        if os.path.exists(glb):
-            rel = os.path.relpath(glb, layout.ROOT).replace("\\", "/")
-            # ?v= the file's time: the browser may keep it until the file changes (served cacheable, server.py)
-            st = os.stat(glb)                   # nanoseconds and size: a rebuild within the same second still changes it
-            item["preview"] = "/files/models/%s?v=%d-%d" % (rel, st.st_mtime_ns, st.st_size)
-            item["stale"] = _mtime(glb) + 1 < max(_mtime(blend), _mtime(fbx), _mtime(clips_blend))
-            info = os.path.join(rd, "preview.json")
-            if os.path.exists(info):
-                try:
-                    with open(info, encoding="utf-8") as fh: item["info"] = json.load(fh)
-                except Exception as e:
-                    item["info"] = {"error": "preview.json cannot be read: %r" % e}
-        item["audit"] = audit_digest(layout, name, max(_mtime(blend), _mtime(fbx)))
-        out.append(item)
-    return out
-
-
-def audit_digest(layout, name, rig_mtime=0):
-    """What the viewer shows of a model's audit, or None when it has none: see worst_bones()."""
-    p = os.path.join(layout.WORK, "audit", name + ".json")
-    if not os.path.exists(p):
-        return None
-    try:
-        with open(p, encoding="utf-8") as fh: full = json.load(fh)
-    except Exception as e:
-        return {"error": "the audit cannot be read: %r" % e}
-    v = full.get("verdict") or {}
-    tears = full.get("tears") or {}
-    return {
-        "pass": v.get("pass"),
-        "grade": v.get("grade") or ("PASS" if v.get("pass") else "FAIL"),
-        "worst_bone": tears.get("worst_bone"),
-        "checks": v.get("checks", {}),
-        "warnings": v.get("warnings", []),
-        "stale": _mtime(p) + 1 < rig_mtime,
-        "bones": worst_bones(full),
-        "meshes": [m for m in full.get("meshes", []) if m.get("verts_over_4")],
-        "bleed_total_pct": full.get("bleed_total_pct"),
-        "bleed_pairs": full.get("bleed_pairs", []),
-        "islands": full.get("islands"), "rigid_islands": full.get("rigid_islands"),
-        "largest_islands": full.get("largest_islands", []),
-        "unweighted_verts": full.get("unweighted_verts", 0),
-    }
+# Autorig Workbench: what an audit (steps/audit.py's JSON) blames, bone by bone, for GET /api/v1/models/{m}/audit
+# (gui/api_manage.py), and whether a model has its preview.glb (the model state's "preview").
+import os, re
 
 
 def worst_bones(audit, limit=12):

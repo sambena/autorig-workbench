@@ -218,6 +218,7 @@ async function selectModel (name) {
   await refreshModel()
   renderLibrary()
   renderAdvancedSteps()
+  refreshModelPanes()
   if ($('adv-ai').open) refreshAI()
 }
 
@@ -906,6 +907,309 @@ let aiTyping = 0
 $('ai-message').oninput = () => { clearTimeout(aiTyping); aiTyping = setTimeout(refreshAI, 400) }
 $('adv-ai').ontoggle = () => { if ($('adv-ai').open) loadAI() }
 $('adv-collections').ontoggle = () => { if ($('adv-collections').open) loadCollections() }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Advanced: this model (gui/api_manage.py). Manage, Retarget, Model Studio, rig.json
+// ---------------------------------------------------------------------------------------------------------------
+
+// the sections that act on the open model, refreshed when the model changes and when they are opened
+function refreshModelPanes () {
+  if ($('adv-manage').open) renderManage()
+  if ($('adv-retarget').open) loadMocap()
+  if ($('adv-studio').open) loadStudio()
+  if ($('adv-spec').open) loadSpec()
+}
+
+// after a rename, move, delete or new model: the library and the chip follow
+async function afterManage (name) {
+  await loadLibrary()
+  if (name) {
+    await selectModel(name)
+  } else {
+    state.model = null
+    state.details = null
+    $('model-chip').textContent = 'No model yet'
+    renderAdvancedSteps()
+    goStep('load')
+  }
+  renderManage()
+}
+
+function renderManage () {
+  const pane = $('manage-pane')
+  if (!state.model) { pane.innerHTML = '<span class="hint">Pick a model first.</span>'; return }
+  const group = state.details?.group || ''
+  const groups = [...new Set(state.models.map((x) => x.group).filter(Boolean))].sort()
+  pane.innerHTML = `<form class="adv-form" id="manage-form">
+      <label for="manage-name">Name</label><input type="text" id="manage-name" value="${esc(state.model)}">
+      <label for="manage-group">Group</label><input type="text" id="manage-group" list="manage-groups" value="${esc(group)}" placeholder="(none)">
+      <datalist id="manage-groups">${groups.map((g) => `<option value="${esc(g)}">`).join('')}</datalist>
+      <div class="wide row"><button type="button" data-do="rename">Rename</button><button type="button" data-do="move">Move to the group</button>
+        <button type="button" data-do="duplicate">Duplicate as the name</button><button type="button" class="danger" data-do="delete">Delete…</button></div>
+    </form><div id="manage-confirm"></div>`
+  for (const b of pane.querySelectorAll('[data-do]')) b.onclick = () => manageModel(b.dataset.do)
+}
+
+async function manageModel (what) {
+  const name = state.model
+  const newName = $('manage-name').value.trim()
+  try {
+    if (what === 'delete') return confirmDelete(name)
+    if (what === 'move') {
+      await api('POST', m(name) + '/move', { group: $('manage-group').value.trim() })
+      toast(`Moved ${name}`)
+      return afterManage(name)
+    }
+    if (!newName || newName === name) { toast('Type the new name first', true); return }
+    const r = await api('POST', m(name) + '/' + what, { name: newName })
+    toast(what === 'rename' ? `Renamed to ${r.model.name}` : `Copied to ${r.model.name}`)
+    await afterManage(r.model.name)
+  } catch (e) { toast(e.message, true) }
+}
+
+// deleting needs a second press here, and the API wants the name repeated (?confirm=)
+function confirmDelete (name) {
+  const box = $('manage-confirm')
+  box.innerHTML = `<div class="confirm"><span>Delete <b>${esc(name)}</b>, its folder and its work files? This can't be undone.</span>
+    <div class="row"><button class="danger" type="button" id="delete-yes">Yes, delete ${esc(name)}</button><button type="button" id="delete-no">Keep it</button></div></div>`
+  $('delete-no').onclick = () => { box.innerHTML = '' }
+  $('delete-yes').onclick = async () => {
+    try {
+      await api('DELETE', m(name) + '?confirm=' + encodeURIComponent(name))
+      toast(`Deleted ${name}`)
+      await afterManage(null)
+    } catch (e) { toast(e.message, true) }
+  }
+}
+
+// ---- Retarget a mocap clip: upload it (POST /api/v1/mocap), plan, then the retarget job
+async function loadMocap () {
+  try {
+    const files = (await api('GET', '/mocap')).files
+    const sel = $('mocap-pick')
+    const keep = sel.value
+    sel.innerHTML = '<option value="">(choose)</option>' + files.map((f) => `<option>${esc(f.file)}</option>`).join('')
+    sel.value = keep
+  } catch (e) { $('retarget-out').textContent = e.message }
+}
+
+// the chosen clip's name on the server, uploading a picked file first
+async function mocapFile () {
+  const f = $('mocap-file').files[0]
+  if (!f) {
+    if (!$('mocap-pick').value) throw new Error('Choose a .bvh or .fbx clip')
+    return $('mocap-pick').value
+  }
+  $('retarget-out').textContent = `Uploading ${f.name}…`
+  const r = await fetch('/api/v1/mocap?filename=' + encodeURIComponent(f.name), {
+    method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: f
+  })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error || 'upload failed: HTTP ' + r.status)
+  $('mocap-file').value = ''
+  await loadMocap()
+  $('mocap-pick').value = d.file
+  return d.file
+}
+
+$('retarget-plan').onclick = async () => {
+  if (!state.model) { toast('Pick a model first'); return }
+  try {
+    const file = await mocapFile()
+    const q = new URLSearchParams({ file })
+    if ($('mocap-name').value.trim()) q.set('clip_name', $('mocap-name').value.trim())
+    const p = await api('GET', m(state.model) + '/retarget?' + q)
+    const mr = p.mapping_result || {}
+    $('retarget-out').textContent = `${p.mocap.format} clip, ${p.mocap.frames} frames → "${p.clip_name}" on ${p.model}: ` +
+      `${mr.mapped_count ?? 0} of ${mr.total_source ?? '?'} clip bones matched` + (p.root_motion ? ', with root motion' : '')
+  } catch (e) { $('retarget-out').textContent = e.message }
+}
+
+$('retarget-form').onsubmit = async (e) => {
+  e.preventDefault()
+  if (!state.model) { toast('Pick a model first'); return }
+  try {
+    const file = await mocapFile()
+    $('retarget-out').textContent = ''
+    const job = await api('POST', m(state.model) + '/retarget', { file, clip_name: $('mocap-name').value.trim() || undefined, root_motion: $('mocap-root').checked })
+    await followJob($('adv-job'), job, `Retarget ${file} onto ${state.model}`)
+    await refreshModel()
+  } catch (err) { $('retarget-out').textContent = err.message }
+}
+
+// ---- Model Studio: a tool's settings as JSON (the saved ones first), run as a job; its outputs listed below
+const studio = { view: null }
+
+async function loadStudio () {
+  if (!state.model) { $('studio-out').innerHTML = '<p class="hint">Pick a model first.</p>'; return }
+  try {
+    studio.view = await api('GET', m(state.model) + '/studio')
+  } catch (e) { $('studio-out').innerHTML = `<p class="hint">${esc(e.message)}</p>`; return }
+  const v = studio.view
+  const sel = $('studio-tool')
+  const keep = sel.value
+  sel.innerHTML = v.tools.map((t) => `<option>${esc(t)}</option>`).join('')
+  if (v.tools.includes(keep)) sel.value = keep
+  showStudioSettings()
+  $('studio-out').innerHTML = v.artifacts.length
+    ? '<table>' + v.artifacts.slice(0, 60).map((a) => `<tr><td><a href="${esc(withToken(a.url))}" download>${esc(a.path)}</a></td>
+        <td>${(a.bytes / 1048576).toFixed(1)} MB</td><td>${/\.(glb|gltf|fbx|obj)$/i.test(a.path) ? `<button class="link" type="button" data-art="${esc(a.path)}">Import as a model</button>` : ''}</td></tr>`).join('') + '</table>'
+    : '<p class="hint">No outputs yet.</p>'
+  for (const b of $('studio-out').querySelectorAll('[data-art]')) b.onclick = () => studioImport(b.dataset.art)
+}
+
+function showStudioSettings (defaults = false) {
+  const v = studio.view
+  if (!v) return
+  $('studio-settings').value = JSON.stringify((defaults ? v.defaults : v.settings)[$('studio-tool').value], null, 2)
+}
+
+function studioSettings () {
+  try { return JSON.parse($('studio-settings').value) } catch (e) { throw new Error('The settings are not JSON: ' + e.message) }
+}
+
+$('studio-tool').onchange = () => showStudioSettings()
+$('studio-reset').onclick = () => showStudioSettings(true)
+$('studio-save').onclick = async () => {
+  try {
+    await api('POST', `${m(state.model)}/studio/${encodeURIComponent($('studio-tool').value)}`, { settings: studioSettings(), save: true })
+    toast('Saved in the model\'s studio.json')
+    await loadStudio()
+  } catch (e) { toast(e.message, true) }
+}
+$('studio-run').onclick = async () => {
+  const tool = $('studio-tool').value
+  try {
+    const job = await api('POST', `${m(state.model)}/studio/${encodeURIComponent(tool)}`, { settings: studioSettings() })
+    await followJob($('adv-job'), job, `Studio ${tool} on ${state.model}`)
+    await loadStudio()
+  } catch (e) { toast(e.message, true) }
+}
+
+async function studioImport (artifact) {
+  const name = artifact.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '_')
+  try {
+    const r = await api('POST', m(state.model) + '/studio/import', { artifact, name, group: state.details?.group || '' })
+    toast(`Added ${r.model.name}`)
+    await afterManage(r.model.name)
+  } catch (e) { toast(e.message, true) }
+}
+
+// ---- rig.json, the classic rig's spec: saved only over the text loaded (its base hash), else the server says 409
+const spec = { base: null }
+
+async function loadSpec () {
+  if (!state.model) { $('spec-text').value = ''; $('spec-msg').textContent = 'Pick a model first.'; return }
+  try {
+    const s = await api('GET', m(state.model) + '/spec')
+    spec.base = s.base
+    $('spec-text').value = s.text ?? ''
+    $('spec-msg').textContent = s.text === null
+      ? 'No rig.json yet: write one (docs/SPEC.md), or rig on a Mesh2Motion skeleton instead.'
+      : s.errors.length ? `${s.errors.length} problem(s), first: ${s.errors[0].path} ${s.errors[0].message}` : s.warnings.length ? `${s.warnings.length} warning(s)` : 'No problems.'
+  } catch (e) { $('spec-msg').textContent = e.message }
+}
+
+$('spec-reload').onclick = loadSpec
+$('spec-save').onclick = async () => {
+  if (!state.model) return
+  let parsed
+  try { parsed = JSON.parse($('spec-text').value) } catch (e) { $('spec-msg').textContent = 'Not JSON: ' + e.message; return }
+  try {
+    const r = await api('PUT', m(state.model) + '/spec', { spec: parsed, base: spec.base })
+    spec.base = r.base
+    $('spec-text').value = r.text
+    $('spec-msg').textContent = 'Saved (the old file is rig.json.bak). Run Rig or Run all to use it.'
+    await refreshModel()
+    renderAdvancedSteps()
+  } catch (e) { $('spec-msg').textContent = e.message }
+}
+
+$('adv-manage').ontoggle = () => { if ($('adv-manage').open) renderManage() }
+$('adv-retarget').ontoggle = () => { if ($('adv-retarget').open) loadMocap() }
+$('adv-studio').ontoggle = () => { if ($('adv-studio').open) loadStudio() }
+$('adv-spec').ontoggle = () => { if ($('adv-spec').open) loadSpec() }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Advanced: the collection (gui/api_manage.py). Batches and the audit table, samples, clean up
+// ---------------------------------------------------------------------------------------------------------------
+
+for (const b of document.querySelectorAll('[data-batch]')) {
+  b.onclick = async () => {
+    try {
+      const job = await api('POST', '/batch/' + b.dataset.batch, { keep_going: $('batch-keep').checked })
+      await followJob($('adv-job'), job, b.textContent)
+      await loadLibrary()
+      if (state.model) await refreshModel()
+      if ($('audit-table').innerHTML) showAuditTable()
+    } catch (e) { toast(e.message, true) }
+  }
+}
+
+async function showAuditTable () {
+  try {
+    const rows = (await api('GET', '/audits')).models
+    $('audit-table').innerHTML = rows.length
+      ? '<table><tr><td><b>Model</b></td><td><b>Grade</b></td><td><b>Bleed %</b></td><td><b>Tears</b></td><td><b>Worst bone</b></td></tr>' +
+        rows.map((r) => `<tr><td><button class="link" type="button" data-open="${esc(r.model)}">${esc(r.model)}</button></td>
+          <td class="${esc(r.grade || '')}">${esc(r.grade || r.status)}</td><td>${esc(r.bleed_pct ?? '')}</td>
+          <td>${esc(r.combined_tears ?? '')}</td><td>${esc(r.worst_bone ?? '')}</td></tr>`).join('') + '</table>'
+      : '<p class="hint">No models.</p>'
+    for (const b of $('audit-table').querySelectorAll('[data-open]')) b.onclick = async () => { await selectModel(b.dataset.open); goStep('rig') }
+  } catch (e) { $('audit-table').textContent = e.message }
+}
+
+$('audit-table-show').onclick = showAuditTable
+
+async function loadSamples () {
+  const pane = $('samples-pane')
+  try {
+    const list = (await api('GET', '/samples')).samples
+    pane.innerHTML = '<table>' + list.map((x) => `<tr><td><b>${esc(x.title)}</b><br><span class="hint">${esc(x.description)}</span></td>
+      <td>${x.installed ? '<span class="hint">loaded</span>' : `<button type="button" data-sample="${esc(x.name)}">Load</button>`}</td></tr>`).join('') + '</table>'
+    for (const b of pane.querySelectorAll('[data-sample]')) {
+      b.onclick = async () => {
+        try {
+          const r = await api('POST', '/samples/' + encodeURIComponent(b.dataset.sample))
+          toast(`Loaded ${r.name}`)
+          await afterManage(r.name)
+          loadSamples()
+        } catch (e) { toast(e.message, true) }
+      }
+    }
+  } catch (e) { pane.textContent = e.message }
+}
+
+const mb = (n) => (n / 1048576).toFixed(n < 1048576 ? 2 : 1) + ' MB'
+
+async function loadClean () {
+  const pane = $('clean-pane')
+  let d
+  try { d = await api('GET', '/clean') } catch (e) { pane.textContent = e.message; return }
+  pane.innerHTML = `<p class="hint">In ${esc(d.work)}, and each model's rigged/preview.glb. Models, textures, rig.json, rigs and clips are never touched.</p>
+    <table>${d.kinds.map((k) => `<tr><td><label class="row"><input type="checkbox" data-kind="${esc(k.key)}" ${k.default && k.files ? 'checked' : ''} ${k.files ? '' : 'disabled'}>${esc(k.label)}</label>
+      <span class="hint">${esc(k.note)}</span></td><td>${k.files} files</td><td>${mb(k.bytes)}</td></tr>`).join('')}</table>
+    <div class="row"><button type="button" class="danger" id="clean-go">Delete the ticked files…</button></div><div id="clean-confirm"></div>`
+  $('clean-go').onclick = () => {
+    const kinds = [...pane.querySelectorAll('[data-kind]:checked')].map((c) => c.dataset.kind)
+    if (!kinds.length) { toast('Tick something to delete'); return }
+    const bytes = d.kinds.filter((k) => kinds.includes(k.key)).reduce((s, k) => s + k.bytes, 0)
+    $('clean-confirm').innerHTML = `<div class="confirm"><span>Delete ${esc(kinds.join(', '))} (${mb(bytes)})?</span>
+      <div class="row"><button class="danger" type="button" id="clean-yes">Yes, delete</button><button type="button" id="clean-no">Keep them</button></div></div>`
+    $('clean-no').onclick = () => { $('clean-confirm').innerHTML = '' }
+    $('clean-yes').onclick = async () => {
+      try {
+        const r = await api('POST', '/clean', { kinds })
+        const freed = Object.values(r.deleted).reduce((s, x) => s + x.bytes, 0)
+        toast(`Freed ${mb(freed)}` + (r.failed.length ? `; ${r.failed.length} files could not go` : ''), r.failed.length > 0)
+        loadClean()
+      } catch (e) { toast(e.message, true) }
+    }
+  }
+}
+
+$('adv-samples').ontoggle = () => { if ($('adv-samples').open) loadSamples() }
+$('adv-clean').ontoggle = () => { if ($('adv-clean').open) loadClean() }
 
 
 // ---------------------------------------------------------------------------------------------------------------

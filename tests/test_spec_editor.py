@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: the spec editor (gui/spec_api.py, spec_editor.html/.js) and the source view step.
+# Autorig Workbench: rig.json checks and saving (gui/spec_api.py, GET/PUT /api/v1/models/{m}/spec) and the source view.
 #
 #   python -m unittest discover -s tests -v
 #
 # Without Blender: the rig.json writer keeps a hand-written file byte for byte and puts short lists on one line;
 # check() catches what would break a rig (a missing head, a bone the source does not have, an allowance with no
 # reason, a build chain placed two ways) and only warns about fields it does not know. Then the server, started on a
-# temporary models folder: the page needs the token, its code is static, /api/spec loads a model, check returns the
-# diff, a save refuses a stale file and a broken spec, and a good save keeps rig.json.bak and every unknown field.
-# With Blender: a generated model with a bone_N skeleton goes through source_preview.py (the joints come back, the
-# GLB has the mesh and no skin), then Save and re-rig twice, and the second run has the first run's audit as its
-# "before".
+# temporary models folder: GET /api/v1/models/{m}/spec needs the token and reads rig.json, a PUT refuses a stale
+# file and a broken spec, and a good save keeps rig.json.bak and every unknown field. With Blender: a generated
+# model with a bone_N skeleton goes through source_preview.py (the joints come back, the GLB has the mesh and no
+# skin), its spec is checked against those joints, and Run all rigs it.
 import json, os, secrets, shutil, struct, subprocess, sys, tempfile, time, unittest, urllib.error, urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -285,84 +284,70 @@ class EditorServer(unittest.TestCase):
         cls.proc.wait()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def call(self, path, body=None, token=TOKEN):
+    def call(self, method, path, body=None, token=TOKEN):
         headers = {"Content-Type": "application/json"}
-        if token: headers["X-Autorig-Token"] = token
+        if token: headers["Authorization"] = "Bearer " + token
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
-                                     method="POST" if body is not None else "GET", headers=headers)
+                                     method=method, headers=headers)
         with urllib.request.urlopen(req, timeout=600) as r:
             return json.load(r)
 
-    def status(self, path, body=None, token=TOKEN):
+    def status(self, method, path, body=None, token=TOKEN):
         try:
-            self.call(path, body, token); return 200
+            self.call(method, path, body, token); return 200
         except urllib.error.HTTPError as e:
             return e.code
-
-    def raw(self, path):
-        with urllib.request.urlopen(self.base + path, timeout=30) as r:
-            return r.headers.get("Content-Type"), r.read()
 
     def wait(self, job, timeout=600):
         t0 = time.time()
         while time.time() - t0 < timeout:
-            j = self.call("/api/jobs/%d" % job["id"])
+            j = self.call("GET", "/api/v1/jobs/%d?log=400" % job["id"])
             if j["state"] not in ("queued", "running"): return j
             time.sleep(0.5)
         self.fail("job did not finish")
 
     def test_1_routes_need_the_token(self):
-        # the editor page went with the old UI (M5); its routes stay for scripts
-        self.assertEqual(self.status("/api/spec?name=flat", token=None), 403)
+        # the editor page went with the old UI (M5) and its /api/spec routes in M7: rig.json is GET/PUT .../spec
+        self.assertEqual(self.status("GET", "/api/v1/models/flat/spec", token=None), 401)
+        self.assertEqual(self.status("GET", "/api/spec?name=flat"), 404)
 
-    def test_2_bundle_check_and_save(self):
-        b = self.call("/api/spec?name=flat")
+    def test_2_read_and_save(self):
+        b = self.call("GET", "/api/v1/models/flat/spec")
         self.assertEqual(b["text"], HAND_WRITTEN)
-        self.assertEqual(b["schema"]["schema"], "autorig-spec/1")
-        self.assertTrue(any(f["key"] == "head" for f in b["schema"]["rig"]))
-        self.assertTrue(any(f["key"] == "builder" for f in b["schema"]["rig"]))
-        self.assertIn("humanoid", b["schema"])
-        self.assertIn("preview_url", b)
+        self.assertEqual((b["errors"], b["backup"]), ([], False))
         spec = b["spec"]
         spec["rig"]["legs"] = ["bone_5"]
-        c = self.call("/api/spec/check", {"model": "flat", "spec": spec})
-        self.assertTrue(c["changed"])
-        self.assertIn('+    "legs": ["bone_5"]', c["diff"])
-        # /api/spec/hash returns base and mtime
-        h = self.call("/api/spec/hash?name=flat")
-        self.assertEqual(h["base"], b["base"])
-        self.assertGreater(h["mtime"], 0)
 
-        # a file changed on disk since the page loaded it is not overwritten without force
+        # a file changed on disk since it was read is not overwritten without force
         try:
-            self.call("/api/spec/save", {"model": "flat", "spec": spec, "base": "stale"})
+            self.call("PUT", "/api/v1/models/flat/spec", {"spec": spec, "base": "stale"})
             self.fail("expected 409 Conflict")
         except urllib.error.HTTPError as e:
             self.assertEqual(e.code, 409)
-            body = json.loads(e.read().decode("utf-8"))
-            self.assertTrue(body.get("conflict"))
-            self.assertEqual(body.get("disk_base"), b["base"])
+            self.assertIn("changed on disk", json.loads(e.read().decode("utf-8"))["error"])
 
         # nor is a broken spec written
         bad = json.loads(json.dumps(spec)); del bad["rig"]["kind"]
-        self.assertEqual(self.status("/api/spec/save", {"model": "flat", "spec": bad, "base": b["base"]}), 400)
-        r = self.call("/api/spec/save", {"model": "flat", "spec": spec, "base": b["base"]})
+        self.assertEqual(self.status("PUT", "/api/v1/models/flat/spec", {"spec": bad, "base": b["base"]}), 400)
+        self.assertEqual(self.status("PUT", "/api/v1/models/flat/spec", {"spec": "not an object"}), 400)
+        r = self.call("PUT", "/api/v1/models/flat/spec", {"spec": spec, "base": b["base"]})
         self.assertTrue(r["saved"])
         d = os.path.join(self.models, "Things", "flat")
         with open(os.path.join(d, "rig.json.bak"), encoding="utf-8") as fh: self.assertEqual(fh.read(), HAND_WRITTEN)
         with open(os.path.join(d, "rig.json"), encoding="utf-8") as fh: saved = json.load(fh)
         self.assertEqual(saved["rig"]["future_field"], {"kept": True})
         self.assertEqual(saved["rig"]["legs"], ["bone_5"])
-        self.assertEqual(self.call("/api/spec?name=flat")["base"], r["base"])
+        after = self.call("GET", "/api/v1/models/flat/spec")
+        self.assertEqual((after["base"], after["backup"]), (r["base"], True))
 
-        # saving with force=True succeeds even if base is stale
+        # saving with force succeeds even if base is stale
         spec["rig"]["legs"] = ["bone_4", "bone_5"]
-        rf = self.call("/api/spec/save", {"model": "flat", "spec": spec, "base": "stale", "force": True})
+        rf = self.call("PUT", "/api/v1/models/flat/spec", {"spec": spec, "base": "stale", "force": True})
         self.assertTrue(rf["saved"])
-        self.assertEqual(self.call("/api/spec?name=flat")["base"], rf["base"])
+        self.assertEqual(self.call("GET", "/api/v1/models/flat/spec")["base"], rf["base"])
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")
-    def test_3_source_view_and_rerig(self):
+    def test_3_source_view_then_rig(self):
         d = os.path.join(self.models, "Things", "boned")
         os.makedirs(d)
         fbx = os.path.join(d, "boned.fbx")
@@ -385,160 +370,45 @@ class EditorServer(unittest.TestCase):
                            capture_output=True, text=True, errors="replace", timeout=300)
         self.assertTrue(os.path.exists(fbx), r.stdout[-2000:] + r.stderr[-2000:])
 
-        job = self.wait(self.call("/api/spec/source", {"model": "boned"}))
+        # the source view (a batch of one): the joints come back, the GLB has the mesh and no skin
+        job = self.wait(self.call("POST", "/api/v1/batch/source-all", {"models": ["boned"]}))
         self.assertEqual(job["state"], "done", "\n".join(job["log"][-30:]))
-        b = self.call("/api/spec?name=boned")
-        src = b["source"]
+        with open(os.path.join(self.models, "_autorig", "source", "boned.json"), encoding="utf-8") as fh:
+            src = json.load(fh)
         self.assertEqual(src["format"], "autorig-source/1")
         self.assertEqual(src["skeleton"], "tripo")
         self.assertEqual([j["name"] for j in src["joints"]], ["bone_0", "bone_1", "bone_2", "bone_3"])
         self.assertEqual(src["joints"][2]["parent"], "bone_1")
-        glb = os.path.join(self.models, "_autorig", "source", "boned.glb")
-        g = read_glb(glb)
+        g = read_glb(os.path.join(self.models, "_autorig", "source", "boned.glb"))
         self.assertTrue(g["meshes"])
-        self.assertNotIn("skins", g)                      # the mesh as it stands; the editor draws the skeleton
+        self.assertNotIn("skins", g)                      # the mesh as it stands
+        b = self.call("GET", "/api/v1/models/boned/spec")
         self.assertIsNone(b["text"])                      # no rig.json yet
 
+        # a joint the source does not have is refused (checked against the source view); then rig it
         spec = {"schema": "autorig-spec/1", "rig": {"kind": "tripo", "head": "bone_3", "hips": "bone_nine"}}
-        self.assertEqual(self.status("/api/spec/rerig", {"model": "boned", "spec": spec, "base": b["base"]}), 400)
+        self.assertEqual(self.status("PUT", "/api/v1/models/boned/spec", {"spec": spec, "base": b["base"]}), 400)
         spec["rig"]["hips"] = "bone_1"
-        first = self.call("/api/spec/rerig", {"model": "boned", "spec": spec, "base": b["base"]})
-        j = self.wait(first["job"])
+        self.call("PUT", "/api/v1/models/boned/spec", {"spec": spec, "base": b["base"]})
+        j = self.wait(self.call("POST", "/api/v1/models/boned/steps/all"))
         self.assertEqual(j["state"], "done", "\n".join(j["log"][-40:]))
-        self.assertEqual([l for l in j["log"] if l.startswith("== ") and " done (" not in l],
-                         ["== rig (tripo)", "== trim to budget", "== audit", "== make clips (walker)",
-                          "== preview for the viewer"])                   # clips as the Clips button: a tripo rig walks
-        b = self.call("/api/spec?name=boned")
-        self.assertIsNotNone(b["audit"])
-        self.assertIsNone(b["before"])                    # the first rig had nothing to compare with
-        self.assertEqual(b["bone_from"].get("head"), "bone_3")
-        second = self.call("/api/spec/rerig", {"model": "boned", "spec": dict(spec, rig=dict(spec["rig"], smooth=2)), "base": first["base"]})
-        self.assertEqual(self.wait(second["job"])["state"], "done")
-        b = self.call("/api/spec?name=boned")
-        self.assertEqual(set(b["before"]["checks"]), set(b["audit"]["checks"]))
-        self.assertGreater(b["audit_time"], b["before"]["time"])
+        self.assertIn(self.call("GET", "/api/v1/models/boned")["audit"]["grade"], ("PASS", "CHECK", "FAIL"))
 
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
-    def test_4_suggest_api(self):
-        # Suggestion using source from boned: the server measures the mesh first (a queued Blender job), and the
-        # page follows the job and asks again, as here
-        sug = self.call("/api/spec/suggest", {"model": "boned"})
-        if sug.get("pending"):
-            self.assertEqual(sug["job"]["step"], "suggest")
-            j = self.wait(sug["job"])
-            self.assertEqual(j["state"], "done", "\n".join(j["log"][-30:]))
-            sug = self.call("/api/spec/suggest", {"model": "boned", "measure": False})
-            self.assertTrue(sug.get("measured"))
-        self.assertIn("spec", sug)
-        self.assertIn("archetype", sug)
-        self.assertEqual(sug["spec"]["schema"], "autorig-spec/1")
-        self.assertIn("rig", sug["spec"])
-
-        # Suggestion with direct survey payload. Tips are in the model's [0..1] bounds, the frame probe_tips and
-        # suggest_step measure in (core/suggest.py pair_tips: mirrored across x = 0.5)
-        payload = {
-            "model": "boned",
-            "source": {
-                "format": "autorig-source/1",
-                "survey": {
-                    "probe_tips": [
-                        {"pos": [0.5, 0.9, 0.9], "name": "snout"},
-                        {"pos": [0.5, 0.0, 0.4], "name": "tail"},
-                        {"pos": [0.75, 0.7, 0.0], "name": "foot_FL"},
-                        {"pos": [0.25, 0.7, 0.0], "name": "foot_FR"},
-                        {"pos": [0.75, 0.2, 0.0], "name": "foot_BL"},
-                        {"pos": [0.25, 0.2, 0.0], "name": "foot_BR"}
-                    ]
-                }
-            }
-        }
-        res = self.call("/api/spec/suggest", payload)
+    def test_4_suggest_from_measurements(self):
+        # tips are in the model's [0..1] bounds, the frame probe_tips and suggest_step measure in (core/suggest.py
+        # pair_tips: mirrored across x = 0.5); `run.py suggest <model>` measures them on the mesh
+        try:
+            import suggest
+        except ImportError:
+            from autorig.core import suggest
+        source = {"format": "autorig-source/1", "survey": {"probe_tips": [
+            {"pos": [0.5, 0.9, 0.9], "name": "snout"}, {"pos": [0.5, 0.0, 0.4], "name": "tail"},
+            {"pos": [0.75, 0.7, 0.0], "name": "foot_FL"}, {"pos": [0.25, 0.7, 0.0], "name": "foot_FR"},
+            {"pos": [0.75, 0.2, 0.0], "name": "foot_BL"}, {"pos": [0.25, 0.2, 0.0], "name": "foot_BR"}]}}
+        res = suggest.suggest_skeleton("boned", source_data=source, survey_data=None)
         self.assertEqual(res["archetype"], "quadruped")
         self.assertEqual(res["spec"]["rig"]["kind"], "placed")
-
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
-    def test_5_auto_tune_api(self):
-        res = self.call("/api/spec/auto-tune", {"model": "boned", "max_iterations": 1})
-        self.assertIn("job", res)
-        self.assertEqual(res["job"]["step"], "auto-tune")
-
-    def test_6_anim_api(self):
-        presets = self.call("/api/anim/presets")
-        self.assertIn("presets", presets)
-        for key in ("natural", "soldier", "swagger", "stealth", "heavy", "quadruped_walk", "quadruped_trot"):
-            self.assertIn(key, presets["presets"])
-
-        eval_biped = self.call("/api/anim/evaluate", {
-            "model": "boned",
-            "preset": "soldier",
-            "overrides": {"stride": 1.2, "cadence": 1.1},
-            "frames": 16,
-            "type": "biped"
-        })
-        self.assertEqual(len(eval_biped["frames"]), 16)
-        self.assertIn("pelvis", eval_biped["frames"][0])
-        self.assertIn("legs", eval_biped["frames"][0])
-        self.assertIn("arms", eval_biped["frames"][0])
-        self.assertIn("stride", eval_biped)
-        self.assertEqual(eval_biped["preset"], "soldier")
-
-        eval_quad = self.call("/api/anim/evaluate", {
-            "model": "boned",
-            "preset": "quadruped_walk",
-            "overrides": {"sway": 1.5},
-            "frames": 12,
-            "type": "quadruped",
-            "feet": [{"name": "foot_FL", "side": 1.0, "is_front": True},
-                     {"name": "foot_BL", "side": 1.0, "is_front": False}]
-        })
-        self.assertEqual(len(eval_quad["frames"]), 12)
-        self.assertIn("body", eval_quad["frames"][0])
-        self.assertIn("feet", eval_quad["frames"][0])
-
-        # Combat action evaluations
-        eval_atk = self.call("/api/anim/evaluate", {
-            "model": "boned",
-            "action": "attack",
-            "frames": 10,
-            "type": "biped"
-        })
-        self.assertEqual(len(eval_atk["frames"]), 10)
-        self.assertIn("pelvis", eval_atk["frames"][0])
-
-        eval_hit = self.call("/api/anim/evaluate", {
-            "model": "boned",
-            "action": "hit",
-            "frames": 8,
-            "type": "biped"
-        })
-        self.assertEqual(len(eval_hit["frames"]), 8)
-
-        eval_death = self.call("/api/anim/evaluate", {
-            "model": "boned",
-            "action": "death",
-            "frames": 18,
-            "type": "biped"
-        })
-        self.assertEqual(len(eval_death["frames"]), 18)
-
-    @unittest.skipUnless(HAVE_BLENDER, "Blender not found (uses the model the Blender tests rig)")
-    def test_7_rebake_clips_endpoint(self):
-        # a model with no rig: the spec is saved and the reply says why nothing ran, as the Clips button does
-        bundle = self.call("/api/spec?name=flat")
-        res = self.call("/api/spec/rebake_clips", {"model": "flat", "spec": bundle["spec"], "base": bundle["base"],
-                                                   "force": True})
-        self.assertTrue(res.get("saved"))
-        self.assertNotIn("job", res)
-        self.assertIn("no rig yet", res.get("error", ""))
-
-        # the model test_3 rigged: the clips are baked again (and the preview after them)
-        bundle = self.call("/api/spec?name=boned")
-        res = self.call("/api/spec/rebake_clips", {"model": "boned", "spec": bundle["spec"], "base": bundle["base"]})
-        self.assertTrue(res.get("saved"))
-        self.assertIn("job", res, res.get("error"))
-        self.assertIn("bake", res["job"]["step"].lower())
-        j = self.wait(res["job"])
-        self.assertEqual(j["state"], "done", "\n".join(j["log"][-30:]))
+        self.assertEqual(spec_api.check(res["spec"])[0], [])
 
 
 if __name__ == "__main__":

@@ -235,7 +235,7 @@ For a viewer to mark them, the audit JSON also carries:
   fractions of the model's bounding box, `edges`, `gap_pct`, the owning `bone` and top `owners`), and up to 40
   `points` (`[x, y, z, gap_pct]`, widest first). Positions are the edges' midpoints at rest.
 
-The GUI's `/api/audit?name=<model>` serves the whole JSON.
+`GET /api/v1/models/{model}/audit` serves the whole JSON, with the bones it blames worst first.
 
 ## Mesh2Motion's skinning (M2b)
 

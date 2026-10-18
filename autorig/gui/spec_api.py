@@ -1,25 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Autorig Workbench: rig.json checking and saving on the local server (gui/server.py routes to it). The spec editor
-# page that drove these went with the old UI (M5); the routes stay for scripts, and `run.py` covers the same steps.
-#
-#   GET  /api/spec?name=<model>                     everything the editor needs: rig.json (text and parsed), the
-#                                                   schema, the source view (steps/source_preview.py), the rig
-#                                                   step's record of which new bone came from which source joint,
-#                                                   the audit's failing spots, the flat views, the before/after pair
-#   POST /api/spec/check    {model, spec}           schema errors and warnings, and the diff against the file
-#   POST /api/spec/save     {model, spec, base}     writes rig.json (the old one kept as rig.json.bak); `base` is the
-#                                                   hash of the text the page loaded, so a file changed on disk
-#                                                   meanwhile is never overwritten blind
-#   POST /api/spec/rerig    {model, spec, base}     save, keep the current audit as "before", then rig, trim, audit,
-#                                                   clips (when the spec names an archetype) and preview, one job
-#   POST /api/spec/source   {model}                 run source_preview.py (the source model and its skeleton)
-#   POST /api/spec/measure  {model, spec}           run measure.py on the draft (not saved) spec: the flat views
+# Autorig Workbench: rig.json, the classic rig's spec: its schema, check(), and saving it safely (write_spec keeps
+# the old file as rig.json.bak and refuses a file changed on disk since it was read, by its hash). Used by
+# GET/PUT /api/v1/models/{m}/spec (gui/api_manage.py) and AI Assist (gui/ai_rig.py). The spec editor page and its
+# /api/spec routes went with the old UI (M5, M7); docs/SPEC.md describes the file.
 #
 # The editor edits a copy of the parsed file: fields it does not know are kept as they are, key order is kept, and
 # the file is written in the same compact style people write it in (short lists and objects on one line).
-import difflib, hashlib, json, math, os, re, shutil, sys, time
+import difflib, hashlib, json, os, re, shutil
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_ID = "autorig-spec/1"
 KINDS = ("tripo", "build", "placed", "humanoid", "custom")
 ARCHETYPES = ("quadruped", "hexapod", "octopod", "serpent", "winged", "floater", "rigid", "humanoid")
@@ -650,34 +638,6 @@ def _load(path):
         return None
 
 
-_VOTE_EXTRAS = []
-
-
-def vote_extras_installed():
-    """Whether Blender's Python has an extra the suggester weighs (trimesh, open-clip): asked once (it starts
-    Blender's Python to learn its version), then remembered."""
-    if not _VOTE_EXTRAS:
-        try:
-            try:
-                import extras
-            except ImportError:
-                from autorig.core import extras
-            st = extras.status()
-            _VOTE_EXTRAS.append(any(e["installed"] for e in st["extras"] if e["name"] in ("trimesh", "open-clip")))
-        except Exception:
-            _VOTE_EXTRAS.append(False)
-    return _VOTE_EXTRAS[0]
-
-
-def editor_dir(layout, name):
-    return os.path.join(layout.WORK, "spec_editor", name)
-
-
-def work_url(layout, path):
-    rel = os.path.relpath(path, layout.WORK).replace("\\", "/")
-    return "/files/work/" + rel
-
-
 def read_spec_text(srv, name):
     g = srv.find_group(name)
     p = os.path.join(srv.model_dir(g, name), "rig.json")
@@ -704,52 +664,6 @@ def hot_spots(a):
     out.sort(key=lambda s: (s["mode"] != "bend", -s["tears"]))
     share = {x.get("bone"): x.get("area_pct") for x in (a or {}).get("dominant_share", []) if isinstance(x, dict)}
     return out, share
-
-
-def bundle(srv, name):
-    """Everything the editor page loads for one model."""
-    layout = srv.layout
-    g = srv.find_group(name)
-    path, text = read_spec_text(srv, name)
-    spec, parse_error = None, None
-    if text is not None:
-        try: spec = json.loads(text)
-        except ValueError as e: parse_error = str(e)
-    src_json = os.path.join(layout.WORK, "source", name + ".json")
-    source = _load(src_json)
-    src_file = srv._quiet(layout.source_model, name)
-    if source:
-        source["glb_url"] = work_url(layout, os.path.join(layout.WORK, "source", source.get("glb", name + ".glb")))
-        source["stale"] = bool(src_file and os.path.getmtime(src_file) > source.get("source_mtime", 0) + 1)
-    rig_log = _load(os.path.join(layout.WORK, "qa", name + ".json")) or {}
-    bone_from = {}
-    for c in rig_log.get("chains") or []:
-        for b, j in zip(c.get("bones", []), c.get("from", [])): bone_from[b] = j
-    rig_bones = [b for c in rig_log.get("chains") or [] for b in c.get("bones", [])]
-    audit = _load(os.path.join(layout.WORK, "audit", name + ".json"))
-    spots, share = hot_spots(audit)
-    ed = editor_dir(layout, name)
-    before = _load(os.path.join(ed, "before.json"))
-    measure = os.path.join(ed, name + ".png")
-    survey = _load(os.path.join(layout.WORK, "survey", name + ".json"))
-    rd = srv._quiet(layout.rigged_dir, name)
-    preview_url, preview_info = None, None
-    if rd:
-        glb = os.path.join(rd, "preview.glb")
-        if os.path.exists(glb):
-            rel = os.path.relpath(glb, layout.ROOT).replace("\\", "/")
-            preview_url = "/files/models/" + rel + "?v=%d" % int(os.path.getmtime(glb))
-            pj = os.path.join(rd, "preview.json")
-            if os.path.exists(pj):
-                preview_info = _load(pj)
-    return {"name": name, "group": g, "path": path, "text": text, "base": text_hash(text), "spec": spec,
-            "parse_error": parse_error, "schema": schema(), "source": source, "source_file": src_file and os.path.basename(src_file),
-            "survey": survey, "rig_bones": rig_bones, "bone_from": bone_from, "rig_error": rig_log.get("error"),
-            "audit": audit_summary(audit), "audit_time": audit and os.path.getmtime(os.path.join(layout.WORK, "audit", name + ".json")),
-            "spots": spots, "share": share, "before": before,
-            "measure": work_url(layout, measure) + "?v=%d" % int(os.path.getmtime(measure)) if os.path.exists(measure) else None,
-            "preview_url": preview_url, "preview_info": preview_info,
-            "backup": os.path.exists(path + ".bak")}
 
 
 def write_spec(srv, name, spec, base, force=False):
@@ -783,217 +697,11 @@ class Conflict(Exception):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Routes
+# Jobs (AI Assist's re-rig)
 # ---------------------------------------------------------------------------------------------------------------
-
-def get(h, app, srv, path, q):
-    """GET routes under the token. True when handled."""
-    if path == "/api/anim/presets":
-        try:
-            import gait
-        except ImportError:
-            from autorig.core import gait
-        h._send(200, {"presets": gait.GAIT_PRESETS})
-        return True
-    if path == "/api/spec/hash":
-        name = (q.get("name") or [""])[0]
-        if srv.find_group(name) is None:
-            h._send(404, {"error": "no model " + name}); return True
-        path_file, text = read_spec_text(srv, name)
-        mtime = os.path.getmtime(path_file) if path_file and os.path.exists(path_file) else 0
-        h._send(200, {"name": name, "base": text_hash(text), "mtime": mtime})
-        return True
-    if path != "/api/spec": return False
-    name = (q.get("name") or [""])[0]
-    if srv.find_group(name) is None:
-        h._send(404, {"error": "no model " + name}); return True
-    srv.spec_store.reload()
-    h._send(200, bundle(srv, name))
-    return True
-
 
 def _job(app, srv, name, label, cmds):
     job = app.runner.submit(srv.Job(name, srv.find_group(name), label, cmds))
     return job.info()
 
 
-def post(h, app, srv, path, body):
-    """POST routes under the token. True when handled."""
-    if path == "/api/anim/evaluate":
-        try:
-            import gait
-        except ImportError:
-            from autorig.core import gait
-        preset_name = body.get("preset", "natural")
-        overrides = body.get("overrides", {})
-        if not isinstance(overrides, dict):
-            h._send(400, {"error": "overrides must be an object"}); return True
-        try:
-            num_frames = max(1, min(240, int(body.get("frames", 24))))     # a preview, not a bake: bounded
-        except (TypeError, ValueError):
-            h._send(400, {"error": "frames must be a number"}); return True
-        is_biped = body.get("type", "biped") == "biped"
-        params = gait.merge_gait_params(preset_name, overrides)
-        if not (isinstance(params.get("cadence", 1.0), (int, float)) and params.get("cadence", 1.0) > 0):
-            params["cadence"] = 1.0
-        frames_out = []
-        for i in range(num_frames):
-            phase = i / float(num_frames)
-            if is_biped:
-                action = body.get("action") or (preset_name if preset_name in ("attack", "hit", "death") else None)
-                if action == "attack":
-                    st = gait.evaluate_biped_attack(phase, 1.0, 1.0, is_shooter=bool(body.get("shooter", False)))
-                elif action == "hit":
-                    st = gait.evaluate_biped_hit(phase, 1.0, 1.0, direction=body.get("direction", "front"))
-                elif action == "death":
-                    st = gait.evaluate_biped_death(phase, 1.0, 1.0)
-                elif preset_name in ("run", "sprint"):
-                    st = gait.evaluate_biped_run(phase, 1.0, 1.0, params, is_shooter=bool(body.get("shooter", False)))
-                else:
-                    st = gait.evaluate_biped_walk(phase, 1.0, 1.0, params, is_shooter=bool(body.get("shooter", False)))
-            else:
-                if preset_name == "quadruped_gallop":
-                    st = gait.evaluate_quadruped_gallop(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
-                elif preset_name == "quadruped_trot":
-                    st = gait.evaluate_quadruped_trot(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
-                else:
-                    st = gait.evaluate_quadruped_walk(phase, 1.0, 1.0, feet_info=body.get("feet"), params=params)
-            frames_out.append(st)
-        thigh_swing = 22.0 * params.get("stride", 1.0)
-        stride = 2.0 * math.sin(math.radians(thigh_swing))
-        cadence = params.get("cadence", 1.0)
-        h._send(200, {
-            "preset": preset_name,
-            "params": params,
-            "frames": frames_out,
-            "stride": stride,
-            "cadence": cadence,
-            "walk_frames": max(10, int(round(24.0 / cadence)))
-        })
-        return True
-
-    if not path.startswith("/api/spec/"): return False
-    name = body.get("model", "")
-    g = srv.find_group(name)
-    if g is None:
-        h._send(404, {"error": "no model " + name}); return True
-    layout = srv.layout
-    what = path[len("/api/spec/"):]
-    try:
-        if what == "check":
-            _, old = read_spec_text(srv, name)
-            errs, warns = check(body.get("spec"), _load(os.path.join(layout.WORK, "source", name + ".json")))
-            new = dumps(body.get("spec")) if isinstance(body.get("spec"), dict) else ""
-            h._send(200, {"errors": errs, "warnings": warns, "text": new, "diff": diff(old, new),
-                          "changed": (old or "") != new})
-        elif what in ("save", "rerig", "rebake_clips"):
-            force = bool(body.get("force", False))
-            text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
-            if errs:
-                h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
-                              "errors": errs, "warnings": warns}); return True
-            # rig.json is saved from here on: the reply is always 200 with the new base, so the page stays in step
-            # with the file, and a job that cannot start says why in "error" instead of failing the request
-            out = {"saved": True, "text": text, "base": text_hash(text), "warnings": warns}
-            try:
-                if what == "rerig":
-                    ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
-                    cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
-                    if cur:              # the audit this edit is measured against
-                        with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
-                            json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
-                    spec = srv.spec_store.model(name)
-                    st = srv.status(g, name)
-                    if st["steps"].get("rig"):
-                        raise ValueError(st["steps"]["rig"])
-                    # the same archetype the Clips button uses: rig.json's, else the one inferred from the skeleton
-                    c_arch = srv.spec_store.infer_clip_archetype(spec)
-                    steps = ["rig", "trim", "audit"] + (["clips"] if c_arch else []) + ["preview"]
-                    cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
-                    out["job"] = _job(app, srv, name, "save and re-rig", cmds)
-                elif what == "rebake_clips":
-                    spec = srv.spec_store.model(name)
-                    st = srv.status(g, name)
-                    if st["steps"].get("clips"):           # no archetype, or no rig yet: say why, as the button does
-                        raise ValueError(st["steps"]["clips"])
-                    steps = ["clips", "preview"]
-                    cmds = [c for s in steps for c in srv.commands(g, name, s, spec)]
-                    out["job"] = _job(app, srv, name, "re-bake clips", cmds)
-            except ValueError as e:
-                out["error"] = "saved, but nothing ran: " + str(e)
-            h._send(200, out)
-        elif what == "auto-tune":
-            out = {}
-            if body.get("spec"):
-                force = bool(body.get("force", False))    # a rig.json changed on disk is a conflict, as on Save
-                text, errs, warns = write_spec(srv, name, body.get("spec"), body.get("base"), force=force)
-                if errs:
-                    h._send(400, {"error": "the spec has problems: " + "; ".join("%s: %s" % (e["path"], e["message"]) for e in errs[:5]),
-                                  "errors": errs, "warnings": warns}); return True
-                out = {"saved": True, "text": text, "base": text_hash(text), "warnings": warns}
-            try:                                          # saved (or unchanged) from here: always 200, as above
-                ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
-                cur = _load(os.path.join(layout.WORK, "audit", name + ".json"))
-                if cur:
-                    with open(os.path.join(ed, "before.json"), "w", encoding="utf-8") as fh:
-                        json.dump(dict(audit_summary(cur), time=time.time(), spots=hot_spots(cur)[0][:12]), fh, indent=1)
-                st = srv.status(g, name)
-                if st["steps"].get("rig"):
-                    raise ValueError(st["steps"]["rig"])
-                auto_tune_script = os.path.join(os.path.dirname(HERE), "steps", "auto_tune.py")
-                max_iter = str(body.get("max_iterations", 3))
-                preview_cmd = ("preview", srv.blender_cmd("preview_glb.py", "-only", name), None)
-                cmd = (f"auto-tune ({max_iter} iter)", [sys.executable, "-u", auto_tune_script, name, "-max-iter", max_iter], None)
-                out["job"] = _job(app, srv, name, "auto-tune", [cmd, preview_cmd])
-            except ValueError as e:
-                out["error"] = ("saved, but nothing ran: " if out.get("saved") else "") + str(e)
-            h._send(200, out)
-        elif what == "source":
-            if not srv._quiet(layout.source_model, name):
-                h._send(409, {"error": "no source export in the model folder"}); return True
-            h._send(200, _job(app, srv, name, "source view",
-                              [("source view", srv.blender_cmd("source_preview.py", "-only", name), None)]))
-        elif what == "measure":
-            spec = body.get("spec")
-            errs, _ = check(spec, _load(os.path.join(layout.WORK, "source", name + ".json")))
-            if errs:
-                h._send(400, {"error": "fix the spec first: " + errs[0]["path"] + ": " + errs[0]["message"]}); return True
-            ed = editor_dir(layout, name); os.makedirs(ed, exist_ok=True)
-            draft = os.path.join(ed, "draft.json")
-            with open(draft, "w", encoding="utf-8") as fh: fh.write(dumps(spec))
-            h._send(200, _job(app, srv, name, "flat views",
-                              [("flat views of the draft", srv.blender_cmd("measure.py", name, "-out", ed, "-spec", draft), None)]))
-        elif what == "suggest":
-            try:
-                import suggest
-            except ImportError:
-                from autorig.core import suggest
-            # A suggestion measured on the mesh itself (steps/suggest_step.py under Blender: the limbs' tips, found along
-            # the surface) is used when there is one newer than the source file; otherwise, unless the caller gave
-            # its own measurements, that step is queued and the page asks again when it is done. Only with neither
-            # Blender nor measurements does the answer fall back to a template (marked low confidence).
-            given = "source" in body or "survey" in body
-            out_dir = os.path.join(layout.WORK, "suggest")
-            measured_file = os.path.join(out_dir, name + "_suggest.json")
-            src_model = srv._quiet(layout.source_model, name)
-            fresh = (os.path.exists(measured_file) and src_model and
-                     os.path.getmtime(measured_file) >= os.path.getmtime(src_model))
-            measured = _load(measured_file) if fresh and not given else None
-            if measured and "opinions" not in measured and vote_extras_installed():
-                measured = None             # measured before the step weighed a body plan and pictures: again
-            if measured and measured.get("spec"):
-                h._send(200, dict(measured, measured=True)); return True
-            if not given and body.get("measure", True) and src_model and srv.blender.find(required=False):
-                job = _job(app, srv, name, "suggest",
-                           [("suggest a skeleton (measuring the mesh)",
-                             srv.blender_cmd("suggest_step.py", name, "-out", out_dir), None)])
-                h._send(200, {"pending": True, "job": job}); return True
-            src = body.get("source") or _load(os.path.join(layout.WORK, "source", name + ".json"))
-            surv = body.get("survey") or _load(os.path.join(layout.WORK, "survey", name + ".json"))
-            proposal = suggest.suggest_skeleton(name, source_data=src, survey_data=surv)
-            h._send(200, proposal)
-        else:
-            h._send(404, {"error": "not found"})
-    except Conflict as e:
-        h._send(409, {"error": str(e), "conflict": True, "disk_base": getattr(e, "disk_base", None)})
-    return True
