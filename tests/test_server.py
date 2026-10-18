@@ -123,6 +123,27 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(r.status, 200)
             self.assertIn("Autorig Workbench", r.read().decode("utf-8"))
 
+    def test_1b_mesh2motion_static(self):
+        """/m2m/ serves the built Mesh2Motion app without the token, and nothing outside its folder."""
+        def get(path):
+            try:
+                with urllib.request.urlopen(self.base + path, timeout=30) as r:
+                    return r.status, r.headers.get("Content-Type", ""), r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, "", b""
+        self.assertIn(get("/m2m/../server.py")[0], (400, 403, 404))
+        self.assertIn(get("/m2m/%2e%2e/server.py")[0], (400, 403, 404))
+        if not os.path.isdir(os.path.join(REPO, "autorig", "gui", "m2m")):
+            self.assertEqual(get("/m2m/create.html")[0], 404)
+            self.skipTest("Mesh2Motion not built (python scripts/build_m2m.py)")
+        code, ctype, body = get("/m2m/create.html")
+        self.assertEqual(code, 200)
+        self.assertTrue(ctype.startswith("text/html"))
+        self.assertIn(b"<script", body)
+        code, ctype, body = get("/m2m/rigs/rig-human.glb")
+        self.assertEqual((code, ctype), (200, "model/gltf-binary"))
+        self.assertEqual(body[:4], b"glTF")
+
     # ---- the pipeline, through the API
 
     @unittest.skipUnless(HAVE_BLENDER, "Blender not found")

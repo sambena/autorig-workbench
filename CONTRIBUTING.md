@@ -18,6 +18,10 @@ Autorig Workbench provides automated rigging, skinning, decimation, and quality 
    - Strict path confinement ensures files are read/written only within `AUTORIG_MODELS` and `AUTORIG_WORK`.
    - Step cancellations kill only the specific process PID.
 5. **Audited Quality**: Every rig is measured against strict mathematical thresholds (tears, bleed percentage, surface ownership, joint bends) and graded **PASS**, **CHECK**, or **FAIL**.
+6. **Credit where it is due**: code, ideas, data or assets taken from another project are credited in the file that uses
+   them (project, authors, licence, link) and in [CREDITS.md](CREDITS.md), in the same pull request. Borrow only from licences
+   GPL-3.0 can include (MIT, BSD, Apache-2.0, CC0, LGPL/GPL-3.0); keep Apache-2.0 code's own LICENSE and NOTICE.
+   Docs (README, docs/) are updated in the same pull request as the change they describe.
 
 ---
 
