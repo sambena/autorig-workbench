@@ -161,7 +161,7 @@ the spec as a form beside it. Nothing needs Blender or JSON:
 
 Docs: [PIPELINE](docs/PIPELINE.md) (the steps and their rules), [SPEC](docs/SPEC.md) (`rig.json` and
 `autorig.json`), [FORMATS](docs/FORMATS.md) (cards, clip manifests), [SKELETONS](docs/SKELETONS.md) (the bone
-conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md).
+conventions), [EXPORT](docs/EXPORT.md) (engine packages), [PLAN](docs/PLAN.md), [CI](docs/CI.md), [Schema](docs/rig.schema.json), [CONTRIBUTING](CONTRIBUTING.md), [CREDITS](CREDITS.md).
 
 ## Mesh2Motion
 
@@ -211,6 +211,9 @@ GPL-3.0-or-later (LICENSE). The steps run inside Blender and import `bpy`, which
 three.js, under `autorig/gui/vendor/three/`, is MIT (its own LICENSE there; VERSION.txt says where it came from).
 Mesh2Motion, under `third_party/mesh2motion-app/`, is MIT for its code and CC0 for its models, rigs and animations
 (`LICENSE-MIT.MD` and `LICENSE-CC0.MD` there), by Scott Petrovic and contributors.
+
+**[CREDITS.md](CREDITS.md)** lists every project, paper, library, data set and service the workbench borrows from or
+works with, who made it, what was taken and under which licence, with links to each.
 
 ## AI Assist
 
