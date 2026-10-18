@@ -1063,10 +1063,19 @@ def make_handler(app):
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
                 return self.m2m_file(path)
             if api_v1.handle(self, app, sys.modules[__name__], "GET", path, q): return
-            if path == "/app.js":                                  # the page's code: static, like /m2m/
+            if path in ("/app.js", "/viewer.js"):                  # the page's code: static, like /m2m/
                 if not self._host_ok(): return self._send(403, {"error": "bad host"})
-                with open(os.path.join(HERE, "app.js"), "rb") as fh:
+                with open(os.path.join(HERE, path[1:]), "rb") as fh:
                     return self._send(200, fh.read(), "text/javascript; charset=utf-8", {"Cache-Control": "no-cache"})
+            if path.startswith("/vendor/"):                       # three.js for the preview (vendor/three/VERSION.txt)
+                if not self._host_ok(): return self._send(403, {"error": "bad host"})
+                rel = safe_rel(unquote(path[len("/vendor/"):]))
+                p = os.path.realpath(os.path.join(HERE, "vendor", *rel.split("/"))) if rel else ""
+                root = os.path.realpath(os.path.join(HERE, "vendor"))
+                if not rel or not p.startswith(root + os.sep) or not p.endswith(".js") or not os.path.isfile(p):
+                    return self._send(404, {"error": "not found"})
+                with open(p, "rb") as fh:
+                    return self._send(200, fh.read(), "text/javascript; charset=utf-8", {"Cache-Control": "public, max-age=86400"})
             if not self._guard(q): return
             try:
                 if studio_api.get(self,app,sys.modules[__name__],path,q): return
