@@ -29,6 +29,9 @@
 # into fewer bones, so each fade needs fewer, and the steps left shrink round by round (bake-off: 20 rounds took the
 # hen from 2869 combined tears to 909, the dragon from 4388 to 1196). Measured from the head, not the bend axis:
 # measuring from each bone's X axis (as the audit bends it) left a person's spine unfaded along the arms and tore more.
+# The envelopes are McShane's and Whitney's Lipschitz extensions (1934;
+# https://en.wikipedia.org/wiki/Lipschitz_continuity#Extensions), found as shortest paths over the edges by
+# Bellman-Ford style relaxation (https://en.wikipedia.org/wiki/Bellman%E2%80%93Ford_algorithm). CREDITS.md.
 import numpy as np
 
 GAP = 0.004          # the audit's tear gap, a share of the model's size (core/grades.py)

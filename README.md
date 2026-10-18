@@ -14,8 +14,9 @@ fixed, gated to the body plans they are for, each switchable) and R4 (clips with
 retarget quality, per-clip morphs, honest export packages) are in and not yet re-tested in
 Blender; R5 (speed: the same results, about a fifth faster on the samples) is measured. `run.py m2m-rig` (M2) fits
 any of Mesh2Motion's nine skeletons to a mesh (picked from the body plan, or named), skins and audits it, and bakes
-its clips into GLB and FBX; the grades on generated meshes are still mostly FAIL, which the skinning bake-off (M2b)
-takes on. Expect rough edges; issues and pull requests are welcome.
+its clips into GLB and FBX. Its skinning now fades every joint as far as a bend there needs (M9): on the bake-off's
+25 models 5 PASS and 3 CHECK (none passed before), two of them generated asset-packs meshes, but most generated
+meshes still FAIL (docs/SKIN-BAKEOFF.md). Expect rough edges; issues and pull requests are welcome.
 
 
 ## Quick start

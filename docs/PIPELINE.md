@@ -115,7 +115,8 @@ model gets them:
 
 `audit.py` measures the engine FBX against five pass limits: weight bleed at most 2%, no tear edge (an edge stretched
 past 2x) in the combined pose or in any single-joint 40-degree bend, a head (+ jaw) owning at least 2.5% of the
-surface, and at most 4 influences. Twist tears, limb reach over 0.2 and asymmetric mirrored chains are warnings. A
+surface, and at most 4 influences. A rig that records how far its clips turn each bone (`rig.audit_clip_bends`, which
+`m2m_rig.py` writes) is bent that far instead, with headroom, between 15 and 40 degrees (docs/SKIN-BAKEOFF.md, "M9"). Twist tears, limb reach over 0.2 and asymmetric mirrored chains are warnings. A
 spec can set `audit: {...}` allowances, with the reason in its notes. A tear must also open a real gap (over 0.4% of
 the model's size): a micro-edge where two surfaces of a sculpt meet reaches 10x on a weight difference of 0.05 and
 opens nothing visible (`tear_edges_raw` keeps the plain count). People are best held to a Mixamo rig's own measured score instead of
