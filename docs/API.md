@@ -94,7 +94,7 @@ The FBX comes with Unity's axes (root rotation 0, scale 1) and one take per clip
 | GET | `/api/v1/templates` | Mesh2Motion's nine skeletons and their clip counts |
 | GET | `/api/v1/templates/{template}/clips` | a template's clips: name, duration in seconds, root motion |
 | GET | `/api/v1/models` | every model and its state |
-| POST | `/api/v1/models` | add a model: raw body with `?filename=&name=&group=`, or JSON `{url, name, group}` |
+| POST | `/api/v1/models` | add a model: raw body with `?filename=&name=&group=`, or JSON `{url, name, group}`, or `{provider, task_id, name, group}` for one already generated (free; [GENERATE.md](GENERATE.md)) |
 | GET | `/api/v1/models/{model}` | state, audit, clips and files (with download URLs) |
 | GET | `/api/v1/models/{model}/files/{path}` | one file of the model's folder |
 | GET | `/api/v1/models/{model}/skeleton` | the fitted skeleton: `{template, joints: {bone: [x, y, z]}}` |
@@ -103,7 +103,10 @@ The FBX comes with Unity's axes (root rotation 0, scale 1) and one take per clip
 | POST | `/api/v1/models/{model}/animate` | `{clips, format: glb\|fbx\|glb,fbx, naming: default\|mixamo, target: unity\|generic}` |
 | POST | `/api/v1/models/{model}/steps/{step}` | one model step: survey, rig, trim, audit, clips, publish, preview, all… |
 | POST | `/api/v1/tools/{tool}` | one tool with `{options: {...}}`: game-prop, fbx-maps, mixamo-import… |
-| POST | `/api/v1/pipeline` | add (optional), rig and animate in one job |
+| POST | `/api/v1/pipeline` | add (optional), rig and animate in one job; with `provider` it generates (estimate, then `{confirm}`) or imports a `task_id` first |
+| GET | `/api/v1/generate` | AI generation: on or off, which keys are set, caps, spend, recent generations |
+| POST | `/api/v1/generate` | `{provider: tripo\|meshy\|rodin, prompt \| images, options, name, group}`: an estimate (free); `{confirm: <estimate id>}` spends it ([GENERATE.md](GENERATE.md)) |
+| GET | `/api/v1/generate/{job}` | a generation: state, progress, provider task id, credits, the model, the rig job |
 | GET | `/api/v1/collections` | the collections this server offers and which is open |
 | POST | `/api/v1/collections/select` | `{path}`: open another collection (one of the list) |
 | POST | `/api/v1/collections` | `{path, name}`: add one (only with `allow_any_folder`) |
@@ -139,7 +142,13 @@ its groups.
 `collections` are models roots the page may switch to. `browse` adds folders whose files may be picked (the
 collections are browsable too). `allow_any_folder` (or `--allow-any-folder`, or `AUTORIG_ALLOW_ANY_FOLDER=1`) lets the
 page open and browse any folder: only for a copy you alone use. Paths outside the list answer 403.
-- Import by a generator's task id (`{"provider": "tripo", "task_id": ...}`) answers 501 until phase M8. Until then, send the download URL.
+- `{"provider": "tripo"|"meshy"|"rodin", "task_id": ...}` downloads a model already generated (and paid for) on the
+  account whose key the server holds. It is free and needs no `enabled` (412 without the key, 404 for an unknown task).
+
+**Generating** ([GENERATE.md](GENERATE.md)) spends money, so it takes two calls. The first answers an estimate id and
+the price in the provider's credits. The second, `{"confirm": id}`, spends exactly that, once. Generation is off until
+the server's owner turns it on, and each provider has a daily and a monthly cap. The settings are readable, never
+writable, over the API.
 
 **Tools**
 - Tool paths may be relative (to the models root) or absolute.
@@ -149,5 +158,8 @@ page open and browse any folder: only for a copy you alone use. Paths outside th
 - **400:** the request is wrong, or Blender is missing.
 - **401:** no token, or the wrong one.
 - **404:** no such model, step, tool or job.
-- **409:** the model isn't ready for that yet. The reason is in `error`, as the page shows it.
+- **402:** a generation would pass a provider's daily or monthly cap.
+- **403:** generation is off on this server (or a path outside the allowed folders).
+- **409:** the model isn't ready for that yet. The reason is in `error`, as the page shows it. For a confirm: the request differs from its estimate's.
+- **412:** the server has no key for that provider.
 - **501:** the feature isn't in this version yet. For example, `m2m-rig` before phase M2 lands.

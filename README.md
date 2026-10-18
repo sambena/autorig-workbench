@@ -207,6 +207,16 @@ button before it runs. Paid AI stops at a monthly limit ($5 by default), and eve
 on this computer, in `.autorig_ai.json`, which git ignores. See [docs/AI-ASSIST.md](docs/AI-ASSIST.md), which also
 lists the next tools planned for it.
 
+## Generate
+
+`POST /api/v1/generate` makes a model with [Tripo](https://www.tripo3d.ai), [Meshy](https://www.meshy.ai) or
+[Hyper3D Rodin](https://hyper3d.ai) and drops it into the open collection; `POST /api/v1/pipeline` does that and then
+rigs and animates it. Every generation is priced first and spent only by a second call that confirms that price.
+Generation is off until the server's owner turns it on (`python scripts/generate_settings.py --on`), and each
+provider has a daily and monthly cap in its own credits. Keys stay in `.autorig_generate.json`, which git ignores. A
+model already made on one of those accounts imports by its task id, free. See [docs/GENERATE.md](docs/GENERATE.md),
+which also covers Tripo's DCC Bridge. The page's Generate tab is next.
+
 ## Model Studio
 
 Model Studio (from the command line since the old page went) makes static/skinned LOD exports, one merged engine LOD FBX (static, skinned with

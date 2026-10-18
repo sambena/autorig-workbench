@@ -14,7 +14,7 @@
 # Every step and tool the CLI has is reachable too (GET /api/v1/steps lists them with their options): a model step
 # with POST /api/v1/models/{m}/steps/{step}, a tool with POST /api/v1/tools/{tool}. Tool paths are kept inside the
 # models root and the work folder. docs/API.md has examples.
-import json, os, re, secrets, shutil, tempfile, time, urllib.parse, urllib.request
+import json, os, re, secrets, shutil, sys, tempfile, time, urllib.parse, urllib.request
 
 VERSION = "1"
 MAX_DOWNLOAD = 1 << 30                                 # 1 GB: a generated model with its textures fits easily
@@ -58,6 +58,13 @@ ROUTES = [
     ("GET", "/api/v1/jobs/{id}/events", "the job's log as Server-Sent Events, ending with event: end", None),
     ("DELETE", "/api/v1/jobs/{id}", "cancel a job", None),
 ]
+
+
+try:
+    from . import generate_api                    # AI generation (gui/generate_api.py, docs/GENERATE.md)
+except ImportError:
+    import generate_api
+ROUTES += generate_api.ROUTES
 
 
 class ApiError(Exception):
@@ -121,6 +128,9 @@ def route(h, app, srv, method, path, q):
 
     if head == "jobs":
         return jobs(h, app, method, parts, q)
+
+    if head == "generate":
+        return generate_api.route(h, app, srv, sys.modules[__name__], method, parts)
 
     if head == "collections":
         if method == "GET" and len(parts) == 1:
@@ -198,6 +208,8 @@ def route(h, app, srv, method, path, q):
 
     if head == "pipeline" and method == "POST" and len(parts) == 1:
         body = h._json_body()
+        if body.get("provider") or body.get("confirm"):
+            return generate_api.pipeline(h, app, srv, sys.modules[__name__], body)
         if body.get("url"):
             m = add_from_url(srv, body["url"], body.get("name"), body.get("group") or "")
             name, g = m["name"], m["group"]
@@ -342,8 +354,7 @@ def add_model(h, srv, q, app=None):
     if ctype == "application/json":
         body = h._json_body()
         if body.get("provider") or body.get("task_id"):
-            raise ApiError(501, "import by provider task id comes with generation (docs/PLAN.md, M8); "
-                                "for now give the download url")
+            return generate_api.import_model(srv, sys.modules[__name__], body)
         if body.get("path"):
             return add_from_server(srv, app, body["path"], body.get("name"), body.get("group") or "")
         if not body.get("url"): raise ValueError("JSON body needs url or path (or send the file itself as the body)")
