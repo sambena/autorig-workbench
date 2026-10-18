@@ -26,6 +26,7 @@ Samples, Clean up).
 |---|---|---|---|
 | Drop or choose a model, paste paths | Load: drop or choose a file, the library (one card per model), or **New files on the server** (one card per model in the inbox folder; the best file picked) | `POST /api/v1/models` (file body, or JSON `{url}` or `{path}`); `GET /api/v1/files/models` | copy it into `<models>/<group>/<name>/` |
 | Model list, search, group menu | Load: library with search and thumbnails | `GET /api/v1/models` | `run.py help`, the folder itself |
+| (new) Recent models | the Recent models dropdown in the header: the last ten opened in this browser, with a ✕ to clear (picking one opens its collection first) | (browser only: localStorage) | — |
 | Prepare, Survey, Rig, Trim, Audit, Make clips, Publish, Preview, Re-bake clips, Mesh Doctor, Run all | Advanced → Steps on this model (a greyed button says what is missing) | `POST /api/v1/models/{m}/steps/{step}` | `run.py <step> <model>`, `run.py <model>` (rig → trim → audit) |
 | Cancel | Cancel on the job panel | `DELETE /api/v1/jobs/{id}` | Ctrl+C |
 | Live log | the job panel under each action | `GET /api/v1/jobs/{id}/events` | the console |

@@ -211,6 +211,7 @@ $('library').onclick = (e) => {
 
 // a picked model shows at once: the Rig step comes up with the preview loading, the details fill in as they come
 async function openModel (name) {
+  rememberRecent(name)
   state.model = name
   state.details = state.skeleton = state.audit = null      // nothing of the last model shows while this one loads
   $('model-chip').innerHTML = `Model: <b>${esc(name)}</b>`
@@ -385,6 +386,67 @@ async function openCollection (path) {
 }
 
 $('collection').onchange = (e) => openCollection(e.target.value)
+
+// ---- recent models: the last ten opened, kept in this browser (localStorage), with the collection each was in, so
+// picking one opens its collection first when another is open
+const RECENT_KEY = 'autorig.recentModels'
+const RECENT_MAX = 10
+
+function readRecent () {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    return Array.isArray(list) ? list.filter((x) => x && typeof x.name === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeRecent (list) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)) } catch { /* private window: no history, no harm */ }
+}
+
+function rememberRecent (name) {
+  const collection = cols?.current || ''
+  const list = readRecent().filter((x) => !(x.name === name && x.collection === collection))
+  list.unshift({ name, collection, at: Date.now() })
+  writeRecent(list.slice(0, RECENT_MAX))
+  renderRecent()
+}
+
+function renderRecent () {
+  const list = readRecent()
+  const sel = $('recent')
+  const short = (p) => (p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop()
+  const many = new Set(list.map((x) => x.collection)).size > 1
+  sel.innerHTML = '<option value="">Recent models</option>' + list.map((x, i) =>
+    `<option value="${i}">${esc(x.name)}${many && x.collection ? ` (${esc(short(x.collection))})` : ''}</option>`).join('')
+  sel.value = ''
+  sel.hidden = list.length === 0
+  $('recent-clear').hidden = list.length === 0
+}
+
+$('recent').onchange = async (e) => {
+  const entry = readRecent()[Number(e.target.value)]
+  e.target.value = ''
+  if (!entry) return
+  if (entry.collection && cols && entry.collection !== cols.current) {
+    try {
+      cols = await api('POST', '/collections/select', { path: entry.collection })
+    } catch (err) {
+      toast(`${entry.name}'s collection can't be opened: ${err.message}`, true)
+      return
+    }
+    await loadCollections()
+    await loadLibrary()
+  }
+  await openModel(entry.name)
+}
+
+$('recent-clear').onclick = () => {
+  writeRecent([])
+  renderRecent()
+  toast('Recent models cleared')
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // 2. Rig
@@ -1309,6 +1371,7 @@ $('adv-clean').ontoggle = () => { if ($('adv-clean').open) loadClean() }
 async function start () {
   loadLibrary()
   loadCollections()
+  renderRecent()
   try {
     state.templates = (await api('GET', '/templates')).templates
   } catch { /* Mesh2Motion not checked out: auto and classic still work */ }

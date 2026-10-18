@@ -101,6 +101,8 @@
   .tpl.current span::after { content: " ●"; color: var(--ok); }
   #inbox { flex: 1; overflow-y: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start; }
   #collection { max-width: 240px; }
+  #recent { max-width: 220px; }
+  #recent-clear { padding: 4px 9px; }
   /* Advanced */
   #advanced { border-top: 1px solid var(--line); background: var(--panel); }
   #advanced > summary { padding: 9px 18px; cursor: pointer; color: var(--dim); }
@@ -150,6 +152,8 @@
     <button data-step="animate"><span class="n">3</span>Animate</button>
   </nav>
   <select id="collection" aria-label="Collection" title="The collection of models this page works on" hidden></select>
+  <select id="recent" aria-label="Recent models" title="The last models you opened in this browser" hidden></select>
+  <button id="recent-clear" type="button" title="Forget the recent models" aria-label="Clear recent models" hidden>✕</button>
   <div id="model-chip">No model yet</div>
 </header>
 
