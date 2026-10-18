@@ -401,7 +401,11 @@ class FixRigTools(unittest.TestCase):
         before = self.run_tool("get_spec")["content"]
         done = self.tool.apply([dict(out["change"], n=1)], {"model": "canine"})
         self.assertIn("tried by a test", self.run_tool("get_spec")["content"])
-        self.assertEqual(done["job"]["label"], "AI fix: re-rig")
+        if "job" in done:
+            self.assertEqual(done["job"]["label"], "AI fix: re-rig")
+        else:
+            # without Blender (AUTORIG_NO_BLENDER=1) the rig step cannot run: rig.json is saved and says so
+            self.assertIn("re-rig didn't start", done["error"])
         self.tool.undo(done["journal"])
         self.assertEqual(self.run_tool("get_spec")["content"], before)
         with self.assertRaises(ValueError):
