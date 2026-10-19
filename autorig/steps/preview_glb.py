@@ -28,11 +28,26 @@ FORMAT = "autorig-preview/1"
 
 
 def rig_files(key):
-    """(blend, fbx, clips blend) for a model: each path, or None where it does not exist."""
+    """(blend, fbx, clips blend) for a model: each path, or None where it does not exist. The rig is named after the
+    model's folder, else after its game name (m2m_rig names it so: CowHereford.blend, Farm_Goat.blend, Shark_T.blend),
+    which the card's rigged_blend / rigged_fbx give, else it is the one .blend (or .fbx) in the rigged folder."""
     rd = layout.rigged_dir(key)
     name = layout.leaf(key)
-    have = lambda p: p if os.path.exists(p) else None
-    return (have(os.path.join(rd, name + ".blend")), have(os.path.join(rd, name + ".fbx")),
+    have = lambda p: p if p and os.path.exists(p) else None
+    card = {}
+    try:
+        with open(os.path.join(layout.pack_dir(key), "model.json"), encoding="utf-8") as fh: card = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    def find(ext, field):
+        p = have(os.path.join(rd, name + ext))
+        if p: return p
+        if isinstance(card.get(field), str):
+            p = have(os.path.join(layout.pack_dir(key), card[field]))
+            if p: return p
+        alone = [f for f in os.listdir(rd) if f.lower().endswith(ext) and not f.lower().endswith("_generic" + ext)]             if os.path.isdir(rd) else []
+        return os.path.join(rd, alone[0]) if len(alone) == 1 else None
+    return (find(".blend", "rigged_blend"), find(".fbx", "rigged_fbx"),
             have(os.path.join(layout.pack_dir(key), "clips", name + "_clips.blend")))
 
 
