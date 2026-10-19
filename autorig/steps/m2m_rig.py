@@ -2456,18 +2456,78 @@ def people_classic(a, log):
                                                   "and mirrored (m2m_rig --people classic)")
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(spec, fh, indent=2)
-    py = shutil.which("python3") or shutil.which("python") or sys.executable
+    # on Windows "python3" is the Microsoft Store's stub (it exits 9009), so "python" there
+    py = (shutil.which("python") if os.name == "nt" else None) or shutil.which("python3") or shutil.which("python")         or sys.executable
     run_py = os.path.join(os.path.dirname(HERE), "cli", "run.py")
     name = layout.leaf(a.model)
     steps = {}
-    for step in ("rig", "audit", "clips", "preview"):
-        print("people: %s %s" % (step, name), flush=True)
-        r = subprocess.run([py, run_py, step, name], capture_output=True, text=True)
+
+    def run(step, skin=None, legs=None):
+        print("people: %s %s%s" % (step, name, " (%s)" % (skin or legs) if (skin or legs) else ""), flush=True)
+        env = dict(os.environ)
+        if skin: env["AUTORIG_HUMANOID_SKIN"] = skin
+        if legs: env["AUTORIG_HUMANOID_LEGS"] = legs
+        r = subprocess.run([py, run_py, step, name], capture_output=True, text=True, env=env)
         sys.stdout.write((r.stdout or "")[-4000:]); sys.stdout.flush()
         steps[step] = r.returncode
         if r.returncode != 0:
             sys.stdout.write((r.stderr or "")[-4000:])
-            if step == "rig": break
+        return r.returncode == 0
+
+    def score(tag):
+        out = os.path.join(layout.work_dir("people_choice"), name, tag)
+        shutil.rmtree(out, ignore_errors=True)
+        subprocess.run([py, run_py, "score", name, "--out", out, "--audit", "skip", "--render", "0"],
+                       capture_output=True, text=True)
+        try: return float(json.load(open(os.path.join(out, name, "score.json"), encoding="utf-8"))["score"])
+        except (OSError, ValueError, KeyError, TypeError): return -1.0
+
+    # a person whose source came rigged and skinned (Tripo's converter) is rigged both ways, our skeleton and the
+    # source's own rig kept, each clipped and scored (run.py score); the better stays. Neither always wins: Heartroot's
+    # stoker scored 91.9 kept against 65.3 rebuilt, the hooded figure uploaded 2026-10-18 82.2 rebuilt against 65.6 kept
+    #
+    # and a sculpt that stood mid-stride (its legs turned more than 8 degrees to stand them straight: Smeltdown's
+    # player_blue) is also rigged with its legs resting as sculpted; the scorer's rest check counts the straightening
+    folder_now = layout.pack_dir(a.model)
+    out_dirs = lambda: [d for d in (layout.rigged_dir(a.model), os.path.join(folder_now, "clips")) if os.path.isdir(d)]
+    best = {"tag": None, "score": -1.0}
+
+    def stash(tag):
+        dst = os.path.join(layout.work_dir("people_choice"), name, tag + "_files")
+        shutil.rmtree(dst, ignore_errors=True); os.makedirs(dst, exist_ok=True)
+        for d in out_dirs(): shutil.copytree(d, os.path.join(dst, os.path.basename(d)))
+        return dst
+
+    def unstash(src):
+        for d in (layout.rigged_dir(a.model), os.path.join(folder_now, "clips")):
+            shutil.rmtree(d, ignore_errors=True)
+            if os.path.isdir(os.path.join(src, os.path.basename(d))):
+                shutil.copytree(os.path.join(src, os.path.basename(d)), d)
+
+    def attempt(tag, skin=None, legs=None):
+        ok = run("rig", skin, legs) and run("clips") and run("preview")
+        sc = score(tag) if ok else -1.0
+        scores[tag] = sc
+        if sc > best["score"]:
+            best.update(tag=tag, score=sc, files=stash(tag))
+
+    scores = {}
+    if run("rig", "rebuild"):
+        try: qa = json.load(open(os.path.join(layout.work_dir("qa"), name + ".json"), encoding="utf-8"))
+        except (OSError, ValueError): qa = {}
+        kept, stride = qa.get("kept_possible"), float(qa.get("legs_turned_deg") or 0) > 8.0
+        if kept or stride:
+            attempt("rebuild", "rebuild")
+            if kept: attempt("kept", "kept")
+            if stride: attempt("legs_kept", "rebuild", "keep")
+            if best["tag"] and best["tag"] != list(scores)[-1]:
+                unstash(best["files"])                   # the best one's files back in place
+            log["skin_scores"] = dict(scores, chosen=best["tag"])
+            print("PEOPLE_CHOICE " + json.dumps(log["skin_scores"]), flush=True)
+            run("audit")
+        else:
+            for step in ("audit", "clips", "preview"):
+                run(step)
     log.update(people="classic", steps=steps)
     print("M2M_RIG " + json.dumps({"name": a.name, "template": "human", "people": "classic", "choice": log["choice"],
                                    "steps": steps}, default=str))

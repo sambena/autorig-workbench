@@ -408,6 +408,79 @@ def chains_for(J, digits=False):
     return ch
 
 
+def keep_source_rig(key, src_path, spec, h, log, export=True):
+    """A person whose source came rigged and skinned to a full Mixamo-named humanoid skeleton (Tripo's converter rigs
+    its people this way) keeps that rig: its bones, its rest pose and its weights, only stood on z=0 with the hips over
+    the origin, facing -Y, its transforms applied. Heartroot's 18 people with such rigs averaged 95.4 with the walker
+    clips on them, against 90.2 rebuilt on our skeleton (stoker, sculpted mid-stride: 90.2 against 65.3; the fingers,
+    twist-free arms and the robe weights are Tripo's). Returns True when it did, False to rig the usual way (no
+    armature, a part of the body left unskinned, a non-humanoid skeleton). rig.json "skin": "kept" asks for it;
+    "skin": "source" or "autorig" rebuilds."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    import source_io
+    source_io.import_source(src_path)
+    arms = [o for o in bpy.data.objects if o.type == 'ARMATURE']
+    if len(arms) != 1:
+        return False
+    arm = arms[0]
+    names = {b.name.split(":")[-1] for b in arm.data.bones}
+    if not HUMANOID_BONES <= names:
+        return False
+    meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+    if not meshes or any(m.find_armature() != arm for m in meshes):
+        return False                                # a loose prop or a part with no skin: rig it the usual way
+    for m in meshes:
+        n = len(m.data.vertices)
+        weighted = sum(1 for v in m.data.vertices if any(g.weight > 1e-4 for g in v.groups))
+        if weighted < 0.98 * n:
+            return False
+    # one mesh, transforms applied, the armature modifier kept
+    for o in list(bpy.data.objects):
+        if o.type not in ('ARMATURE', 'MESH'):
+            bpy.data.objects.remove(o, do_unlink=True)
+    rerig.select_only(*meshes)
+    if len(meshes) > 1:
+        bpy.context.view_layer.objects.active = meshes[0]
+        bpy.ops.object.join()
+    mesh = bpy.context.view_layer.objects.active if len(meshes) > 1 else meshes[0]
+    rerig.select_only(mesh)
+    bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+    rerig.select_only(mesh, arm)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    # facing: spec forward (the humanoid section's) turned to -Y about Z
+    fwd = Vector(h.get("forward", spec.get("forward", [0, -1, 0])))
+    fwd.z = 0
+    if fwd.length > 1e-6 and (fwd.normalized() - Vector((0, -1, 0))).length > 1e-3:
+        q = fwd.normalized().rotation_difference(Vector((0, -1, 0)))
+        R = q.to_matrix().to_4x4()
+        mesh.data.transform(R); arm.data.transform(R)
+        log["turned_deg"] = round(math.degrees(q.angle), 1)
+    # stood on z=0 with the hips over the origin
+    co = np.array([v.co[:] for v in mesh.data.vertices])
+    hips = next(b for b in arm.data.bones if b.name.split(":")[-1] == "Hips").head_local
+    off = Matrix.Translation(Vector((-hips.x, -hips.y, -float(co[:, 2].min()))))
+    mesh.data.transform(off); arm.data.transform(off)
+    mesh.parent = arm
+    mesh.matrix_parent_inverse = Matrix.Identity(4)
+    if not any(m.type == 'ARMATURE' for m in mesh.modifiers):
+        mesh.modifiers.new("Armature", 'ARMATURE').object = arm
+    for m in mesh.modifiers:
+        if m.type == 'ARMATURE': m.object = arm
+    mesh.name, arm.name = key.split("/")[-1], key.split("/")[-1] + "_rig"
+    bpy.context.view_layer.update()
+    lo, hi = rerig.bounds(mesh); size = hi - lo
+    import skeletons
+    have = {b.name.split(":")[-1]: b.name for b in arm.data.bones}
+    log.update(kind="humanoid", skinning="kept", bones=len(arm.data.bones),
+               deform_bones=sum(1 for b in arm.data.bones if b.use_deform), size=[round(x, 4) for x in size],
+               skeleton={"archetype": "humanoid", "root": next(iter(arm.data.bones)).name,
+                         "humanoid": {k: have[v] for k, v in skeletons.HUMANOID.items() if v in have}})
+    log["kept_tears"] = stress_tears(mesh, arm, size)
+    if export:
+        rerig.save_rig(key, mesh, arm, log)
+    return True
+
+
 HUMANOID_BONES = {"Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"} | {
     s + b for s in ("Left", "Right") for b in ("Shoulder", "Arm", "ForeArm", "Hand", "UpLeg", "Leg", "Foot", "ToeBase")}
 
@@ -490,15 +563,16 @@ def stress_tears(mesh, arm, size):
     def coords():
         dg.update(); e = mesh.evaluated_get(dg); m = e.to_mesh()
         c = np.empty(len(m.vertices) * 3); m.vertices.foreach_get("co", c); e.to_mesh_clear(); return c.reshape(-1, 3)
-    pb = arm.pose.bones
+    pb = {b.name.split(":")[-1]: b for b in arm.pose.bones}     # a kept Mixamo rig's "mixamorig:" names too
+    full = {b.name.split(":")[-1]: b.name for b in arm.data.bones}
     def reset():
-        for b in pb:
+        for b in arm.pose.bones:
             b.rotation_mode = 'QUATERNION'; b.rotation_quaternion = (1, 0, 0, 0)
     reset(); rest = coords()
     L0 = np.linalg.norm(rest[ed[:, 0]] - rest[ed[:, 1]], axis=1)
     X, Y = Vector((1, 0, 0)), Vector((0, -1, 0))           # lateral, forward (the model faces -Y)
     def down(side):
-        b = arm.data.bones.get(side + "Arm")
+        b = arm.data.bones.get(full.get(side + "Arm", ""))
         if not b: return 0.0
         d = (b.tail_local - b.head_local).normalized()
         return math.degrees(math.atan2(-d.z, abs(d.x))) - 74.0  # from its slope to 16 degrees off straight down
@@ -514,7 +588,7 @@ def stress_tears(mesh, arm, size):
         reset()
         for name, (ax, deg) in pose.items():
             if name not in pb: continue
-            m = arm.data.bones[name].matrix_local.to_3x3()
+            m = arm.data.bones[full[name]].matrix_local.to_3x3()
             q = Quaternion(ax, math.radians(deg)).to_matrix()
             pb[name].rotation_quaternion = (m.inverted() @ q @ m).to_quaternion()
         c = coords()
@@ -543,7 +617,7 @@ def choose_skin(mesh, arm, joints, src_w, size, log):
     return best
 
 
-def straighten(arm, size, arms="t-pose"):
+def straighten(arm, size, arms="t-pose", legs=True, turned=None):
     """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
     arms: "keep" leaves them exactly as modelled; "as-modelled" keeps the upper arms' modelled slope and lines the
     forearms and hands up with them; a number
@@ -578,15 +652,19 @@ def straighten(arm, size, arms="t-pose"):
                 return
         pb.matrix = new_mat
         bpy.context.view_layer.update()
+        return math.degrees(r.angle)
 
+    legs_turned = 0.0
     with rerig.deform_off(arm):                    # bone matrices only: the mesh is posed once, by the apply below
         for side, sx in (("Left", 1), ("Right", -1)):
-            aim(side + "UpLeg", down); aim(side + "Leg", down)
-            aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
+            if legs:                               # legs=False: they rest as sculpted (a stride kept, see rerig_humanoid)
+                for b in ("UpLeg", "Leg"):
+                    legs_turned = max(legs_turned, aim(side + b, down) or 0.0)
+                aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
             if isinstance(arms, (int, float)) and not isinstance(arms, bool):
                 # the arms rest straight, `arms` degrees below horizontal
-                down = math.radians(max(0.0, min(80.0, float(arms))))
-                along = Vector((sx * math.cos(down), 0, -math.sin(down)))
+                drop = math.radians(max(0.0, min(80.0, float(arms))))
+                along = Vector((sx * math.cos(drop), 0, -math.sin(drop)))
                 for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
                     aim(side + b, along)
             elif arms == "keep":
@@ -606,6 +684,8 @@ def straighten(arm, size, arms="t-pose"):
             else:
                 for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
                     aim(side + b, (sx, 0, 0))
+    if turned is not None:
+        turned["legs_turned_deg"] = round(legs_turned, 1)
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh = next(o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm)
     rerig.select_only(mesh)
@@ -689,6 +769,20 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     if not src_path or not os.path.exists(src_path):
         log["error"] = f"no source model file found for {key}"
         return log
+    kept_tears = None
+    # AUTORIG_HUMANOID_SKIN: people_classic rigs a keepable person both ways and keeps whichever scores better
+    # ("kept", then "rebuild": our skeleton, choose_skin among ours, the source's and the blend)
+    choice = os.environ.get("AUTORIG_HUMANOID_SKIN") or spec.get("skin")
+    if choice == "kept":
+        if keep_source_rig(key, src_path, spec, h, log, export):
+            log["seconds"] = round(time.time() - t0, 1)
+            return log
+    elif spec.get("skin") is None and wants_auto(h):
+        probe = {}
+        if keep_source_rig(key, src_path, spec, h, probe, export=False):
+            log["kept_possible"] = True
+            if choice != "rebuild":
+                kept_tears = probe["kept_tears"]   # weighed against our skins below (choose_skin)
     mesh, joints = rerig.load(src_path)
     src_w = source_weights(mesh, joints)          # read now: skinning clears the vertex groups
     rerig.floating(mesh, spec, log)
@@ -748,9 +842,24 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         return log
     elif use_src:
         choose_skin(mesh, arm, joints, src_w, size, log)
+        ch = log.get("skin_choice") or {}
+        if kept_tears is not None:
+            ch["kept"] = kept_tears
+            if kept_tears <= min(v for k, v in ch.items() if k not in ("chosen", "kept")):
+                # the source's own rig tears least: rig it as it came (keep_source_rig loads it again)
+                ch["chosen"] = "kept"
+                log["skin_choice"] = ch
+                keep_source_rig(key, src_path, spec, h, log, export)
+                log["seconds"] = round(time.time() - t0, 1)
+                return log
+            log["skin_choice"] = ch
     rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "keep"))     # the arms as modelled (2026-10-18)
     log["rest_arms"] = rest_arms
-    log["rest_offset"] = straighten(arm, size, arms=rest_arms)
+    # AUTORIG_HUMANOID_LEGS=keep (people_classic's try when a sculpt stood mid-stride): the legs rest as modelled
+    keep_legs = os.environ.get("AUTORIG_HUMANOID_LEGS") == "keep" or h.get("rest_legs") == "keep"
+    log["rest_offset"] = straighten(arm, size, arms=rest_arms, legs=not keep_legs, turned=log)
+    if keep_legs:
+        log["rest_legs"] = "keep"
     if spec.get("twist_bones", False):
         try:
             import twist_bones

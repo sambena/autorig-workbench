@@ -1257,7 +1257,7 @@ def creature_walker(rig, style, spec=None):
                    "duty": fact_duty, "plant": plant}
 
 
-ARM_HANG_MIN, ARM_HANG_MAX = 15.6, 30.0
+ARM_HANG_MIN, ARM_HANG_MAX = 22.0, 40.0   # 15.6-30 until 2026-10-19: robes' forearms hung inside the cloth
 
 
 def arm_hang_angles(rig, arms, side_of):
@@ -1270,7 +1270,8 @@ def arm_hang_angles(rig, arms, side_of):
     cleared a jacket; a coat's skirt or a robe hung the hands inside the cloth (Heartroot's ticket taker,
     2026-10-18). Higher up, a poncho or a cape lying over the arm is the body's to the skin but goes where the arm
     goes, so it is not counted; and no arm hangs out further than ARM_HANG_MAX (a scarecrow's past that)."""
-    out = {a: ARM_HANG_MIN for a, _ in arms}
+    lo_deg, hi_deg = ARM_HANG_MIN, ARM_HANG_MAX
+    out = {a: lo_deg for a, _ in arms}
     mesh = getattr(rig, "mesh", None)
     if mesh is None or not len(mesh.data.vertices) or not mesh.vertex_groups:
         return out
@@ -1311,7 +1312,7 @@ def arm_hang_angles(rig, arms, side_of):
                     t = np.clip(((own - h0) @ d) / ll, 0, 1)
                     dist = np.minimum(dist, np.linalg.norm(own - (h0 + t[:, None] * d), axis=1))
                 r = float(np.clip(np.percentile(dist, 40), 0.01 * H, 0.05 * H))
-            for deg in np.arange(ARM_HANG_MIN, ARM_HANG_MAX + 0.01, 1.0):
+            for deg in np.arange(lo_deg, hi_deg + 0.01, 1.0):
                 th = math.radians(deg)
                 ok = True
                 for t in np.linspace(0.6, 1.0, 6):
@@ -1327,7 +1328,7 @@ def arm_hang_angles(rig, arms, side_of):
                     out[a] = float(deg)
                     break
             else:
-                out[a] = ARM_HANG_MAX
+                out[a] = hi_deg
         # both arms hang alike: a lopsided drape (a satchel, a sleeve longer one side) would otherwise give a
         # lopsided stance
         both = max(out.values())
@@ -1369,7 +1370,7 @@ def humanoid_walker(rig, style, spec=None):
 
     arms = [(r["arm.L"], r["forearm.L"]), (r["arm.R"], r["forearm.R"])]
     # arms down at the sides: out from straight down as far as each arm needs to hang clear of the body (a long coat's
-    # skirt, a robe, a broad belly), at least the old 15.6 degrees (0.28 out per 1 down)
+    # skirt, a robe, a broad belly), at least ARM_HANG_MIN (22 degrees; 15.6 before 2026-10-19)
     hang = arm_hang_angles(rig, arms, side_of)
     # each forearm turned into line with its upper arm before any clip moves the arm: an arm resting as modelled can
     # rest bent (a fitted elbow too close to the shoulder, a sculpt's relaxed elbow), and swinging only the upper arm
