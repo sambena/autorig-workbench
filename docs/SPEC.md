@@ -211,7 +211,7 @@ people in loose pieces: sleeves, hoods, boots). On Heartroot's ticket taker that
 3 and the run's from 155 to 13; `skirt` was tried as well and left off: it tore robes more in the walk (the mourner's
 run 76 to 266).
 
-Against those skeletons the measured joints are 5.6% of the height off on average, the default's 7.7%; worst and
+Against those skeletons the measured joints are 5.8% of the height off on average, the default's 7.7%; worst and
 best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
 
 ### `m2m`
