@@ -1,0 +1,1097 @@
+{
+ "Barn_Grey_Big": {
+  "route": "classic",
+  "why": "a barn: committed as M2M shark by an earlier Auto run, which is the bug, not the truth"
+ },
+ "Barn_Grey_Gambrel": {
+  "route": "classic",
+  "why": "a barn: committed as M2M shark by an earlier Auto run, which is the bug, not the truth"
+ },
+ "Barn_Red_Classic": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Red_Classic_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Red_Dairy": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Red_DriveIn_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Red_Gambrel": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Red_Gambrel_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barn_Steel_Pole": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Barricade_Road": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Boulder": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Boulder_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Bush_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Car_Sedan_Abandoned": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Car_Vintage_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Cat_Tabby_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Chicken_Hen_Tripo": {
+  "route": "m2m:bird",
+  "why": "a bird: committed M2M bird"
+ },
+ "Chicken_Rooster_Rigged_Tripo": {
+  "route": "m2m:bird",
+  "why": "a bird: committed M2M bird"
+ },
+ "Chicken_Rooster_Tripo": {
+  "route": "m2m:bird",
+  "why": "a bird: committed M2M bird"
+ },
+ "Church": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Church_Stylised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Church_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Corn_DryHarvest_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Corn_MatureGreen_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Corn_Young_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Cow_Angus_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Cow_Hereford_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Cow_Holstein": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Cow_Holstein_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Cow_Jersey_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Dog_BlackTan_Rigged_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Dog_BlackTan_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Dog_TanWhite_Rigged_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Dog_TanWhite_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Fence_Rail": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Goat_Alpine_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "HayBale_Round": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "HayBale_Round_B": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "HayBale_Round_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Horse_Bay_Rigged_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Horse_Bay_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "House_Cottage": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Cottage_Stylised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Farmhouse": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Farmhouse_Porch_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Farmhouse_Stylised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Farmhouse_TwoStory_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Gabled_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Ranch": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Ranch_Stylised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "House_Ranch_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Ice_Age16_Tripo": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "Ice_Age26_Tripo": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "Junk_Mailbox": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_Refrigerator_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_Sofa": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_TinSheet": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_Tyre": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_WashingMachine": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Junk_WashingMachine_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Laree_Age32_Tripo": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "LemonadeTable_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Leon_Age10_Tripo": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "Pig_Rigged_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Pig_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Plank": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Pole_Telegraph": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Potato_Plant_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Potato_Single_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Potato_Sprout_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Potato_Tubers_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "PropaneTank_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Pumpjack": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Pumpjack_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Rabbit_Tripo": {
+  "route": "m2m:fox",
+  "why": "carries its tail out: committed M2M fox (or its Tripo-rigged twin)"
+ },
+ "Radar_Age17_Tripo": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "Shark": {
+  "route": "m2m:shark",
+  "why": "a shark: committed M2M shark"
+ },
+ "Shark_Tripo": {
+  "route": "m2m:shark",
+  "why": "a shark: committed M2M shark"
+ },
+ "Shed_Machine_Open": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Shed_Utility_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Sheep_Rigged_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Sheep_Tripo": {
+  "route": "m2m:horse",
+  "why": "hoofed, hanging tail: committed M2M horse (or its Tripo-rigged twin)"
+ },
+ "Silo_Concrete_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Silo_Galvanised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Silo_Galvanised_B": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Silo_Galvanised_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Store_General_Candidate_A": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Store_General_Candidate_B": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Store_General_Candidate_C": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Store_General_Stylised": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Store_General_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tractor_Red": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tractor_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "TrailerPark_Sign_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Carport_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Double_Nice_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Double_Tired_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Single_Tidy_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Single_Vintage_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Single_Worn_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Single_Wrecked_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Trailer_Steps_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Dead_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Fallen": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Oak_Mature_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Oak_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Pine_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Tree_Round_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Interceptor": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Interceptor_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_OldClunky": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_OldClunky_B_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_OldClunky_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Peanut": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Peanut_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Rally_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Ranger": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Ranger_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Tank": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Tank_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Thunderhead": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Truck_Thunderhead_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Wheat_Golden_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Wheat_Green_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Windpump": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Windpump_B": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Windpump_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Wreckage_Car_Tripo": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "Wreckage_Planks": {
+  "route": "classic",
+  "why": "a prop (building, vehicle, plant, junk): no rig"
+ },
+ "_note": {
+  "route": "",
+  "why": "Routes Auto should take, from the committed rigs (2026-10-18). m2m:quad is horse or fox. cli/route_eval.py scores against it."
+ },
+ "armoured_crawler": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "armoured_guard": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "battery": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "blaster": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "bomber": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "bone_mouse": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "bose_einstein_condenser": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "candle_moth": {
+  "route": "m2m:bird",
+  "why": "a winged moth: committed Tripo winged rig",
+  "also": [
+   "classic"
+  ]
+ },
+ "castaway": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "chemical_reactor": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "cogbug": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "crawler": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/mandible rig"
+ },
+ "crossbow_sentinel": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "crusher_bot": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "crystal_formation": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "crystalline": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "crystalline_larva": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "dematerializer": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "dirt_creator": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/mandible rig"
+ },
+ "dragon": {
+  "route": "m2m:dragon",
+  "why": "a dragon: committed winged rig"
+ },
+ "drake": {
+  "route": "m2m:dragon",
+  "why": "a winged beast: committed winged rig",
+  "also": [
+   "m2m:bird"
+  ]
+ },
+ "echo": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "eel": {
+  "route": "m2m:snake",
+  "why": "an eel"
+ },
+ "exploder": {
+  "route": "m2m:quad",
+  "why": "four legs (lifted from Heartroot's quadrupeds): committed leg rig"
+ },
+ "firefly": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "floater": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "furnace": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "glass_eel": {
+  "route": "m2m:snake",
+  "why": "an eel or serpent: committed chain rig"
+ },
+ "gloomcrawler": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "glowfish": {
+  "route": "m2m:shark",
+  "why": "a fish or whale: committed chain rig"
+ },
+ "gravehound": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "ground_trooper": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "gulper": {
+  "route": "m2m:shark",
+  "why": "a fish or whale: committed chain rig"
+ },
+ "heartstone": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "helmet": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "hero": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "home_cottage": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "home_keep": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "hopper": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "hostile_light_drone": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "hostile_turret": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "hypercube": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "jelly_fish": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "juggling_imp": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "lantern": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "lantern_cat": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "lantern_squid": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "leaper": {
+  "route": "m2m:quad",
+  "why": "four legs (lifted from Heartroot's quadrupeds): committed leg rig"
+ },
+ "light_drone": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "light_orb": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "lost_digger": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "lurcher": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/mandible rig"
+ },
+ "lure": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "lurker": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "material_eater": {
+  "route": "m2m:quad",
+  "why": "four legs (lifted from Heartroot's quadrupeds): committed leg rig"
+ },
+ "milling_machine": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "mimic_chest": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "mind_feeder": {
+  "route": "classic",
+  "why": "a floating swimmer with tentacles: committed build rig",
+  "also": [
+   "m2m:shark"
+  ]
+ },
+ "mining_drone": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "mining_tool": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "mossback": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "mourner": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "music": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "nettle_hive": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "nettlefly": {
+  "route": "m2m:bird",
+  "why": "a flying insect",
+  "also": [
+   "classic"
+  ]
+ },
+ "nuclear_reactor": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "old_mossback": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "ore_pickup": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "personal_hypercube": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "photovoltaic_cell": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "pipe_and_ducting_run": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "player_blue": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "player_orange": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "point_defense_drone": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "portal": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "portal_seeker": {
+  "route": "classic",
+  "why": "a floating swimmer with tentacles: committed build rig",
+  "also": [
+   "m2m:shark"
+  ]
+ },
+ "proj_blaster": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "proj_dig_orb": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "proj_disruptor": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "proj_grenade": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "proj_homing_missile": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "proj_laser_rifle": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "quaternius": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "raft": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "rattlebones": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "ray": {
+  "route": "m2m:shark",
+  "why": "a manta ray: swims",
+  "also": [
+   "classic",
+   "m2m:bird"
+  ]
+ },
+ "reef_crab": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "reward_hypercube": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "rift_creator": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "sea_serpent": {
+  "route": "m2m:snake",
+  "why": "an eel or serpent: committed chain rig"
+ },
+ "sea_turtle": {
+  "route": "m2m:quad",
+  "why": "four flippers: committed Tripo rig",
+  "also": [
+   "m2m:shark"
+  ]
+ },
+ "sentry_turret": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "shard": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "sky_boss": {
+  "route": "m2m:dragon",
+  "why": "a winged beast: committed winged rig",
+  "also": [
+   "m2m:bird"
+  ]
+ },
+ "slime_boss": {
+  "route": "classic",
+  "why": "a blob on seven goo legs: committed build rig",
+  "also": [
+   "m2m:spider"
+  ]
+ },
+ "snap_jaw": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "snapper": {
+  "route": "m2m:shark",
+  "why": "a fish or whale: committed chain rig"
+ },
+ "spark_hound": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "spitter": {
+  "route": "classic",
+  "why": "a floater, drone, turret or blob: committed build rig, no template fits"
+ },
+ "sprout": {
+  "route": "m2m:quad",
+  "why": "four legs (lifted from Heartroot's quadrupeds): committed leg rig"
+ },
+ "squire": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "squire_pup": {
+  "route": "m2m:quad",
+  "why": "four legs: committed Tripo quadruped rig"
+ },
+ "stalactite_and_rock_cluster": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "sting_jelly": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "stoker": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "suit_shell": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "support_beam_and_scaffold": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "surfrunner": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "survivor": {
+  "route": "people",
+  "why": "a humanoid mesh (lifted from Heartroot's people): committed humanoid or Mixamo rig"
+ },
+ "sweeper_drone": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "test_person": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "test_squire": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "test_tickettaker": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "the_ghost": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_greatwhale": {
+  "route": "m2m:shark",
+  "why": "a fish or whale: committed chain rig"
+ },
+ "the_hermit": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "the_human": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_knight": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_megalodon": {
+  "route": "m2m:shark",
+  "why": "a fish or whale: committed chain rig"
+ },
+ "the_robot": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_skeleton": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_trickster": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "the_warden": {
+  "route": "m2m:quad",
+  "why": "horned beast on legs: committed Tripo leg rig",
+  "also": [
+   "people"
+  ]
+ },
+ "thornmother": {
+  "route": "m2m:spider",
+  "why": "many legs: committed hexapod/crab/spider rig"
+ },
+ "ticket_taker": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "torch": {
+  "route": "classic",
+  "why": "a prop: no rig"
+ },
+ "treasure_chest": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "tripo_convert_490e492f-7e74-4d13-a3f1-5887a8e4c828": {
+  "route": "people",
+  "why": "a person: committed humanoid rig"
+ },
+ "vent_and_steam_outlet": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "voltray": {
+  "route": "m2m:quad",
+  "why": "four legs (lifted from Heartroot's quadrupeds): committed leg rig"
+ },
+ "wailer": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "wanderer": {
+  "route": "people",
+  "why": "a person or humanoid: committed humanoid or Mixamo rig"
+ },
+ "will_o_wisp": {
+  "route": "classic",
+  "why": "a floater, jelly, wisp, drone or object with moving parts: committed build rig, no template fits"
+ },
+ "workbench": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "world_hypercube": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ },
+ "wrecked_machinery_hulk": {
+  "route": "classic",
+  "why": "a prop or machine: no rig"
+ }
+}

@@ -1,0 +1,224 @@
+{
+ "model": "voltray",
+ "group": "Smeltdown",
+ "source": "Voltray.fbx",
+ "height": 0.0,
+ "top": 0.5059,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7756,
+ "source_data": {
+  "size": [
+   0.498046875,
+   0.9980652332305908,
+   0.505859375
+  ],
+  "lo": [
+   -0.2490234375,
+   -0.4990326166152954,
+   0.0
+  ],
+  "hi": [
+   0.2490234375,
+   0.4990326166152954,
+   0.505859375
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.51,
+   0.06,
+   0.51
+  ],
+  [
+   0.51,
+   1.0,
+   0.58
+  ],
+  [
+   0.96,
+   0.21,
+   0.01
+  ],
+  [
+   0.15,
+   0.19,
+   0.01
+  ],
+  [
+   0.58,
+   0.48,
+   0.98
+  ],
+  [
+   0.11,
+   0.62,
+   0.01
+  ],
+  [
+   0.9,
+   0.62,
+   0.02
+  ],
+  [
+   0.5,
+   0.5,
+   0.16
+  ],
+  [
+   0.17,
+   0.69,
+   0.74
+  ],
+  [
+   0.15,
+   0.32,
+   0.63
+  ],
+  [
+   0.86,
+   0.32,
+   0.58
+  ],
+  [
+   0.98,
+   0.61,
+   0.51
+  ],
+  [
+   0.74,
+   0.8,
+   0.78
+  ],
+  [
+   0.45,
+   0.77,
+   0.31
+  ],
+  [
+   0.09,
+   0.55,
+   0.52
+  ],
+  [
+   0.6,
+   0.66,
+   0.99
+  ],
+  [
+   0.49,
+   0.23,
+   0.28
+  ],
+  [
+   0.5,
+   0.22,
+   0.81
+  ]
+ ],
+ "proportions": [
+  0.498046875,
+  0.9980652332305908,
+  0.505859375
+ ],
+ "plan": {
+  "size": [
+   0.498,
+   0.9981,
+   0.5059
+  ],
+  "height": 0.507,
+  "stand": 0.507,
+  "length": 2.004,
+  "parts": {
+   "count": 1,
+   "pieces": 140,
+   "largest": 0.837
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.927
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.152,
+   "largest": 0.274
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.04,
+    "thin": 0.24,
+    "broad": 0.417,
+    "outward": 0.989,
+    "high": 0.436,
+    "reach": 0.236,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.039,
+    "thin": 0.247,
+    "broad": 0.399,
+    "outward": 0.992,
+    "high": 0.431,
+    "reach": 0.237,
+    "sheet": false
+   },
+   "torso": 0.113
+  },
+  "flat": {
+   "share": 0.048,
+   "level": 0.022
+  },
+  "belly": {
+   "clear": 0.183,
+   "min": 0.154
+  },
+  "rest": {
+   "upright": 0.223,
+   "best": 0.35,
+   "poses": 6
+  }
+ },
+ "measures": {
+  "ground": 0.253,
+  "slender": 1.973,
+  "stand": 0.507,
+  "tail": 0.544,
+  "tail_reach": 0.647
+ },
+ "rigged": {
+  "file": "voltray.blend",
+  "bones": [
+   "root",
+   "body",
+   "head",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L"
+  ]
+ },
+ "seconds": 0.8
+}

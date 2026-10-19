@@ -1,0 +1,252 @@
+{
+ "model": "Chicken_Hen_Tripo",
+ "group": "TornadoTitans",
+ "source": "Chicken_Hen_Tripo.glb",
+ "height": 0.0,
+ "top": 0.9207,
+ "facing": "+x",
+ "had_rig": false,
+ "vertices": 7515,
+ "source_data": {
+  "size": [
+   0.5393373370170593,
+   0.9950103759765625,
+   0.9206939339637756
+  ],
+  "lo": [
+   -0.26966866850852966,
+   -0.49750518798828125,
+   0.0
+  ],
+  "hi": [
+   0.26966866850852966,
+   0.49750518798828125,
+   0.9206939339637756
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.27,
+   0.32,
+   0.01
+  ],
+  [
+   0.59,
+   0.96,
+   0.96
+  ],
+  [
+   0.49,
+   0.0,
+   0.84
+  ],
+  [
+   0.95,
+   0.51,
+   0.37
+  ],
+  [
+   0.05,
+   0.54,
+   0.52
+  ],
+  [
+   0.42,
+   0.13,
+   0.39
+  ],
+  [
+   0.73,
+   0.32,
+   0.0
+  ],
+  [
+   0.44,
+   0.77,
+   0.28
+  ],
+  [
+   0.68,
+   0.4,
+   0.71
+  ],
+  [
+   0.31,
+   0.88,
+   0.63
+  ],
+  [
+   0.8,
+   0.75,
+   0.67
+  ],
+  [
+   0.55,
+   0.44,
+   0.23
+  ],
+  [
+   0.2,
+   0.23,
+   0.67
+  ],
+  [
+   0.08,
+   0.51,
+   0.24
+  ],
+  [
+   0.87,
+   0.22,
+   0.51
+  ],
+  [
+   0.37,
+   0.65,
+   0.74
+  ],
+  [
+   0.5,
+   0.24,
+   0.93
+  ],
+  [
+   0.52,
+   0.08,
+   0.64
+  ]
+ ],
+ "proportions": [
+  0.5393373370170593,
+  0.9950103759765625,
+  0.9206939339637756
+ ],
+ "plan": {
+  "size": [
+   0.5393,
+   0.995,
+   0.9207
+  ],
+  "height": 0.925,
+  "stand": 0.925,
+  "length": 1.845,
+  "parts": {
+   "count": 1,
+   "pieces": 3,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.77
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.07,
+   "largest": 0.534
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.026,
+    "thin": 0.15,
+    "broad": 0.585,
+    "outward": 0.999,
+    "high": 0.484,
+    "reach": 0.27,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.028,
+    "thin": 0.156,
+    "broad": 0.565,
+    "outward": 0.999,
+    "high": 0.477,
+    "reach": 0.271,
+    "sheet": false
+   },
+   "torso": 0.148
+  },
+  "flat": {
+   "share": 0.033,
+   "level": 0.011
+  },
+  "belly": {
+   "clear": 0.191,
+   "min": 0.004
+  },
+  "rest": {
+   "upright": 0.021,
+   "best": 0.227,
+   "poses": 20
+  }
+ },
+ "measures": {
+  "ground": 0.12,
+  "slender": 1.081,
+  "stand": 0.925,
+  "tail": 0.257,
+  "tail_reach": 5.955
+ },
+ "rigged": {
+  "file": "Farm_Hen.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_0",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "head",
+   "mouth_upper",
+   "mouth_upper_tip",
+   "mouth_lower",
+   "mouth_lower_tip",
+   "wing_1_L",
+   "wing_2_L",
+   "wing_feather_1_1_L",
+   "wing_feather_1_2_L",
+   "wing_3_L",
+   "wing_4_L",
+   "wing_5_L",
+   "wing_tip_L",
+   "wing_feather_4_1_L",
+   "wing_feather_4_2_L",
+   "wing_feather_3_1_L",
+   "wing_feather_3_2_L",
+   "wing_feather_2_1_L",
+   "wing_feather_2_2_L",
+   "wing_1_R",
+   "wing_2_R",
+   "wing_feather_1_1_R",
+   "wing_feather_1_2_R",
+   "wing_3_R",
+   "wing_4_R",
+   "wing_5_R",
+   "wing_tip_R",
+   "wing_feather_4_1_R",
+   "wing_feather_4_2_R",
+   "wing_feather_3_1_R",
+   "wing_feather_3_2_R",
+   "wing_feather_2_1_R",
+   "wing_feather_2_2_R",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_tip",
+   "UpperLeg_L",
+   "LowerLeg_L",
+   "AnkleLeg_L",
+   "Foot_L",
+   "Toes_L",
+   "Toes_tip_L",
+   "UpperLeg_R",
+   "LowerLeg_R",
+   "AnkleLeg_R",
+   "Foot_R",
+   "Toes_R",
+   "Toes_tip_R"
+  ]
+ },
+ "seconds": 2.0
+}

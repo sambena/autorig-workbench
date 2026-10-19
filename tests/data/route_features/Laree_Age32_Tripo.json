@@ -1,0 +1,226 @@
+{
+ "model": "Laree_Age32_Tripo",
+ "group": "TornadoTitans",
+ "source": "Laree_Age32_Tripo.glb",
+ "height": 0.0,
+ "top": 97.8893,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7495,
+ "source_data": {
+  "size": [
+   70.86454772949219,
+   19.641597747802734,
+   97.88928985595703
+  ],
+  "lo": [
+   -35.432273864746094,
+   -9.820798873901367,
+   0.0
+  ],
+  "hi": [
+   35.432273864746094,
+   9.820798873901367,
+   97.88928985595703
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.0,
+   0.27,
+   0.46
+  ],
+  [
+   0.63,
+   0.06,
+   0.0
+  ],
+  [
+   1.0,
+   0.3,
+   0.46
+  ],
+  [
+   0.35,
+   0.14,
+   0.0
+  ],
+  [
+   0.5,
+   0.48,
+   1.0
+  ],
+  [
+   0.44,
+   0.15,
+   0.53
+  ],
+  [
+   0.7,
+   0.74,
+   0.72
+  ],
+  [
+   0.27,
+   0.72,
+   0.73
+  ],
+  [
+   0.64,
+   0.68,
+   0.3
+  ],
+  [
+   0.39,
+   0.79,
+   0.27
+  ],
+  [
+   0.48,
+   0.16,
+   0.76
+  ],
+  [
+   0.51,
+   0.92,
+   0.53
+  ],
+  [
+   0.48,
+   0.98,
+   0.82
+  ],
+  [
+   0.6,
+   0.43,
+   0.16
+  ],
+  [
+   0.63,
+   0.32,
+   0.58
+  ],
+  [
+   0.85,
+   0.35,
+   0.61
+  ],
+  [
+   0.17,
+   0.38,
+   0.59
+  ],
+  [
+   0.42,
+   0.23,
+   0.36
+  ]
+ ],
+ "proportions": [
+  70.86454772949219,
+  19.641597747802734,
+  97.88928985595703
+ ],
+ "plan": {
+  "size": [
+   70.8645,
+   19.6416,
+   97.8893
+  ],
+  "height": 1.381,
+  "stand": 4.984,
+  "length": 0.277,
+  "parts": {
+   "count": 1,
+   "pieces": 2,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.956
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.138,
+   "largest": 0.5
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.074,
+    "thin": 0.884,
+    "broad": 0.205,
+    "outward": 0.762,
+    "high": 0.612,
+    "reach": 0.361,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.077,
+    "thin": 0.874,
+    "broad": 0.203,
+    "outward": 0.779,
+    "high": 0.607,
+    "reach": 0.361,
+    "sheet": false
+   },
+   "torso": 0.13
+  },
+  "flat": {
+   "share": 0.066,
+   "level": 0.009
+  },
+  "belly": {
+   "clear": 0.002,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.008,
+   "best": 0.54,
+   "poses": 5
+  }
+ },
+ "measures": {
+  "ground": 0.263,
+  "slender": 0.201,
+  "stand": 4.984,
+  "tail": 0.0,
+  "tail_reach": 1.531
+ },
+ "rigged": {
+  "file": "Laree_Age32_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 3.2
+}

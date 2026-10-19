@@ -1,0 +1,262 @@
+{
+ "model": "survivor",
+ "group": "Smeltdown",
+ "source": "tripo_convert_53d69cd6-c7a4-4129-a5a8-91c844a19568.fbx",
+ "height": 0.0,
+ "top": 0.998,
+ "facing": "-y",
+ "had_rig": true,
+ "vertices": 7232,
+ "source_data": {
+  "size": [
+   0.9980467557907104,
+   0.3066405653953552,
+   0.9980469942092896
+  ],
+  "lo": [
+   -0.49902328848838806,
+   -0.15332022309303284,
+   -1.1636187480235094e-07
+  ],
+  "hi": [
+   0.4990234375,
+   0.1533203274011612,
+   0.998046875
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.65,
+   0.12,
+   0.01
+  ],
+  [
+   0.01,
+   0.39,
+   0.71
+  ],
+  [
+   1.0,
+   0.45,
+   0.69
+  ],
+  [
+   0.38,
+   0.79,
+   0.65
+  ],
+  [
+   0.51,
+   0.44,
+   1.0
+  ],
+  [
+   0.33,
+   0.21,
+   0.01
+  ],
+  [
+   0.5,
+   0.82,
+   0.33
+  ],
+  [
+   0.55,
+   0.08,
+   0.55
+  ],
+  [
+   0.52,
+   0.62,
+   0.36
+  ],
+  [
+   0.49,
+   0.04,
+   0.23
+  ],
+  [
+   0.35,
+   0.69,
+   0.65
+  ],
+  [
+   0.68,
+   0.54,
+   0.6
+  ],
+  [
+   0.39,
+   0.27,
+   0.7
+  ],
+  [
+   0.5,
+   0.41,
+   0.84
+  ],
+  [
+   0.5,
+   0.41,
+   0.35
+  ],
+  [
+   0.39,
+   0.23,
+   0.44
+  ],
+  [
+   0.43,
+   0.13,
+   0.71
+  ],
+  [
+   0.61,
+   0.2,
+   0.4
+  ]
+ ],
+ "proportions": [
+  0.9980467557907104,
+  0.3066405653953552,
+  0.9980469942092896
+ ],
+ "plan": {
+  "size": [
+   0.998,
+   0.3066,
+   0.998
+  ],
+  "height": 1.0,
+  "stand": 3.255,
+  "length": 0.307,
+  "parts": {
+   "count": 7,
+   "pieces": 75,
+   "largest": 0.479
+  },
+  "mirror": {
+   "x": 0.984,
+   "y": 0.913
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.092,
+   "largest": 0.52
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.073,
+    "thin": 0.922,
+    "broad": 0.452,
+    "outward": 0.071,
+    "high": 0.681,
+    "reach": 0.497,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.082,
+    "thin": 0.936,
+    "broad": 0.451,
+    "outward": 0.001,
+    "high": 0.681,
+    "reach": 0.498,
+    "sheet": false
+   },
+   "torso": 0.112
+  },
+  "flat": {
+   "share": 0.079,
+   "level": 0.026
+  },
+  "belly": {
+   "clear": 0.005,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.001,
+   "best": 0.531,
+   "poses": 5
+  }
+ },
+ "measures": {
+  "ground": 0.191,
+  "slender": 0.307,
+  "stand": 3.255,
+  "tail": 0.0,
+  "tail_reach": 1.985
+ },
+ "rigged": {
+  "file": "survivor.blend",
+  "bones": [
+   "mixamorig:Hips",
+   "mixamorig:LeftUpLeg",
+   "mixamorig:LeftLeg",
+   "mixamorig:LeftFoot",
+   "mixamorig:LeftToeBase",
+   "mixamorig:LeftToe_End",
+   "mixamorig:Spine",
+   "mixamorig:Spine1",
+   "mixamorig:Spine2",
+   "mixamorig:LeftShoulder",
+   "mixamorig:LeftArm",
+   "mixamorig:LeftForeArm",
+   "mixamorig:LeftHand",
+   "mixamorig:LeftHandIndex1",
+   "mixamorig:LeftHandIndex2",
+   "mixamorig:LeftHandIndex3",
+   "mixamorig:LeftHandIndex4",
+   "mixamorig:LeftHandMiddle1",
+   "mixamorig:LeftHandMiddle2",
+   "mixamorig:LeftHandMiddle3",
+   "mixamorig:LeftHandMiddle4",
+   "mixamorig:LeftHandPinky1",
+   "mixamorig:LeftHandPinky2",
+   "mixamorig:LeftHandPinky3",
+   "mixamorig:LeftHandPinky4",
+   "mixamorig:LeftHandRing1",
+   "mixamorig:LeftHandRing2",
+   "mixamorig:LeftHandRing3",
+   "mixamorig:LeftHandRing4",
+   "mixamorig:LeftHandThumb1",
+   "mixamorig:LeftHandThumb2",
+   "mixamorig:LeftHandThumb3",
+   "mixamorig:LeftHandThumb4",
+   "mixamorig:Neck",
+   "mixamorig:Head",
+   "mixamorig:HeadTop_End",
+   "mixamorig:RightShoulder",
+   "mixamorig:RightArm",
+   "mixamorig:RightForeArm",
+   "mixamorig:RightHand",
+   "mixamorig:RightHandIndex1",
+   "mixamorig:RightHandIndex2",
+   "mixamorig:RightHandIndex3",
+   "mixamorig:RightHandIndex4",
+   "mixamorig:RightHandMiddle1",
+   "mixamorig:RightHandMiddle2",
+   "mixamorig:RightHandMiddle3",
+   "mixamorig:RightHandMiddle4",
+   "mixamorig:RightHandPinky1",
+   "mixamorig:RightHandPinky2",
+   "mixamorig:RightHandPinky3",
+   "mixamorig:RightHandPinky4",
+   "mixamorig:RightHandRing1",
+   "mixamorig:RightHandRing2",
+   "mixamorig:RightHandRing3",
+   "mixamorig:RightHandRing4",
+   "mixamorig:RightHandThumb1",
+   "mixamorig:RightHandThumb2",
+   "mixamorig:RightHandThumb3",
+   "mixamorig:RightHandThumb4",
+   "mixamorig:RightUpLeg",
+   "mixamorig:RightLeg",
+   "mixamorig:RightFoot",
+   "mixamorig:RightToeBase",
+   "mixamorig:RightToe_End"
+  ]
+ },
+ "seconds": 1.3
+}

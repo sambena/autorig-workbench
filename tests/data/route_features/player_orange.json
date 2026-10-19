@@ -1,0 +1,263 @@
+{
+ "model": "player_orange",
+ "group": "Smeltdown",
+ "source": "Player+Orange.fbx",
+ "height": 0.0,
+ "top": 0.998,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7533,
+ "source_data": {
+  "size": [
+   0.9200114011764526,
+   0.3066406846046448,
+   0.998046875
+  ],
+  "lo": [
+   -0.4600057005882263,
+   -0.1533203423023224,
+   0.0
+  ],
+  "hi": [
+   0.4600057005882263,
+   0.1533203423023224,
+   0.998046875
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.69,
+   0.01,
+   0.01
+  ],
+  [
+   0.0,
+   0.13,
+   0.79
+  ],
+  [
+   0.27,
+   0.28,
+   0.0
+  ],
+  [
+   1.0,
+   0.23,
+   0.78
+  ],
+  [
+   0.48,
+   0.47,
+   0.99
+  ],
+  [
+   0.34,
+   0.59,
+   0.51
+  ],
+  [
+   0.57,
+   0.97,
+   0.69
+  ],
+  [
+   0.63,
+   0.21,
+   0.33
+  ],
+  [
+   0.59,
+   0.27,
+   0.71
+  ],
+  [
+   0.42,
+   0.46,
+   0.24
+  ],
+  [
+   0.29,
+   0.57,
+   0.83
+  ],
+  [
+   0.75,
+   0.88,
+   0.78
+  ],
+  [
+   0.61,
+   0.59,
+   0.13
+  ],
+  [
+   0.45,
+   0.82,
+   0.85
+  ],
+  [
+   0.58,
+   0.63,
+   0.55
+  ],
+  [
+   0.52,
+   0.55,
+   0.85
+  ],
+  [
+   0.46,
+   0.13,
+   0.57
+  ],
+  [
+   0.56,
+   0.9,
+   0.84
+  ]
+ ],
+ "proportions": [
+  0.9200114011764526,
+  0.3066406846046448,
+  0.998046875
+ ],
+ "plan": {
+  "size": [
+   0.92,
+   0.3066,
+   0.998
+  ],
+  "height": 1.085,
+  "stand": 3.255,
+  "length": 0.333,
+  "parts": {
+   "count": 3,
+   "pieces": 121,
+   "largest": 0.736
+  },
+  "mirror": {
+   "x": 0.899,
+   "y": 0.76
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.124,
+   "largest": 0.521
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.066,
+    "thin": 0.82,
+    "broad": 0.311,
+    "outward": 0.117,
+    "high": 0.778,
+    "reach": 0.46,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.074,
+    "thin": 0.328,
+    "broad": 0.661,
+    "outward": 0.546,
+    "high": 0.747,
+    "reach": 0.46,
+    "sheet": true
+   },
+   "torso": 0.086
+  },
+  "flat": {
+   "share": 0.129,
+   "level": 0.039
+  },
+  "belly": {
+   "clear": 0.0,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.014,
+   "best": 0.406,
+   "poses": 7
+  }
+ },
+ "measures": {
+  "ground": 0.187,
+  "slender": 0.307,
+  "stand": 3.255,
+  "tail": 0.0,
+  "tail_reach": 1.084
+ },
+ "rigged": {
+  "file": "player_orange.blend",
+  "bones": [
+   "root",
+   "pelvis",
+   "spine_01",
+   "spine_02",
+   "spine_03",
+   "neck_01",
+   "head",
+   "head_leaf",
+   "clavicle_l",
+   "upperarm_l",
+   "lowerarm_l",
+   "hand_l",
+   "index_01_l",
+   "index_02_l",
+   "index_03_l",
+   "index_04_leaf_l",
+   "middle_01_l",
+   "middle_02_l",
+   "middle_03_l",
+   "middle_04_leaf_l",
+   "pinky_01_l",
+   "pinky_02_l",
+   "pinky_03_l",
+   "pinky_04_leaf_l",
+   "ring_01_l",
+   "ring_02_l",
+   "ring_03_l",
+   "ring_04_leaf_l",
+   "thumb_01_l",
+   "thumb_02_l",
+   "thumb_03_l",
+   "thumb_04_leaf_l",
+   "clavicle_r",
+   "upperarm_r",
+   "lowerarm_r",
+   "hand_r",
+   "index_01_r",
+   "index_02_r",
+   "index_03_r",
+   "index_04_leaf_r",
+   "middle_01_r",
+   "middle_02_r",
+   "middle_03_r",
+   "middle_04_leaf_r",
+   "pinky_01_r",
+   "pinky_02_r",
+   "pinky_03_r",
+   "pinky_04_leaf_r",
+   "ring_01_r",
+   "ring_02_r",
+   "ring_03_r",
+   "ring_04_leaf_r",
+   "thumb_01_r",
+   "thumb_02_r",
+   "thumb_03_r",
+   "thumb_04_leaf_r",
+   "thigh_l",
+   "calf_l",
+   "foot_l",
+   "ball_l",
+   "ball_leaf_l",
+   "thigh_r",
+   "calf_r",
+   "foot_r",
+   "ball_r",
+   "ball_leaf_r"
+  ]
+ },
+ "seconds": 0.8
+}

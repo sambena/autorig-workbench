@@ -1,0 +1,248 @@
+{
+ "model": "Cow_Jersey_Tripo",
+ "group": "TornadoTitans",
+ "source": "Cow_Jersey_Tripo.glb",
+ "height": 0.0,
+ "top": 0.653,
+ "facing": "+y",
+ "had_rig": true,
+ "vertices": 7502,
+ "source_data": {
+  "size": [
+   0.3661206364631653,
+   0.9987397193908691,
+   0.6529885530471802
+  ],
+  "lo": [
+   -0.18306031823158264,
+   -0.49936985969543457,
+   0.0
+  ],
+  "hi": [
+   0.18306031823158264,
+   0.49936985969543457,
+   0.6529885530471802
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.52,
+   0.01,
+   0.25
+  ],
+  [
+   0.22,
+   1.0,
+   0.61
+  ],
+  [
+   0.83,
+   0.21,
+   0.0
+  ],
+  [
+   0.27,
+   0.13,
+   0.0
+  ],
+  [
+   0.56,
+   0.38,
+   0.97
+  ],
+  [
+   0.73,
+   0.66,
+   0.0
+  ],
+  [
+   0.33,
+   0.67,
+   0.0
+  ],
+  [
+   0.53,
+   0.4,
+   0.41
+  ],
+  [
+   0.62,
+   0.1,
+   0.7
+  ],
+  [
+   0.89,
+   0.71,
+   0.65
+  ],
+  [
+   0.17,
+   0.69,
+   0.68
+  ],
+  [
+   0.73,
+   0.97,
+   0.97
+  ],
+  [
+   0.06,
+   0.83,
+   0.99
+  ],
+  [
+   0.13,
+   0.24,
+   0.71
+  ],
+  [
+   0.56,
+   0.04,
+   0.73
+  ],
+  [
+   1.0,
+   0.41,
+   0.69
+  ],
+  [
+   0.84,
+   0.2,
+   0.39
+  ],
+  [
+   0.4,
+   0.62,
+   0.36
+  ]
+ ],
+ "proportions": [
+  0.3661206364631653,
+  0.9987397193908691,
+  0.6529885530471802
+ ],
+ "plan": {
+  "size": [
+   0.3661,
+   0.9987,
+   0.653
+  ],
+  "height": 0.654,
+  "stand": 0.654,
+  "length": 2.728,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.91,
+   "y": 0.696
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.063,
+   "largest": 0.274
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.003,
+    "thin": 0.062,
+    "broad": 0.819,
+    "outward": 1.0,
+    "high": 0.667,
+    "reach": 0.183,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.091
+  },
+  "flat": {
+   "share": 0.061,
+   "level": 0.02
+  },
+  "belly": {
+   "clear": 0.404,
+   "min": 0.001
+  },
+  "rest": {
+   "upright": 0.037,
+   "best": 0.278,
+   "poses": 10
+  }
+ },
+ "measures": {
+  "ground": 0.116,
+  "slender": 1.529,
+  "stand": 0.654,
+  "tail": 0.364,
+  "tail_reach": 0.408
+ },
+ "rigged": {
+  "file": "CowJersey.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 2.1
+}

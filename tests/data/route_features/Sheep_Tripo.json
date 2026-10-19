@@ -1,0 +1,243 @@
+{
+ "model": "Sheep_Tripo",
+ "group": "TornadoTitans",
+ "source": "Sheep_Tripo.glb",
+ "height": 0.0,
+ "top": 0.7775,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7505,
+ "source_data": {
+  "size": [
+   0.44642186164855957,
+   0.9995899200439453,
+   0.7775327563285828
+  ],
+  "lo": [
+   -0.22321093082427979,
+   -0.49979496002197266,
+   0.0
+  ],
+  "hi": [
+   0.22321093082427979,
+   0.49979496002197266,
+   0.7775327563285828
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.4,
+   0.95,
+   0.84
+  ],
+  [
+   0.72,
+   0.11,
+   0.0
+  ],
+  [
+   0.65,
+   0.66,
+   0.0
+  ],
+  [
+   0.14,
+   0.21,
+   0.75
+  ],
+  [
+   0.27,
+   0.69,
+   0.0
+  ],
+  [
+   0.24,
+   0.11,
+   0.0
+  ],
+  [
+   0.96,
+   0.39,
+   0.48
+  ],
+  [
+   0.1,
+   0.62,
+   0.56
+  ],
+  [
+   0.8,
+   0.77,
+   0.48
+  ],
+  [
+   0.67,
+   0.05,
+   0.48
+  ],
+  [
+   0.61,
+   0.51,
+   0.8
+  ],
+  [
+   0.29,
+   0.33,
+   0.36
+  ],
+  [
+   0.82,
+   0.2,
+   0.77
+  ],
+  [
+   0.9,
+   0.87,
+   0.92
+  ],
+  [
+   0.15,
+   0.1,
+   0.39
+  ],
+  [
+   0.65,
+   0.57,
+   0.35
+  ],
+  [
+   0.42,
+   0.74,
+   0.92
+  ],
+  [
+   0.5,
+   0.01,
+   0.53
+  ]
+ ],
+ "proportions": [
+  0.44642186164855957,
+  0.9995899200439453,
+  0.7775327563285828
+ ],
+ "plan": {
+  "size": [
+   0.4464,
+   0.9996,
+   0.7775
+  ],
+  "height": 0.778,
+  "stand": 0.778,
+  "length": 2.239,
+  "parts": {
+   "count": 1,
+   "pieces": 2,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.999,
+   "y": 0.614
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.066,
+   "largest": 0.275
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.146
+  },
+  "flat": {
+   "share": 0.057,
+   "level": 0.021
+  },
+  "belly": {
+   "clear": 0.316,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.051,
+   "best": 0.178,
+   "poses": 16
+  }
+ },
+ "measures": {
+  "ground": 0.094,
+  "slender": 1.286,
+  "stand": 0.778,
+  "tail": 0.292,
+  "tail_reach": 0.199
+ },
+ "rigged": {
+  "file": "Sheep_Tripo.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 1.8
+}

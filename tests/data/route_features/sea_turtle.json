@@ -1,0 +1,220 @@
+{
+ "model": "sea_turtle",
+ "group": "Heartroot",
+ "source": "tripo_convert_c8771cb8-0e09-46aa-afda-f181ee579579.fbx",
+ "height": 0.0,
+ "top": 0.5488,
+ "facing": "-y",
+ "had_rig": true,
+ "vertices": 4056,
+ "source_data": {
+  "size": [
+   0.7753908634185791,
+   0.9980467557907104,
+   0.5488281846046448
+  ],
+  "lo": [
+   -0.3876954913139343,
+   -0.4990234375,
+   -4.948103793367409e-08
+  ],
+  "hi": [
+   0.3876953423023224,
+   0.49902331829071045,
+   0.548828125
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.53,
+   1.0,
+   0.22
+  ],
+  [
+   0.51,
+   0.02,
+   0.98
+  ],
+  [
+   0.98,
+   0.41,
+   0.01
+  ],
+  [
+   0.0,
+   0.39,
+   0.02
+  ],
+  [
+   0.21,
+   0.56,
+   0.74
+  ],
+  [
+   0.82,
+   0.54,
+   0.51
+  ],
+  [
+   0.18,
+   0.85,
+   0.04
+  ],
+  [
+   0.73,
+   0.88,
+   0.08
+  ],
+  [
+   0.35,
+   0.31,
+   0.38
+  ],
+  [
+   0.52,
+   0.81,
+   0.7
+  ],
+  [
+   0.83,
+   0.17,
+   0.53
+  ],
+  [
+   0.55,
+   0.33,
+   0.96
+  ],
+  [
+   0.46,
+   0.64,
+   0.26
+  ],
+  [
+   0.2,
+   0.78,
+   0.48
+  ],
+  [
+   0.17,
+   0.17,
+   0.43
+  ],
+  [
+   0.21,
+   0.31,
+   0.69
+  ],
+  [
+   0.58,
+   0.18,
+   0.62
+  ],
+  [
+   0.48,
+   0.6,
+   0.91
+  ]
+ ],
+ "proportions": [
+  0.7753908634185791,
+  0.9980467557907104,
+  0.5488281846046448
+ ],
+ "plan": {
+  "size": [
+   0.7754,
+   0.998,
+   0.5488
+  ],
+  "height": 0.55,
+  "stand": 0.55,
+  "length": 1.287,
+  "parts": {
+   "count": 1,
+   "pieces": 28,
+   "largest": 0.965
+  },
+  "mirror": {
+   "x": 0.924,
+   "y": 0.584
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.021,
+   "largest": 0.44
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.018,
+    "thin": 0.474,
+    "broad": 0.733,
+    "outward": 0.897,
+    "high": 0.399,
+    "reach": 0.362,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.009,
+    "thin": 0.326,
+    "broad": 0.172,
+    "outward": 0.929,
+    "high": 0.389,
+    "reach": 0.319,
+    "sheet": false
+   },
+   "torso": 0.175
+  },
+  "flat": {
+   "share": 0.029,
+   "level": 0.019
+  },
+  "belly": {
+   "clear": 0.262,
+   "min": 0.133
+  },
+  "rest": {
+   "upright": 0.245,
+   "best": 0.245,
+   "poses": 17
+  }
+ },
+ "measures": {
+  "ground": 0.051,
+  "slender": 1.287,
+  "stand": 0.55,
+  "tail": 0.551,
+  "tail_reach": 0.446
+ },
+ "rigged": {
+  "file": "sea_turtle.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "neck",
+   "head",
+   "flipper_front_1.L",
+   "flipper_front_2.L",
+   "flipper_front_3.L",
+   "flipper_front_4.L",
+   "flipper_front_1.R",
+   "flipper_front_2.R",
+   "flipper_front_3.R",
+   "flipper_front_4.R",
+   "flipper_hind_1.L",
+   "flipper_hind_2.L",
+   "flipper_hind_3.L",
+   "flipper_hind_4.L",
+   "flipper_hind_1.R",
+   "flipper_hind_2.R",
+   "flipper_hind_3.R",
+   "flipper_hind_4.R"
+  ]
+ },
+ "seconds": 1.1
+}

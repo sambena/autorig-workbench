@@ -1,0 +1,226 @@
+{
+ "model": "test_person",
+ "group": "Tests",
+ "source": "Test_Person.glb",
+ "height": 0.0,
+ "top": 99.8047,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7281,
+ "source_data": {
+  "size": [
+   87.69525909423828,
+   32.226531982421875,
+   99.80474090576172
+  ],
+  "lo": [
+   -43.84762954711914,
+   -16.113265991210938,
+   0.0
+  ],
+  "hi": [
+   43.84762954711914,
+   16.113265991210938,
+   99.80474090576172
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.53,
+   0.92,
+   0.41
+  ],
+  [
+   0.41,
+   0.01,
+   0.0
+  ],
+  [
+   0.24,
+   0.17,
+   0.38
+  ],
+  [
+   0.6,
+   0.02,
+   0.01
+  ],
+  [
+   0.78,
+   0.2,
+   0.56
+  ],
+  [
+   0.37,
+   0.24,
+   0.53
+  ],
+  [
+   0.48,
+   0.45,
+   0.99
+  ],
+  [
+   0.0,
+   0.41,
+   0.77
+  ],
+  [
+   0.53,
+   0.73,
+   0.61
+  ],
+  [
+   1.0,
+   0.45,
+   0.78
+  ],
+  [
+   0.54,
+   0.42,
+   0.3
+  ],
+  [
+   0.24,
+   0.62,
+   0.37
+  ],
+  [
+   0.65,
+   0.64,
+   0.73
+  ],
+  [
+   0.5,
+   0.14,
+   0.74
+  ],
+  [
+   0.31,
+   0.68,
+   0.68
+  ],
+  [
+   0.43,
+   0.48,
+   0.23
+  ],
+  [
+   0.52,
+   0.12,
+   0.45
+  ],
+  [
+   0.18,
+   0.27,
+   0.65
+  ]
+ ],
+ "proportions": [
+  87.69525909423828,
+  32.226531982421875,
+  99.80474090576172
+ ],
+ "plan": {
+  "size": [
+   87.6953,
+   32.2265,
+   99.8047
+  ],
+  "height": 1.138,
+  "stand": 3.097,
+  "length": 0.367,
+  "parts": {
+   "count": 1,
+   "pieces": 16,
+   "largest": 0.986
+  },
+  "mirror": {
+   "x": 0.952,
+   "y": 0.684
+  },
+  "feet": {
+   "count": 1,
+   "fill": 0.073,
+   "largest": 1.0
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.123,
+    "thin": 0.949,
+    "broad": 0.455,
+    "outward": 0.547,
+    "high": 0.686,
+    "reach": 0.435,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.153,
+    "thin": 0.856,
+    "broad": 0.465,
+    "outward": 0.957,
+    "high": 0.652,
+    "reach": 0.439,
+    "sheet": false
+   },
+   "torso": 0.121
+  },
+  "flat": {
+   "share": 0.053,
+   "level": 0.011
+  },
+  "belly": {
+   "clear": 0.179,
+   "min": 0.002
+  },
+  "rest": {
+   "upright": 0.0,
+   "best": 0.574,
+   "poses": 3
+  }
+ },
+ "measures": {
+  "ground": 0.145,
+  "slender": 0.323,
+  "stand": 3.097,
+  "tail": 0.0,
+  "tail_reach": 3.865
+ },
+ "rigged": {
+  "file": "test_person.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 0.8
+}

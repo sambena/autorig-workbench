@@ -1,0 +1,227 @@
+{
+ "model": "spark_hound",
+ "group": "Heartroot",
+ "source": "tripo_convert_71af148e-3973-4a38-9d35-d9ce9b7b433e.fbx",
+ "height": 0.0,
+ "top": 0.6895,
+ "facing": "+x",
+ "had_rig": true,
+ "vertices": 4089,
+ "source_data": {
+  "size": [
+   0.3769530951976776,
+   0.9980467557907104,
+   0.6894530653953552
+  ],
+  "lo": [
+   -0.18847660720348358,
+   -0.4990234076976776,
+   -9.381082577419875e-10
+  ],
+  "hi": [
+   0.18847648799419403,
+   0.49902331829071045,
+   0.6894530653953552
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.5,
+   1.0,
+   0.78
+  ],
+  [
+   0.95,
+   0.29,
+   0.0
+  ],
+  [
+   0.05,
+   0.29,
+   0.01
+  ],
+  [
+   0.78,
+   0.77,
+   0.01
+  ],
+  [
+   0.49,
+   0.04,
+   0.92
+  ],
+  [
+   0.07,
+   0.75,
+   0.0
+  ],
+  [
+   0.43,
+   0.48,
+   0.73
+  ],
+  [
+   0.36,
+   0.6,
+   0.4
+  ],
+  [
+   0.67,
+   0.6,
+   0.39
+  ],
+  [
+   0.35,
+   0.73,
+   0.6
+  ],
+  [
+   0.79,
+   0.74,
+   0.49
+  ],
+  [
+   0.5,
+   0.23,
+   0.43
+  ],
+  [
+   0.08,
+   0.28,
+   0.41
+  ],
+  [
+   0.91,
+   0.28,
+   0.38
+  ],
+  [
+   0.15,
+   0.61,
+   0.46
+  ],
+  [
+   0.55,
+   0.72,
+   0.94
+  ],
+  [
+   0.73,
+   0.51,
+   0.44
+  ],
+  [
+   0.84,
+   0.63,
+   0.22
+  ]
+ ],
+ "proportions": [
+  0.3769530951976776,
+  0.9980467557907104,
+  0.6894530653953552
+ ],
+ "plan": {
+  "size": [
+   0.377,
+   0.998,
+   0.6895
+  ],
+  "height": 0.691,
+  "stand": 0.691,
+  "length": 2.648,
+  "parts": {
+   "count": 3,
+   "pieces": 35,
+   "largest": 0.861
+  },
+  "mirror": {
+   "x": 0.99,
+   "y": 0.681
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.114,
+   "largest": 0.295
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.069
+  },
+  "flat": {
+   "share": 0.206,
+   "level": 0.038
+  },
+  "belly": {
+   "clear": 0.346,
+   "min": 0.022
+  },
+  "rest": {
+   "upright": 0.084,
+   "best": 0.38,
+   "poses": 6
+  }
+ },
+ "measures": {
+  "ground": 0.203,
+  "slender": 1.448,
+  "stand": 0.691,
+  "tail": 0.283,
+  "tail_reach": 0.581
+ },
+ "rigged": {
+  "file": "spark_hound.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "spine_4",
+   "spine_5",
+   "neck",
+   "head",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "leg_front_5.R",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "leg_hind_5.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "leg_hind_5.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L"
+  ]
+ },
+ "seconds": 1.1
+}

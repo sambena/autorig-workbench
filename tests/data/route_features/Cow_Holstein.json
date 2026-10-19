@@ -1,0 +1,253 @@
+{
+ "model": "Cow_Holstein",
+ "group": "TornadoTitans",
+ "source": "rodin/cow/base_basic_pbr.glb",
+ "height": 0.0,
+ "top": 1.3704,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7500,
+ "source_data": {
+  "size": [
+   0.7609565258026123,
+   1.9005184173583984,
+   1.370370626449585
+  ],
+  "lo": [
+   -0.38047826290130615,
+   -0.9502592086791992,
+   0.0
+  ],
+  "hi": [
+   0.38047826290130615,
+   0.9502592086791992,
+   1.370370626449585
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.57,
+   0.97,
+   0.18
+  ],
+  [
+   0.18,
+   0.02,
+   0.66
+  ],
+  [
+   0.8,
+   0.7,
+   0.01
+  ],
+  [
+   0.77,
+   0.33,
+   0.01
+  ],
+  [
+   0.46,
+   0.65,
+   0.87
+  ],
+  [
+   0.35,
+   0.31,
+   0.0
+  ],
+  [
+   0.38,
+   0.7,
+   0.01
+  ],
+  [
+   0.75,
+   0.61,
+   0.39
+  ],
+  [
+   0.65,
+   0.9,
+   0.65
+  ],
+  [
+   0.76,
+   0.26,
+   0.7
+  ],
+  [
+   0.29,
+   0.31,
+   0.59
+  ],
+  [
+   0.0,
+   0.25,
+   0.9
+  ],
+  [
+   0.74,
+   0.03,
+   0.89
+  ],
+  [
+   0.6,
+   0.97,
+   0.59
+  ],
+  [
+   0.41,
+   0.76,
+   0.4
+  ],
+  [
+   0.9,
+   0.5,
+   0.72
+  ],
+  [
+   0.81,
+   0.39,
+   0.35
+  ],
+  [
+   0.19,
+   0.56,
+   0.56
+  ]
+ ],
+ "proportions": [
+  0.7609565258026123,
+  1.9005184173583984,
+  1.370370626449585
+ ],
+ "plan": {
+  "size": [
+   0.761,
+   1.9005,
+   1.3704
+  ],
+  "height": 0.721,
+  "stand": 0.721,
+  "length": 2.498,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.628,
+   "y": 0.605
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.064,
+   "largest": 0.31
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.017,
+    "thin": 0.159,
+    "broad": 0.723,
+    "outward": 1.0,
+    "high": 0.596,
+    "reach": 0.2,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.004,
+    "thin": 0.289,
+    "broad": 0.138,
+    "outward": 1.0,
+    "high": 0.715,
+    "reach": 0.198,
+    "sheet": false
+   },
+   "torso": 0.081
+  },
+  "flat": {
+   "share": 0.062,
+   "level": 0.023
+  },
+  "belly": {
+   "clear": 0.332,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.031,
+   "best": 0.422,
+   "poses": 12
+  }
+ },
+ "measures": {
+  "ground": 0.123,
+  "slender": 1.387,
+  "stand": 0.721,
+  "tail": 0.578,
+  "tail_reach": 0.604
+ },
+ "rigged": {
+  "file": "Cow.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 1.0
+}

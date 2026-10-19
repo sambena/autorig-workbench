@@ -1,0 +1,216 @@
+{
+ "model": "test_squire",
+ "group": "Tests",
+ "source": "Test_squire.glb",
+ "height": 0.0,
+ "top": 99.8047,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7135,
+ "source_data": {
+  "size": [
+   22.85155487060547,
+   91.9921646118164,
+   99.8046646118164
+  ],
+  "lo": [
+   -11.425777435302734,
+   -45.9960823059082,
+   0.0
+  ],
+  "hi": [
+   11.425777435302734,
+   45.9960823059082,
+   99.8046646118164
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.69,
+   0.32,
+   0.01
+  ],
+  [
+   1.0,
+   0.5,
+   0.88
+  ],
+  [
+   0.92,
+   0.66,
+   0.01
+  ],
+  [
+   0.37,
+   1.0,
+   0.77
+  ],
+  [
+   0.34,
+   0.0,
+   0.77
+  ],
+  [
+   0.11,
+   0.43,
+   0.42
+  ],
+  [
+   0.6,
+   0.66,
+   0.78
+  ],
+  [
+   0.68,
+   0.54,
+   0.32
+  ],
+  [
+   0.59,
+   0.35,
+   0.78
+  ],
+  [
+   0.32,
+   0.41,
+   0.26
+  ],
+  [
+   0.62,
+   0.59,
+   0.62
+  ],
+  [
+   0.96,
+   0.49,
+   0.67
+  ],
+  [
+   0.96,
+   0.5,
+   0.37
+  ],
+  [
+   0.48,
+   0.68,
+   0.76
+  ],
+  [
+   0.13,
+   0.46,
+   0.67
+  ],
+  [
+   0.13,
+   0.45,
+   0.83
+  ],
+  [
+   0.32,
+   0.46,
+   0.52
+  ],
+  [
+   0.54,
+   0.5,
+   0.53
+  ]
+ ],
+ "proportions": [
+  22.85155487060547,
+  91.9921646118164,
+  99.8046646118164
+ ],
+ "plan": {
+  "size": [
+   22.8516,
+   91.9922,
+   99.8047
+  ],
+  "height": 1.085,
+  "stand": 1.085,
+  "length": 4.026,
+  "parts": {
+   "count": 15,
+   "pieces": 165,
+   "largest": 0.179
+  },
+  "mirror": {
+   "x": 0.82,
+   "y": 0.992
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.114,
+   "largest": 0.523
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.052
+  },
+  "flat": {
+   "share": 0.095,
+   "level": 0.048
+  },
+  "belly": {
+   "clear": 0.007,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.0,
+   "best": 0.515,
+   "poses": 5
+  }
+ },
+ "measures": {
+  "ground": 0.216,
+  "slender": 0.922,
+  "stand": 1.085,
+  "tail": 0.141,
+  "tail_reach": 1.693
+ },
+ "rigged": {
+  "file": "test_squire.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 1.1
+}

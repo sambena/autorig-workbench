@@ -1,0 +1,226 @@
+{
+ "model": "tripo_convert_490e492f-7e74-4d13-a3f1-5887a8e4c828",
+ "group": "TornadoTitans",
+ "source": "tripo_convert_490e492f-7e74-4d13-a3f1-5887a8e4c828.fbx",
+ "height": 0.0,
+ "top": 0.9798,
+ "facing": "-y",
+ "had_rig": true,
+ "vertices": 7894,
+ "source_data": {
+  "size": [
+   0.964945375919342,
+   0.47513777017593384,
+   0.9797517657279968
+  ],
+  "lo": [
+   -0.482472687959671,
+   -0.23756888508796692,
+   0.0
+  ],
+  "hi": [
+   0.482472687959671,
+   0.23756888508796692,
+   0.9797517657279968
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.38,
+   0.89,
+   0.03
+  ],
+  [
+   0.99,
+   0.33,
+   0.8
+  ],
+  [
+   0.0,
+   0.25,
+   0.8
+  ],
+  [
+   0.7,
+   0.34,
+   0.31
+  ],
+  [
+   0.27,
+   0.32,
+   0.23
+  ],
+  [
+   0.68,
+   0.04,
+   0.0
+  ],
+  [
+   0.6,
+   0.54,
+   0.58
+  ],
+  [
+   0.5,
+   1.0,
+   0.06
+  ],
+  [
+   0.45,
+   0.07,
+   0.4
+  ],
+  [
+   0.47,
+   0.06,
+   0.01
+  ],
+  [
+   0.77,
+   0.47,
+   0.04
+  ],
+  [
+   0.48,
+   0.1,
+   0.91
+  ],
+  [
+   0.22,
+   0.21,
+   0.01
+  ],
+  [
+   0.55,
+   0.07,
+   0.41
+  ],
+  [
+   0.73,
+   0.35,
+   0.54
+  ],
+  [
+   0.22,
+   0.3,
+   0.52
+  ],
+  [
+   0.19,
+   0.97,
+   0.06
+  ],
+  [
+   0.42,
+   0.53,
+   0.41
+  ]
+ ],
+ "proportions": [
+  0.964945375919342,
+  0.47513777017593384,
+  0.9797517657279968
+ ],
+ "plan": {
+  "size": [
+   0.9649,
+   0.4751,
+   0.9798
+  ],
+  "height": 1.015,
+  "stand": 2.062,
+  "length": 0.492,
+  "parts": {
+   "count": 8,
+   "pieces": 104,
+   "largest": 0.577
+  },
+  "mirror": {
+   "x": 0.993,
+   "y": 0.499
+  },
+  "feet": {
+   "count": 7,
+   "fill": 0.185,
+   "largest": 0.338
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.069,
+    "thin": 0.523,
+    "broad": 0.345,
+    "outward": 0.026,
+    "high": 0.677,
+    "reach": 0.479,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.061,
+    "thin": 0.456,
+    "broad": 0.399,
+    "outward": 0.021,
+    "high": 0.687,
+    "reach": 0.488,
+    "sheet": false
+   },
+   "torso": 0.103
+  },
+  "flat": {
+   "share": 0.074,
+   "level": 0.013
+  },
+  "belly": {
+   "clear": 0.038,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.095,
+   "best": 0.471,
+   "poses": 6
+  }
+ },
+ "measures": {
+  "ground": 0.48,
+  "slender": 0.485,
+  "stand": 2.062,
+  "tail": 0.045,
+  "tail_reach": 0.843
+ },
+ "rigged": {
+  "file": "tripo_convert_490e492f-7e74-4d13-a3f1-5887a8e4c828.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 1.2
+}

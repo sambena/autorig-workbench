@@ -1,0 +1,273 @@
+{
+ "model": "thornmother",
+ "group": "Heartroot",
+ "source": "tripo_convert_f67724ec-52e0-4469-8190-38e024893a6b.fbx",
+ "height": 0.0,
+ "top": 0.6934,
+ "facing": "-y",
+ "had_rig": true,
+ "vertices": 7585,
+ "source_data": {
+  "size": [
+   0.4902343153953552,
+   0.998308539390564,
+   0.6933598518371582
+  ],
+  "lo": [
+   -0.2451171576976776,
+   -0.499154269695282,
+   0.0
+  ],
+  "hi": [
+   0.2451171576976776,
+   0.499154269695282,
+   0.6933598518371582
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.31,
+   0.29,
+   0.95
+  ],
+  [
+   0.63,
+   0.98,
+   0.08
+  ],
+  [
+   0.05,
+   0.47,
+   0.0
+  ],
+  [
+   0.84,
+   0.27,
+   0.02
+  ],
+  [
+   0.26,
+   0.06,
+   0.01
+  ],
+  [
+   0.98,
+   0.66,
+   0.01
+  ],
+  [
+   0.7,
+   0.52,
+   0.78
+  ],
+  [
+   0.88,
+   0.31,
+   0.9
+  ],
+  [
+   0.32,
+   0.75,
+   0.45
+  ],
+  [
+   0.73,
+   0.26,
+   0.35
+  ],
+  [
+   0.24,
+   0.29,
+   0.47
+  ],
+  [
+   0.59,
+   0.02,
+   0.56
+  ],
+  [
+   0.88,
+   0.53,
+   0.38
+  ],
+  [
+   0.37,
+   0.21,
+   1.0
+  ],
+  [
+   0.85,
+   0.21,
+   0.97
+  ],
+  [
+   0.21,
+   0.39,
+   0.36
+  ],
+  [
+   0.19,
+   0.47,
+   0.73
+  ],
+  [
+   0.82,
+   0.25,
+   0.61
+  ]
+ ],
+ "proportions": [
+  0.4902343153953552,
+  0.998308539390564,
+  0.6933598518371582
+ ],
+ "plan": {
+  "size": [
+   0.4902,
+   0.9983,
+   0.6934
+  ],
+  "height": 0.695,
+  "stand": 0.695,
+  "length": 2.036,
+  "parts": {
+   "count": 1,
+   "pieces": 137,
+   "largest": 0.99
+  },
+  "mirror": {
+   "x": 0.679,
+   "y": 0.503
+  },
+  "feet": {
+   "count": 5,
+   "fill": 0.124,
+   "largest": 0.231
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.009,
+    "thin": 0.162,
+    "broad": 0.24,
+    "outward": 1.0,
+    "high": 0.443,
+    "reach": 0.213,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.002,
+    "thin": 0.176,
+    "broad": 0.786,
+    "outward": 0.99,
+    "high": 0.324,
+    "reach": 0.194,
+    "sheet": false
+   },
+   "torso": 0.082
+  },
+  "flat": {
+   "share": 0.047,
+   "level": 0.02
+  },
+  "belly": {
+   "clear": 0.287,
+   "min": 0.014
+  },
+  "rest": {
+   "upright": 0.14,
+   "best": 0.388,
+   "poses": 6
+  }
+ },
+ "measures": {
+  "ground": 0.246,
+  "slender": 1.44,
+  "stand": 0.695,
+  "tail": 0.66,
+  "tail_reach": 0.308
+ },
+ "rigged": {
+  "file": "thornmother.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "neck",
+   "head",
+   "jaw2",
+   "head_part.R",
+   "ear.L",
+   "head_part.L",
+   "jaw1",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "leg_front_5.L",
+   "leg_front_6.L",
+   "leg_front_b2_1.L",
+   "leg_front_b2_2.L",
+   "leg_front_b1_1.L",
+   "leg_front_b1_2.L",
+   "leg_front_b3_1.L",
+   "leg_front_b3_2.L",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "leg_front_5.R",
+   "leg_front_6.R",
+   "leg_front_b2_1.R",
+   "leg_front_b2_2.R",
+   "leg_front_b1_1.R",
+   "leg_front_b1_2.R",
+   "leg_front_b3_1.R",
+   "leg_front_b3_2.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "leg_hind_5.L",
+   "leg_hind_6.L",
+   "leg_hind_b3_1.L",
+   "leg_hind_b3_2.L",
+   "leg_hind_b2_1.L",
+   "leg_hind_b2_2.L",
+   "leg_hind_b1_1.L",
+   "leg_hind_b1_2.L",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "leg_hind_5.R",
+   "leg_hind_6.R",
+   "leg_hind_b3_1.R",
+   "leg_hind_b3_2.R",
+   "leg_hind_b2_1.R",
+   "leg_hind_b2_2.R",
+   "leg_hind_b1_1.R",
+   "leg_hind_b1_2.R",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_5",
+   "tail_6",
+   "tail_7",
+   "tail_8",
+   "tail_9",
+   "tail_10",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R"
+  ]
+ },
+ "seconds": 1.4
+}

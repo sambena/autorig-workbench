@@ -1,0 +1,250 @@
+{
+ "model": "dragon",
+ "group": "Smeltdown",
+ "source": "Dragon.fbx",
+ "height": 0.0,
+ "top": 0.8932,
+ "facing": "+y",
+ "had_rig": false,
+ "vertices": 7503,
+ "source_data": {
+  "size": [
+   0.615234375,
+   0.9986323118209839,
+   0.8932487964630127
+  ],
+  "lo": [
+   -0.3076171875,
+   -0.49931615591049194,
+   0.0
+  ],
+  "hi": [
+   0.3076171875,
+   0.49931615591049194,
+   0.8932487964630127
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.83,
+   0.51,
+   0.12
+  ],
+  [
+   0.18,
+   0.52,
+   0.13
+  ],
+  [
+   0.51,
+   0.0,
+   0.11
+  ],
+  [
+   0.38,
+   0.8,
+   1.0
+  ],
+  [
+   0.18,
+   0.83,
+   0.0
+  ],
+  [
+   0.85,
+   0.52,
+   0.21
+  ],
+  [
+   0.19,
+   0.83,
+   0.2
+  ],
+  [
+   0.15,
+   0.52,
+   0.2
+  ],
+  [
+   0.82,
+   0.83,
+   0.2
+  ],
+  [
+   0.83,
+   0.83,
+   0.0
+  ],
+  [
+   0.92,
+   0.79,
+   0.87
+  ],
+  [
+   0.09,
+   0.79,
+   0.88
+  ],
+  [
+   0.48,
+   0.58,
+   0.13
+  ],
+  [
+   0.77,
+   0.81,
+   0.62
+  ],
+  [
+   0.18,
+   0.74,
+   0.62
+  ],
+  [
+   0.29,
+   0.81,
+   0.34
+  ],
+  [
+   0.67,
+   0.68,
+   0.4
+  ],
+  [
+   0.97,
+   0.55,
+   0.54
+  ]
+ ],
+ "proportions": [
+  0.615234375,
+  0.9986323118209839,
+  0.8932487964630127
+ ],
+ "plan": {
+  "size": [
+   0.6152,
+   0.9986,
+   0.8932
+  ],
+  "height": 0.894,
+  "stand": 0.894,
+  "length": 1.623,
+  "parts": {
+   "count": 3,
+   "pieces": 9,
+   "largest": 0.887
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.096
+  },
+  "feet": {
+   "count": 3,
+   "fill": 0.093,
+   "largest": 0.383
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.058,
+    "thin": 0.224,
+    "broad": 0.666,
+    "outward": 0.996,
+    "high": 0.573,
+    "reach": 0.308,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.055,
+    "thin": 0.218,
+    "broad": 0.681,
+    "outward": 0.996,
+    "high": 0.573,
+    "reach": 0.308,
+    "sheet": false
+   },
+   "torso": 0.132
+  },
+  "flat": {
+   "share": 0.034,
+   "level": 0.01
+  },
+  "belly": {
+   "clear": 0.029,
+   "min": 0.01
+  },
+  "rest": {
+   "upright": 0.068,
+   "best": 0.232,
+   "poses": 10
+  }
+ },
+ "measures": {
+  "ground": 0.295,
+  "slender": 1.118,
+  "stand": 0.894,
+  "tail": 0.019,
+  "tail_reach": 0.598
+ },
+ "rigged": {
+  "file": "dragon.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "neck_1",
+   "neck_2",
+   "neck_3",
+   "head",
+   "jaw",
+   "arm_1.L",
+   "arm_2.L",
+   "arm_3.L",
+   "arm_1.R",
+   "arm_2.R",
+   "arm_3.R",
+   "wing_1.L",
+   "wing_2.L",
+   "wing_3.L",
+   "wing_finger1_1.L",
+   "wing_finger1_2.L",
+   "wing_finger1_3.L",
+   "wing_finger2_1.L",
+   "wing_finger2_2.L",
+   "wing_finger3_1.L",
+   "wing_finger3_2.L",
+   "wing_1.R",
+   "wing_2.R",
+   "wing_3.R",
+   "wing_finger1_1.R",
+   "wing_finger1_2.R",
+   "wing_finger1_3.R",
+   "wing_finger2_1.R",
+   "wing_finger2_2.R",
+   "wing_finger3_1.R",
+   "wing_finger3_2.R",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_5",
+   "tail_6",
+   "leg_1.L",
+   "leg_2.L",
+   "leg_3.L",
+   "leg_4.L",
+   "leg_1.R",
+   "leg_2.R",
+   "leg_3.R",
+   "leg_4.R",
+   "ik_leg.L",
+   "pole_leg.L",
+   "ik_leg.R",
+   "pole_leg.R"
+  ]
+ },
+ "seconds": 0.6
+}

@@ -1,0 +1,253 @@
+{
+ "model": "Cow_Angus_Tripo",
+ "group": "TornadoTitans",
+ "source": "Cow_Angus_Tripo.glb",
+ "height": 0.0,
+ "top": 0.6707,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7530,
+ "source_data": {
+  "size": [
+   0.36654403805732727,
+   0.9957708120346069,
+   0.6706889271736145
+  ],
+  "lo": [
+   -0.18327201902866364,
+   -0.49788540601730347,
+   0.0
+  ],
+  "hi": [
+   0.18327201902866364,
+   0.49788540601730347,
+   0.6706889271736145
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.49,
+   0.01,
+   0.22
+  ],
+  [
+   0.31,
+   0.73,
+   0.0
+  ],
+  [
+   0.77,
+   0.21,
+   0.0
+  ],
+  [
+   0.69,
+   0.6,
+   0.89
+  ],
+  [
+   0.26,
+   0.22,
+   0.0
+  ],
+  [
+   0.74,
+   0.72,
+   0.0
+  ],
+  [
+   0.28,
+   0.11,
+   0.77
+  ],
+  [
+   0.37,
+   1.0,
+   0.65
+  ],
+  [
+   0.52,
+   0.43,
+   0.33
+  ],
+  [
+   0.07,
+   0.68,
+   0.6
+  ],
+  [
+   0.91,
+   0.27,
+   0.73
+  ],
+  [
+   0.86,
+   0.76,
+   0.5
+  ],
+  [
+   0.11,
+   0.4,
+   0.78
+  ],
+  [
+   0.89,
+   0.97,
+   0.91
+  ],
+  [
+   0.63,
+   0.15,
+   0.39
+  ],
+  [
+   0.51,
+   0.05,
+   0.66
+  ],
+  [
+   0.23,
+   0.22,
+   0.39
+  ],
+  [
+   0.05,
+   0.91,
+   0.92
+  ]
+ ],
+ "proportions": [
+  0.36654403805732727,
+  0.9957708120346069,
+  0.6706889271736145
+ ],
+ "plan": {
+  "size": [
+   0.3665,
+   0.9958,
+   0.6707
+  ],
+  "height": 0.674,
+  "stand": 0.674,
+  "length": 2.717,
+  "parts": {
+   "count": 1,
+   "pieces": 15,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.991,
+   "y": 0.794
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.062,
+   "largest": 0.29
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.003,
+    "thin": 0.081,
+    "broad": 0.679,
+    "outward": 1.0,
+    "high": 0.636,
+    "reach": 0.184,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.003,
+    "thin": 0.077,
+    "broad": 0.609,
+    "outward": 1.0,
+    "high": 0.63,
+    "reach": 0.184,
+    "sheet": false
+   },
+   "torso": 0.103
+  },
+  "flat": {
+   "share": 0.068,
+   "level": 0.023
+  },
+  "belly": {
+   "clear": 0.347,
+   "min": 0.001
+  },
+  "rest": {
+   "upright": 0.044,
+   "best": 0.471,
+   "poses": 10
+  }
+ },
+ "measures": {
+  "ground": 0.098,
+  "slender": 1.485,
+  "stand": 0.674,
+  "tail": 0.434,
+  "tail_reach": 0.39
+ },
+ "rigged": {
+  "file": "Cow_T.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 1.8
+}

@@ -92,6 +92,63 @@ def is_root_motion(name):
     return isinstance(name, str) and (name.endswith(" RM") or name.endswith("_RM"))
 
 
+# What the body plan (core/body_plan.py) says, read before the archetype is trusted. Calibrated on the committed rigs
+# of Tornado Titans, Heartroot and Smeltdown (tests/data/route_truth.json, cli/route_eval.py, 2026-10-18).
+# BUILT: a share of the surface on flat faces square to the axes at or over this is a built thing (a building, a
+# vehicle, a machine, a sign): sculpted animals and people stay under 0.14 (one hound reaches 0.21), props have a
+# median of 0.38. Four legs with air under the belly (BELLY_LEGS) keep it a creature up to BUILT_LEGS.
+BUILT = 0.15
+BUILT_LEGS = 0.3
+BELLY_LEGS = (0.25, 0.5)     # an animal's belly clears 0.2-0.41 of its height; a table or a carport on posts more
+# On one patch of ground or none, neither long (the plan's length, front to back over side to side) nor slender, and
+# not standing as tall as a person: a tree, a plant, a jelly, a drone, a crystal, a rock. Long footless bodies are
+# fish and serpents; tall ones on one patch are robed people.
+BASE_LONG = 1.6
+BASE_SLENDER = 1.15
+BASE_TALL = 2.6
+# A person stands at least this tall over their depth (a T-posed robot 1.5; the tallest bird, a rooster, 1.14), with
+# less tail than PERSON_TAIL (birds 0.15 and up). On anything but two feet (robes, tentacles), a person stands taller
+# still, PERSON_ROBED, with little air under the middle (BELLY_HANGING: a jelly's tentacles hang, a robe reaches down).
+PERSON_STAND = 1.4
+PERSON_TAIL = 0.12
+PERSON_ROBED = 2.0
+BELLY_HANGING = 0.25
+# Two feet with this much air under the body (belly, over the height) stand on legs: a bird (a hen 0.19, a rooster
+# 0.25). Less: a fish resting on its fins (0.05-0.16).
+BIRD_BELLY = 0.17
+# A footless long body standing this tall over its length or more is a serpent rearing or coiling; lower, a fish.
+SERPENT_STAND = 0.7
+
+
+def plan_measures(plan):
+    """The body plan's measures choose() reads, from core/body_plan.measure (none for a missing plan)."""
+    if not isinstance(plan, dict) or plan.get("error"): return {}
+    out = {}
+    feet = plan.get("feet") or {}
+    if feet.get("count") is not None: out["feet"] = feet["count"]
+    if feet.get("fill") is not None: out["feet_fill"] = feet["fill"]
+    if (plan.get("wings") or {}).get("both"): out["wings"] = True
+    if (plan.get("flat") or {}).get("share") is not None: out["flat"] = plan["flat"]["share"]
+    if (plan.get("belly") or {}).get("clear") is not None: out["belly"] = plan["belly"]["clear"]
+    if plan.get("length") is not None: out["length"] = plan["length"]
+    return out
+
+
+def is_prop(m):
+    """(True, why) when the body plan says it is a prop, not a creature or a person: built (flat faces), or standing
+    on one base. Without the plan's measures (plan_measures), (False, "")."""
+    flat, feet, belly = m.get("flat"), m.get("feet"), m.get("belly")
+    if flat is None or feet is None: return False, ""
+    legs = feet == 4 and BELLY_LEGS[0] <= (belly or 0) <= BELLY_LEGS[1]
+    if flat >= BUILT and not (legs and flat < BUILT_LEGS):
+        return True, "built: %.0f%% of its surface on flat faces square to the axes" % (100 * flat)
+    if feet <= 1 and (m.get("length") or 0) < BASE_LONG and (m.get("slender") or 0) < BASE_SLENDER \
+            and (m.get("stand") or 0) < BASE_TALL:
+        return True, "stands on %s, neither long nor tall: a plant, a floater or an object" % (
+            "one base" if feet == 1 else "nothing")
+    return False, ""
+
+
 def choose(archetype, measures=None):
     """(template, reason) for an archetype, or (None, reason) when Mesh2Motion has none for it. measures, all optional:
        tail_reach  how far it reaches back past its hind feet, over the distance between the feet (quadrupeds:
@@ -103,33 +160,63 @@ def choose(archetype, measures=None):
        stand       height over length
        tail        how far it reaches back past a person's depth, over its height (a kaiju's tail)
        wings       True when wings were found
-    The body's measures overrule the archetype where they plainly disagree: a body lying on the ground is a snake or
-    a fish whatever the tips said (the sea serpent's tips read "rigid"), and two feet are not a quadruped's."""
+       flat, belly, feet_fill, length   the body plan's (plan_measures)
+    The body's measures overrule the archetype where they plainly disagree: a built thing is a prop whatever its tips
+    look like, a body lying on the ground is a snake or a fish (the sea serpent's tips read "rigid"), and two feet are
+    not a quadruped's. (None, reason) for a prop sends it to the classic rig."""
     m = measures or {}
     a = (archetype or "").lower()
     why = ""
-    if (m.get("ground") or 0) >= LYING and a not in ("humanoid", "biped", "human"):
+    prop, reason = is_prop(m)
+    if prop:
+        return None, "%s: the classic rig (was %s)" % (reason, a or "unknown")
+    feet, stand, belly = m.get("feet"), m.get("stand") or 0, m.get("belly")
+    if feet is not None and feet <= 1 and (m.get("length") or 0) >= BASE_LONG and a not in ("winged", "bird", "dragon"):
+        if stand >= SERPENT_STAND or (m.get("slender") or 0) >= SERPENT_SLENDER:
+            return "snake", "no feet, long, standing %.2f of its length: Snake (was %s)" % (stand, a or "unknown")
+        return "shark", "no feet, long and low: Shark (was %s)" % (a or "unknown")
+    # a body on three or more feet (a hare sitting, its big hind feet flat) is not lying down, however much of its
+    # footprint touches
+    if (m.get("ground") or 0) >= LYING and a not in ("humanoid", "biped", "human") and (feet is None or feet <= 2):
         if (m.get("slender") or 0) >= SERPENT_SLENDER:
             return "snake", "lies on the ground (%.0f%% of its footprint), slender %.1f: Snake (was %s)" % (
                 100 * m["ground"], m["slender"], a or "unknown")
         return "shark", "lies on the ground (%.0f%% of its footprint), not slender: Shark (was %s)" % (
             100 * m["ground"], a or "unknown")
-    if m.get("wings") and a not in ("winged", "bird", "dragon"):
+    upright = a in ("humanoid", "biped", "human")
+    if upright and feet is not None and feet != 2 and (stand < PERSON_ROBED or (belly or 0) >= BELLY_HANGING):
+        return None, ("on %d contact patches, standing %.1f with %.2f of its height clear under the middle: no "
+                      "person, a floater or an object: the classic rig (was %s)" % (feet, stand, belly or 0, a))
+    if upright and feet == 2 and stand < PERSON_STAND and belly is not None and belly >= BIRD_BELLY:
+        why = " (two feet with air under a low body, %.2f of its height: was %s)" % (belly, a); a = "winged"
+    elif a in ("winged", "bird") and feet == 2 and stand >= PERSON_STAND and (m.get("tail") or 0) < PERSON_TAIL:
+        return "human", "two feet under an upright body (%.1f) with no tail: arms held out, not wings: Human" % stand
+    elif a in ("hexapod", "octopod") and stand >= PERSON_ROBED:
+        return "human", "many contact patches under a body standing %.1f, as tall as a person: Human (was %s)" % (
+            stand, a)
+    elif m.get("wings") and a not in ("winged", "bird", "dragon"):
         why = " (wings: was %s)" % a; a = "winged"
-    elif a in ("quadruped", "", "rigid", "creature") and m.get("feet") == 2:
-        if (m.get("stand") or 1) < 0.5:
-            why = " (long and low on two contact patches, a body resting on fins: was %s)" % (a or "unknown")
-            a = "swimmer"
-        elif (m.get("stand") or 0) >= 1.6:
+    elif a in ("quadruped", "", "rigid", "creature") and feet == 2:
+        if stand >= 1.6:
             why = " (two feet under an upright body: was %s)" % (a or "unknown"); a = "humanoid"
+        elif stand < 0.5 or (a == "quadruped" and belly is not None and belly < BIRD_BELLY):
+            why = " (low on two contact patches with little air under it, a body resting on fins: was %s)" % (
+                a or "unknown")
+            a = "swimmer"
         else:
             why = " (two feet under a long body: was %s)" % (a or "unknown"); a = "winged"
-    elif a in ("", "rigid", "creature") and (m.get("feet") or 0) >= 5:
+    elif a in ("", "rigid", "creature") and (feet or 0) >= 5:
         a = "octopod"
-    elif a in ("", "rigid", "creature") and m.get("feet") == 4:
+    elif a in ("", "rigid", "creature") and feet == 4:
         a = "quadruped"
     t, reason = _choose(a, m)
     return t, reason + why
+
+
+def is_person(template, archetype=None, measures=None):
+    """Whether Auto sends it to the humanoid rig: choose() picked the human template. A T-pose's arms and coat tails
+    that read as wings are choose()'s to see (two feet, upright, no tail), so a built thing it calls a prop stays one."""
+    return template == "human"
 
 
 def _choose(a, m):
