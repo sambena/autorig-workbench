@@ -120,5 +120,36 @@ class Fit(unittest.TestCase):
         self.assertEqual(F.DEFAULT_HUMANOID["z"]["hip"], 0.47)           # the default itself is untouched
 
 
+@unittest.skipUnless(HAVE_NUMPY, "numpy not installed (use Blender's own Python)")
+class SourceSkin(unittest.TestCase):
+    """A Tripo-converted person's own weights on our 29-bone skeleton (rerig_humanoid.choose_skin's candidates)."""
+    HAVE = {"Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+            "LeftHandIndex1", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase"}
+    PARENT = {"LeftHandThumb2": "LeftHandThumb1", "LeftHandThumb1": "LeftHand", "HeadTop_End": "Head",
+              "LeftToe_End": "LeftToeBase", "Mystery": None}
+
+    def test_fold_to_nearest_kept_ancestor(self):
+        w = F.fold_weights({"LeftHandThumb2": 0.5, "LeftHand": 0.25, "HeadTop_End": 0.25}, self.HAVE, self.PARENT)
+        self.assertAlmostEqual(w["LeftHand"], 0.75)
+        self.assertAlmostEqual(w["Head"], 0.25)
+        self.assertAlmostEqual(sum(w.values()), 1.0)
+        self.assertEqual(F.fold_weights({"Mystery": 1.0}, self.HAVE, self.PARENT), {"Hips": 1.0})
+
+    def test_fold_keeps_four(self):
+        w = F.fold_weights({"Hips": 0.3, "Spine": 0.25, "Spine1": 0.2, "Spine2": 0.15, "Neck": 0.1}, self.HAVE, {})
+        self.assertEqual(len(w), 4)
+        self.assertNotIn("Neck", w)
+        self.assertAlmostEqual(sum(w.values()), 1.0)
+
+    def test_blend_follows_the_source_on_a_sleeve_only(self):
+        ours = {"LeftUpLeg": 0.7, "Hips": 0.3}                    # bone heat gave a sleeve's hem to the thigh
+        sleeve = F.blend_arm_weights(ours, {"LeftForeArm": 0.9, "LeftArm": 0.1})
+        self.assertNotIn("LeftUpLeg", sleeve)
+        self.assertAlmostEqual(sleeve["LeftForeArm"], 0.9)
+        half = F.blend_arm_weights(ours, {"LeftForeArm": 0.25, "Spine2": 0.75})   # arm share 0.25 x 2: half each
+        self.assertAlmostEqual(half["LeftUpLeg"], 0.35)
+        self.assertIsNone(F.blend_arm_weights(ours, {"LeftUpLeg": 1.0}))   # no arm in the source: ours untouched
+
+
 if __name__ == "__main__":
     unittest.main()

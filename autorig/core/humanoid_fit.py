@@ -252,3 +252,41 @@ def auto_landmarks(co, lo, size, main=None, h=None, log=None):
         out["robe"] = True                 # no legs to be seen at all: a robe to the floor
     log["landmarks"] = out
     return out
+
+
+def fold_weights(w, have, parent, limit=4):
+    """One vertex's source weights {bone: weight} (names without a "mixamorig:" prefix) on a skeleton that has the
+    bones `have`: a bone it lacks (fingers past the index chain, end bones, twist bones) gives its weight to its
+    nearest ancestor in `have` (parent: {bone: its parent}), or to the Hips. The `limit` largest are kept, summing
+    to one."""
+    acc = {}
+    for nm, x in w.items():
+        b, seen = nm, set()
+        while b and b not in have and b not in seen:
+            seen.add(b); b = parent.get(b)
+        b = b if b in have else "Hips"
+        acc[b] = acc.get(b, 0.0) + x
+    top = [kv for kv in sorted(acc.items(), key=lambda kv: -kv[1])[:limit] if kv[1] > 1e-6]
+    tot = sum(x for _, x in top) or 1.0
+    return {b: x / tot for b, x in top}
+
+
+def is_arm_bone(b):
+    return b.startswith(("Left", "Right")) and any(k in b for k in ("Shoulder", "Arm", "Hand"))
+
+
+def blend_arm_weights(ours, src, gain=2.0, limit=4):
+    """A vertex's weights from our skin with the source's blended in by the source's arm share x gain (at most all
+    of it): a sleeve the source gives the arm follows the arm, the rest stays ours. None when the source gives it no
+    arm weight (nothing to change)."""
+    tot = sum(src.values()) or 1.0
+    a = min(1.0, gain * sum(x for b, x in src.items() if is_arm_bone(b)) / tot)
+    if a <= 0:
+        return None
+    to = sum(ours.values()) or 1.0
+    mix = {}
+    for b, x in ours.items(): mix[b] = mix.get(b, 0.0) + (1 - a) * x / to
+    for b, x in src.items(): mix[b] = mix.get(b, 0.0) + a * x / tot
+    top = [kv for kv in sorted(mix.items(), key=lambda kv: -kv[1])[:limit] if kv[1] > 1e-6]
+    tt = sum(x for _, x in top) or 1.0
+    return {b: x / tt for b, x in top}
