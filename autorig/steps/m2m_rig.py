@@ -1550,8 +1550,7 @@ def run(a):
     log["template"] = t
     log["family"] = fam
     log["height"] = round(top, 3)
-    if (a.template.lower() == "auto" and t == "human" and a.people == "classic" and a.model and not a.joints
-            and not a.choose_only and (log["choice"].get("measures") or {}).get("tail", 0) < 0.05):
+    if a.people == "classic" and a.model and not a.joints and not a.choose_only and is_person(a, t, log):
         return people_classic(a, log)
     if a.choose_only:                       # what auto would pick, and why, without rigging anything
         print("M2M_RIG " + json.dumps({"name": a.name, "template": t, "choice": log["choice"], "suggest": log.get("suggest"),
@@ -1745,8 +1744,22 @@ def run(a):
     return 0
 
 
+def is_person(a, t, log):
+    """Whether this goes to the humanoid rig. The Human tile (--template human) says so outright, and so does auto
+    choosing the human template: that template never suits anything but a person here (a sword read as a short tail
+    must not stop it: Heartroot's squire). Also "winged" with no tail standing tall like a person: a T-pose's arms
+    and coat tails read as wings (the ticket taker stands 3.3; a hen or a rooster about 1)."""
+    if "--out" in sys.argv: return False          # a scratch run (Fix skin's tries) never re-rigs the model's own folder
+    if a.template.lower() == "human": return True
+    if a.template.lower() != "auto": return False
+    ch = log.get("choice") or {}
+    m = ch.get("measures") or {}
+    if t == "human": return True
+    return ch.get("archetype") == "winged" and m.get("stand", 0) >= 2.0 and m.get("tail", 1) < 0.05
+
+
 def people_classic(a, log):
-    """A person goes to the humanoid rig, not the human template. On Tornado Titans' cast the template's walk held
+    """A person (is_person) goes to the humanoid rig, not the human template. On Tornado Titans' cast the template's walk held
     the arms stiff and out and the jacket sleeves stayed on the body; the humanoid rig, resting in the A-pose as
     modelled with the arms mirrored, walked clean (2026-10-18). rig.json gets the humanoid sections if it has none
     (a rig.json made for the template is replaced), then the classic steps run: rig, audit, walker clips, preview."""
