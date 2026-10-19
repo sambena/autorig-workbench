@@ -1445,7 +1445,11 @@ def skin(mesh, arm, chains, spec, size, log):
     timed("joint_relaxation", placed_rules.joint_relaxation_pass, mesh, arm, chains, spec, size, log)
     if spec.get("rigid_islands", "auto") not in (False, "off", None) or spec.get("rigid_armor") or spec.get("armor") or spec.get("accessories"):
         timed("rigid_islands", placed_rules.rigid_islands_pass, mesh, arm, chains, spec, size, log)
-    if spec.get("limb_pieces"):
+    # a creature built from chains: each loose piece but the body (an arm made as a part of its own, an insect's leg)
+    # is one limb's, unless the spec says no. Bone heat gave Smeltdown's spitter's hand its thigh's weight, and its
+    # walk tore the hand open (stretch 14 a thousand, 4.6 with the rule; steps/score.py, 2026-10-19)
+    if spec.get("limb_pieces", spec.get("kind") in ("build", "placed")):
+        spec["limb_pieces"] = True
         timed("limb_pieces", placed_rules.limb_pieces_pass, mesh, arm, chains, spec, size, log)
     locked = spec["_locked"]
     t_rest = time.time()
