@@ -53,7 +53,11 @@ def args(argv=None):
     p.add_argument("--model", help="an asset-packs model: its source, and its folder for the results")
     p.add_argument("--name", help="output name (default: the model's game_name, or the file's)")
     p.add_argument("--out", help="output folder (default with --model: the model's rig folder)")
-    p.add_argument("--height", type=float, default=0.0, help="height in metres (default: as it is)")
+    p.add_argument("--height", type=float, default=0.0,
+                   help="height in metres (default: the card's metres_high, else a known animal's typical height "
+                        "(ANIMAL_HEIGHT), else as it is)")
+    p.add_argument("--no-kind-height", dest="height_auto", action="store_false",
+                   help="no typical height by kind: as it is when nothing gives one")
     p.add_argument("--template", default="auto", help="auto, or one of: " + ", ".join(T.TEMPLATES))
     p.add_argument("--archetype", default="", help="what it is when --template is auto (quadruped, humanoid...)")
     p.add_argument("--clips", default="", help="roles or clip names, each optionally =engine name; or all")
@@ -1597,6 +1601,25 @@ def merge_json(path, update):
 
 # ---------------------------------------------------------------- the step
 
+# Standing height (ground to the top of the head, metres) by kind (core/lessons.kind: the first word of the name),
+# for a four-legged animal whose card and caller give none. Tripo's meshes come out about 1 m tall whatever they are,
+# so a cat, a rabbit and a horse all stood a metre high in the game. Typical adults: a house cat 0.3, a cottontail
+# 0.3 to its ear tips, a medium dog (shepherd, hound) 0.65 to the top of its head, a domestic pig and a sheep 0.9,
+# a goat 0.95, a dairy cow 1.5, a horse 1.7. The card's metres_high wins, and the step writes back what it used.
+ANIMAL_HEIGHT = {"cat": 0.3, "kitten": 0.2, "rabbit": 0.3, "hare": 0.4, "bunny": 0.3, "dog": 0.65, "puppy": 0.35,
+                 "fox": 0.45, "wolf": 0.85, "pig": 0.9, "boar": 0.95, "sheep": 0.9, "lamb": 0.6, "goat": 0.95,
+                 "deer": 1.4, "cow": 1.5, "bull": 1.6, "calf": 1.0, "horse": 1.7, "pony": 1.3, "donkey": 1.3}
+
+
+def kind_height(*names):
+    """ANIMAL_HEIGHT for the first of these names whose kind it knows, as (metres, kind), or (0, None)."""
+    import lessons
+    for n in names:
+        k = lessons.kind(os.path.basename(n or ""))
+        if k in ANIMAL_HEIGHT: return ANIMAL_HEIGHT[k], k
+    return 0.0, None
+
+
 def model_paths(a, log):
     """The source, name, output folder and the model's own folder (None without --model)."""
     folder = None
@@ -1611,6 +1634,9 @@ def model_paths(a, log):
         a.name = a.name or card.get("game_name") or layout.leaf(a.model)
         a.out = a.out or layout.rigged_dir(a.model)
         if not a.height and card.get("metres_high"): a.height = float(card["metres_high"])
+    if not a.height and a.height_auto:
+        a.height, k = kind_height(a.model, a.name, a.src)
+        if k: log["height_from"] = "a %s's typical height (ANIMAL_HEIGHT)" % k
     if not a.src or not os.path.exists(a.src):
         raise SystemExit("m2m_rig: no source mesh (%s)" % a.src)
     a.name = a.name or os.path.splitext(os.path.basename(a.src))[0]
@@ -1873,7 +1899,8 @@ def run(a):
                           "glb": rel(out["glb"]) if "glb" in out else None}},
         "rigged_fbx": rel(out["fbx"]) if "fbx" in out else None,
         "rigged_glb": rel(out["glb"]) if "glb" in out else None,
-        "rigged_blend": rel(blend), "preview": rel(out["preview"]) if "preview" in out else None})
+        "rigged_blend": rel(blend), "preview": rel(out["preview"]) if "preview" in out else None,
+        **({"metres_high": round(top, 3), "metres_high_from": log["height_from"]} if log.get("height_from") else {})})
     log.update(out=out, clips=clips, seconds=round(time.time() - t0, 1),
                triangles=sum(len(p.vertices) - 2 for p in mesh.data.polygons))
     with open(os.path.join(a.out, a.name + "_m2m.json"), "w", encoding="utf-8", newline="\n") as fh:

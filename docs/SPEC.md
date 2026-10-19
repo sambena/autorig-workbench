@@ -223,7 +223,10 @@ ground) scale the swing of the legs, the tail and the wings. With no `--swing`, 
 its legs by how long they are against the template's (the belly's height over the distance between the front and hind
 feet), 1 down to 0.65: a horse 1, a dog 0.75, a pig 0.65 (`m2m.swing` keeps what was used). `--gait hop` (auto: a
 rabbit or hare, by the first word of its name, on the Fox) walks on a hop made from the Fox's Run with each pair of
-legs together.
+legs together. A model given no height (no `--height`, no `metres_high` on its card) whose kind is a known animal
+(`m2m_rig.ANIMAL_HEIGHT`: cat 0.3 m, rabbit 0.3, dog 0.65, pig and sheep 0.9, goat 0.95, cow 1.5, horse 1.7, ...)
+stands at that animal's typical height, and the card gets `metres_high` and `metres_high_from` (`--no-kind-height`:
+as it is). Tripo's meshes come out about 1 m tall whatever they are.
 
 ### `budget`
 
