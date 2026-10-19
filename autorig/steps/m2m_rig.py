@@ -1745,20 +1745,17 @@ def run(a):
 
 
 def is_person(a, t, log):
-    """Whether this goes to the humanoid rig. The Human tile (--template human) says so outright. On auto: two feet
-    and humanoid (a sword or a belt end read as a short tail does not stop it: Heartroot's squire), or "winged"
-    standing tall like a person (a T-pose's arms and coat tails read as wings: the ticket taker, stand 3.3; a hen
-    or a rooster stands about 1)."""
+    """Whether this goes to the humanoid rig. The Human tile (--template human) says so outright, and so does auto
+    choosing the human template: that template never suits anything but a person here (a sword read as a short tail
+    must not stop it: Heartroot's squire). Also "winged" with no tail standing tall like a person: a T-pose's arms
+    and coat tails read as wings (the ticket taker stands 3.3; a hen or a rooster about 1)."""
     if "--out" in sys.argv: return False          # a scratch run (Fix skin's tries) never re-rigs the model's own folder
     if a.template.lower() == "human": return True
     if a.template.lower() != "auto": return False
     ch = log.get("choice") or {}
     m = ch.get("measures") or {}
-    arch = ch.get("archetype") or ""
-    two_feet = m.get("feet") == 2
-    if t == "human" and (m.get("tail", 0) < 0.05 or two_feet): return True
-    if arch == "winged" and two_feet and m.get("stand", 0) >= 2.0: return True
-    return False
+    if t == "human": return True
+    return ch.get("archetype") == "winged" and m.get("stand", 0) >= 2.0 and m.get("tail", 1) < 0.05
 
 
 def people_classic(a, log):
