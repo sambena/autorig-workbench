@@ -2214,6 +2214,10 @@ def run(a):
                 log["facing"] = face_minus_y(mesh, "auto", "long"); top = stand(mesh, a.height)
             elif a.facing == "auto" and head_end([v.co for v in mesh.data.vertices], 1) > 0:
                 turn(mesh, math.pi); top = stand(mesh, 0); log["facing"] += " (turned: the head end is taller)"
+        elif t in ("bird", "dragon") and a.facing == "auto" and toes_point([v.co for v in mesh.data.vertices]) > 0:
+            # a winged body on its feet faces the way its toes point (face_minus_y's "flip", which a named template
+            # gets): Auto left Smeltdown's dragon walking backwards (foot skate 140, score 83; 98.5 named Bird)
+            turn(mesh, math.pi); top = stand(mesh, 0); log["facing"] += " (turned: its toes point +Y)"
     else:
         fam = T.TEMPLATES[t]["family"]
         how = {"human": "anatomy", "spider": "anatomy"}.get(fam, "flip" if t in ("bird", "dragon") else "long")
