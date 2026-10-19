@@ -2612,6 +2612,8 @@ def people_classic(a, log):
                 unstash(best["files"])                   # the best one's files back in place
             log["skin_scores"] = dict(scores, chosen=best["tag"])
             print("PEOPLE_CHOICE " + json.dumps(log["skin_scores"]), flush=True)
+            # the candidates' copies and scores go: a person's rig and clips are tens of MB, and the box's disk is small
+            shutil.rmtree(os.path.join(layout.work_dir("people_choice"), name), ignore_errors=True)
             run("audit")
         else:
             for step in ("audit", "clips", "preview"):
