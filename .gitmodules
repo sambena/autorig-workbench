@@ -2,4 +2,4 @@
 	path = third_party/mesh2motion-app
 	url = https://github.com/sambena/mesh2motion-app.git
 	shallow = true
-	branch = workbench-bridge
+	branch = main
