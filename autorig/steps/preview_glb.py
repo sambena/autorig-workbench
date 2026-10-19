@@ -15,7 +15,7 @@
 #
 #   blender -b --python autorig/steps/preview_glb.py -- -only wolf,moth
 #   blender -b --python autorig/steps/preview_glb.py -- [<group>]            every rigged model in a group (or root)
-#   blender -b --python autorig/steps/preview_glb.py -- -file <rig.blend|rig.fbx> [-out <preview.glb>]
+#   blender -b --python autorig/steps/preview_glb.py -- -file <rig.blend|rig.fbx> [-out <preview.glb>] [-clips <clips.blend>]
 #
 # Prints one PREVIEW line of JSON per model, then PREVIEW_DONE.
 import bpy, sys, os, json, time
@@ -199,7 +199,7 @@ def main():
         src = os.path.abspath(val("-file"))
         out = os.path.abspath(val("-out") or os.path.join(os.path.dirname(src), "preview.glb"))
         try:
-            r = run(src, out)
+            r = run(src, out, None, os.path.abspath(val("-clips")) if val("-clips") else None)
         except Exception as e:
             r = {"file": src, "error": repr(e)}
         print("PREVIEW " + json.dumps(r))
