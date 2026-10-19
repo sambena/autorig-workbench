@@ -600,7 +600,10 @@
  },
  "dragon": {
   "route": "m2m:dragon",
-  "why": "a dragon: committed winged rig"
+  "why": "a dragon: committed winged rig; standing on two legs it fits the bird better (docs/CREATURES.md)",
+  "also": [
+   "m2m:bird"
+  ]
  },
  "drake": {
   "route": "m2m:dragon",

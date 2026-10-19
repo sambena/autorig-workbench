@@ -74,13 +74,11 @@ bends; the scorer leaves tear counts out for that reason (docs/QUALITY.md).
 
 ## Still failing, and why
 
-- **The template choice** (`m2m_templates.choose`, `suggest.py`, the score-and-choice work): the megalodon, glowfish
-  and gulper go to the bird or the human, the eels to the human, the cogbug to the dragon, the jellies, squid and
-  drones to the human or the kaiju. The numbers above are with the right template named.
-- **Snakes rest straightened** on the template's line by design (`--rest template`), so the scorer's rest-against-source
-  check fails them. The rigs themselves hold (audit CHECK and PASS).
-- **The megalodon** is modelled heading diagonally, and the scorer lines the rest up with the source in quarter turns
-  only.
+- **The template choice** (`m2m_templates.choose`, the score-and-choice work): #135 routes the fish, eels, jellies, squid
+  and drones right. Still wrong as of 2026-10-19: the cogbug goes to the dragon, the Smeltdown dragon to the spider,
+  sky_boss to the classic rig and slime_boss to the spider (`cli/route_eval.py --show wrong`).
+- **Snakes and the megalodon** are fixed in the scorer (#136): the rest check is skipped for a rig resting in its
+  template's pose (glass eel 96.5 PASS, sea serpent 100 PASS) and lined up at any turn (megalodon 100 PASS).
 - **The ray** on the bird: bleed 31% and stretch in its flap. A ray's wing is its body.
 - **The candle moth** (CHECK 86): legs crossing in the walk, no head share (its head is a sphere on the thorax).
 - **Bodies with no template** (jellies, squid, drones, wisps, blobs, chests, the Smeltdown boss): their specs come from
