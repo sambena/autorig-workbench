@@ -79,6 +79,9 @@ LYING = 0.3
 SERPENT_SLENDER = 5.0
 # a biped with a tail longer than this share of its height, reaching back behind it, is a kaiju, not a person
 KAIJU_TAIL = 0.3
+# a tail this long (tail_share, past a person's depth over the height) on a body with five ground patches is the
+# fifth patch: its tip on the floor (the spiders and crabs measured 0.28-0.64 with six or more patches, or fewer)
+TAIL_ON_GROUND = 0.5
 
 # archetypes (core/suggest.py, plus a few names a caller may pass) with no Mesh2Motion template: these keep the
 # old path (rerig.py and make_clips.py)
@@ -205,6 +208,12 @@ def choose(archetype, measures=None):
             a = "swimmer"
         else:
             why = " (two feet under a long body: was %s)" % (a or "unknown"); a = "winged"
+    elif a in ("", "rigid", "creature") and feet == 5 and (m.get("tail") or 0) >= TAIL_ON_GROUND             and belly is not None and BELLY_LEGS[0] <= belly <= BELLY_LEGS[1]:
+        # four feet and a tail lying on the ground behind them, with an animal's air under the belly: Heartroot's
+        # thornmother is a four-legged beast whose tail tip rests on the floor, and its fifth patch made it a spider
+        why = " (five ground patches, a long tail, %.2f of its height under the belly: four feet and its tail: was %s)" % (
+            belly, a or "unknown")
+        a = "quadruped"
     elif a in ("", "rigid", "creature") and (feet or 0) >= 5:
         a = "octopod"
     elif a in ("", "rigid", "creature") and feet == 4:

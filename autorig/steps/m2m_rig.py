@@ -138,6 +138,12 @@ def head_end(co, axis):
 def source_mesh(path, name, triangles):
     """The source as one welded mesh, any rig it had dropped; its old skeleton's joints kept for the facing."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    if path.lower().endswith(".glb"):
+        # Tripo's rigged GLBs put every joint at the origin (core/tripo_glb.py): imported as they are, the Tornado
+        # Titans horse twin lay on its side, 0.26 m high, and Auto took it for a prop. The API mends uploads; a file
+        # already in the collection is mended here (a copy; nothing when it needs none)
+        import tripo_glb
+        path = tripo_glb.mend(path, report=lambda *_: None)
     import_any(path)
     joints = {}
     for o in bpy.data.objects:
@@ -1233,17 +1239,22 @@ def auto_swing(A, R):
 
 
 # The animals that hop rather than walk, by their kind (core/lessons.kind: the first word of the name, as the
-# collections name their models). Mesh2Motion has no hop; hop_from() makes one.
+# collections name their models). Mesh2Motion has no hop; hop_from() makes one. Only for a rabbit standing on its
+# legs: Heartroot's hopper sits on folded haunches, and the Fox's run on that rest crushed it (score 69; the Horse's
+# walk the route gives it, 99.7).
 HOP_KINDS = ("rabbit", "hare", "bunny", "jackrabbit", "kangaroo", "wallaby")
 HOP_SOURCE = "Run"
 HOP_NAME = "Hop"
 
 
+def hop_kind(a):
+    import lessons
+    return lessons.kind(a.name or "") in HOP_KINDS or lessons.kind(os.path.basename(a.model or "")) in HOP_KINDS
+
+
 def wants_hop(a, t):
     if a.gait != "auto": return a.gait == "hop"
-    if t != "fox": return False
-    import lessons
-    return lessons.kind(a.name or "") in HOP_KINDS or lessons.kind(a.model or "") in HOP_KINDS
+    return t == "fox" and hop_kind(a)
 
 
 def hop_from(src, name=HOP_NAME):
