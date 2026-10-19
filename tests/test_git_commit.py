@@ -104,6 +104,74 @@ class GitCommitTest(unittest.TestCase):
         self.assertIsNone(st["repo"])
 
 
+FAKE_ARCHIVES = '''import os, sys
+for pack in sys.argv[2:]:
+    for d in sorted(os.listdir(pack)):
+        folder = os.path.join(pack, d)
+        if os.path.isdir(folder) and d[0] not in "_.":
+            with open(folder + ".tar.zst", "w") as out:
+                for f in sorted(os.listdir(folder)): out.write(f + open(os.path.join(folder, f)).read())
+'''
+
+
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class SubmoduleCommitTest(unittest.TestCase):
+    """asset-packs: the collection repo holds tools/archives.py and its packs as submodules, each pack keeping its
+    model folders as git-ignored folders beside their <model>.tar.zst archives."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "protocol.file.allow", "GIT_CONFIG_VALUE_0": "always"}
+        patch = mock.patch.dict(os.environ, env); patch.start(); self.addCleanup(patch.stop)
+        no_gh = mock.patch.object(git_commit.shutil, "which", lambda name: None if name == "gh" else shutil.which(name))
+        no_gh.start(); self.addCleanup(no_gh.stop)
+        self.pack_remote, self.top_remote = os.path.join(self.tmp, "pack.git"), os.path.join(self.tmp, "top.git")
+        seed = self.repo("seed", {"pack.json": "{}", ".gitignore": "/*/\n", "Oak.tar.zst": "Oak.glbv1"})
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.pack_remote], check=True)
+        sh(seed, "remote", "add", "origin", self.pack_remote); sh(seed, "push", "-q", "origin", "main")
+        self.top = self.repo("top", {"tools/archives.py": FAKE_ARCHIVES, "_autorig/qa/Oak.json": "{}"})
+        sh(self.top, "submodule", "add", "-q", self.pack_remote, "Pack")
+        sh(self.top, "commit", "-q", "-m", "packs")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.top_remote], check=True)
+        sh(self.top, "remote", "add", "origin", self.top_remote); sh(self.top, "push", "-q", "-u", "origin", "main")
+        self.pack = os.path.join(self.top, "Pack")
+        for k, v in (("user.name", "Test"), ("user.email", "t@example.com"), ("commit.gpgsign", "false")):
+            sh(self.pack, "config", k, v)
+        os.makedirs(os.path.join(self.pack, "Oak"))
+        with open(os.path.join(self.pack, "Oak", "Oak.glb"), "w") as f: f.write("v1")
+
+    def repo(self, name, files):
+        top = os.path.join(self.tmp, name)
+        subprocess.run(["git", "init", "-q", "-b", "main", top], check=True)
+        for k, v in (("user.name", "Test"), ("user.email", "t@example.com"), ("commit.gpgsign", "false")):
+            sh(top, "config", k, v)
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(top, rel)) or top, exist_ok=True)
+            with open(os.path.join(top, rel), "w") as f: f.write(text)
+        sh(top, "add", "-A"); sh(top, "commit", "-q", "-m", "start")
+        return top
+
+    def test_a_changed_model_is_packed_and_committed_in_its_packs_repo(self):
+        with open(os.path.join(self.pack, "Oak", "Oak.glb"), "w") as f: f.write("v2")
+        with open(os.path.join(self.top, "_autorig", "qa", "Oak.json"), "w") as f: f.write('{"score": 100}')
+        with contextlib.redirect_stdout(io.StringIO()):
+            git_commit.commit_push_pr(self.top, "Rig the oak")
+        pack_branch = sh(self.pack, "branch", "--show-current")
+        self.assertTrue(pack_branch.startswith("autorig/"), pack_branch)
+        self.assertEqual(sh(self.pack_remote, "show", "%s:Oak.tar.zst" % pack_branch), "Oak.glbv2")
+        top_branch = sh(self.top, "branch", "--show-current")
+        # the collection's own files on its own branch, without the submodule's new commit
+        self.assertEqual(sh(self.top_remote, "show", "--name-only", "--format=", top_branch), "_autorig/qa/Oak.json")
+
+    def test_status_counts_the_packs_changes(self):
+        with open(os.path.join(self.pack, "Oak.tar.zst"), "w") as f: f.write("changed")
+        st = git_commit.status(self.top, {"Oak"})
+        self.assertEqual(st["count"], 1)
+        self.assertEqual(st["models"], ["Oak"])
+        self.assertEqual([c["path"] for c in st["repos"][0]["changes"]], ["Oak.tar.zst"])
+
+
 class GithubRepoTest(unittest.TestCase):
     def test_remote_forms(self):
         for url in ("https://github.com/sambena/asset-packs.git", "https://github.com/sambena/asset-packs",

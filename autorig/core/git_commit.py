@@ -5,7 +5,9 @@
 #   python autorig/core/git_commit.py --root <models folder> --status      what would be committed, as JSON
 #
 # Only the models folder is committed (git add -A -- <root>), so a models folder inside a bigger repo takes
-# nothing else with it; .gitignore is respected. On the default branch (main) the commit goes on a new branch
+# nothing else with it; .gitignore is respected. asset-packs keeps each model folder as a <model>.tar.zst archive
+# (its tools/archives.py), so the changed folders are packed first; each pack is its own repo, a submodule of
+# asset-packs, and gets its own commit, branch and pull request, apart from asset-packs' own files. On the default branch (main) the commit goes on a new branch
 # autorig/<date>-<time>; on any other branch it is added there, and a pull request already open for that branch
 # picks it up. The push and the pull request use the GitHub CLI (gh) when it is installed: gh's login is offered
 # to git as a credential helper, so a machine where gh is signed in can push over https without anything else
@@ -14,12 +16,12 @@
 import argparse, datetime, json, os, re, shutil, subprocess, sys
 
 
-def git(top, *args, check=True):
+def git(top, *args, check=True, strip=True):
     p = subprocess.run(["git", "-C", top] + list(args), capture_output=True, text=True, encoding="utf-8",
                        errors="replace", stdin=subprocess.DEVNULL)
     if check and p.returncode != 0:
         raise RuntimeError("git %s failed: %s" % (args[0], (p.stderr or p.stdout).strip()))
-    return p.stdout.strip() if p.returncode == 0 else None
+    return (p.stdout.strip() if strip else p.stdout) if p.returncode == 0 else None
 
 
 def toplevel(root):
@@ -56,9 +58,49 @@ def pull_request(top, branch):
     return {"state": rows[0]["state"], "url": rows[0]["url"]} if rows else None
 
 
-def changes(top, root):
-    """[(code, path)] for every change under the models folder, paths relative to the repo."""
-    out = git(top, "status", "--porcelain", "-z", "--untracked-files=all", "--", root) or ""
+def submodules(top, root):
+    """The checked-out git submodules inside the models folder, as full paths. asset-packs keeps each pack
+    (Heartroot, Smeltdown, TornadoTitans) in its own repo, a submodule of the collection's."""
+    out = git(top, "config", "-f", os.path.join(top, ".gitmodules"), "--get-regexp", r"^submodule\..*\.path$",
+              check=False) or ""
+    inside = os.path.normcase(os.path.normpath(root)).rstrip(os.sep) + os.sep
+    found = []
+    for line in out.splitlines():
+        path = os.path.normpath(os.path.join(top, line.split(" ", 1)[-1]))
+        if (os.path.normcase(path) + os.sep).startswith(inside) and os.path.exists(os.path.join(path, ".git")):
+            found.append(path)
+    return sorted(found)
+
+
+def archive_tool(root):
+    """asset-packs' tools/archives.py, in the models folder or a folder above it, or None."""
+    d = os.path.abspath(root)
+    while True:
+        tool = os.path.join(d, "tools", "archives.py")
+        if os.path.isfile(tool): return tool
+        up = os.path.dirname(d)
+        if up == d: return None
+        d = up
+
+
+def pack_models(root):
+    """asset-packs keeps each model folder as a <model>.tar.zst archive and git ignores the folders, so a change
+    reaches git only once the folder is packed again. Packs the changed folders of the packs under root."""
+    tool = archive_tool(root)
+    if not tool: return
+    packs = [root] if os.path.isfile(os.path.join(root, "pack.json")) else \
+        [os.path.join(root, d) for d in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, d, "pack.json"))]
+    if packs:
+        print("Packing the changed model folders into their archives.", flush=True)
+        run([sys.executable, tool, "pack"] + packs, root)
+
+
+def changes(top, root, skip=()):
+    """[(code, path)] for every change under the models folder, paths relative to the repo. skip: folders left out
+    (the submodules, which are committed in their own repos)."""
+    spec = [root] + [":(exclude)" + os.path.relpath(s, top).replace(os.sep, "/") for s in skip]
+    out = git(top, "status", "--porcelain", "-z", "--untracked-files=all", "--", *spec,
+              strip=False) or ""   # unstripped: " M path" starts with the space of an unstaged change
     rows, items = [], out.split("\0")
     i = 0
     while i < len(items):
@@ -71,20 +113,32 @@ def changes(top, root):
 
 
 def status(root, known=None):
-    """Everything the File menu's dialog shows before committing. known: model names, to say which ones changed."""
+    """Everything the File menu's dialog shows before committing. known: model names, to say which ones changed.
+    A models folder holding submodules lists each one's own status under "repos"; "count" and "models" cover all."""
     root = os.path.abspath(root)
     top = toplevel(root)
     if not top:
         return {"repo": None, "root": root, "error": "the models folder %s is not in a git repo" % root}
     top = os.path.normpath(top)
+    subs = submodules(top, root)
+    st = repo_status(top, root, known, subs)
+    st["repos"] = [status(s, known) for s in subs]
+    st["count"] += sum(r.get("count", 0) for r in st["repos"])
+    st["models"] = sorted(set(st["models"]).union(*[r.get("models", ()) for r in st["repos"]]))[:200]
+    return st
+
+
+def repo_status(top, root, known=None, skip=()):
     branch = git(top, "branch", "--show-current", check=False) or ""
     base = default_branch(top)
     url = git(top, "remote", "get-url", "origin", check=False) or ""
-    rows = changes(top, root)
+    rows = changes(top, root, skip)
     pr = None if branch in ("", base) or not github_repo(url) else pull_request(top, branch)
     # a branch whose pull request is merged or closed is finished: start a fresh one from the latest base
     restart = bool(pr and pr["state"] != "OPEN")
-    models = sorted({seg for _, p in rows for seg in p.split("/")[:-1] if seg in (known or ())})
+    # a model's folder in the path, or its archive (Heartroot/the_knight.tar.zst)
+    models = sorted({seg for _, p in rows for seg in p.split("/")[:-1] + [p.rsplit("/", 1)[-1][:-len(".tar.zst")]]
+                     if seg in (known or ())})
     # commits not on GitHub yet: against the branch's remote copy, or against the base for a branch never pushed
     pushed = branch and git(top, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch, check=False)
     ahead = git(top, "rev-list", "--count", "%s..HEAD" % ("origin/" + (branch if pushed else base)), check=False) \
@@ -117,8 +171,21 @@ def run(cmd, cwd):
 
 
 def commit_push_pr(root, message, title=None, body=None):
-    st = status(root)
-    if not st["repo"]: raise RuntimeError(st["error"])
+    """Pack the changed models, then commit, push and open a pull request in each repo that has changes: every
+    submodule inside the models folder (each pack's own repo), then the folder's repo for the rest. The links."""
+    root = os.path.abspath(root)
+    top = toplevel(root)
+    if not top: raise RuntimeError("the models folder %s is not in a git repo" % root)
+    pack_models(root)
+    subs = submodules(os.path.normpath(top), root)
+    urls = [commit_repo(s, message, title, body) for s in subs]
+    urls.append(commit_repo(root, message, title, body, subs))
+    return [u for u in urls if u]
+
+
+def commit_repo(root, message, title=None, body=None, skip=()):
+    top = os.path.normpath(toplevel(root))
+    st = repo_status(top, root, skip=skip)
     top, base, branch = st["repo"], st["base"], st["branch"]
     if not st["count"] and (st["new_branch"] or not st["unpushed"]):
         print("Nothing to commit under %s." % root); return None
@@ -137,7 +204,8 @@ def commit_push_pr(root, message, title=None, body=None):
         # the changes come along; from a finished branch, onto the latest base
         run(["git", "switch", "-c", branch] + (["origin/" + base] if st["restart"] else []), top)
     if st["count"]:
-        run(["git", "add", "-A", "--", root], top)
+        run(["git", "add", "-A", "--", root] + [":(exclude)" + os.path.relpath(s, top).replace(os.sep, "/")
+                                                 for s in skip], top)
         run(["git", "commit", "-q", "-m", message], top)
     print("Pushing to GitHub: a big change takes minutes, and git says nothing until it is done.", flush=True)
     run(remote + ["push", "-u", "origin", branch], top)
