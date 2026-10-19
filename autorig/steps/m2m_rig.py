@@ -2437,7 +2437,9 @@ def people_classic(a, log):
         rig.setdefault("clips", {"archetype": "walker"})
         spec["rig"] = rig
         if not isinstance(spec.get("humanoid"), dict) or not spec["humanoid"].get("z"):
-            spec["humanoid"] = json.loads(json.dumps(rerig_humanoid.DEFAULT_HUMANOID))
+            # "auto": the rig measures this person's heights and spans (humanoid_fit.auto_landmarks); the default's
+            # numbers are only what is left when a part cannot be measured
+            spec["humanoid"] = dict(json.loads(json.dumps(rerig_humanoid.DEFAULT_HUMANOID)), auto=True)
         spec.setdefault("clips", {"archetype": "walker"})
         spec.setdefault("notes", {})["people"] = ("Auto rig took it for a person: the humanoid rig, arms as modelled "
                                                   "and mirrored (m2m_rig --people classic)")

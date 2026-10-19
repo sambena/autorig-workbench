@@ -1257,7 +1257,7 @@ def creature_walker(rig, style, spec=None):
                    "duty": fact_duty, "plant": plant}
 
 
-ARM_HANG_MIN, ARM_HANG_MAX = 15.6, 38.0
+ARM_HANG_MIN, ARM_HANG_MAX = 15.6, 30.0
 
 
 def arm_hang_angles(rig, arms, side_of):
@@ -1265,9 +1265,11 @@ def arm_hang_angles(rig, arms, side_of):
 
     The body is every vertex whose strongest weight is not an arm's (a sleeve is the arm's own); the arm is its rest
     length from the shoulder to the hand's tip and as thick as its own vertices sit from its bones. For each angle
-    from ARM_HANG_MIN up, the arm's line from a third of the way down to the hand must pass outside the body's widest
-    point beside it (within the arm's depth, front to back, plus the swing's reach). The tuned 15.6 degrees cleared a
-    jacket; a coat's skirt or a robe hung the hands inside the cloth (Heartroot's ticket taker, 2026-10-18)."""
+    from ARM_HANG_MIN up, the forearm and hand (the arm's line from 60% of the way down) must pass outside the body's
+    widest point beside them (within the arm's depth, front to back, plus the swing's reach). The tuned 15.6 degrees
+    cleared a jacket; a coat's skirt or a robe hung the hands inside the cloth (Heartroot's ticket taker,
+    2026-10-18). Higher up, a poncho or a cape lying over the arm is the body's to the skin but goes where the arm
+    goes, so it is not counted; and no arm hangs out further than ARM_HANG_MAX (a scarecrow's past that)."""
     out = {a: ARM_HANG_MIN for a, _ in arms}
     mesh = getattr(rig, "mesh", None)
     if mesh is None or not len(mesh.data.vertices) or not mesh.vertex_groups:
@@ -1312,7 +1314,7 @@ def arm_hang_angles(rig, arms, side_of):
             for deg in np.arange(ARM_HANG_MIN, ARM_HANG_MAX + 0.01, 1.0):
                 th = math.radians(deg)
                 ok = True
-                for t in np.linspace(0.35, 1.0, 8):
+                for t in np.linspace(0.6, 1.0, 6):
                     q = np.array((S.x + sg * math.sin(th) * t * L, S.y, S.z - math.cos(th) * t * L))
                     near = body[(np.abs(body[:, 2] - q[2]) < 0.02 * H) & (np.abs(body[:, 1] - q[1]) < r + 0.06 * H)]
                     if len(near) < 5:

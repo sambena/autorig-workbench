@@ -187,6 +187,27 @@ within a foot's length ahead of the ankle.
 then the sleeve's and the arm tracker follows it down. With it the shoulder, elbow, wrist and knuckle lie on the
 straight line from the shoulder (the arm height, the torso's depth) to the measured fingertip.
 
+`auto: true` measures the heights and spans from the mesh (`core/humanoid_fit.py`) instead of reading them from the
+section; a section that is `DEFAULT_HUMANOID`'s numbers unchanged (what Auto rig and the Human tile write for a fresh
+upload) counts as `auto` too, and `auto: false` keeps any numbers as they are. Measured, in fractions of the height,
+on a dense sampling of the surface (a Tripo person has a few thousand vertices, too few for a thin slice):
+
+- **arms**: each arm's top edge, followed in from the fingertip. The shoulder joint is under the line that edge makes
+  along the forearm half (a pauldron, a cape or the trapezius sits on the upper arm), run in to the chest's half width:
+  read at the first levels under the upper arm where the run through the middle is the torso alone. The arms then
+  run straight to the fingertip (`straight_arms`), so a bell sleeve never pulls them down.
+- **neck, head, spine, hips, knees**: from the shoulders and the ankles by proportions fitted to the Mixamo-named
+  skeletons of 18 Heartroot people and Mixamo's own rigs of 5 Tornado Titans (`humanoid_fit.AUTO`): the hip is
+  0.62 of the way from the ankle to the neck (0.60-0.67 on all but one of them). The default's 0.47 put every hip
+  about 8% of the height low. A crotch is not read off the mesh: a tunic's hem looks just like one.
+- **legs**: tracked up from the feet, each the run of points continuing the one below, until the two merge or one
+  widens into a hem. Their spacing gives `x.leg` and `x.leg_band`, so a robe's hem never splays the legs. `robe` is
+  then the height the legs are covered from (`true`: no legs seen at all): joints above it stand under the body's
+  middle, those below keep their own depth, and the toe is clamped to a foot's length only when the feet are hidden.
+
+Against those skeletons the measured joints are 5.6% of the height off on average, the default's 7.7%; worst and
+best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
+
 ### `m2m`
 
 Written by `steps/m2m_rig.py` (`run.py m2m-rig`), with `rig.kind: "m2m"` and `rig.skeleton` the archetype it was
