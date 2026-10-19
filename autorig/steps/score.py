@@ -10,7 +10,7 @@
 # Every clip starts from the same state: the NLA tracks muted, every pose bone's matrix_basis reset and the objects at
 # their rest matrices, then the clip's action set. Without that a clip's renders and numbers carry the last clip's
 # pose (or the importer's active take) and lie.
-import argparse, json, math, os, sys, tempfile
+import argparse, json, math, os, shutil, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
@@ -343,6 +343,7 @@ def shoot(cam, frames, path):
     img.pixels.foreach_set(sheet.ravel())
     img.filepath_raw = path; img.file_format = "PNG"; img.save()
     bpy.data.images.remove(img)
+    shutil.rmtree(tmp, ignore_errors=True)        # a frame's renders, a few MB a clip: /tmp is a small RAM disk on the box
 
 
 RENDER = a.render == "1"
