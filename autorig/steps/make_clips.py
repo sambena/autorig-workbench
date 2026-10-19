@@ -1257,6 +1257,81 @@ def creature_walker(rig, style, spec=None):
                    "duty": fact_duty, "plant": plant}
 
 
+ARM_HANG_MIN, ARM_HANG_MAX = 15.6, 38.0
+
+
+def arm_hang_angles(rig, arms, side_of):
+    """{upper arm bone: degrees out from straight down} that keeps each arm, hanging straight, clear of the body.
+
+    The body is every vertex whose strongest weight is not an arm's (a sleeve is the arm's own); the arm is its rest
+    length from the shoulder to the hand's tip and as thick as its own vertices sit from its bones. For each angle
+    from ARM_HANG_MIN up, the arm's line from a third of the way down to the hand must pass outside the body's widest
+    point beside it (within the arm's depth, front to back, plus the swing's reach). The tuned 15.6 degrees cleared a
+    jacket; a coat's skirt or a robe hung the hands inside the cloth (Heartroot's ticket taker, 2026-10-18)."""
+    out = {a: ARM_HANG_MIN for a, _ in arms}
+    mesh = getattr(rig, "mesh", None)
+    if mesh is None or not len(mesh.data.vertices) or not mesh.vertex_groups:
+        return out
+    try:
+        names = {vg.index: vg.name.split(":")[-1] for vg in mesh.vertex_groups}
+        mw = mesh.matrix_world
+        aw_inv = rig.arm.matrix_world.inverted()
+        co = np.array([(aw_inv @ (mw @ v.co))[:] for v in mesh.data.vertices])
+        dom = []
+        for v in mesh.data.vertices:
+            g = max(v.groups, key=lambda e: e.weight, default=None)
+            dom.append(names.get(g.group, "") if g else "")
+        arm_words = ("Shoulder", "Arm", "ForeArm", "Hand")
+        is_arm = np.array([any(w in d for w in arm_words) and "UpLeg" not in d for d in dom])
+        body = co[~is_arm]
+        H = float(co[:, 2].max() - co[:, 2].min()) or 1.0
+        for a, fa in arms:
+            sg = side_of(a)
+            b = rig.arm.data.bones[a]
+            S = b.head_local
+            chain = [b]
+            while chain[-1].children:
+                kids = [c for c in chain[-1].children if "Thumb" not in c.name]
+                if not kids:
+                    break
+                chain.append(kids[0])
+            L = sum(c.length for c in chain)
+            side = "Left" if "Left" in a else "Right"
+            own = co[np.array([d.startswith(side) and any(w in d for w in arm_words) for d in dom])]
+            # the arm's thickness: its vertices' distance from the upper arm and forearm lines, a low percentile so a
+            # bell sleeve does not count
+            r = 0.025 * H
+            if len(own) > 20:
+                seg = [(c.head_local, c.tail_local) for c in chain[:3]]
+                dist = np.full(len(own), np.inf)
+                for h0, t0 in seg:
+                    h0 = np.array(h0[:]); d = np.array(t0[:]) - h0; ll = float(d @ d) or 1e-9
+                    t = np.clip(((own - h0) @ d) / ll, 0, 1)
+                    dist = np.minimum(dist, np.linalg.norm(own - (h0 + t[:, None] * d), axis=1))
+                r = float(np.clip(np.percentile(dist, 40), 0.01 * H, 0.05 * H))
+            for deg in np.arange(ARM_HANG_MIN, ARM_HANG_MAX + 0.01, 1.0):
+                th = math.radians(deg)
+                ok = True
+                for t in np.linspace(0.35, 1.0, 8):
+                    q = np.array((S.x + sg * math.sin(th) * t * L, S.y, S.z - math.cos(th) * t * L))
+                    near = body[(np.abs(body[:, 2] - q[2]) < 0.02 * H) & (np.abs(body[:, 1] - q[1]) < r + 0.06 * H)]
+                    if len(near) < 5:
+                        continue
+                    widest = float(np.percentile(sg * near[:, 0], 97))
+                    if sg * q[0] - r < widest:
+                        ok = False
+                        break
+                if ok:
+                    out[a] = float(deg)
+                    break
+            else:
+                out[a] = ARM_HANG_MAX
+    except Exception as e:                       # a rig without weights or odd bones keeps the old angle
+        print("arm_hang_angles:", repr(e))
+    print("ARM_HANG", {k: round(v, 1) for k, v in out.items()})
+    return out
+
+
 def humanoid_walker(rig, style, spec=None):
     """The Walker set for a Mixamo skeleton: forward kinematics, by role.
 
@@ -1287,7 +1362,17 @@ def humanoid_walker(rig, style, spec=None):
         return 1.0 if rig.direction(bone).x >= 0 else -1.0
 
     arms = [(r["arm.L"], r["forearm.L"]), (r["arm.R"], r["forearm.R"])]
-    at_side = {a: rig.aim(a, Vector((side_of(a) * 0.28, 0.0, -1.0))) for a, _ in arms}
+    # arms down at the sides: out from straight down as far as each arm needs to hang clear of the body (a long coat's
+    # skirt, a robe, a broad belly), at least the old 15.6 degrees (0.28 out per 1 down)
+    hang = arm_hang_angles(rig, arms, side_of)
+    # each forearm turned into line with its upper arm before any clip moves the arm: an arm resting as modelled can
+    # rest bent (a fitted elbow too close to the shoulder, a sculpt's relaxed elbow), and swinging only the upper arm
+    # down carried that bend inward until the hands met in front of the hips (Tornado Titans' Ice_Age16, 2026-10-18).
+    # A T-pose's straight arm is unchanged.
+    upper_of = {fa: a for a, fa in arms}
+    straight = {fa: rig.direction(fa).rotation_difference(rig.direction(a)) for a, fa in arms}
+    at_side = {a: rig.aim(a, Vector((side_of(a) * math.sin(math.radians(hang[a])), 0.0,
+                                      -math.cos(math.radians(hang[a]))))) for a, _ in arms}
     level = {a: rig.aim(a, Vector((side_of(a) * 0.12, -1.0, 0.02))) for a, _ in arms}
     overhead = {a: rig.aim(a, Vector((side_of(a) * 0.15, 0.15, 1.0))) for a, _ in arms}
     slam = {a: rig.aim(a, Vector((side_of(a) * 0.15, -1.0, -0.7))) for a, _ in arms}
@@ -1365,7 +1450,7 @@ def humanoid_walker(rig, style, spec=None):
         a T-posed arm (forearm along +-X) it is the vertical the clips were written for; for an arm resting as
         modelled in an A-pose it is the real hinge, where the vertical swung the forearm across the body (Tornado
         Titans' Ice_Age26 ran with his hands through his hips, 2026-10-18)."""
-        h = rig.direction(fa).cross(FORWARD)
+        h = rig.direction(upper_of.get(fa, fa)).cross(FORWARD)    # the forearm lies along the upper arm (straight)
         if h.length < 1e-4:
             return UP * (-1.0 if side_of(fa) > 0 else 1.0)
         return h.normalized()
@@ -1373,6 +1458,7 @@ def humanoid_walker(rig, style, spec=None):
     def arms_down(p, bend=None):
         for a, fa in arms:
             p.orient(a, at_side[a])
+            p.orient(fa, straight[fa])
             if bend is not None and abs(bend) > 1e-5:
                 side_sign = 1.0 if side_of(a) > 0 else -1.0
                 p.turn(fa, elbow_axis(fa), bend)
@@ -1613,6 +1699,7 @@ def humanoid_walker(rig, style, spec=None):
 
         for a, fa in arms:
             p.orient(a, at_side[a].slerp(level[a], rear * (1 - recover)))
+            p.orient(fa, straight[fa])
             p.turn(a, LATERAL, -16.0 * kick)                   # the muzzle climbs on the shot
             side_sign = 1.0 if side_of(a) > 0 else -1.0
             p.turn(fa, elbow_axis(fa), 8.0 * (1 - rear))
@@ -1639,6 +1726,7 @@ def humanoid_walker(rig, style, spec=None):
         for a, fa in arms:
             up = at_side[a].slerp(overhead[a], rear)
             p.orient(a, up.slerp(slam[a], strike) if strike < 1 else slam[a].slerp(at_side[a], recover))
+            p.orient(fa, straight[fa])
             side_sign = 1.0 if side_of(a) > 0 else -1.0
             p.turn(fa, elbow_axis(fa), 20.0 * rear * (1 - strike))
         lean(p, -14.0 * rear * (1 - strike) + 22.0 * strike * (1 - recover))

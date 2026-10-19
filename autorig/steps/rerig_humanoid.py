@@ -36,6 +36,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "core")]
 import rerig
 from layout import work_dir
 from spec_store import HUMANOIDS, SPECS
+from humanoid_fit import DEFAULT_HUMANOID, AUTO, wants_auto, auto_section, auto_landmarks   # noqa: F401 (re-exported)
 
 # HUMANOIDS (rig.json "humanoid"): heights (z) and spans (x) as 0..1 of the model's bounds after it is turned to face
 # -Y, read off measure.py's front view; everything else about a joint is measured from the mesh.
@@ -161,7 +162,8 @@ def measure(co, lo, size, h, main=None):
         # below the hips, so the median of everything on a side lands out at the hem and splays the legs; with it,
         # the hips, knees, ankles and feet are only read in a band around the leg (the boots under the hem).
         if "leg" in x:
-            leg, band = float(x["leg"]), max(0.02, 0.5 * float(x["leg"]))
+            leg = float(x["leg"])
+            band = float(x["leg_band"]) if "leg_band" in x else max(0.02, 0.5 * leg)
             xs = (cx + leg - band, cx + leg + band) if sgn > 0 else (cx - leg - band, cx - leg + band)
         # Anatomical crease refinement for knee via cross-section pinch analysis
         knee_z = z["knee"]
@@ -191,12 +193,18 @@ def measure(co, lo, size, h, main=None):
         k_x = float(np.median(s_knee[:, 0])) if len(s_knee) else float(xs[0] * 0.5 + xs[1] * 0.5)
         k_y = float(np.median(s_knee[:, 1])) if len(s_knee) else float(spine_y(knee_z))
         raw[side + "knee"] = (k_x, k_y, knee_z)
-        if "leg" in x:
+        # "robe": true, or the height the legs are seen up to (auto_landmarks: a tunic's hem at the knees covers the
+        # hips only); an old "leg" with no band meant a robe
+        robe = h.get("robe", "leg" in x and "leg_band" not in x)
+        robe_to = float(robe) if isinstance(robe, (int, float)) and not isinstance(robe, bool) else 0.0
+        if robe:
             # under a robe the depth of a slab is the cloth's (a train trailing behind drags the median back), so
-            # the leg stands straight down under the body's middle, as a T-pose's legs do
+            # the leg stands straight down under the body's middle, as a T-pose's legs do; a joint below the hem,
+            # where the leg itself was seen, keeps its own depth
             ly = float(spine_y(z["hip"]))
             for j in ("hip", "knee", "ankle"):
-                raw[side + j] = (raw[side + j][0], ly, raw[side + j][2])
+                if raw[side + j][2] > robe_to - 0.02:
+                    raw[side + j] = (raw[side + j][0], ly, raw[side + j][2])
 
         foot = M[(M[:, 2] < 0.06) & (M[:, 0] >= xs[0]) & (M[:, 0] <= xs[1])]
         if len(foot) == 0:
@@ -210,9 +218,9 @@ def measure(co, lo, size, h, main=None):
         else:
             fx = float(xs[0] * 0.5 + xs[1] * 0.5)
             toe_y = float(raw[side + "ankle"][1] - 0.08)
-        if "leg" in x:                             # a hem lying on the floor ahead of the boot is not the toe
-            ay0 = raw[side + "ankle"][1]
-            toe_y = min(max(toe_y, ay0 - 0.24 / max(1e-6, size[1])), ay0 - 0.08 / max(1e-6, size[1]))
+        if robe and robe_to < 0.06:                # a hem lying on the floor ahead of the boot is not the toe
+            ay0 = raw[side + "ankle"][1]           # (a foot 4-13% of the height long; it was metres, 0.08-0.24)
+            toe_y = min(max(toe_y, ay0 - 0.13 * size[2] / max(1e-6, size[1])), ay0 - 0.04 * size[2] / max(1e-6, size[1]))
         raw[side + "toe"] = (fx, toe_y, 0.02)
         ay = raw[side + "ankle"][1]
         raw[side + "ball"] = (fx, ay + (toe_y - ay) * 0.68, 0.035)
@@ -312,6 +320,32 @@ def measure(co, lo, size, h, main=None):
     raw["Lefthip"] = (cx + hx, hy, z["hip"]); raw["Righthip"] = (cx - hx, hy, z["hip"])
     for k, v in raw.items(): out[k] = P(*v)
     return out
+
+
+def surface_points(mesh, main=None, n=60000, seed=0):
+    """n points spread over the mesh's surface by area (the main pieces' faces only, when main masks the vertices),
+    with the vertices themselves: a generated person has a few thousand vertices, too few for a 1%-of-height slice
+    to see a leg or a neck."""
+    me = mesh.data
+    me.calc_loop_triangles()
+    tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int64); me.loop_triangles.foreach_get("vertices", tri)
+    tri = tri.reshape(-1, 3)
+    co = np.empty(len(me.vertices) * 3); me.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+    if main is not None:
+        tri = tri[main[tri].all(axis=1)]
+    if not len(tri):
+        return co
+    A, B, C = co[tri[:, 0]], co[tri[:, 1]], co[tri[:, 2]]
+    area = 0.5 * np.linalg.norm(np.cross(B - A, C - A), axis=1)
+    if area.sum() <= 0:
+        return co
+    rng = np.random.default_rng(seed)
+    pick = rng.choice(len(tri), size=n, p=area / area.sum())
+    u, v = rng.random(n), rng.random(n)
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    pts = A[pick] + (B[pick] - A[pick]) * u[:, None] + (C[pick] - A[pick]) * v[:, None]
+    return np.vstack([pts, co[main] if main is not None else co])
 
 
 def find_fingertips(co, wrist, sgn, height):
@@ -529,6 +563,11 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     main = np.zeros(len(co), bool)
     for idx in isl:  # the body's own pieces: everything bigger than a tenth of the largest
         if len(idx) >= 0.1 * len(isl[0]): main[idx] = True
+    if wants_auto(h):
+        # nobody tuned this person's section: its heights and spans are measured (auto_landmarks), not one set of
+        # proportions for every body (DEFAULT_HUMANOID put a robe's legs out at the hem and a coat's hips too narrow)
+        log["auto_landmarks"] = {}
+        h = auto_section(h, surface_points(mesh), np.array(lo[:]), np.array(size[:]), None, log["auto_landmarks"])
     J = measure(co, np.array(lo[:]), np.array(size[:]), h, main)
     log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items()}
     if spec.get("digits"):
@@ -580,13 +619,6 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         except Exception as e: log["qa_error"] = repr(e)
     log["seconds"] = round(time.time() - t0, 1)
     return log
-
-
-DEFAULT_HUMANOID = {
-    "forward": [0, -1, 0],
-    "z": {"top": 1.0, "head": 0.87, "neck": 0.83, "arm": 0.77, "spine2": 0.72, "spine1": 0.65, "spine": 0.57, "hip": 0.47, "knee": 0.28, "ankle": 0.08},
-    "x": {"shoulder": 0.38, "elbow": 0.23, "wrist": 0.11, "knuckle": 0.05, "tip": 0.0}
-}
 
 
 def main():
