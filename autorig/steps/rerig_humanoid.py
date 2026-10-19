@@ -563,11 +563,22 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
     main = np.zeros(len(co), bool)
     for idx in isl:  # the body's own pieces: everything bigger than a tenth of the largest
         if len(idx) >= 0.1 * len(isl[0]): main[idx] = True
+    h_in = h
     if wants_auto(h):
         # nobody tuned this person's section: its heights and spans are measured (auto_landmarks), not one set of
         # proportions for every body (DEFAULT_HUMANOID put a robe's legs out at the hem and a coat's hips too narrow)
         log["auto_landmarks"] = {}
         h = auto_section(h, surface_points(mesh), np.array(lo[:]), np.array(size[:]), None, log["auto_landmarks"])
+        # and the skin rules for what it found, unless rig.json says otherwise: a robe's cloth shares itself between
+        # the legs and the hips (skirt), a generated person's loose pieces (Tripo's sleeves, hoods, boots) belong to
+        # one limb each (limb_pieces), and a boot holds together below the knee (feet_on_legs)
+        auto_rules = {"limb_pieces": True, "feet_on_legs": True}
+        if h.get("robe"):
+            auto_rules["skirt"] = True
+        for k, v in auto_rules.items():
+            if k not in rig_spec and k not in h_in:
+                spec[k] = v
+        log["auto_rules"] = sorted(k for k in auto_rules if spec.get(k) is auto_rules[k])
     J = measure(co, np.array(lo[:]), np.array(size[:]), h, main)
     log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items()}
     if spec.get("digits"):

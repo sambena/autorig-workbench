@@ -1328,6 +1328,10 @@ def arm_hang_angles(rig, arms, side_of):
                     break
             else:
                 out[a] = ARM_HANG_MAX
+        # both arms hang alike: a lopsided drape (a satchel, a sleeve longer one side) would otherwise give a
+        # lopsided stance
+        both = max(out.values())
+        out = {a: both for a in out}
     except Exception as e:                       # a rig without weights or odd bones keeps the old angle
         print("arm_hang_angles:", repr(e))
     print("ARM_HANG", {k: round(v, 1) for k, v in out.items()})
