@@ -78,6 +78,7 @@ model can move between groups with nothing else changing.
     set AUTORIG_MODELS=D:\models
     python autorig/cli/pipeline.py wolf,moth           rig -> trim -> audit, with a graded table
     python autorig/cli/run.py audit-all                 audit every rigged model, worst first (exit 1 on any FAIL)
+    python autorig/cli/run.py score all                 0-100 quality score per rigged model, ranked, with contact sheets (docs/QUALITY.md)
     python autorig/steps/publish.py Creatures           model cards and the group's pack.json
     python autorig/cli/run.py preview wolf              rigged/preview.glb, a GLB of the rig and its clips
     blender -b --python autorig/steps/suggest_step.py -- -only wolf           suggest archetype and skeleton
