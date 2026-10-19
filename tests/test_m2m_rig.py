@@ -139,6 +139,8 @@ class TestTripoLegged(unittest.TestCase):
         self.assertGreater(hip[2], j["belly"], (hip, j))
         self.assertLess(log["swing_auto"], 1.0)
         self.assertNotIn("gait", log)
+        self.assertAlmostEqual(log["height"], 0.3, places=2)           # a cat's typical height, not Tripo's 1 m
+        self.assertIn("cat", log["height_from"])
 
     def test_rabbit_hops(self):
         out = tempfile.mkdtemp(prefix="m2m_rabbit_")
