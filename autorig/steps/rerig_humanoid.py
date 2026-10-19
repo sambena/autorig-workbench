@@ -299,6 +299,14 @@ def measure(co, lo, size, h, main=None):
                 f = shoulder_x if j == "shoulder" else x[j]
                 t = (X(f) - s0[0]) / (s1[0] - s0[0]) if abs(s1[0] - s0[0]) > 1e-6 else 0.0
                 raw[side + j] = tuple(s0 + (s1 - s0) * t)
+    if h.get("symmetric_arms"):
+        # the arms' joints, averaged across the two sides and mirrored. The shoulder is found by running the upper
+        # arm's line in to the shoulder's width, so a small slope error moves it a long way: Ice_Age26's left one
+        # came out 3 cm above the right, and lowering that arm crushed his jacket into a lump at the shoulder
+        for j in ("shoulder", "elbow", "wrist", "knuckle", "tip"):
+            L, R = raw["Left" + j], raw["Right" + j]
+            ax = (L[0] - R[0]) / 2; ay = (L[1] + R[1]) / 2; az = (L[2] + R[2]) / 2
+            raw["Left" + j] = (cx + ax, ay, az); raw["Right" + j] = (cx - ax, ay, az)
     # the hip joints mirror each other: a stride moves the knees and feet, never the pelvis
     hx = (raw["Lefthip"][0] - raw["Righthip"][0]) / 2; hy = (raw["Lefthip"][1] + raw["Righthip"][1]) / 2
     raw["Lefthip"] = (cx + hx, hy, z["hip"]); raw["Righthip"] = (cx - hx, hy, z["hip"])
@@ -367,7 +375,8 @@ def chains_for(J, digits=False):
 
 def straighten(arm, size, arms="t-pose"):
     """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
-    arms: "as-modelled" keeps the upper arms' modelled slope and lines the forearms and hands up with them; a number
+    arms: "keep" leaves them exactly as modelled; "as-modelled" keeps the upper arms' modelled slope and lines the
+    forearms and hands up with them; a number
     rests them straight that many degrees below horizontal (0-80). An engine that stands a character with its arms down
     then bends the shoulders that much less (Tornado Titans' cast, 2026-10-17: a T-pose rest crumpled their jackets);
     see docs/SPEC.md for what it costs the raised-arm bends."""
@@ -410,6 +419,11 @@ def straighten(arm, size, arms="t-pose"):
                 along = Vector((sx * math.cos(down), 0, -math.sin(down)))
                 for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
                     aim(side + b, along)
+            elif arms == "keep":
+                # the arms rest exactly as modelled (an A-pose stays an A-pose): no turn, so the mesh is untouched
+                # there. "as-modelled" turns them onto the fitted upper-arm bone, and a lopsided fit (Ice_Age26:
+                # a shoulder 3 cm high, its bone 11 degrees below the sleeve) crushed the jacket into a lump
+                pass
             elif arms == "as-modelled" and side + "Arm" in arm.pose.bones:
                 # along the upper arm as modelled, flattened front to back so the arm hangs in the body's plane
                 ua = arm.matrix_world @ arm.pose.bones[side + "Arm"].matrix
