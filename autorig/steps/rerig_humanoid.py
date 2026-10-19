@@ -617,7 +617,7 @@ def choose_skin(mesh, arm, joints, src_w, size, log):
     return best
 
 
-def straighten(arm, size, arms="t-pose"):
+def straighten(arm, size, arms="t-pose", legs=True, turned=None):
     """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
     arms: "keep" leaves them exactly as modelled; "as-modelled" keeps the upper arms' modelled slope and lines the
     forearms and hands up with them; a number
@@ -652,15 +652,19 @@ def straighten(arm, size, arms="t-pose"):
                 return
         pb.matrix = new_mat
         bpy.context.view_layer.update()
+        return math.degrees(r.angle)
 
+    legs_turned = 0.0
     with rerig.deform_off(arm):                    # bone matrices only: the mesh is posed once, by the apply below
         for side, sx in (("Left", 1), ("Right", -1)):
-            aim(side + "UpLeg", down); aim(side + "Leg", down)
-            aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
+            if legs:                               # legs=False: they rest as sculpted (a stride kept, see rerig_humanoid)
+                for b in ("UpLeg", "Leg"):
+                    legs_turned = max(legs_turned, aim(side + b, down) or 0.0)
+                aim(side + "Foot", fwd, keep_pitch=True); aim(side + "ToeBase", fwd, keep_pitch=True)
             if isinstance(arms, (int, float)) and not isinstance(arms, bool):
                 # the arms rest straight, `arms` degrees below horizontal
-                down = math.radians(max(0.0, min(80.0, float(arms))))
-                along = Vector((sx * math.cos(down), 0, -math.sin(down)))
+                drop = math.radians(max(0.0, min(80.0, float(arms))))
+                along = Vector((sx * math.cos(drop), 0, -math.sin(drop)))
                 for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
                     aim(side + b, along)
             elif arms == "keep":
@@ -680,6 +684,8 @@ def straighten(arm, size, arms="t-pose"):
             else:
                 for b in ("Arm", "ForeArm", "Hand", "HandIndex1", "HandIndex2", "HandIndex3"):
                     aim(side + b, (sx, 0, 0))
+    if turned is not None:
+        turned["legs_turned_deg"] = round(legs_turned, 1)
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh = next(o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm)
     rerig.select_only(mesh)
@@ -849,7 +855,11 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             log["skin_choice"] = ch
     rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "keep"))     # the arms as modelled (2026-10-18)
     log["rest_arms"] = rest_arms
-    log["rest_offset"] = straighten(arm, size, arms=rest_arms)
+    # AUTORIG_HUMANOID_LEGS=keep (people_classic's try when a sculpt stood mid-stride): the legs rest as modelled
+    keep_legs = os.environ.get("AUTORIG_HUMANOID_LEGS") == "keep" or h.get("rest_legs") == "keep"
+    log["rest_offset"] = straighten(arm, size, arms=rest_arms, legs=not keep_legs, turned=log)
+    if keep_legs:
+        log["rest_legs"] = "keep"
     if spec.get("twist_bones", False):
         try:
             import twist_bones

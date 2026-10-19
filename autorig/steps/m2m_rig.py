@@ -2462,10 +2462,11 @@ def people_classic(a, log):
     name = layout.leaf(a.model)
     steps = {}
 
-    def run(step, skin=None):
-        print("people: %s %s%s" % (step, name, " (%s)" % skin if skin else ""), flush=True)
+    def run(step, skin=None, legs=None):
+        print("people: %s %s%s" % (step, name, " (%s)" % (skin or legs) if (skin or legs) else ""), flush=True)
         env = dict(os.environ)
         if skin: env["AUTORIG_HUMANOID_SKIN"] = skin
+        if legs: env["AUTORIG_HUMANOID_LEGS"] = legs
         r = subprocess.run([py, run_py, step, name], capture_output=True, text=True, env=env)
         sys.stdout.write((r.stdout or "")[-4000:]); sys.stdout.flush()
         steps[step] = r.returncode
@@ -2484,22 +2485,44 @@ def people_classic(a, log):
     # a person whose source came rigged and skinned (Tripo's converter) is rigged both ways, our skeleton and the
     # source's own rig kept, each clipped and scored (run.py score); the better stays. Neither always wins: Heartroot's
     # stoker scored 91.9 kept against 65.3 rebuilt, the hooded figure uploaded 2026-10-18 82.2 rebuilt against 65.6 kept
+    #
+    # and a sculpt that stood mid-stride (its legs turned more than 8 degrees to stand them straight: Smeltdown's
+    # player_blue) is also rigged with its legs resting as sculpted; the scorer's rest check counts the straightening
+    folder_now = layout.pack_dir(a.model)
+    out_dirs = lambda: [d for d in (layout.rigged_dir(a.model), os.path.join(folder_now, "clips")) if os.path.isdir(d)]
+    best = {"tag": None, "score": -1.0}
+
+    def stash(tag):
+        dst = os.path.join(layout.work_dir("people_choice"), name, tag + "_files")
+        shutil.rmtree(dst, ignore_errors=True); os.makedirs(dst, exist_ok=True)
+        for d in out_dirs(): shutil.copytree(d, os.path.join(dst, os.path.basename(d)))
+        return dst
+
+    def unstash(src):
+        for d in (layout.rigged_dir(a.model), os.path.join(folder_now, "clips")):
+            shutil.rmtree(d, ignore_errors=True)
+            if os.path.isdir(os.path.join(src, os.path.basename(d))):
+                shutil.copytree(os.path.join(src, os.path.basename(d)), d)
+
+    def attempt(tag, skin=None, legs=None):
+        ok = run("rig", skin, legs) and run("clips") and run("preview")
+        sc = score(tag) if ok else -1.0
+        scores[tag] = sc
+        if sc > best["score"]:
+            best.update(tag=tag, score=sc, files=stash(tag))
+
+    scores = {}
     if run("rig", "rebuild"):
         try: qa = json.load(open(os.path.join(layout.work_dir("qa"), name + ".json"), encoding="utf-8"))
         except (OSError, ValueError): qa = {}
-        if qa.get("kept_possible") and run("clips") and run("preview"):
-            first = score("rebuild")
-            folder_now = layout.pack_dir(a.model)
-            keep_dirs = [d for d in (layout.rigged_dir(a.model), os.path.join(folder_now, "clips")) if os.path.isdir(d)]
-            stash = os.path.join(layout.work_dir("people_choice"), name, "rebuild_files")
-            shutil.rmtree(stash, ignore_errors=True); os.makedirs(stash, exist_ok=True)
-            for d in keep_dirs: shutil.copytree(d, os.path.join(stash, os.path.basename(d)))
-            second = score("kept") if run("rig", "kept") and run("clips") and run("preview") else -1.0
-            if first >= second:                          # the rebuilt rig back in place
-                for d in keep_dirs:
-                    shutil.rmtree(d, ignore_errors=True)
-                    shutil.copytree(os.path.join(stash, os.path.basename(d)), d)
-            log["skin_scores"] = {"rebuild": first, "kept": second, "chosen": "rebuild" if first >= second else "kept"}
+        kept, stride = qa.get("kept_possible"), float(qa.get("legs_turned_deg") or 0) > 8.0
+        if kept or stride:
+            attempt("rebuild", "rebuild")
+            if kept: attempt("kept", "kept")
+            if stride: attempt("legs_kept", "rebuild", "keep")
+            if best["tag"] and best["tag"] != list(scores)[-1]:
+                unstash(best["files"])                   # the best one's files back in place
+            log["skin_scores"] = dict(scores, chosen=best["tag"])
             print("PEOPLE_CHOICE " + json.dumps(log["skin_scores"]), flush=True)
             run("audit")
         else:
