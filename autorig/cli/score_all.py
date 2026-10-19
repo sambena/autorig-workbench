@@ -64,6 +64,15 @@ def source_for(model):
         except Exception: return None
 
 
+def rest_by_design(model):
+    """True when the model's rig rests in its template's pose on purpose (rig.json m2m.rest "template")."""
+    try:
+        import spec_store
+        return (spec_store.model(model).get("m2m") or {}).get("rest") == "template"
+    except Exception:
+        return False
+
+
 def score_one(model, out, opts):
     d = os.path.join(out, model)
     os.makedirs(d, exist_ok=True)
@@ -84,7 +93,9 @@ def score_one(model, out, opts):
     measured = read_json(os.path.join(d, "measure.json"))
     if not measured: return {"model": model, "error": "no measure.json"}
     audit, audit_path = audit_for(model, opts.get("audit", "read"), d)
-    s = QS.score(measured, audit)
+    by_design = rest_by_design(model)
+    s = QS.score(measured, audit, by_design)
+    if by_design: s["rest_skipped"] = "rig.json m2m.rest is \"template\": it rests in the template's pose on purpose"
     s.update({"model": model, "group": layout.group_of(model), "format": "autorig-score/1",
               "audit": audit_path, "clips": [c["name"] for c in measured.get("clips", [])],
               "sheets": sorted(f for f in os.listdir(d) if f.startswith("sheet_") and f.endswith(".png"))})

@@ -151,19 +151,27 @@ def rest_vs_source():
         l, h = p.min(0), p.max(0); s = max(float(h[2] - l[2]), 1e-9)
         c = np.array([(l[0] + h[0]) / 2, (l[1] + h[1]) / 2, l[2]])
         return (p - c) / s
-    r = norm(rest); s0 = norm(source_pts)
+    r = norm(rest); sp = norm(source_pts)
     rng = np.random.default_rng(1)
-    probe = r if len(r) <= 20000 else r[rng.choice(len(r), 20000, replace=False)]
-    best = None
-    for k in range(4):                              # the rig may face another way than the source
-        c, s_ = math.cos(k * math.pi / 2), math.sin(k * math.pi / 2)
-        rot = np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1]])
-        sp = s0 @ rot.T
-        tree = BVHTree.FromPolygons([tuple(x) for x in sp], [tuple(int(i) for i in t) for t in source_tris], all_triangles=True)
-        sub = probe[:: max(1, len(probe) // 2000)]
-        d = np.array([(tree.find_nearest(Vector(p))[3] or 0.0) for p in sub])
-        if best is None or d.mean() < best[0]: best = (d.mean(), k, tree, sp)
-    _, k, tree, sp = best
+    probe0 = r if len(r) <= 20000 else r[rng.choice(len(r), 20000, replace=False)]
+    tree = BVHTree.FromPolygons([tuple(x) for x in sp], [tuple(int(i) for i in t) for t in source_tris], all_triangles=True)
+
+    def turned(p, deg):
+        """The rig's points turned by deg about Z and re-centred on their own footprint: the rig may face any way
+        the source does not (m2m_rig turns a model to face -Y; the megalodon is modelled heading 43 degrees off)."""
+        c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        q = p @ np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1]]).T
+        l, h = q.min(0), q.max(0)
+        return q - np.array([(l[0] + h[0]) / 2, (l[1] + h[1]) / 2, 0.0])
+
+    sub0 = probe0[:: max(1, len(probe0) // 1500)]
+
+    def cost(deg):
+        return float(np.mean([(tree.find_nearest(Vector(p))[3] or 0.0) for p in turned(sub0, deg)]))
+    deg = min(range(0, 360, 15), key=cost)            # every 15 degrees, then to the nearest degree
+    for step in (5, 2, 1):
+        deg = min((deg - step, deg, deg + step), key=cost)
+    probe = turned(probe0, deg)
     d = np.array([(tree.find_nearest(Vector(p))[3] or 0.0) for p in probe]) * 100
     # the other way: source surface the rig lost or moved away from
     kd = KDTree(len(probe))
@@ -173,7 +181,7 @@ def rest_vs_source():
     back = np.array([kd.find(Vector(p))[2] for p in back_probe]) * 100
     return {"mean_pct": round(float(d.mean()), 3), "p99_pct": round(float(np.percentile(d, 99)), 3),
             "max_pct": round(float(d.max()), 3), "source_p99_pct": round(float(np.percentile(back, 99)), 3),
-            "turn_degrees": 90 * k, "source_vertices": int(len(source_pts))}
+            "turn_degrees": int(deg % 360), "source_vertices": int(len(source_pts))}
 
 
 rest_report = rest_vs_source()

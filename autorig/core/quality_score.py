@@ -71,9 +71,11 @@ def worst_clip(clips, key):
     return max(vals) if vals else None
 
 
-def values(measured, audit=None):
-    """{check: value} from steps/score.py's JSON and an audit JSON (either may lack parts: those checks are None)."""
-    rest = measured.get("rest") or {}
+def values(measured, audit=None, rest_by_design=False):
+    """{check: value} from steps/score.py's JSON and an audit JSON (either may lack parts: those checks are None).
+    rest_by_design: the rig rests in its template's pose on purpose (rig.json m2m.rest "template": a snake laid
+    straight along the template's line), so the rest checks are left out."""
+    rest = {} if rest_by_design else (measured.get("rest") or {})
     clips = measured.get("clips") or []
     out = {"rest_mean_pct": rest.get("mean_pct"), "rest_p99_pct": rest.get("p99_pct")}
     for k in ("stretch3_permille", "max_stretch", "squash_permille", "arm_in_torso_pct", "leg_cross_pct",
@@ -87,10 +89,10 @@ def values(measured, audit=None):
     return out
 
 
-def score(measured, audit=None):
+def score(measured, audit=None, rest_by_design=False):
     """{"score", "grade", "values", "penalties", "worst"}: the score, every check's value and what it cost, and the
     three checks that cost most (what to look at first)."""
-    vals = values(measured, audit)
+    vals = values(measured, audit, rest_by_design)
     pens = {k: round(penalty(k, v), 2) for k, v in vals.items()}
     total = max(0.0, 100.0 - sum(pens.values()))
     worst = [k for k, p in sorted(pens.items(), key=lambda kv: -kv[1]) if p > 0][:3]
