@@ -87,8 +87,8 @@ class Fit(unittest.TestCase):
         out = F.auto_landmarks(pts, lo, size, None, None, log)
         z, x = self.check_body(out, log)
         self.assertTrue(log["legs"]["seen"], log)
-        wx = size[0] / size[2]
-        self.assertAlmostEqual(x["leg"] * wx, 0.06, delta=0.015)        # each leg 0.06 out, in height units
+        self.assertNotIn("leg", x)                                       # bare legs: measure()'s own slices place them
+        self.assertNotIn("robe", out)
         self.assertLess(x["tip"], 0.03)                                  # the fingertips are the bounds' edges
         self.assertTrue(x["tip"] < x["knuckle"] < x["wrist"] < x["elbow"] < x["shoulder"] < 0.5)
 

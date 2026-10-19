@@ -50,7 +50,10 @@ def auto_section(h, co, lo, size, main=None, log=None):
 # knights, robes, coats, a jester, a barrel skeleton, a robot), in fractions of the height. The hips were the
 # default's worst guess: 0.47 is 8% of the height under where those skeletons (and an adult's anatomy) put them.
 AUTO = {
-    "hip_share": 0.62,             # hip = ankle + this x (neck - ankle): 0.61-0.67 on 17 of the 18; Mixamo's 0.60-0.63
+    # hip = ankle + this x (neck - ankle). The skeletons put it at 0.60-0.67, but scored rigs skin better lower: a
+    # thigh bone that starts at the waist takes a robe's or a cape's cloth there with it (test_person 74.3 with the
+    # default's hips, 70.3 at 0.62). 0.55 is the hand-tuned Tornado Titans' and the Smeltdown players' share.
+    "hip_share": 0.55,
     "knee_share": 0.48,            # knee = ankle + this x (hip - ankle)
     "spine_shares": (0.19, 0.45, 0.69),   # Spine, Spine1, Spine2 from the hip to the neck
     "neck_over_arm": 0.035,        # the neck's base above the shoulder joints (Tripo's 0.02, Mixamo's 0.05)
@@ -235,14 +238,17 @@ def auto_landmarks(co, lo, size, main=None, h=None, log=None):
                 "arm": round(arm_z, 4), "spine2": round(hip + sp[2] * (neck - hip), 4),
                 "spine1": round(hip + sp[1] * (neck - hip), 4), "spine": round(hip + sp[0] * (neck - hip), 4),
                 "hip": round(hip, 4), "knee": round(knee, 4), "ankle": round(ankle, 4)}
-    if legs_seen:
+    covered = not legs_seen or float(stop_z or 0.8) < hip - 0.08
+    if legs_seen and covered:
+        # something covers the legs from stop_z up (a robe, a long coat, a tunic): they are read only in a band
+        # around the boots' line under it. Legs seen up to the hips are left to measure()'s own slices, which follow
+        # a stance that slants them (the band, set from the shins, read the squire's hips too wide: 99.4 -> 89.4)
         lx = [float(np.median([t["c"] for t in tracks[sg] if 0.08 < t["z"] < 0.3] or [tracks[sg][-1]["c"]])) for sg in (1, -1)]
         lw = float(np.median([t["w"] for sg in (1, -1) for t in tracks[sg] if t["z"] > 0.08] or [0.06]))
         out["x"]["leg"] = round(abs(lx[0] - lx[1]) / 2.0 / wx, 4)
         out["x"]["leg_band"] = round(max(0.01, 0.6 * lw / wx), 4)
-        if float(stop_z or 0.8) < hip - 0.08:
-            out["robe"] = round(float(stop_z), 4)   # something covers the legs from here up: read them under it
-    else:
+        out["robe"] = round(float(stop_z), 4)
+    elif covered:
         out["robe"] = True                 # no legs to be seen at all: a robe to the floor
     log["landmarks"] = out
     return out
