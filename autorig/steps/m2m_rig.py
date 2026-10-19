@@ -2153,6 +2153,15 @@ def run(a):
                 arch = ""
         plan = None
         if not arch: arch, plan = suggest_archetype(mesh, a.name, log)
+        elif plan is None:
+            # the archetype from the model's spec (what the last rig wrote) still needs the body plan's measures: a
+            # second press of Rig on Heartroot's hopper had no feet count, read its sitting body as lying, and gave it
+            # the Shark where the first press gave a quadruped
+            try:
+                import suggest_step
+                plan = suggest_step.plan_of(mesh)
+            except Exception as e:
+                log["body_plan_error"] = repr(e)
         pts = [v.co for v in mesh.data.vertices]
         meas = dict(body_measures(pts, top), tail=round(tail_share(pts, top), 3))
         meas.update(T.plan_measures(plan))          # feet, wings, flat faces, belly clearance (core/body_plan.py)
