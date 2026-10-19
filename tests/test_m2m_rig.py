@@ -82,6 +82,26 @@ class TestSelfFit(unittest.TestCase):
         self.assertEqual(log["rest"], "template")
         self.assertIn("line", log)
 
+    def test_spider_legs(self):
+        # the spider's own sample: its eight legs are found on the mesh and the template's legs go on them
+        out, log, joints = self.check("spider")
+        self.assertEqual(log["fit"]["legs_used"], "abcd")
+        self.assertEqual(log["fit"]["legs_fitted"], 8)
+        self.assertGreater(log["limbs_rebaked"], 0)
+        # each leg's tip on the ground, out to its own side
+        for side, sign in (("l", 1), ("r", -1)):
+            for leg in "abcd":
+                tip = joints["leg_%s_tip_%s" % (leg, side)]
+                self.assertLess(tip[1], 0.1 * max(v[1] for v in joints.values()))
+                self.assertGreater(tip[0] * sign, 0)
+
+    def test_bird_stride(self):
+        out, log, joints = self.check("bird")
+        g = log.get("stride_gain") or {}
+        self.assertIn("Walk", g)
+        # its own sample walks the template's stride: no gain needed
+        self.assertLess(g["Walk"]["gain"], 1.1)
+
     def test_root_motion_and_mixamo(self):
         out, log = self.fit("human", "--clips", "Roll_RM=roll,idle", "--naming", "mixamo", "--no-audit")
         self.assertEqual([c["root_motion"] for c in log["clips"]], [True, False])

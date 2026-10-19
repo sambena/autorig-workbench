@@ -69,6 +69,10 @@ def args(argv=None):
     p.add_argument("--skin", default="", help="skinning method: autorig or m2m (default: the template's)")
     p.add_argument("--triangles", type=int, default=15000)
     p.add_argument("--facing", default="auto", help="which way the source's head points: +x, -x, +y, -y or auto")
+    p.add_argument("--folded-flap", dest="folded_flap", type=float, default=0.35,
+                   help="scale folded wings' swing in flying clips (flap, glide) where they barely leave the body")
+    p.add_argument("--no-stride", dest="stride", action="store_false",
+                   help="a bird's walk keeps the template's leg turns, not scaled to the template's stride")
     p.add_argument("--swing", type=float, default=None,
                    help="scale the legs' swing (1 as made; a cow ~0.75; default: from the legs' length, auto_swing)")
     p.add_argument("--gait", default="auto", choices=("auto", "walk", "hop"),
@@ -194,9 +198,31 @@ def face_minus_y(mesh, facing, how, joints=None):
     yaw = {(0, 1): -math.pi / 2, (0, -1): math.pi / 2, (1, 1): math.pi, (1, -1): 0.0}[(axis, sign)]
     turn(mesh, yaw)
     if how == "flip" and facing == "auto":
-        if head_end([v.co for v in mesh.data.vertices], 1) > 0:
+        co = [v.co for v in mesh.data.vertices]
+        toes = toes_point(co)
+        if (toes > 0) if toes else head_end(co, 1) > 0:
             turn(mesh, math.pi); sign = -sign
     return ("+" if sign > 0 else "-") + "xy"[axis]
+
+
+def toes_point(co):
+    """+1 or -1: the way along Y a standing bird's toes point from its ankles (three forward, one back), or 0 when no
+    feet stand clear of the body. A hen's or a rooster's tail stands taller than its head, so the taller end
+    (head_end) turned Tornado Titans' chickens backwards (2026-10-19)."""
+    zs = [c.z for c in co]
+    z0 = min(zs); h = max(zs) - z0
+    if h < 1e-6: return 0
+    low = [c for c in co if c.z < z0 + 0.03 * h]
+    if len(low) < 8: return 0
+    x0, x1 = min(c.x for c in low), max(c.x for c in low)
+    y0, y1 = min(c.y for c in low), max(c.y for c in low)
+    pad = 0.05 * h
+    ank = [c for c in co if z0 + 0.08 * h < c.z < z0 + 0.16 * h and x0 - pad <= c.x <= x1 + pad and y0 - pad <= c.y <= y1 + pad]
+    # the ankles are a leg's thin column: the band over the toes holds a small share of the footprint's width
+    if len(ank) < 8 or (max(c.x for c in ank) - min(c.x for c in ank)) > 0.9 * (x1 - x0 + 2 * pad): return 0
+    d = sum(c.y for c in low) / len(low) - sum(c.y for c in ank) / len(ank)
+    if abs(d) < 0.015 * h: return 0
+    return 1 if d > 0 else -1
 
 
 def stand(mesh, height):
@@ -598,6 +624,235 @@ def reach_front(heads, tails, bones, surface):
     return round((heads["head_tip"] - old).length, 3)
 
 
+# ---------------------------------------------------------------- the spider's legs, found on the body
+
+SPIDER_LEGS = "abcd"
+# which of the template's leg pairs a body with n pairs uses, front first. Its walk lifts L a, L c, R b and R d
+# together, then the others: three pairs on a, b, c lift front and back on one side with the middle on the other (an
+# insect's tripod); two pairs on a and d lift each front leg with the opposite back one (a trot)
+SPIDER_USE = {1: "a", 2: "ad", 3: "abc", 4: "abcd"}
+SPIDER_FOOT = 0.3         # a lifted foot's tip lies in the lowest this share of the height, its leg reaching down
+SPIDER_CLAW_FRONT = 0.45  # a claw reaches out of the front this share of the length
+SPIDER_GROUND = 0.08      # a limb ending this low (a share of the height) stands on the ground
+SPIDER_REACH = 0.5        # a leg or a claw reaches at least this share of what a standing limb does
+
+
+def spider_chain(bones, letter, side):
+    """The template's leg bones for one leg, body end first (leg_a_1_l .. leg_a_tip_l), or None."""
+    names = ["leg_%s_%d_%s" % (letter, i, side) for i in (1, 2, 3)] + ["leg_%s_tip_%s" % (letter, side)]
+    return names if all(n in bones for n in names) else None
+
+
+def limb_tips(surface, top, length, width, ylo, body_at):
+    """The pairs of limbs sticking out to the sides of a body, as {"l"/"r": [(tip, kind, reach)]} front first, the
+    same pairs on both sides. Each tip off the centre plane is followed in to where it meets the body
+    (geo.Surface.junction). One tip per limb: two tips are the same limb when they are nearer each other along the
+    surface than either is to the body (a leg's toe and a spike on its knee). Generated bodies are symmetric but the
+    search is not, so the limbs of both sides are matched on the body folded across its centre plane and judged as
+    pairs: a pair with no limb leaving the body (a shell's rim) or a fraction as long as the legs standing on the
+    ground (a spike) is none; "foot" for one ending near the ground or reaching down to it from where it starts (a
+    beetle's lifted front legs), "claw" for one at least as thick as the legs reaching forward and not up (a crab's
+    pincers); antennae, which reach up, are neither. A limb found on one side only is mirrored onto the other."""
+    cands = [v for v, _ in surface.tips(most=40, least=0.04) if abs(surface.co[v].x) >= width * 0.3]
+    info = {}
+    for v in cands:
+        tip = surface.co[v]
+        b = body_at(tip.y)
+        j = surface.junction(tip, b)
+        root, radius = (j[0], j[2]) if j else (b.lerp(tip, 0.25), None)
+        d = surface.distances([v])
+        r = d[surface.nearest(root)]
+        info[v] = dict(tip=tip, root=root, radius=radius, d=d, reach=r if r < float("inf") else (tip - root).length)
+    keep = []
+    for v in sorted(cands, key=lambda c: -info[c]["reach"]):
+        if any(info[k]["d"][v] < 0.8 * min(info[v]["reach"], info[k]["reach"]) for k in keep): continue
+        keep.append(v)
+    fold = lambda p: Vector((abs(p.x), p.y, p.z))
+    near = 0.12 * max(width * 2, length)
+    pairs = []                                     # [{"l": v, "r": v}], strongest first
+    for v in keep:
+        side = "l" if info[v]["tip"].x > 0 else "r"
+        for pr in pairs:
+            o = next(iter(pr.values()))
+            if side not in pr and (fold(info[o]["tip"]) - fold(info[v]["tip"])).length < near:
+                pr[side] = v; break
+        else:
+            pairs.append({side: v})
+    ground = [info[v] for v in keep if info[v]["tip"].z < top * SPIDER_GROUND] or [info[v] for v in keep]
+    reach = sorted(i["reach"] for i in ground)[len(ground) // 2] if ground else 0.0
+    radii = sorted(i["radius"] for i in ground if i["radius"])
+    leg_r = radii[len(radii) // 2] if radii else 0.0
+    sides = {"l": [], "r": []}
+    for pr in pairs:
+        ii = [info[v] for v in pr.values()]
+        if all(i["radius"] is None for i in ii): continue           # no limb leaves the body there
+        best = max(ii, key=lambda i: (i["radius"] is not None, i["reach"]))
+        if best["reach"] < SPIDER_REACH * reach: continue
+        tip, root = fold(best["tip"]), fold(best["root"])
+        down = root.z - tip.z
+        if tip.z < top * SPIDER_GROUND * 1.5 or (tip.z < top * SPIDER_FOOT and down > 0.5 * (tip - root).length):
+            kind = "foot"
+        elif (tip.y < root.y and tip.y < ylo + length * SPIDER_CLAW_FRONT and down > -0.3 * (tip - root).length
+              and max(i["radius"] or 0.0 for i in ii) >= 0.8 * leg_r):
+            kind = "claw"
+        else:
+            continue
+        for side, sign in (("l", 1.0), ("r", -1.0)):
+            if side in pr: p = info[pr[side]]["tip"].copy()
+            else: p = surface.co[surface.nearest(Vector((sign * tip.x, tip.y, tip.z)))].copy()
+            sides[side].append((p, kind, round(best["reach"] / max(reach, 1e-6), 2),
+                                round(tip.z / top, 2), round(down / max((tip - root).length, 1e-6), 2)))
+    for sd in sides.values(): sd.sort(key=lambda t: t[0].y)
+    return sides
+
+
+def body_point(points, y, width, top, length):
+    """The middle of the body at y: on the centre plane, half way up the points near it there."""
+    for w in (0.04, 0.08, 0.16, 0.5):
+        sel = [p.z for p in points if abs(p.y - y) < length * w and abs(p.x) < width * 0.15]
+        if len(sel) >= 6: break
+    zs = sorted(sel) if sel else [top * 0.5]
+    return Vector((0.0, y, (zs[int(len(zs) * 0.1)] + zs[int(len(zs) * 0.9)]) / 2))
+
+
+def place_chain(path, lengths):
+    """Joints down a limb's centre line (body end first) for bones of these template lengths: each joint by its share
+    of the template chain, then the first inner joint moved to the line's sharpest corner (a knee) when the line
+    bends there by more than 20 degrees, the rest shared out after it."""
+    cum = [0.0]
+    for a, b in zip(path, path[1:]): cum.append(cum[-1] + (b - a).length)
+    total = max(cum[-1], 1e-6)
+    def at(s):
+        for i in range(1, len(cum)):
+            if cum[i] >= s or i == len(cum) - 1:
+                f = (s - cum[i - 1]) / max(cum[i] - cum[i - 1], 1e-9)
+                return path[i - 1].lerp(path[i], max(0.0, min(1.0, f)))
+    share = [sum(lengths[:k]) / max(sum(lengths), 1e-9) for k in range(len(lengths) + 1)]
+    joints = [at(total * s) for s in share]
+    if len(lengths) >= 2 and len(path) >= 5:
+        best, where = 0.0, None
+        for i in range(1, len(path) - 1):
+            if not 0.2 * total <= cum[i] <= 0.7 * total: continue
+            a, b = path[i] - path[max(0, i - 2)], path[min(len(path) - 1, i + 2)] - path[i]
+            if a.length < 1e-6 or b.length < 1e-6: continue
+            ang = a.angle(b)
+            if ang > best: best, where = ang, i
+        if where is not None and best > math.radians(20):
+            s1 = cum[where]
+            rest = sum(lengths[1:])
+            joints[1] = path[where].copy()
+            for k in range(2, len(lengths)):
+                joints[k] = at(s1 + (total - s1) * sum(lengths[1:k]) / max(rest, 1e-9))
+    return joints
+
+
+def fit_spider_legs(mesh, arm, heads, tails, top, log):
+    """Each of the template's legs on one of the body's own: the template's legs are set by its body's proportions
+    (slice by slice), which put a crab's or a beetle's leg bones in the air above its shell and its feet nowhere near
+    its feet (every spider-family rig failed with hundreds of tears, 2026-10-19). Here the legs are found on the mesh:
+    the tips near the ground off the centre plane, each followed in to where it meets the body (geo.Surface.junction,
+    the limb's radius jumping) down its centre line (medial_axis). Per side, front to back, they take the template's
+    legs by SPIDER_USE; with more than four pairs, four spread from front to back. A pair of thick limbs reaching
+    forward off the ground (a crab's claws) takes the fangs, so a bite closes them. A leg the body has no match for is
+    folded inside the body and carries no skin. Returns what it found, and {bone: (group, left)} for the legs used."""
+    import geo
+    bones = arm.data.bones
+    s = geo.Surface(mesh)
+    pts = s.co
+    width = max(abs(p.x) for p in pts)
+    ylo, yhi = min(p.y for p in pts), max(p.y for p in pts)
+    length = max(yhi - ylo, 1e-6)
+    sides = limb_tips(s, top, length, width, ylo, lambda y: body_point(pts, y, width, top, length))
+    feet = {k: [t[0] for t in v if t[1] == "foot"] for k, v in sides.items()}
+    claws = {k: [t[0] for t in v if t[1] == "claw"] for k, v in sides.items()}
+    pairs = min(len(feet["l"]), len(feet["r"]))
+    found = {"feet": [len(feet["l"]), len(feet["r"])], "claws": [len(claws["l"]), len(claws["r"])]}
+    if pairs == 0:
+        found["legs_fitted"] = 0
+        return found, {}
+    if pairs in SPIDER_USE: pick = list(range(pairs)); letters = SPIDER_USE[pairs]
+    else: pick = sorted({round(i * (pairs - 1) / 3.0) for i in range(4)}); letters = SPIDER_USE[len(pick)]
+    leg_of, roots = {}, []
+
+    def limb(tip):
+        """(root, centre line body end first, radius) of the limb ending at tip."""
+        b = body_point(pts, tip.y, width, top, length)
+        j = s.junction(tip, b)
+        root = j[0] if j else b.lerp(tip, 0.25)
+        path = s.medial_axis(root, tip, 12, first=root)
+        path[-1] = tip.copy()
+        return root, path, (j[2] if j else None)
+
+    for side in ("l", "r"):
+        fs = feet[side]
+        if len(fs) > pairs:          # keep the pairs both sides share, from the front
+            fs = fs[:pairs]
+        for g, (i, letter) in enumerate(zip(pick, letters)):
+            chain = spider_chain(bones, letter, side)
+            if chain is None: continue
+            root, path, _ = limb(fs[i])
+            lengths = [bones[n].length for n in chain[:3]]
+            j = place_chain(path, lengths)
+            for n, p in zip(chain[:3], j[:3]): heads[n] = p
+            heads[chain[3]] = j[3]
+            d = (j[3] - j[2]).normalized() if (j[3] - j[2]).length > 1e-6 else Vector((0, 0, -1))
+            d = Vector((d.x, d.y, 0.0)).normalized() if Vector((d.x, d.y)).length > 1e-3 else d
+            tails[chain[3]] = j[3] + d * max(bones[chain[3]].length * (j[3] - j[0]).length /
+                                             max(sum(bones[n].length for n in chain[:3]), 1e-6), 1e-3)
+            k = "legs_anchor_%d_%s" % ("abcd".index(letter) + 1, side)
+            for n in chain: leg_of[n] = (g, side == "l")
+            roots.append((side, letter, root))
+        # the template's legs this body has none for: folded into the body at the nearest used leg's root, no skin
+        for letter in SPIDER_LEGS:
+            if letter in letters: continue
+            chain = spider_chain(bones, letter, side)
+            if chain is None: continue
+            mine = [r for sd, _, r in roots if sd == side]
+            base = min(mine, key=lambda r: abs(r.y - heads[chain[0]].y)) if mine else heads[chain[0]]
+            for i, n in enumerate(chain):
+                heads[n] = base + Vector((0, 0, 0.002 * i)); bones[n].use_deform = False
+            tails[chain[-1]] = base + Vector((0, 0, 0.002 * len(chain)))
+    # the anchors: from the body's middle at the legs out to each leg's root
+    for side in ("l", "r"):
+        mine = [(l, r) for sd, l, r in roots if sd == side]
+        if not mine: continue
+        c = body_point(pts, sum(r.y for _, r in mine) / len(mine), width, top, length)
+        a = "legs_anchor_%s" % side
+        if a in bones:
+            heads[a] = c
+            tails[a] = c.lerp(sum((r for _, r in mine), Vector()) / len(mine), 0.35)
+        for letter in SPIDER_LEGS:
+            k = "legs_anchor_%d_%s" % ("abcd".index(letter) + 1, side)
+            if k not in bones: continue
+            heads[k] = tails.get(a, c)
+            used = [r for l, r in mine if l == letter]
+            tails[k] = used[0] if used else heads[k] + Vector((0, 0, 0.002))
+    # the fangs on a pair of claws
+    if claws["l"] and claws["r"] and all(n in bones for n in ("teeth_l", "teeth_tip_l", "teeth_r", "teeth_tip_r")):
+        for side in ("l", "r"):
+            root, path, _ = limb(claws[side][0])
+            j = place_chain(path, [1.0, 1.0])
+            heads["teeth_" + side], heads["teeth_tip_" + side] = j[0], j[1]
+            tails["teeth_tip_" + side] = j[2]
+            leg_of["teeth_" + side] = leg_of["teeth_tip_" + side] = (-1, side == "l")
+        found["claws_on_fangs"] = True
+    # the body's own bones on its centre line: the slice fit reads the template's slices, which its long legs
+    # dominate, and put a crab's abdomen under the floor and its head over its shell
+    used = set(leg_of)
+    mid = [p.y for p in pts if abs(p.x) < width * 0.15] or [ylo, yhi]
+    ylo, yhi = min(mid), max(mid)
+    for n in [b.name for b in bones if b.name not in used and b.parent is not None and not b.name.startswith(("leg", "teeth"))]:
+        p = heads.get(n)
+        if p is None: continue
+        y = max(ylo, min(yhi, p.y))
+        heads[n] = body_point(pts, y, width, top, length)
+        if n in tails:
+            t = tails[n]; tails[n] = body_point(pts, max(ylo, min(yhi, t.y)), width, top, length)
+    found["legs_fitted"] = len(roots)
+    found["legs_used"] = letters
+    return found, leg_of
+
+
 def mesh_line(mesh, bins=40):
     """The body's own centre line, head end first: the two ends farthest apart along the surface, the vertices
     binned by their distance along it from one end, each bin's middle a point. A coiled snake's line follows the
@@ -614,17 +869,50 @@ def mesh_line(mesh, bins=40):
     groups = [[] for _ in range(bins)]
     for i, d in enumerate(da):
         if d < float("inf"): groups[min(bins - 1, int(d / max(far, 1e-9) * bins))].append(co[i])
-    pts, rad = [], []
+    import numpy as np
+    pts, rad, thick, minor = [], [], [], []
     for g in groups:
         if not g: continue
         m = sum(g, Vector()) / len(g)
         pts.append(m); rad.append(sum((p - m).length for p in g) / len(g))
+        # the ring's thickness across its narrower way: a round head is thick both ways, a flat tail fin (the glass
+        # eel's) is wide one way only, and by the mean radius alone the eel's head went on its tail; weighted by the
+        # ring's size, so the bulk of a head counts and the whisker the line starts from (the sea serpent's) does not
+        if len(g) >= 4:
+            sv = np.linalg.svd(np.array([p - m for p in g]), compute_uv=False) / math.sqrt(len(g))
+            minor.append(float(sv[1]))
+        else:
+            minor.append(rad[-1])
+        thick.append(minor[-1] * len(g))
     # a little smoothing: a bin's middle wobbles where a fin or a jaw joins it
     sm = [pts[0]] + [(pts[i - 1] + pts[i] * 2 + pts[i + 1]) / 4 for i in range(1, len(pts) - 1)] + [pts[-1]]
-    n = max(1, len(rad) // 6)
-    if sum(rad[-n:]) > sum(rad[:n]):
-        sm.reverse(); rad.reverse()
-    return sm, rad
+    n = max(1, len(rad) // 3)
+    if sum(thick[-n:]) > sum(thick[:n]):
+        sm.reverse(); rad.reverse(); minor.reverse()
+    # the line starts where the head does, not at the tip of a whisker or a horn ahead of it: the sea serpent's
+    # head bone went on its whisker and its head on the neck (head 0.06% of the skin)
+    mid = sorted(minor)[len(minor) // 2] if minor else 0.0
+    cut = 0
+    while cut < len(sm) // 4 and minor[cut] < WHISKER * mid: cut += 1
+    sm, rad, minor = sm[cut:], rad[cut:], minor[cut:]
+    return sm, rad, neck_share(minor)
+
+
+def neck_share(minor):
+    """Where the head ends along a long body, as a share of its length from the front: the narrowest ring behind
+    the thickest in the front third, when it narrows there by a fifth or more (a neck); None when nothing narrows."""
+    n = len(minor)
+    third = max(3, n // 3)
+    if n < 6: return None
+    top = max(range(third), key=lambda i: minor[i])
+    if top >= third - 1: return None
+    neck = min(range(top + 1, third), key=lambda i: minor[i])
+    if minor[neck] > 0.8 * minor[top]: return None
+    return (neck + 0.5) / n
+
+
+# a ring at the front end of a long body thinner than this share of the body's median is a whisker, not the head
+WHISKER = 0.3
 
 
 def polyline_param(line, p):
@@ -666,6 +954,9 @@ def frame(d, hint=Vector((0, 0, 1))):
     return Matrix((x, y, z)).transposed()
 
 
+YAW_SNAP = 25.0
+
+
 def fit_line(arm, mesh, log, head_at=None):
     """heads, tails and rolls for a body with no legs to stand on (snake, shark): the template's line from its front
     tip to its back tip laid along the body's own centre line, every joint at the same share of the length; a joint
@@ -687,12 +978,25 @@ def fit_line(arm, mesh, log, head_at=None):
         for e in ends:
             p = mw @ (b.tail_local if e == "tail" else b.head_local)
             if (p - tl[-1]).length > 1e-5: tl.append(p)
-    ml, rad = mesh_line(mesh)
+    ml, rad, neck = mesh_line(mesh)
+    if head_at == "neck":                 # the head as long as the body's own (a snake's template head is a stub)
+        head_at = min(0.25, max(0.03, neck)) if neck else None
+        log["neck_at"] = round(neck, 3) if neck else None
     flat = lambda v: Vector((v.x, v.y, 0.0))
-    ht, hm = flat(tl[0] - tl[-1]), flat(ml[0] - ml[-1])
+    # the way the head points (the front of the line), not the nose-to-tail chord: a shark modelled curving round
+    # (the megalodon) was turned 43 degrees off the way it was modelled heading
+    # a body modelled heading along an axis (as generators make them) stays on it: the turn snaps to the nearest
+    # quarter turn when the chord or the head is within YAW_SNAP of one (a round fish's fins tilt its front)
+    ht = flat(tl[0] - tl[-1])
     yaw = 0.0
-    if ht.length > 1e-6 and hm.length > 1e-6:
-        yaw = math.atan2(ht.y, ht.x) - math.atan2(hm.y, hm.x)
+    turns = []
+    for hm in (flat(ml[0] - ml[-1]), flat(ml[0] - ml[max(1, len(ml) * 3 // 10)])):
+        if ht.length > 1e-6 and hm.length > 1e-6: turns.append(math.atan2(ht.y, ht.x) - math.atan2(hm.y, hm.x))
+    if turns:
+        yaw = turns[-1]
+        for y in turns:
+            q = round(y / (math.pi / 2)) * (math.pi / 2)
+            if abs(y - q) < math.radians(YAW_SNAP): yaw = q; break
         R = Matrix.Rotation(yaw, 4, 'Z')
         turn(mesh, yaw)
         ml = [R @ p for p in ml]
@@ -991,6 +1295,75 @@ def hop_from(src, name=HOP_NAME):
     return act, sorted(done)
 
 
+def amplify(actions, names, k):
+    """The turns of these bones from their rest scaled by k (k over 1 swings them further: damp() only eases)."""
+    for act in actions:
+        by_bone = {}
+        for fc in fcurves(act):
+            if not fc.data_path.endswith("rotation_quaternion"): continue
+            n = bone_of(fc.data_path)
+            if n in names: by_bone.setdefault(n, [None] * 4)[fc.array_index] = fc
+        for n, fcs in by_bone.items():
+            if None in fcs or len({len(f.keyframe_points) for f in fcs}) != 1: continue
+            for i in range(len(fcs[0].keyframe_points)):
+                q = Quaternion([f.keyframe_points[i].co.y for f in fcs])
+                if q.magnitude < 1e-9: continue
+                axis, ang = q.normalized().to_axis_angle()
+                if ang > math.pi: ang -= 2 * math.pi
+                q = Quaternion(axis, ang * k)
+                for j, f in enumerate(fcs):
+                    kp = f.keyframe_points[i]
+                    d = q[j] - kp.co.y
+                    kp.co.y += d; kp.handle_left.y += d; kp.handle_right.y += d
+
+
+def foot_sweep(obj, act, feet):
+    """How far the feet travel forward and back in a clip, over the hips' height at rest (the mean of the feet)."""
+    assign(obj, act)
+    span = []
+    for n in feet:
+        ys = []
+        for f in frames_of(act)[::max(1, len(frames_of(act)) // 24)]:
+            at(f)
+            ys.append(tip(obj.matrix_world @ obj.pose.bones[n].matrix, obj.data.bones[n].length).y)
+        span.append(max(ys) - min(ys))
+    obj.animation_data.action = None
+    return sum(span) / max(len(span), 1)
+
+
+# wings reaching out of the body less than this share of its height are folded (Tornado Titans' hen 0.27, rooster
+# 0.24; the candle moth's open wings 0.72)
+WING_SPREAD = 0.4
+
+
+# a bird's legs swing at most this much further than the template's (the turns, not the stride)
+STRIDE_GAIN_MAX = 1.6
+
+
+def stride_gain(arm, src, actions, limb, feet, k, root, legs):
+    """A walk's stride matched to the template's for the body's own legs: the same turns on a hen's short, nearly
+    straight legs moved her feet 0.55 of her hip height a step, where the template's long bent ones move 0.94
+    (Chicken_Hen_Tripo, 2026-10-19: "the walk barely moves"). Each walking clip is rebaked once on a copy, its feet's
+    sweep over the hip height measured on both, and the clip's leg turns scaled by the ratio (1 to STRIDE_GAIN_MAX)
+    before the real rebake, so the feet are grounded on the larger stride. Returns {clip: gain}."""
+    tops = [n for n in legs if arm.data.bones[n].parent and arm.data.bones[n].parent.name not in legs]
+    h_arm = sum((arm.matrix_world @ arm.data.bones[n].head_local).z for n in tops) / max(len(tops), 1)
+    h_src = sum((src.matrix_world @ src.data.bones[n].head_local).z for n in tops) / max(len(tops), 1)
+    out = {}
+    for act in actions:
+        if not re.search(r"walk|run|trot", act.name, re.I) or h_arm < 1e-6 or h_src < 1e-6: continue
+        want = foot_sweep(src, act, feet) / h_src
+        tmp = act.copy()
+        match_world(arm, src, [tmp], limb, feet, k, root, calibrate=True)
+        got = foot_sweep(arm, tmp, feet) / h_arm
+        bpy.data.actions.remove(tmp)
+        if got < 1e-6: continue
+        g = max(1.0, min(STRIDE_GAIN_MAX, want / got))
+        if g > 1.02: amplify([act], legs, g)
+        out[act.name] = {"template": round(want, 3), "body": round(got, 3), "gain": round(g, 2)}
+    return out
+
+
 # The audit's single-bone bend is 40 degrees, a combined pose 30 on limbs; a bone that never turns that far in its
 # clips (a hen's spine turns a few degrees) is tested at what it does turn, with headroom, and never past 40 (the
 # old test) nor under 15 (a game adds turns of its own: a look-at, a hit reaction). docs/SKIN-BAKEOFF.md, "M9".
@@ -1108,6 +1481,70 @@ def match_world(arm, src, actions, limb, feet, k, root, calibrate=False):
                 local = rb.matrix_local.to_3x3().inverted() @ Vector((0, 0, low_t * k - low))
                 pb[root].location = root_loc + local
                 pb[root].keyframe_insert("location", frame=f)
+        arm.animation_data.action = None
+
+
+def plant_legs(arm, src, actions, legs, k, root):
+    """A spider-family body's legs, each frame solved by FABRIK (core/limb_ik.py) so its foot follows the template
+    foot's path from where it stands: the template foot's move from its rest, scaled by the leg's length against the
+    template leg's, added to this foot's rest. Turning each leg bone as the template's turns (match_world) drove the
+    feet of legs standing at another angle (a crab's splay sideways, a beetle's bend under it) through the floor and
+    across it: Smeltdown's crawler sank 18% of its height in its walk and its feet skated 145 (steps/score.py,
+    2026-10-19). Each leg starts from its own rest under the body as the clip moves it, so its knee stays on its side;
+    the body, the anchors and the fangs keep the clip's own turns. legs: [[leg_1, leg_2, leg_3, tip], ...]."""
+    import limb_ik
+    pb, sb = arm.pose.bones, src.pose.bones
+    ab, sd = arm.data.bones, src.data.bones
+    smw, amw = src.matrix_world, arm.matrix_world
+    legs = [c for c in legs if all(n in pb and n in sb for n in c)]
+    limb = {n for c in legs for n in c}
+    span = lambda bones, c: sum(bones[n].length for n in c[:3])
+    for act in actions:
+        frames = frames_of(act)
+        assign(src, act)
+        moves = []
+        for f in frames:
+            at(f)
+            moves.append({c[3]: (smw @ sb[c[3]].head) - (smw @ sd[c[3]].head_local) for c in legs})
+        src.animation_data.action = None
+        scale_travel([act], k)
+        for fc in list(fcurves(act)):
+            if bone_of(fc.data_path) in limb and fc.data_path.endswith(("rotation_quaternion", "rotation_euler", "location")):
+                drop_fcurve(act, fc)
+        assign(arm, act)
+        keys = []
+        for f, mv in zip(frames, moves):
+            at(f)
+            pose = {}
+            for c in legs:
+                par = pb[c[0]].parent.matrix.copy()
+                # the leg at its own rest under the body as the clip has moved it
+                joints, m = [], par
+                for n in c[:3]:
+                    b = ab[n]
+                    m = m @ (b.parent.matrix_local.inverted() @ b.matrix_local)
+                    joints.append(m.to_translation())
+                joints.append((m @ Matrix.Translation((0, ab[c[2]].length, 0))).to_translation())
+                target = amw.inverted() @ ((amw @ ab[c[3]].head_local) + mv[c[3]] * (span(ab, c) / max(span(sd, c), 1e-9)))
+                knee = joints[1] - joints[0].lerp(joints[-1], 0.5)
+                solved = limb_ik.fabrik([tuple(p) for p in joints], tuple(target), pole=tuple(knee))
+                solved = [Vector(p) for p in solved]
+                m = par
+                for i, n in enumerate(c[:3]):
+                    b = ab[n]
+                    base = m @ (b.parent.matrix_local.inverted() @ b.matrix_local)
+                    cur = base.to_3x3() @ Vector((0, 1, 0))
+                    want = solved[i + 1] - solved[i]
+                    turn_ = cur.rotation_difference(want).to_matrix() if want.length > 1e-9 else Matrix.Identity(3)
+                    new = Matrix.Translation(base.to_translation()) @ (turn_ @ base.to_3x3()).to_4x4()
+                    pose[n] = (base.inverted() @ new).to_quaternion()
+                    m = new
+            keys.append((f, pose))
+        for f, pose in keys:
+            for n, q in pose.items():
+                pb[n].rotation_mode = 'QUATERNION'
+                pb[n].rotation_quaternion = q
+                pb[n].keyframe_insert("rotation_quaternion", frame=f)
         arm.animation_data.action = None
 
 
@@ -1784,12 +2221,15 @@ def run(a):
         k = J["hip"].z / max(bones[tracking].head_local.z, 1e-6) if tracking in bones else scale
         found = {"legs": 1, "leg_bones": len(leg_of)}
     elif fam == "body":
-        heads, tails, rolls, k = fit_line(arm, mesh, log, info.get("head_at"))
+        heads, tails, rolls, k = fit_line(arm, mesh, log, info.get("head_at") or ("neck" if t == "snake" else None))
         scale, leg_of, found = k, {}, {"line": True}
         animal = [v.co.copy() for v in mesh.data.vertices]
     else:
         heads, tails, found, leg_of, tail_names, shape = fit_shape(arm, R, A, rig_surface, animal, fam,
                                                                    profile=t in FOUR_LEGGED)
+        if fam == "spider":
+            legs, leg_of = fit_spider_legs(mesh, arm, heads, tails, top, log)
+            found.update(legs)
         scale = A["top"] / max(R["top"], 1e-6)
         if fam == "legged": k = A["belly"] / max(R["belly"], 1e-6)
         else: k = (A["tail"] - A["nose"]) / max(R["tail"] - R["nose"], 1e-6)
@@ -1813,13 +2253,13 @@ def run(a):
     # arms from the upper arm down; a kaiju's arms. Not wings: the bird's rest has them spread, and pointing a hen's
     # folded wings that way opened them out behind her like a cape on every walking step. They keep the clip's turns
     # from the wings as modelled.
-    limb_set = set(n for n in leg_of if fam == "human" or bones[n].head_local.z < A["belly"])
+    limb_set = set(n for n in leg_of if fam in ("human", "spider") or bones[n].head_local.z < A["belly"])
     for b in bones:
         if (fam == "human" and b.name.startswith("upperarm_")) or (fam == "legged" and b.name.startswith("Front_Leg_Upper")):
             limb_set.add(b.name)
             limb_set.update(c.name for c in b.children_recursive)
     limb_set.discard(root_bone)
-    feet = [n for n in leg_of if not bones[n].children]
+    feet = [n for n in leg_of if not bones[n].children and leg_of[n][0] >= 0]
     if a.swing is None:
         a.swing = auto_swing(A, R) if t in FOUR_LEGGED else 1.0
         log["swing_auto"] = a.swing
@@ -1829,7 +2269,13 @@ def run(a):
     # height into the floor and their planted feet slid (the quality score's sink 10%, skate 130; 2.5% and 70 at 1)
     early = t in FOUR_LEGGED and a.swing != 1.0
     if early: damp(actions, set(leg_of), a.swing)
-    if fam in ("human", "legged") and limb_set:
+    if t == "bird" and feet and a.limbs == "calibrated" and a.stride:
+        log["stride_gain"] = stride_gain(arm, rig0, actions, limb_set, feet, k, root_bone, set(leg_of))
+    if fam == "spider" and leg_of:
+        legs = [[n for n in leg_of if leg_of[n] == key] for key in sorted({v for v in leg_of.values() if v[0] >= 0})]
+        legs = [sorted(c, key=lambda n: len(up(bones[n]))) for c in legs]
+        plant_legs(arm, rig0, actions, [c for c in legs if len(c) == 4], k, root_bone)
+    elif fam in ("human", "legged") and limb_set:
         match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam in ("legged", "human") and a.limbs == "calibrated")
     else:
         scale_travel(actions, k)
@@ -1842,14 +2288,23 @@ def run(a):
     wings = {b.name for b in bones if b.name.lower().startswith(("wing_", "shoulder_"))}
     grounded = [act for act in actions if not re.search(r"fly|flap|glide", act.name, re.I)]
     if wings and grounded and a.wing_swing != 1.0: damp(grounded, wings, a.wing_swing)
-    log["limbs_rebaked"] = len(limb_set) if fam in ("human", "legged") else 0
+    # folded wings in the air: a hen's wings are a patch of her side, and the template's flap (its wings turn 80
+    # degrees and more) tore her flanks open; they flap as far as they reach out of the body
+    if wings and t in ("bird", "dragon"):
+        spread = max(abs(p.x) for p in animal) / max(top, 1e-6)
+        log["wing_spread"] = round(spread, 3)
+        if spread < WING_SPREAD and toes_point(animal):       # a bird standing on its toes (a moth's rise up)
+            flying = [act for act in actions if act not in grounded]
+            if flying: damp(flying, wings, a.folded_flap)
+            log["folded_flap"] = a.folded_flap
+    log["limbs_rebaked"] = len(limb_set) if fam in ("human", "legged", "spider") else 0
     bends, bends_raw = clip_bends(arm, actions)
     log["clip_bends"] = {"turns": {n: v for n, v in bends_raw.items() if v}, "tested_at": bends}
 
     # the skin
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
     def after():
-        if fam in ("legged", "human"): log["side_fixed"] = side_rule(mesh, arm)      # each side's bones, its own skin
+        if fam in ("legged", "human", "spider"): log["side_fixed"] = side_rule(mesh, arm)   # each side's bones, its own skin
         if fam == "legged": log["tail_fixed"] = tail_rule(mesh, arm)                 # the tail moves only the tail
         if leg_of and fam in ("legged", "human"): log["confined"] = confine(mesh, arm, leg_of, shape, A["belly"])
     t_skin = time.time()

@@ -29,7 +29,7 @@
 # tear edges are, clustered, for a viewer to mark), and (unless -render 0) <slug>_skin.png and <slug>_bend.png.
 #
 # THRESHOLDS and the warn bands live in autorig/core/grades.py (docs/PIPELINE.md, "Grades"). Pass limits: bleed <= 2%;
-# no tear edges in the combined pose or any single-joint bend; head (+ jaw) owns at least 2.5% of the surface where
+# no tear edges in the combined pose or any single-joint bend; head (+ jaw and all else hung from the head) owns at least 2.5% of the surface where
 # there is a head; at most 4 influences per vertex. A model can tighten or loosen these in its spec with audit={...}
 # (same keys as THRESHOLDS), and says why beside it.
 # Warnings (reported, not graded): twist tears, a limb bone reaching over 0.2 of the model, mirrored chains that
@@ -687,7 +687,22 @@ if "combined_pose" not in result:  # the numbers-only run still poses it; it is 
     clear_pose()
     if arm is not None:
         bpy.context.view_layer.update()
-head_pct = sum(x["area_pct"] for x in share if x["bone"].split(":")[-1].lower() in ("head", "jaw")) if share else 0.0
+# the head is the head bone and everything hung from it (a jaw, a beak, a mouth, teeth, horns): on Mesh2Motion's bird
+# and dragon the beak's bones (mouth_upper, mouth_lower, children of head) own the face, and a hen whose whole head
+# turned with her head bone was failed for a head owning 0.7% of her
+# The body itself is not: a snake hangs its neck and every tail bone from its head, so a chain carrying on along the
+# body (neck, spine, tail, hips) stops it
+HEAD_SET = {"head", "jaw"}
+_BODY = re.compile(r"neck|spine|tail|hips|pelvis|body|chest|torso", re.I)
+def _head_parts(b):
+    for c in b.children:
+        if _BODY.search(c.name.split(":")[-1]): continue
+        HEAD_SET.add(c.name.split(":")[-1].lower())
+        _head_parts(c)
+if arm is not None:
+    _hb = next((b for b in arm.data.bones if b.name.split(":")[-1].lower() == "head"), None)
+    if _hb is not None: _head_parts(_hb)
+head_pct = sum(x["area_pct"] for x in share if x["bone"].split(":")[-1].lower() in HEAD_SET) if share else 0.0
 has_head = any(n.split(":")[-1].lower() == "head" for n in BN) if BN else False
 max_inf = max((m["max_influences"] for m in per_mesh), default=0) if per_mesh else 0
 single = [b for b in bends if b["mode"] == "bend"]

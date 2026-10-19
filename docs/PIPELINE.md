@@ -189,7 +189,7 @@ body are very different rigs. Each check is graded instead (`autorig/core/grades
 | Tears, combined pose | 0 | 1-12, and the widest gap at most 8% of the model | more than 12, or a gap over 8% |
 | Tears, single bends (the worst bone) | 0 | 1-12, and the widest gap at most 5% of the model | more than 12, or a gap over 5% |
 | Bleed | at most 2% | at most 3% | over 3% |
-| Head (+ jaw) share, where there is a head | at least 2.5% | at least 1.5% | under 1.5% |
+| Head share (the head bone and everything hung from it: jaw, beak, mouth, horns), where there is a head | at least 2.5% | at least 1.5% | under 1.5% |
 | Influences per vertex | at most 4 | (no band) | over 4 |
 | Folds standing (humanoids), per 10,000 triangles | at most 8 | at most 20 | over 20 |
 
