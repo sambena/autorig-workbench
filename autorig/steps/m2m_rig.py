@@ -83,6 +83,9 @@ def args(argv=None):
     p.add_argument("--fade", type=float, default=40.0,
                    help="fade every joint as far as a bend of this many degrees needs (core/skin_fade.py; 0: the "
                         "old ring smoothing)")
+    p.add_argument("--people", default="classic", choices=("classic", "m2m"),
+                   help="a person (auto picks the human template, no tail): classic rigs them with the humanoid rig "
+                        "(steps/rerig_humanoid.py, A-pose kept, walker clips); m2m uses the human template")
     p.add_argument("--choose-only", dest="choose_only", action="store_true",
                    help="print the template choice (M2M_RIG {template, choice}) and stop")
     p.add_argument("--no-audit", dest="audit", action="store_false")
@@ -1547,6 +1550,9 @@ def run(a):
     log["template"] = t
     log["family"] = fam
     log["height"] = round(top, 3)
+    if (a.template.lower() == "auto" and t == "human" and a.people == "classic" and a.model and not a.joints
+            and not a.choose_only and (log["choice"].get("measures") or {}).get("tail", 0) < 0.05):
+        return people_classic(a, log)
     if a.choose_only:                       # what auto would pick, and why, without rigging anything
         print("M2M_RIG " + json.dumps({"name": a.name, "template": t, "choice": log["choice"], "suggest": log.get("suggest"),
                                        "facing": log.get("facing"), "height": log["height"]}))
@@ -1737,6 +1743,46 @@ def run(a):
         json.dump(dict(log, joints=joints), fh, indent=1, default=str)
     print("M2M_RIG " + json.dumps(log, default=str))
     return 0
+
+
+def people_classic(a, log):
+    """A person goes to the humanoid rig, not the human template. On Tornado Titans' cast the template's walk held
+    the arms stiff and out and the jacket sleeves stayed on the body; the humanoid rig, resting in the A-pose as
+    modelled with the arms mirrored, walked clean (2026-10-18). rig.json gets the humanoid sections if it has none
+    (a rig.json made for the template is replaced), then the classic steps run: rig, audit, walker clips, preview."""
+    import subprocess, shutil
+    import layout
+    folder = layout.pack_dir(a.model)
+    path = os.path.join(folder, "rig.json")
+    try: spec = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError): spec = {}
+    if (spec.get("rig") or {}).get("kind") != "humanoid":
+        import rerig_humanoid
+        spec.pop("m2m", None)
+        spec["schema"] = "autorig-spec/1"
+        spec["rig"] = {"kind": "humanoid", "skeleton": "humanoid", "clips": {"archetype": "walker"}}
+        spec["humanoid"] = json.loads(json.dumps(rerig_humanoid.DEFAULT_HUMANOID))
+        spec["clips"] = {"archetype": "walker"}
+        spec.setdefault("notes", {})["people"] = ("Auto rig took it for a person: the humanoid rig, arms as modelled "
+                                                  "and mirrored (m2m_rig --people classic)")
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(spec, fh, indent=2)
+    py = shutil.which("python3") or shutil.which("python") or sys.executable
+    run_py = os.path.join(os.path.dirname(HERE), "cli", "run.py")
+    name = layout.leaf(a.model)
+    steps = {}
+    for step in ("rig", "audit", "clips", "preview"):
+        print("people: %s %s" % (step, name), flush=True)
+        r = subprocess.run([py, run_py, step, name], capture_output=True, text=True)
+        sys.stdout.write((r.stdout or "")[-4000:]); sys.stdout.flush()
+        steps[step] = r.returncode
+        if r.returncode != 0:
+            sys.stdout.write((r.stderr or "")[-4000:])
+            if step == "rig": break
+    log.update(people="classic", steps=steps)
+    print("M2M_RIG " + json.dumps({"name": a.name, "template": "human", "people": "classic", "choice": log["choice"],
+                                   "steps": steps}, default=str))
+    return 0 if steps.get("rig") == 0 else 1
 
 
 def main():

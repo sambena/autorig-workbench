@@ -299,7 +299,7 @@ def measure(co, lo, size, h, main=None):
                 f = shoulder_x if j == "shoulder" else x[j]
                 t = (X(f) - s0[0]) / (s1[0] - s0[0]) if abs(s1[0] - s0[0]) > 1e-6 else 0.0
                 raw[side + j] = tuple(s0 + (s1 - s0) * t)
-    if h.get("symmetric_arms"):
+    if h.get("symmetric_arms", True):       # the default since 2026-10-18; false for a model built lopsided
         # the arms' joints, averaged across the two sides and mirrored. The shoulder is found by running the upper
         # arm's line in to the shoulder's width, so a small slope error moves it a long way: Ice_Age26's left one
         # came out 3 cm above the right, and lowering that arm crushed his jacket into a lump at the shoulder
@@ -547,7 +547,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         rerig.keep_joints_inside(chains, bvh, size, log)
     arm, _ = rerig.build_armature(key, chains, size)
     if not rerig.skin(mesh, arm, chains, spec, size, log): return log
-    rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "t-pose"))
+    rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "keep"))     # the arms as modelled (2026-10-18)
     log["rest_arms"] = rest_arms
     log["rest_offset"] = straighten(arm, size, arms=rest_arms)
     if spec.get("twist_bones", False):
