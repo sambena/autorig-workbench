@@ -1,0 +1,226 @@
+{
+ "model": "Radar_Age17_Tripo",
+ "group": "TornadoTitans",
+ "source": "Radar_Age17_Tripo.glb",
+ "height": 0.0,
+ "top": 97.7288,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7503,
+ "source_data": {
+  "size": [
+   65.20218658447266,
+   21.10443115234375,
+   97.72880554199219
+  ],
+  "lo": [
+   -32.60109329223633,
+   -10.552215576171875,
+   0.0
+  ],
+  "hi": [
+   32.60109329223633,
+   10.552215576171875,
+   97.72880554199219
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.02,
+   0.28,
+   0.42
+  ],
+  [
+   0.71,
+   0.14,
+   0.0
+  ],
+  [
+   0.98,
+   0.28,
+   0.42
+  ],
+  [
+   0.31,
+   0.07,
+   0.0
+  ],
+  [
+   0.51,
+   0.33,
+   0.99
+  ],
+  [
+   0.47,
+   0.98,
+   0.46
+  ],
+  [
+   0.52,
+   0.13,
+   0.65
+  ],
+  [
+   0.67,
+   0.38,
+   0.25
+  ],
+  [
+   0.32,
+   0.35,
+   0.23
+  ],
+  [
+   0.21,
+   0.73,
+   0.7
+  ],
+  [
+   0.67,
+   0.88,
+   0.76
+  ],
+  [
+   0.63,
+   0.81,
+   0.09
+  ],
+  [
+   0.44,
+   0.14,
+   0.45
+  ],
+  [
+   0.4,
+   0.83,
+   0.1
+  ],
+  [
+   0.85,
+   0.46,
+   0.63
+  ],
+  [
+   0.43,
+   0.48,
+   0.83
+  ],
+  [
+   0.69,
+   0.51,
+   0.51
+  ],
+  [
+   0.55,
+   0.69,
+   0.3
+  ]
+ ],
+ "proportions": [
+  65.20218658447266,
+  21.10443115234375,
+  97.72880554199219
+ ],
+ "plan": {
+  "size": [
+   65.2022,
+   21.1044,
+   97.7288
+  ],
+  "height": 1.499,
+  "stand": 4.631,
+  "length": 0.324,
+  "parts": {
+   "count": 1,
+   "pieces": 5,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.963
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.227,
+   "largest": 0.519
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.065,
+    "thin": 0.765,
+    "broad": 0.223,
+    "outward": 0.89,
+    "high": 0.566,
+    "reach": 0.332,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.064,
+    "thin": 0.727,
+    "broad": 0.229,
+    "outward": 0.893,
+    "high": 0.562,
+    "reach": 0.333,
+    "sheet": false
+   },
+   "torso": 0.168
+  },
+  "flat": {
+   "share": 0.095,
+   "level": 0.02
+  },
+  "belly": {
+   "clear": 0.0,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.015,
+   "best": 0.415,
+   "poses": 7
+  }
+ },
+ "measures": {
+  "ground": 0.37,
+  "slender": 0.216,
+  "stand": 4.631,
+  "tail": 0.0,
+  "tail_reach": 1.15
+ },
+ "rigged": {
+  "file": "Radar_Age17_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 3.0
+}

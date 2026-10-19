@@ -1705,8 +1705,7 @@ def run(a):
         if not arch: arch, plan = suggest_archetype(mesh, a.name, log)
         pts = [v.co for v in mesh.data.vertices]
         meas = dict(body_measures(pts, top), tail=round(tail_share(pts, top), 3))
-        if plan and (plan.get("feet") or {}).get("count") is not None: meas["feet"] = plan["feet"]["count"]
-        if plan and (plan.get("wings") or {}).get("both"): meas["wings"] = True
+        meas.update(T.plan_measures(plan))          # feet, wings, flat faces, belly clearance (core/body_plan.py)
         if a.height: meas["metres"] = round(top, 3)     # a real height only: Tripo's come out ~1 m whatever they are
         r = tail_reach(pts)
         if r is not None: meas["tail_reach"] = r
@@ -1951,15 +1950,14 @@ def run(a):
 def is_person(a, t, log):
     """Whether this goes to the humanoid rig. The Human tile (--template human) says so outright, and so does auto
     choosing the human template: that template never suits anything but a person here (a sword read as a short tail
-    must not stop it: Heartroot's squire). Also "winged" with no tail standing tall like a person: a T-pose's arms
-    and coat tails read as wings (the ticket taker stands 3.3; a hen or a rooster about 1)."""
+    must not stop it: Heartroot's squire). choose() also picks it for "winged" with no tail standing tall like a
+    person: a T-pose's arms and coat tails read as wings (the ticket taker stands 3.3; a hen or a rooster about 1)."""
     if "--out" in sys.argv: return False          # a scratch run (Fix skin's tries) never re-rigs the model's own folder
     if a.template.lower() == "human": return True
     if a.template.lower() != "auto": return False
     ch = log.get("choice") or {}
     m = ch.get("measures") or {}
-    if t == "human": return True
-    return ch.get("archetype") == "winged" and m.get("stand", 0) >= 2.0 and m.get("tail", 1) < 0.05
+    return T.is_person(t, ch.get("archetype"), m)
 
 
 def people_classic(a, log):

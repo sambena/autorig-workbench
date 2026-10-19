@@ -1,0 +1,252 @@
+{
+ "model": "point_defense_drone",
+ "group": "Smeltdown",
+ "source": "tripo_convert_ec3c458f-73e7-462e-a46e-ecca30e7ad55.fbx",
+ "height": 0.0,
+ "top": 0.9981,
+ "facing": "-y",
+ "had_rig": true,
+ "vertices": 7691,
+ "source_data": {
+  "size": [
+   0.9746096134185791,
+   0.6503908634185791,
+   0.9981405138969421
+  ],
+  "lo": [
+   -0.4873049259185791,
+   -0.32519540190696716,
+   -1.8192584150256152e-07
+  ],
+  "hi": [
+   0.4873046576976776,
+   0.32519543170928955,
+   0.9981403350830078
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.02,
+   0.36,
+   0.6
+  ],
+  [
+   0.97,
+   0.3,
+   0.29
+  ],
+  [
+   0.22,
+   0.21,
+   0.0
+  ],
+  [
+   0.79,
+   0.2,
+   0.0
+  ],
+  [
+   0.51,
+   0.91,
+   0.93
+  ],
+  [
+   0.53,
+   0.26,
+   0.49
+  ],
+  [
+   0.2,
+   0.36,
+   0.36
+  ],
+  [
+   0.79,
+   0.28,
+   0.38
+  ],
+  [
+   0.81,
+   0.5,
+   0.81
+  ],
+  [
+   0.21,
+   0.55,
+   0.82
+  ],
+  [
+   0.5,
+   0.38,
+   0.93
+  ],
+  [
+   0.95,
+   0.53,
+   0.7
+  ],
+  [
+   0.71,
+   0.69,
+   0.98
+  ],
+  [
+   0.34,
+   0.71,
+   1.0
+  ],
+  [
+   0.29,
+   0.48,
+   0.29
+  ],
+  [
+   0.09,
+   0.75,
+   0.61
+  ],
+  [
+   0.61,
+   0.6,
+   0.16
+  ],
+  [
+   0.55,
+   0.73,
+   0.6
+  ]
+ ],
+ "proportions": [
+  0.9746096134185791,
+  0.6503908634185791,
+  0.9981405138969421
+ ],
+ "plan": {
+  "size": [
+   0.9746,
+   0.6504,
+   0.9981
+  ],
+  "height": 1.024,
+  "stand": 1.535,
+  "length": 0.667,
+  "parts": {
+   "count": 8,
+   "pieces": 79,
+   "largest": 0.441
+  },
+  "mirror": {
+   "x": 0.946,
+   "y": 0.737
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.17,
+   "largest": 0.526
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.312
+  },
+  "flat": {
+   "share": 0.133,
+   "level": 0.044
+  },
+  "belly": {
+   "clear": 0.0,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.047,
+   "best": 0.262,
+   "poses": 25
+  }
+ },
+ "measures": {
+  "ground": 0.173,
+  "slender": 0.652,
+  "stand": 1.535,
+  "tail": 0.085,
+  "tail_reach": 1.185
+ },
+ "rigged": {
+  "file": "point_defense_drone.blend",
+  "bones": [
+   "mixamorig:Hips",
+   "mixamorig:LeftUpLeg",
+   "mixamorig:LeftLeg",
+   "mixamorig:LeftFoot",
+   "mixamorig:LeftToeBase",
+   "mixamorig:LeftToe_End",
+   "mixamorig:Spine",
+   "mixamorig:Spine1",
+   "mixamorig:Spine2",
+   "mixamorig:LeftShoulder",
+   "mixamorig:LeftArm",
+   "mixamorig:LeftForeArm",
+   "mixamorig:LeftHand",
+   "mixamorig:LeftHandIndex1",
+   "mixamorig:LeftHandIndex2",
+   "mixamorig:LeftHandIndex3",
+   "mixamorig:LeftHandIndex4",
+   "mixamorig:LeftHandMiddle1",
+   "mixamorig:LeftHandMiddle2",
+   "mixamorig:LeftHandMiddle3",
+   "mixamorig:LeftHandMiddle4",
+   "mixamorig:LeftHandPinky1",
+   "mixamorig:LeftHandPinky2",
+   "mixamorig:LeftHandPinky3",
+   "mixamorig:LeftHandPinky4",
+   "mixamorig:LeftHandRing1",
+   "mixamorig:LeftHandRing2",
+   "mixamorig:LeftHandRing3",
+   "mixamorig:LeftHandRing4",
+   "mixamorig:LeftHandThumb1",
+   "mixamorig:LeftHandThumb2",
+   "mixamorig:LeftHandThumb3",
+   "mixamorig:LeftHandThumb4",
+   "mixamorig:Neck",
+   "mixamorig:Head",
+   "mixamorig:HeadTop_End",
+   "mixamorig:RightShoulder",
+   "mixamorig:RightArm",
+   "mixamorig:RightForeArm",
+   "mixamorig:RightHand",
+   "mixamorig:RightHandIndex1",
+   "mixamorig:RightHandIndex2",
+   "mixamorig:RightHandIndex3",
+   "mixamorig:RightHandIndex4",
+   "mixamorig:RightHandMiddle1",
+   "mixamorig:RightHandMiddle2",
+   "mixamorig:RightHandMiddle3",
+   "mixamorig:RightHandMiddle4",
+   "mixamorig:RightHandPinky1",
+   "mixamorig:RightHandPinky2",
+   "mixamorig:RightHandPinky3",
+   "mixamorig:RightHandPinky4",
+   "mixamorig:RightHandRing1",
+   "mixamorig:RightHandRing2",
+   "mixamorig:RightHandRing3",
+   "mixamorig:RightHandRing4",
+   "mixamorig:RightHandThumb1",
+   "mixamorig:RightHandThumb2",
+   "mixamorig:RightHandThumb3",
+   "mixamorig:RightHandThumb4",
+   "mixamorig:RightUpLeg",
+   "mixamorig:RightLeg",
+   "mixamorig:RightFoot",
+   "mixamorig:RightToeBase",
+   "mixamorig:RightToe_End"
+  ]
+ },
+ "seconds": 2.0
+}

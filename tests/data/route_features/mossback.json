@@ -1,0 +1,236 @@
+{
+ "model": "mossback",
+ "group": "Heartroot",
+ "source": "tripo_convert_eb0fd64a-4b6d-4392-90d2-4c2917927c5b.fbx",
+ "height": 0.0,
+ "top": 0.6309,
+ "facing": "+y",
+ "had_rig": true,
+ "vertices": 4039,
+ "source_data": {
+  "size": [
+   0.40039050579071045,
+   0.9980467557907104,
+   0.6308593153953552
+  ],
+  "lo": [
+   -0.20019519329071045,
+   -0.4990233778953552,
+   3.163321693477883e-08
+  ],
+  "hi": [
+   0.2001953125,
+   0.49902334809303284,
+   0.630859375
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.5,
+   0.98,
+   0.38
+  ],
+  [
+   0.46,
+   0.02,
+   0.19
+  ],
+  [
+   0.35,
+   0.31,
+   0.0
+  ],
+  [
+   0.59,
+   0.49,
+   0.82
+  ],
+  [
+   0.74,
+   0.31,
+   0.0
+  ],
+  [
+   0.26,
+   0.7,
+   0.0
+  ],
+  [
+   0.2,
+   0.56,
+   0.74
+  ],
+  [
+   0.74,
+   0.7,
+   0.0
+  ],
+  [
+   0.8,
+   0.64,
+   0.89
+  ],
+  [
+   0.32,
+   0.17,
+   0.7
+  ],
+  [
+   0.42,
+   0.8,
+   0.88
+  ],
+  [
+   0.8,
+   0.26,
+   0.52
+  ],
+  [
+   0.17,
+   0.57,
+   0.6
+  ],
+  [
+   0.4,
+   0.69,
+   0.99
+  ],
+  [
+   0.92,
+   0.89,
+   0.8
+  ],
+  [
+   0.08,
+   0.89,
+   0.8
+  ],
+  [
+   0.78,
+   0.58,
+   0.42
+  ],
+  [
+   0.22,
+   0.67,
+   0.43
+  ]
+ ],
+ "proportions": [
+  0.40039050579071045,
+  0.9980467557907104,
+  0.6308593153953552
+ ],
+ "plan": {
+  "size": [
+   0.4004,
+   0.998,
+   0.6309
+  ],
+  "height": 0.632,
+  "stand": 0.632,
+  "length": 2.493,
+  "parts": {
+   "count": 1,
+   "pieces": 384,
+   "largest": 0.823
+  },
+  "mirror": {
+   "x": 0.995,
+   "y": 0.679
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.082,
+   "largest": 0.281
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.002,
+    "thin": 0.673,
+    "broad": 0.239,
+    "outward": 0.997,
+    "high": 0.708,
+    "reach": 0.2,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.004,
+    "thin": 0.602,
+    "broad": 0.258,
+    "outward": 0.984,
+    "high": 0.716,
+    "reach": 0.2,
+    "sheet": false
+   },
+   "torso": 0.094
+  },
+  "flat": {
+   "share": 0.048,
+   "level": 0.019
+  },
+  "belly": {
+   "clear": 0.249,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.064,
+   "best": 0.407,
+   "poses": 9
+  }
+ },
+ "measures": {
+  "ground": 0.167,
+  "slender": 1.582,
+  "stand": 0.632,
+  "tail": 0.313,
+  "tail_reach": 0.641
+ },
+ "rigged": {
+  "file": "mossback.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "neck",
+   "head",
+   "head_part_1.L",
+   "head_part_2.L",
+   "head_part_1.R",
+   "head_part_2.R",
+   "jaw",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R"
+  ]
+ },
+ "seconds": 1.1
+}

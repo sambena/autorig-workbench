@@ -1,0 +1,224 @@
+{
+ "model": "floater",
+ "group": "Smeltdown",
+ "source": "tripo_convert_8eeca796-fce2-40ee-8102-32567e0cf59f.fbx",
+ "height": 0.0,
+ "top": 0.998,
+ "facing": "+y",
+ "had_rig": false,
+ "vertices": 3956,
+ "source_data": {
+  "size": [
+   0.5371094346046448,
+   0.5136719942092896,
+   0.998046875
+  ],
+  "lo": [
+   -0.2685547173023224,
+   -0.2568359971046448,
+   1.4377042667490514e-08
+  ],
+  "hi": [
+   0.2685547173023224,
+   0.2568359673023224,
+   0.998046875
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.53,
+   0.4,
+   0.98
+  ],
+  [
+   0.6,
+   0.87,
+   0.0
+  ],
+  [
+   0.17,
+   0.36,
+   0.08
+  ],
+  [
+   0.88,
+   0.58,
+   0.05
+  ],
+  [
+   0.46,
+   0.89,
+   0.0
+  ],
+  [
+   0.37,
+   0.13,
+   0.05
+  ],
+  [
+   0.63,
+   0.84,
+   0.57
+  ],
+  [
+   0.43,
+   0.22,
+   0.52
+  ],
+  [
+   0.56,
+   0.58,
+   0.31
+  ],
+  [
+   0.16,
+   0.53,
+   0.01
+  ],
+  [
+   0.12,
+   0.74,
+   0.67
+  ],
+  [
+   0.84,
+   0.86,
+   0.76
+  ],
+  [
+   0.32,
+   0.83,
+   0.16
+  ],
+  [
+   0.11,
+   0.46,
+   0.79
+  ],
+  [
+   0.92,
+   0.46,
+   0.81
+  ],
+  [
+   0.61,
+   0.32,
+   0.37
+  ],
+  [
+   0.77,
+   0.82,
+   0.33
+  ],
+  [
+   0.23,
+   0.57,
+   0.4
+  ]
+ ],
+ "proportions": [
+  0.5371094346046448,
+  0.5136719942092896,
+  0.998046875
+ ],
+ "plan": {
+  "size": [
+   0.5371,
+   0.5137,
+   0.998
+  ],
+  "height": 1.858,
+  "stand": 1.943,
+  "length": 0.956,
+  "parts": {
+   "count": 2,
+   "pieces": 36,
+   "largest": 0.484
+  },
+  "mirror": {
+   "x": 0.947,
+   "y": 0.859
+  },
+  "feet": {
+   "count": 3,
+   "fill": 0.021,
+   "largest": 0.424
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.104,
+    "thin": 0.325,
+    "broad": 0.453,
+    "outward": 0.999,
+    "high": 0.696,
+    "reach": 0.265,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.113,
+    "thin": 0.293,
+    "broad": 0.548,
+    "outward": 0.997,
+    "high": 0.696,
+    "reach": 0.269,
+    "sheet": false
+   },
+   "torso": 0.182
+  },
+  "flat": {
+   "share": 0.04,
+   "level": 0.008
+  },
+  "belly": {
+   "clear": 0.318,
+   "min": 0.285
+  },
+  "rest": {
+   "upright": 0.022,
+   "best": 0.171,
+   "poses": 16
+  }
+ },
+ "measures": {
+  "ground": 0.075,
+  "slender": 0.515,
+  "stand": 1.943,
+  "tail": 0.0,
+  "tail_reach": 0.758
+ },
+ "rigged": {
+  "file": "floater.blend",
+  "bones": [
+   "root",
+   "body",
+   "mantle",
+   "tentacle1_1.R",
+   "tentacle1_2.R",
+   "tentacle1_3.R",
+   "tentacle1_4.R",
+   "tentacle3_1.L",
+   "tentacle3_2.L",
+   "tentacle3_3.L",
+   "tentacle3_4.L",
+   "tentacle2_1.R",
+   "tentacle2_2.R",
+   "tentacle2_3.R",
+   "tentacle2_4.R",
+   "tentacle1_1.L",
+   "tentacle1_2.L",
+   "tentacle1_3.L",
+   "tentacle1_4.L",
+   "tentacle4_1.L",
+   "tentacle4_2.L",
+   "tentacle4_3.L",
+   "tentacle4_4.L",
+   "tentacle2_1.L",
+   "tentacle2_2.L",
+   "tentacle2_3.L",
+   "tentacle2_4.L"
+  ]
+ },
+ "seconds": 1.1
+}

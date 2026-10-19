@@ -1,0 +1,220 @@
+{
+ "model": "sting_jelly",
+ "group": "Heartroot",
+ "source": "tripo_convert_afb22db8-17f9-4457-aa89-928cb80b7dac.fbx",
+ "height": 0.0,
+ "top": 0.998,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 4066,
+ "source_data": {
+  "size": [
+   0.6425781846046448,
+   0.9863282442092896,
+   0.998046875
+  ],
+  "lo": [
+   -0.3212890923023224,
+   -0.4931641221046448,
+   6.119454276642955e-09
+  ],
+  "hi": [
+   0.3212890923023224,
+   0.4931641221046448,
+   0.998046875
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.4,
+   0.8,
+   0.97
+  ],
+  [
+   0.63,
+   0.0,
+   0.0
+  ],
+  [
+   0.76,
+   0.48,
+   0.06
+  ],
+  [
+   0.19,
+   0.56,
+   0.11
+  ],
+  [
+   0.97,
+   0.44,
+   0.21
+  ],
+  [
+   0.13,
+   0.01,
+   0.16
+  ],
+  [
+   0.67,
+   0.07,
+   0.34
+  ],
+  [
+   0.66,
+   0.66,
+   0.43
+  ],
+  [
+   0.22,
+   0.35,
+   0.44
+  ],
+  [
+   0.7,
+   0.35,
+   0.49
+  ],
+  [
+   0.35,
+   0.79,
+   0.34
+  ],
+  [
+   0.21,
+   0.44,
+   0.2
+  ],
+  [
+   0.81,
+   0.76,
+   0.34
+  ],
+  [
+   0.44,
+   0.59,
+   0.31
+  ],
+  [
+   0.72,
+   0.56,
+   0.59
+  ],
+  [
+   0.36,
+   0.55,
+   0.57
+  ],
+  [
+   0.96,
+   0.84,
+   0.71
+  ],
+  [
+   0.51,
+   0.41,
+   0.83
+  ]
+ ],
+ "proportions": [
+  0.6425781846046448,
+  0.9863282442092896,
+  0.998046875
+ ],
+ "plan": {
+  "size": [
+   0.6426,
+   0.9863,
+   0.998
+  ],
+  "height": 1.012,
+  "stand": 1.012,
+  "length": 1.535,
+  "parts": {
+   "count": 2,
+   "pieces": 140,
+   "largest": 0.898
+  },
+  "mirror": {
+   "x": 0.823,
+   "y": 0.3
+  },
+  "feet": {
+   "count": 1,
+   "fill": 0.021,
+   "largest": 1.0
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.118,
+    "thin": 0.347,
+    "broad": 0.9,
+    "outward": 1.0,
+    "high": 0.732,
+    "reach": 0.322,
+    "sheet": true
+   },
+   "right": {
+    "share": 0.144,
+    "thin": 0.37,
+    "broad": 0.797,
+    "outward": 0.999,
+    "high": 0.719,
+    "reach": 0.321,
+    "sheet": false
+   },
+   "torso": 0.096
+  },
+  "flat": {
+   "share": 0.03,
+   "level": 0.011
+  },
+  "belly": {
+   "clear": 0.215,
+   "min": 0.081
+  },
+  "rest": {
+   "upright": 0.0,
+   "best": 0.195,
+   "poses": 38
+  }
+ },
+ "measures": {
+  "ground": 0.042,
+  "slender": 0.988,
+  "stand": 1.012,
+  "tail": 0.167,
+  "tail_reach": 0.453
+ },
+ "rigged": {
+  "file": "sting_jelly.blend",
+  "bones": [
+   "root",
+   "body",
+   "bell",
+   "oral_arm_1.R",
+   "oral_arm_2.R",
+   "oral_arm_3.R",
+   "oral_arm_4.R",
+   "oral_arm_5.R",
+   "tentacle2_1",
+   "tentacle2_2",
+   "tentacle2_3",
+   "tentacle_1.L",
+   "tentacle_2.L",
+   "tentacle_3.L",
+   "tentacle1_1",
+   "tentacle1_2",
+   "tentacle1_3",
+   "tentacle2_1.R",
+   "tentacle2_2.R",
+   "tentacle2_3.R",
+   "tentacle1_1.R",
+   "tentacle1_2.R",
+   "tentacle1_3.R"
+  ]
+ },
+ "seconds": 1.3
+}

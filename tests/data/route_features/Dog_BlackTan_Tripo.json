@@ -1,0 +1,236 @@
+{
+ "model": "Dog_BlackTan_Tripo",
+ "group": "TornadoTitans",
+ "source": "Dog_BlackTan_Tripo.glb",
+ "height": 0.0,
+ "top": 0.5917,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7502,
+ "source_data": {
+  "size": [
+   0.27305126190185547,
+   0.9975044131278992,
+   0.5917298793792725
+  ],
+  "lo": [
+   -0.13652563095092773,
+   -0.4987522065639496,
+   0.0
+  ],
+  "hi": [
+   0.13652563095092773,
+   0.4987522065639496,
+   0.5917298793792725
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.87,
+   0.81,
+   0.0
+  ],
+  [
+   0.35,
+   0.01,
+   0.92
+  ],
+  [
+   0.94,
+   0.34,
+   0.0
+  ],
+  [
+   0.11,
+   0.34,
+   0.0
+  ],
+  [
+   0.38,
+   0.89,
+   0.98
+  ],
+  [
+   0.14,
+   0.8,
+   0.0
+  ],
+  [
+   0.79,
+   0.45,
+   0.74
+  ],
+  [
+   0.21,
+   0.65,
+   0.49
+  ],
+  [
+   0.93,
+   0.8,
+   0.56
+  ],
+  [
+   0.16,
+   0.36,
+   0.48
+  ],
+  [
+   0.53,
+   0.2,
+   0.66
+  ],
+  [
+   0.82,
+   0.39,
+   0.33
+  ],
+  [
+   0.27,
+   0.83,
+   0.66
+  ],
+  [
+   0.6,
+   0.66,
+   0.77
+  ],
+  [
+   0.83,
+   0.59,
+   0.47
+  ],
+  [
+   0.24,
+   0.79,
+   0.33
+  ],
+  [
+   0.77,
+   0.73,
+   0.28
+  ],
+  [
+   0.75,
+   0.3,
+   0.54
+  ]
+ ],
+ "proportions": [
+  0.27305126190185547,
+  0.9975044131278992,
+  0.5917298793792725
+ ],
+ "plan": {
+  "size": [
+   0.2731,
+   0.9975,
+   0.5917
+  ],
+  "height": 0.593,
+  "stand": 0.593,
+  "length": 3.653,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.969,
+   "y": 0.649
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.086,
+   "largest": 0.283
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.067
+  },
+  "flat": {
+   "share": 0.069,
+   "level": 0.023
+  },
+  "belly": {
+   "clear": 0.369,
+   "min": 0.083
+  },
+  "rest": {
+   "upright": 0.064,
+   "best": 0.46,
+   "poses": 8
+  }
+ },
+ "measures": {
+  "ground": 0.157,
+  "slender": 1.686,
+  "stand": 0.593,
+  "tail": 0.19,
+  "tail_reach": 0.698
+ },
+ "rigged": {
+  "file": "Dog_BlackTan_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine_1",
+   "Spine_2",
+   "Spine_2.001",
+   "Spine_3",
+   "Spine_4",
+   "Head",
+   "Nose",
+   "Head.tip",
+   "Ear_L",
+   "Ear_Tip_L",
+   "Chin",
+   "Chin_Tip",
+   "Ear_R",
+   "Ear_Tip_R",
+   "Front_Leg_Shoulder_L",
+   "Front_Leg_Upper_L",
+   "Front_Leg_Lower_L",
+   "Front_Leg_Ankle_L",
+   "Front_Leg_Foot_L",
+   "Front_Leg_Tip_L",
+   "Front_Leg_Shoulder_R",
+   "Front_Leg_Upper_R",
+   "Front_Leg_Lower_R",
+   "Front_Leg_Ankle_R",
+   "Front_Leg_Foot_R",
+   "Front_Leg_Tip_R",
+   "Stomach",
+   "Stomach_tip",
+   "Tail_Base",
+   "Tail_Mid",
+   "Tail_Mid.001",
+   "Tail_End",
+   "Tail_Tip",
+   "Back_Leg_Pelvis_L",
+   "Back_Leg_Upper_L",
+   "Back_Leg_Lower_L",
+   "Back_Leg_Ankle_L",
+   "Back_Leg_Foot_L",
+   "Back_Leg_Foot_1_L",
+   "Back_Leg_Tip_L",
+   "Back_Leg_Pelvis_R",
+   "Back_Leg_Upper_R",
+   "Back_Leg_Lower_R",
+   "Back_Leg_Ankle_R",
+   "Back_Leg_Foot_R",
+   "Back_Leg_Foot_1_R",
+   "Back_Leg_Tip_R"
+  ]
+ },
+ "seconds": 1.6
+}

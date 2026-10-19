@@ -1,0 +1,236 @@
+{
+ "model": "Cat_Tabby_Tripo",
+ "group": "TornadoTitans",
+ "source": "Cat_Tabby_Tripo.glb",
+ "height": 0.0,
+ "top": 0.7805,
+ "facing": "+y",
+ "had_rig": false,
+ "vertices": 7501,
+ "source_data": {
+  "size": [
+   0.3729322552680969,
+   0.9974923133850098,
+   0.7805260419845581
+  ],
+  "lo": [
+   -0.18646612763404846,
+   -0.4987461566925049,
+   0.0
+  ],
+  "hi": [
+   0.18646612763404846,
+   0.4987461566925049,
+   0.7805260419845581
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.53,
+   0.01,
+   0.56
+  ],
+  [
+   0.37,
+   0.97,
+   0.97
+  ],
+  [
+   0.08,
+   0.79,
+   0.0
+  ],
+  [
+   0.91,
+   0.48,
+   0.02
+  ],
+  [
+   0.3,
+   0.27,
+   0.03
+  ],
+  [
+   0.62,
+   0.89,
+   0.01
+  ],
+  [
+   0.24,
+   0.51,
+   0.65
+  ],
+  [
+   0.89,
+   0.63,
+   0.46
+  ],
+  [
+   0.4,
+   0.9,
+   0.47
+  ],
+  [
+   0.61,
+   0.32,
+   0.43
+  ],
+  [
+   0.13,
+   0.75,
+   0.73
+  ],
+  [
+   0.62,
+   0.77,
+   0.77
+  ],
+  [
+   0.22,
+   0.66,
+   0.32
+  ],
+  [
+   0.33,
+   0.99,
+   0.71
+  ],
+  [
+   0.82,
+   0.45,
+   0.69
+  ],
+  [
+   0.86,
+   0.81,
+   0.27
+  ],
+  [
+   0.16,
+   0.77,
+   1.0
+  ],
+  [
+   0.22,
+   0.42,
+   0.37
+  ]
+ ],
+ "proportions": [
+  0.3729322552680969,
+  0.9974923133850098,
+  0.7805260419845581
+ ],
+ "plan": {
+  "size": [
+   0.3729,
+   0.9975,
+   0.7805
+  ],
+  "height": 0.782,
+  "stand": 0.782,
+  "length": 2.675,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.759,
+   "y": 0.509
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.111,
+   "largest": 0.328
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.097
+  },
+  "flat": {
+   "share": 0.08,
+   "level": 0.017
+  },
+  "belly": {
+   "clear": 0.282,
+   "min": 0.024
+  },
+  "rest": {
+   "upright": 0.061,
+   "best": 0.404,
+   "poses": 4
+  }
+ },
+ "measures": {
+  "ground": 0.202,
+  "slender": 1.278,
+  "stand": 0.782,
+  "tail": 0.099,
+  "tail_reach": 0.804
+ },
+ "rigged": {
+  "file": "Cat_Tabby_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine_1",
+   "Spine_2",
+   "Spine_2.001",
+   "Spine_3",
+   "Spine_4",
+   "Head",
+   "Nose",
+   "Head.tip",
+   "Ear_L",
+   "Ear_Tip_L",
+   "Chin",
+   "Chin_Tip",
+   "Ear_R",
+   "Ear_Tip_R",
+   "Front_Leg_Shoulder_L",
+   "Front_Leg_Upper_L",
+   "Front_Leg_Lower_L",
+   "Front_Leg_Ankle_L",
+   "Front_Leg_Foot_L",
+   "Front_Leg_Tip_L",
+   "Front_Leg_Shoulder_R",
+   "Front_Leg_Upper_R",
+   "Front_Leg_Lower_R",
+   "Front_Leg_Ankle_R",
+   "Front_Leg_Foot_R",
+   "Front_Leg_Tip_R",
+   "Stomach",
+   "Stomach_tip",
+   "Tail_Base",
+   "Tail_Mid",
+   "Tail_Mid.001",
+   "Tail_End",
+   "Tail_Tip",
+   "Back_Leg_Pelvis_L",
+   "Back_Leg_Upper_L",
+   "Back_Leg_Lower_L",
+   "Back_Leg_Ankle_L",
+   "Back_Leg_Foot_L",
+   "Back_Leg_Foot_1_L",
+   "Back_Leg_Tip_L",
+   "Back_Leg_Pelvis_R",
+   "Back_Leg_Upper_R",
+   "Back_Leg_Lower_R",
+   "Back_Leg_Ankle_R",
+   "Back_Leg_Foot_R",
+   "Back_Leg_Foot_1_R",
+   "Back_Leg_Tip_R"
+  ]
+ },
+ "seconds": 3.1
+}

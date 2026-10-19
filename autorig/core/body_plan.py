@@ -10,6 +10,8 @@
 #   wings        thin flat sheets standing out to both sides above the legs
 #   height       height over the longer of width and length; stand: height over the length front to back
 #   rest         whether the mesh, as it stands, rests stably (the chance it lands this way up if dropped)
+#   flat         the share of the surface on flat faces square to the axes: built things, not sculpted ones
+#   belly        how high the underside clears the ground along the middle: legs, wheels, or lying on it
 #
 # Needs numpy and the trimesh extra (core/extras.py; trimesh's graph and hull calls need scipy or networkx, which
 # open-clip's torch brings). measure() returns None without trimesh, and a measure that cannot be taken is left
@@ -139,6 +141,35 @@ def _wings(pts, lo, size, np):
             "torso": round(torso / max(1e-9, max(size[0], size[1])), 3)}
 
 
+def _flat(tm, np):
+    """The share of the surface on flat faces square to the axes (normal within 8 degrees of +-X, +-Y or +-Z): walls,
+    floors, panels and table tops. A sculpted animal or person has a few percent; a building, a vehicle or a machine
+    has much more, even when a generator made it."""
+    n = np.asarray(tm.face_normals, dtype=np.float64)
+    a = np.asarray(tm.area_faces, dtype=np.float64)
+    total = float(a.sum()) or 1.0
+    square = np.abs(n).max(axis=1) > 0.99           # cos 8 degrees
+    up = np.abs(n[:, 2]) > 0.99
+    return {"share": round(float(a[square].sum()) / total, 3), "level": round(float(a[up].sum()) / total, 3)}
+
+
+def _belly(pts, lo, size, np):
+    """How high the underside clears the ground along the middle of the body, over the height: the median, over
+    slices across the middle half of its length, of the lowest surface within a fifth of the width of the midline.
+    An animal stands on legs with air under its belly (a horse about half its height, a dog a third); a vehicle sits
+    on its wheels a little off the ground; a building, a boulder or a fish lying down sits on it."""
+    cx = lo[0] + 0.5 * size[0]
+    mid = pts[np.abs(pts[:, 0] - cx) < 0.2 * size[0]]
+    mid = mid[(mid[:, 1] > lo[1] + 0.25 * size[1]) & (mid[:, 1] < lo[1] + 0.75 * size[1])]
+    if len(mid) < 30:
+        return None
+    k = 12
+    rows = np.clip(((mid[:, 1] - (lo[1] + 0.25 * size[1])) / (0.5 * size[1]) * k).astype(int), 0, k - 1)
+    lows = [float(mid[rows == r, 2].min()) for r in range(k) if np.any(rows == r)]
+    clear = [(z - lo[2]) / size[2] for z in lows]
+    return {"clear": round(float(np.median(clear)), 3), "min": round(float(min(clear)), 3)}
+
+
 def _rest(tm, pts, np):
     """The chance the mesh comes to rest standing as it stands now (trimesh's stable poses, over its convex hull)
     and the most likely pose's chance."""
@@ -176,6 +207,7 @@ def measure(verts, faces, log=None):
     pts = _sample(tm, SAMPLES, np)
     for name, fn in (("parts", lambda: _parts(tm, np)), ("mirror", lambda: _mirror(pts, lo, size, np)),
                      ("feet", lambda: _feet(pts, lo, size, np)), ("wings", lambda: _wings(pts, lo, size, np)),
+                     ("flat", lambda: _flat(tm, np)), ("belly", lambda: _belly(pts, lo, size, np)),
                      ("rest", lambda: _rest(tm, pts, np))):
         try:
             got = fn()

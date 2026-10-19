@@ -1,0 +1,226 @@
+{
+ "model": "Ice_Age26_Tripo",
+ "group": "TornadoTitans",
+ "source": "Ice_Age26_Tripo.glb",
+ "height": 0.0,
+ "top": 97.8228,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7502,
+ "source_data": {
+  "size": [
+   70.06989288330078,
+   19.20311737060547,
+   97.82276153564453
+  ],
+  "lo": [
+   -35.03494644165039,
+   -9.601558685302734,
+   0.0
+  ],
+  "hi": [
+   35.03494644165039,
+   9.601558685302734,
+   97.82276153564453
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.99,
+   0.21,
+   0.45
+  ],
+  [
+   0.31,
+   0.08,
+   0.01
+  ],
+  [
+   0.01,
+   0.22,
+   0.45
+  ],
+  [
+   0.7,
+   0.12,
+   0.0
+  ],
+  [
+   0.49,
+   0.16,
+   0.99
+  ],
+  [
+   0.53,
+   0.97,
+   0.47
+  ],
+  [
+   0.46,
+   0.04,
+   0.63
+  ],
+  [
+   0.74,
+   0.74,
+   0.76
+  ],
+  [
+   0.34,
+   0.55,
+   0.26
+  ],
+  [
+   0.66,
+   0.49,
+   0.25
+  ],
+  [
+   0.35,
+   0.9,
+   0.76
+  ],
+  [
+   0.62,
+   0.22,
+   0.61
+  ],
+  [
+   0.18,
+   0.35,
+   0.63
+  ],
+  [
+   0.55,
+   0.44,
+   0.81
+  ],
+  [
+   0.39,
+   0.81,
+   0.1
+  ],
+  [
+   0.56,
+   0.23,
+   0.43
+  ],
+  [
+   0.6,
+   0.82,
+   0.09
+  ],
+  [
+   0.34,
+   0.5,
+   0.57
+  ]
+ ],
+ "proportions": [
+  70.06989288330078,
+  19.20311737060547,
+  97.82276153564453
+ ],
+ "plan": {
+  "size": [
+   70.0699,
+   19.2031,
+   97.8228
+  ],
+  "height": 1.396,
+  "stand": 5.094,
+  "length": 0.274,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.938
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.211,
+   "largest": 0.527
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.076,
+    "thin": 0.851,
+    "broad": 0.245,
+    "outward": 0.82,
+    "high": 0.6,
+    "reach": 0.357,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.079,
+    "thin": 0.884,
+    "broad": 0.24,
+    "outward": 0.815,
+    "high": 0.597,
+    "reach": 0.358,
+    "sheet": false
+   },
+   "torso": 0.146
+  },
+  "flat": {
+   "share": 0.076,
+   "level": 0.016
+  },
+  "belly": {
+   "clear": 0.001,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.01,
+   "best": 0.405,
+   "poses": 10
+  }
+ },
+ "measures": {
+  "ground": 0.333,
+  "slender": 0.196,
+  "stand": 5.094,
+  "tail": 0.0,
+  "tail_reach": 1.155
+ },
+ "rigged": {
+  "file": "Ice_Age26_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 1.8
+}

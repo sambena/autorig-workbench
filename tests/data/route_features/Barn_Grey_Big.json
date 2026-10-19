@@ -1,0 +1,220 @@
+{
+ "model": "Barn_Grey_Big",
+ "group": "TornadoTitans",
+ "source": "rodin/barn_6/base_basic_pbr.glb",
+ "height": 0.0,
+ "top": 1.3217,
+ "facing": "+y",
+ "had_rig": false,
+ "vertices": 7466,
+ "source_data": {
+  "size": [
+   1.8342065811157227,
+   1.894435167312622,
+   1.3217430114746094
+  ],
+  "lo": [
+   -0.9171032905578613,
+   -0.947217583656311,
+   0.0
+  ],
+  "hi": [
+   0.9171032905578613,
+   0.947217583656311,
+   1.3217430114746094
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.16,
+   0.03,
+   0.72
+  ],
+  [
+   0.95,
+   0.94,
+   0.09
+  ],
+  [
+   0.09,
+   1.0,
+   0.66
+  ],
+  [
+   0.52,
+   0.45,
+   0.36
+  ],
+  [
+   0.95,
+   0.09,
+   0.3
+  ],
+  [
+   0.23,
+   0.48,
+   0.0
+  ],
+  [
+   0.66,
+   0.58,
+   0.86
+  ],
+  [
+   0.62,
+   0.93,
+   0.66
+  ],
+  [
+   0.46,
+   0.16,
+   0.03
+  ],
+  [
+   0.48,
+   0.7,
+   0.03
+  ],
+  [
+   0.77,
+   0.83,
+   0.78
+  ],
+  [
+   0.6,
+   0.09,
+   0.62
+  ],
+  [
+   0.07,
+   0.5,
+   0.61
+  ],
+  [
+   0.75,
+   0.34,
+   0.8
+  ],
+  [
+   0.97,
+   0.52,
+   0.24
+  ],
+  [
+   0.67,
+   0.17,
+   0.86
+  ],
+  [
+   0.72,
+   0.27,
+   0.0
+  ],
+  [
+   0.26,
+   0.95,
+   0.23
+  ]
+ ],
+ "proportions": [
+  1.8342065811157227,
+  1.894435167312622,
+  1.3217430114746094
+ ],
+ "plan": {
+  "size": [
+   1.8342,
+   1.8944,
+   1.3217
+  ],
+  "height": 0.698,
+  "stand": 0.698,
+  "length": 1.033,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 1.0,
+   "y": 0.999
+  },
+  "feet": {
+   "count": 1,
+   "fill": 0.741,
+   "largest": 1.0
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.342
+  },
+  "flat": {
+   "share": 0.581,
+   "level": 0.258
+  },
+  "belly": {
+   "clear": 0.004,
+   "min": 0.003
+  },
+  "rest": {
+   "upright": 0.235,
+   "best": 0.235,
+   "poses": 9
+  }
+ },
+ "measures": {
+  "ground": 0.495,
+  "slender": 1.033,
+  "stand": 0.698,
+  "tail": 0.391,
+  "tail_reach": 0.319
+ },
+ "rigged": {
+  "file": "Barn_6.blend",
+  "bones": [
+   "root",
+   "pelvis",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_5",
+   "tail_6",
+   "tail_7",
+   "tail_8",
+   "tail_tip",
+   "back_fin_0_l",
+   "back_fin_1_l",
+   "back_fin_2_l",
+   "back_fin_tip_l",
+   "back_fin_0_r",
+   "back_fin_1_r",
+   "back_fin_2_r",
+   "back_fin_tip_r",
+   "front_fin_0_l",
+   "front_fin_1_l",
+   "front_fin_2_l",
+   "front_fin_tip_l",
+   "front_fin_0_r",
+   "front_fin_1_r",
+   "front_fin_2_r",
+   "front_fin_tip_r",
+   "neck",
+   "head",
+   "head_tip",
+   "mouth_base",
+   "mouth_1",
+   "mouth_tip"
+  ]
+ },
+ "seconds": 2.2
+}

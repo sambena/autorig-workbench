@@ -1,0 +1,236 @@
+{
+ "model": "Rabbit_Tripo",
+ "group": "TornadoTitans",
+ "source": "Rabbit_Tripo.glb",
+ "height": 0.0,
+ "top": 0.8831,
+ "facing": "+x",
+ "had_rig": false,
+ "vertices": 7504,
+ "source_data": {
+  "size": [
+   0.3965492844581604,
+   0.9988452196121216,
+   0.8831253051757812
+  ],
+  "lo": [
+   -0.1982746422290802,
+   -0.4994226098060608,
+   0.0
+  ],
+  "hi": [
+   0.1982746422290802,
+   0.4994226098060608,
+   0.8831253051757812
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.91,
+   0.65,
+   0.01
+  ],
+  [
+   0.1,
+   0.22,
+   1.0
+  ],
+  [
+   0.28,
+   0.23,
+   0.0
+  ],
+  [
+   0.37,
+   0.69,
+   0.61
+  ],
+  [
+   0.06,
+   0.67,
+   0.01
+  ],
+  [
+   0.65,
+   0.14,
+   0.52
+  ],
+  [
+   0.69,
+   0.22,
+   0.0
+  ],
+  [
+   0.91,
+   0.23,
+   1.0
+  ],
+  [
+   0.78,
+   0.55,
+   0.32
+  ],
+  [
+   0.53,
+   0.97,
+   0.32
+  ],
+  [
+   0.13,
+   0.36,
+   0.4
+  ],
+  [
+   0.11,
+   0.68,
+   0.28
+  ],
+  [
+   0.34,
+   0.23,
+   0.68
+  ],
+  [
+   0.78,
+   0.84,
+   0.23
+  ],
+  [
+   0.53,
+   0.26,
+   0.25
+  ],
+  [
+   0.75,
+   0.43,
+   0.57
+  ],
+  [
+   0.84,
+   0.75,
+   0.48
+  ],
+  [
+   0.84,
+   0.31,
+   0.38
+  ]
+ ],
+ "proportions": [
+  0.3965492844581604,
+  0.9988452196121216,
+  0.8831253051757812
+ ],
+ "plan": {
+  "size": [
+   0.3965,
+   0.9988,
+   0.8831
+  ],
+  "height": 0.884,
+  "stand": 0.884,
+  "length": 2.519,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.999,
+   "y": 0.653
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.104,
+   "largest": 0.275
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.092
+  },
+  "flat": {
+   "share": 0.075,
+   "level": 0.025
+  },
+  "belly": {
+   "clear": 0.23,
+   "min": 0.002
+  },
+  "rest": {
+   "upright": 0.07,
+   "best": 0.42,
+   "poses": 7
+  }
+ },
+ "measures": {
+  "ground": 0.174,
+  "slender": 1.131,
+  "stand": 0.884,
+  "tail": 0.45,
+  "tail_reach": 0.686
+ },
+ "rigged": {
+  "file": "Rabbit_Tripo.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine_1",
+   "Spine_2",
+   "Spine_2.001",
+   "Spine_3",
+   "Spine_4",
+   "Head",
+   "Nose",
+   "Head.tip",
+   "Ear_L",
+   "Ear_Tip_L",
+   "Chin",
+   "Chin_Tip",
+   "Ear_R",
+   "Ear_Tip_R",
+   "Front_Leg_Shoulder_L",
+   "Front_Leg_Upper_L",
+   "Front_Leg_Lower_L",
+   "Front_Leg_Ankle_L",
+   "Front_Leg_Foot_L",
+   "Front_Leg_Tip_L",
+   "Front_Leg_Shoulder_R",
+   "Front_Leg_Upper_R",
+   "Front_Leg_Lower_R",
+   "Front_Leg_Ankle_R",
+   "Front_Leg_Foot_R",
+   "Front_Leg_Tip_R",
+   "Stomach",
+   "Stomach_tip",
+   "Tail_Base",
+   "Tail_Mid",
+   "Tail_Mid.001",
+   "Tail_End",
+   "Tail_Tip",
+   "Back_Leg_Pelvis_L",
+   "Back_Leg_Upper_L",
+   "Back_Leg_Lower_L",
+   "Back_Leg_Ankle_L",
+   "Back_Leg_Foot_L",
+   "Back_Leg_Foot_1_L",
+   "Back_Leg_Tip_L",
+   "Back_Leg_Pelvis_R",
+   "Back_Leg_Upper_R",
+   "Back_Leg_Lower_R",
+   "Back_Leg_Ankle_R",
+   "Back_Leg_Foot_R",
+   "Back_Leg_Foot_1_R",
+   "Back_Leg_Tip_R"
+  ]
+ },
+ "seconds": 1.8
+}

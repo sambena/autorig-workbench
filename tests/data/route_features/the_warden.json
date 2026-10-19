@@ -1,0 +1,236 @@
+{
+ "model": "the_warden",
+ "group": "Heartroot",
+ "source": "tripo_convert_142e3aa1-8b73-4030-a0bd-189ae45984af.fbx",
+ "height": 0.0,
+ "top": 0.877,
+ "facing": "-x",
+ "had_rig": true,
+ "vertices": 8257,
+ "source_data": {
+  "size": [
+   0.583984375,
+   0.998046875,
+   0.8769528865814209
+  ],
+  "lo": [
+   -0.2919921576976776,
+   -0.4990231990814209,
+   1.9614066815165643e-08
+  ],
+  "hi": [
+   0.2919922471046448,
+   0.4990236461162567,
+   0.8769528865814209
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.3,
+   0.17,
+   0.93
+  ],
+  [
+   0.96,
+   0.82,
+   0.01
+  ],
+  [
+   0.94,
+   0.32,
+   0.0
+  ],
+  [
+   0.1,
+   0.49,
+   0.0
+  ],
+  [
+   0.11,
+   0.75,
+   0.01
+  ],
+  [
+   0.6,
+   0.74,
+   0.69
+  ],
+  [
+   0.82,
+   0.26,
+   0.61
+  ],
+  [
+   0.62,
+   0.62,
+   0.24
+  ],
+  [
+   0.07,
+   0.44,
+   0.57
+  ],
+  [
+   0.26,
+   0.93,
+   0.44
+  ],
+  [
+   0.37,
+   0.58,
+   0.96
+  ],
+  [
+   0.96,
+   0.43,
+   0.43
+  ],
+  [
+   0.92,
+   0.81,
+   0.39
+  ],
+  [
+   0.23,
+   0.67,
+   0.29
+  ],
+  [
+   0.61,
+   0.32,
+   0.9
+  ],
+  [
+   0.62,
+   0.08,
+   0.71
+  ],
+  [
+   0.67,
+   0.94,
+   0.2
+  ],
+  [
+   0.29,
+   0.26,
+   0.54
+  ]
+ ],
+ "proportions": [
+  0.583984375,
+  0.998046875,
+  0.8769528865814209
+ ],
+ "plan": {
+  "size": [
+   0.584,
+   0.998,
+   0.877
+  ],
+  "height": 0.879,
+  "stand": 0.879,
+  "length": 1.709,
+  "parts": {
+   "count": 1,
+   "pieces": 254,
+   "largest": 0.774
+  },
+  "mirror": {
+   "x": 0.942,
+   "y": 0.472
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.202,
+   "largest": 0.316
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.02,
+    "thin": 0.122,
+    "broad": 0.444,
+    "outward": 0.997,
+    "high": 0.417,
+    "reach": 0.291,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.013,
+    "thin": 0.133,
+    "broad": 0.675,
+    "outward": 0.998,
+    "high": 0.417,
+    "reach": 0.292,
+    "sheet": false
+   },
+   "torso": 0.156
+  },
+  "flat": {
+   "share": 0.048,
+   "level": 0.025
+  },
+  "belly": {
+   "clear": 0.091,
+   "min": 0.003
+  },
+  "rest": {
+   "upright": 0.096,
+   "best": 0.228,
+   "poses": 9
+  }
+ },
+ "measures": {
+  "ground": 0.282,
+  "slender": 1.138,
+  "stand": 0.879,
+  "tail": 0.394,
+  "tail_reach": 0.386
+ },
+ "rigged": {
+  "file": "the_warden.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "neck",
+   "head",
+   "ear2.R",
+   "ear1.R",
+   "ear2.L",
+   "jaw",
+   "ear3.L",
+   "ear3.R",
+   "ear1.L",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "leg_hind_b.R",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R"
+  ]
+ },
+ "seconds": 1.4
+}

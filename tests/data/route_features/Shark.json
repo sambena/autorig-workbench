@@ -1,0 +1,220 @@
+{
+ "model": "Shark",
+ "group": "TornadoTitans",
+ "source": "rodin/shark/base_basic_pbr.glb",
+ "height": 0.0,
+ "top": 0.6446,
+ "facing": "+y",
+ "had_rig": false,
+ "vertices": 7502,
+ "source_data": {
+  "size": [
+   0.7180253863334656,
+   1.8994547128677368,
+   0.6446380615234375
+  ],
+  "lo": [
+   -0.3590126931667328,
+   -0.9497273564338684,
+   0.0
+  ],
+  "hi": [
+   0.3590126931667328,
+   0.9497273564338684,
+   0.6446380615234375
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.5,
+   0.99,
+   0.41
+  ],
+  [
+   0.49,
+   0.0,
+   0.76
+  ],
+  [
+   0.09,
+   0.48,
+   0.06
+  ],
+  [
+   0.7,
+   0.45,
+   0.5
+  ],
+  [
+   0.5,
+   0.88,
+   0.0
+  ],
+  [
+   0.33,
+   0.28,
+   0.29
+  ],
+  [
+   0.33,
+   0.71,
+   0.58
+  ],
+  [
+   0.99,
+   0.52,
+   0.05
+  ],
+  [
+   0.84,
+   0.72,
+   0.31
+  ],
+  [
+   0.49,
+   0.05,
+   0.07
+  ],
+  [
+   0.49,
+   0.41,
+   1.0
+  ],
+  [
+   0.35,
+   0.66,
+   0.02
+  ],
+  [
+   0.4,
+   0.81,
+   0.25
+  ],
+  [
+   0.62,
+   0.23,
+   0.41
+  ],
+  [
+   0.56,
+   0.44,
+   0.04
+  ],
+  [
+   0.28,
+   0.49,
+   0.49
+  ],
+  [
+   0.6,
+   0.63,
+   0.63
+  ],
+  [
+   0.63,
+   0.84,
+   0.57
+  ]
+ ],
+ "proportions": [
+  0.7180253863334656,
+  1.8994547128677368,
+  0.6446380615234375
+ ],
+ "plan": {
+  "size": [
+   0.718,
+   1.8995,
+   0.6446
+  ],
+  "height": 0.339,
+  "stand": 0.339,
+  "length": 2.645,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.995,
+   "y": 0.711
+  },
+  "feet": {
+   "count": 1,
+   "fill": 0.211,
+   "largest": 0.999
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.051
+  },
+  "flat": {
+   "share": 0.117,
+   "level": 0.06
+  },
+  "belly": {
+   "clear": 0.029,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.31,
+   "best": 0.345,
+   "poses": 4
+  }
+ },
+ "measures": {
+  "ground": 0.43,
+  "slender": 2.645,
+  "stand": 0.339,
+  "tail": 0.565,
+  "tail_reach": 0.247
+ },
+ "rigged": {
+  "file": "Shark.blend",
+  "bones": [
+   "root",
+   "pelvis",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_5",
+   "tail_6",
+   "tail_7",
+   "tail_8",
+   "tail_tip",
+   "back_fin_0_l",
+   "back_fin_1_l",
+   "back_fin_2_l",
+   "back_fin_tip_l",
+   "back_fin_0_r",
+   "back_fin_1_r",
+   "back_fin_2_r",
+   "back_fin_tip_r",
+   "front_fin_0_l",
+   "front_fin_1_l",
+   "front_fin_2_l",
+   "front_fin_tip_l",
+   "front_fin_0_r",
+   "front_fin_1_r",
+   "front_fin_2_r",
+   "front_fin_tip_r",
+   "neck",
+   "head",
+   "head_tip",
+   "mouth_base",
+   "mouth_1",
+   "mouth_tip"
+  ]
+ },
+ "seconds": 1.0
+}

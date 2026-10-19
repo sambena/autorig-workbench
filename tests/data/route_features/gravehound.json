@@ -1,0 +1,226 @@
+{
+ "model": "gravehound",
+ "group": "Heartroot",
+ "source": "tripo_convert_2a8f29dc-bb4e-4c05-86e5-91a09d7d3613.fbx",
+ "height": 0.0,
+ "top": 0.7559,
+ "facing": "-x",
+ "had_rig": true,
+ "vertices": 4022,
+ "source_data": {
+  "size": [
+   0.4082030653953552,
+   0.9980466961860657,
+   0.7558593153953552
+  ],
+  "lo": [
+   -0.2041015923023224,
+   -0.49902334809303284,
+   6.84878997958549e-08
+  ],
+  "hi": [
+   0.20410148799419403,
+   0.49902334809303284,
+   0.755859375
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.0,
+   0.23,
+   0.0
+  ],
+  [
+   0.71,
+   0.99,
+   0.86
+  ],
+  [
+   0.17,
+   0.73,
+   0.01
+  ],
+  [
+   0.99,
+   0.22,
+   0.02
+  ],
+  [
+   0.88,
+   0.74,
+   0.01
+  ],
+  [
+   0.65,
+   0.0,
+   0.27
+  ],
+  [
+   0.36,
+   0.48,
+   0.66
+  ],
+  [
+   0.55,
+   0.75,
+   0.49
+  ],
+  [
+   0.71,
+   0.19,
+   0.52
+  ],
+  [
+   0.52,
+   0.69,
+   0.88
+  ],
+  [
+   0.18,
+   0.29,
+   0.3
+  ],
+  [
+   0.72,
+   0.57,
+   0.65
+  ],
+  [
+   0.6,
+   0.47,
+   0.43
+  ],
+  [
+   0.23,
+   0.59,
+   0.38
+  ],
+  [
+   0.78,
+   0.21,
+   0.23
+  ],
+  [
+   0.78,
+   0.63,
+   0.27
+  ],
+  [
+   0.27,
+   0.25,
+   0.59
+  ],
+  [
+   0.8,
+   0.85,
+   0.88
+  ]
+ ],
+ "proportions": [
+  0.4082030653953552,
+  0.9980466961860657,
+  0.7558593153953552
+ ],
+ "plan": {
+  "size": [
+   0.4082,
+   0.998,
+   0.7559
+  ],
+  "height": 0.757,
+  "stand": 0.757,
+  "length": 2.445,
+  "parts": {
+   "count": 2,
+   "pieces": 45,
+   "largest": 0.917
+  },
+  "mirror": {
+   "x": 0.956,
+   "y": 0.463
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.079,
+   "largest": 0.283
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.071
+  },
+  "flat": {
+   "share": 0.051,
+   "level": 0.018
+  },
+  "belly": {
+   "clear": 0.363,
+   "min": 0.002
+  },
+  "rest": {
+   "upright": 0.076,
+   "best": 0.401,
+   "poses": 8
+  }
+ },
+ "measures": {
+  "ground": 0.184,
+  "slender": 1.32,
+  "stand": 0.757,
+  "tail": 0.122,
+  "tail_reach": 0.428
+ },
+ "rigged": {
+  "file": "gravehound.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "neck_1",
+   "neck_2",
+   "neck_3",
+   "head",
+   "jaw",
+   "leg_front_0.L",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "leg_front_0.R",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R"
+  ]
+ },
+ "seconds": 1.2
+}

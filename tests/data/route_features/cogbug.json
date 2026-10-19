@@ -1,0 +1,232 @@
+{
+ "model": "cogbug",
+ "group": "Heartroot",
+ "source": "tripo_convert_9e3e2cb1-4202-407d-82e5-2e257103971f.fbx",
+ "height": 0.0,
+ "top": 0.877,
+ "facing": "-x",
+ "had_rig": true,
+ "vertices": 3995,
+ "source_data": {
+  "size": [
+   0.7714842557907104,
+   0.9980469346046448,
+   0.8769531846046448
+  ],
+  "lo": [
+   -0.3857422173023224,
+   -0.4990234375,
+   5.5789833197650296e-08
+  ],
+  "hi": [
+   0.38574206829071045,
+   0.4990234971046448,
+   0.8769532442092896
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.99,
+   0.62,
+   0.57
+  ],
+  [
+   0.78,
+   0.16,
+   0.03
+  ],
+  [
+   0.08,
+   0.38,
+   0.76
+  ],
+  [
+   0.49,
+   0.23,
+   0.94
+  ],
+  [
+   0.15,
+   0.83,
+   0.02
+  ],
+  [
+   0.24,
+   0.15,
+   0.05
+  ],
+  [
+   0.78,
+   0.79,
+   0.66
+  ],
+  [
+   0.91,
+   0.82,
+   0.01
+  ],
+  [
+   0.24,
+   0.35,
+   0.83
+  ],
+  [
+   0.88,
+   0.22,
+   0.57
+  ],
+  [
+   0.26,
+   0.84,
+   0.43
+  ],
+  [
+   0.62,
+   0.49,
+   1.0
+  ],
+  [
+   0.51,
+   0.37,
+   0.22
+  ],
+  [
+   0.32,
+   0.64,
+   0.89
+  ],
+  [
+   0.1,
+   0.62,
+   0.46
+  ],
+  [
+   0.9,
+   0.65,
+   0.49
+  ],
+  [
+   0.77,
+   0.48,
+   0.83
+  ],
+  [
+   0.38,
+   0.07,
+   0.54
+  ]
+ ],
+ "proportions": [
+  0.7714842557907104,
+  0.9980469346046448,
+  0.8769531846046448
+ ],
+ "plan": {
+  "size": [
+   0.7715,
+   0.998,
+   0.877
+  ],
+  "height": 0.879,
+  "stand": 0.879,
+  "length": 1.294,
+  "parts": {
+   "count": 5,
+   "pieces": 45,
+   "largest": 0.73
+  },
+  "mirror": {
+   "x": 0.975,
+   "y": 0.775
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.06,
+   "largest": 0.366
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.007,
+    "thin": 0.252,
+    "broad": 0.348,
+    "outward": 0.995,
+    "high": 0.604,
+    "reach": 0.382,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.007,
+    "thin": 0.152,
+    "broad": 0.921,
+    "outward": 1.0,
+    "high": 0.633,
+    "reach": 0.386,
+    "sheet": false
+   },
+   "torso": 0.222
+  },
+  "flat": {
+   "share": 0.049,
+   "level": 0.021
+  },
+  "belly": {
+   "clear": 0.217,
+   "min": 0.208
+  },
+  "rest": {
+   "upright": 0.11,
+   "best": 0.12,
+   "poses": 57
+  }
+ },
+ "measures": {
+  "ground": 0.11,
+  "slender": 1.138,
+  "stand": 0.879,
+  "tail": 0.144,
+  "tail_reach": 0.379
+ },
+ "rigged": {
+  "file": "cogbug.blend",
+  "bones": [
+   "root",
+   "body",
+   "neck_1",
+   "neck_2",
+   "head",
+   "leg_hind_1.L",
+   "leg_hind_2.L",
+   "leg_hind_3.L",
+   "leg_hind_4.L",
+   "leg_hind_5.L",
+   "leg_front_1.R",
+   "leg_front_2.R",
+   "leg_front_3.R",
+   "leg_front_4.R",
+   "leg_front_5.R",
+   "leg_front_1.L",
+   "leg_front_2.L",
+   "leg_front_3.L",
+   "leg_front_4.L",
+   "leg_front_5.L",
+   "leg_front_6.L",
+   "leg_hind_1.R",
+   "leg_hind_2.R",
+   "leg_hind_3.R",
+   "leg_hind_4.R",
+   "leg_hind_5.R",
+   "leg_hind_6.R",
+   "ik_leg_hind.L",
+   "pole_leg_hind.L",
+   "ik_leg_front.R",
+   "pole_leg_front.R",
+   "ik_leg_front.L",
+   "pole_leg_front.L",
+   "ik_leg_hind.R",
+   "pole_leg_hind.R"
+  ]
+ },
+ "seconds": 1.1
+}

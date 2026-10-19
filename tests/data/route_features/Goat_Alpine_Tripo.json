@@ -1,0 +1,243 @@
+{
+ "model": "Goat_Alpine_Tripo",
+ "group": "TornadoTitans",
+ "source": "Goat_Alpine_Tripo.glb",
+ "height": 0.0,
+ "top": 0.7769,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7502,
+ "source_data": {
+  "size": [
+   0.28831183910369873,
+   0.9995384216308594,
+   0.7769423127174377
+  ],
+  "lo": [
+   -0.14415591955184937,
+   -0.4997692108154297,
+   0.0
+  ],
+  "hi": [
+   0.14415591955184937,
+   0.4997692108154297,
+   0.7769423127174377
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.14,
+   0.23,
+   0.01
+  ],
+  [
+   0.92,
+   0.84,
+   0.97
+  ],
+  [
+   0.25,
+   0.71,
+   0.01
+  ],
+  [
+   0.87,
+   0.23,
+   0.01
+  ],
+  [
+   0.5,
+   0.35,
+   0.77
+  ],
+  [
+   0.79,
+   0.74,
+   0.0
+  ],
+  [
+   0.48,
+   0.5,
+   0.36
+  ],
+  [
+   0.29,
+   0.82,
+   0.6
+  ],
+  [
+   0.5,
+   0.01,
+   0.79
+  ],
+  [
+   0.75,
+   0.17,
+   0.44
+  ],
+  [
+   0.85,
+   0.66,
+   0.67
+  ],
+  [
+   0.07,
+   0.26,
+   0.48
+  ],
+  [
+   0.03,
+   0.92,
+   0.93
+  ],
+  [
+   0.82,
+   0.7,
+   0.35
+  ],
+  [
+   0.11,
+   0.56,
+   0.61
+  ],
+  [
+   0.17,
+   0.68,
+   0.32
+  ],
+  [
+   0.85,
+   0.37,
+   0.52
+  ],
+  [
+   0.69,
+   0.86,
+   0.8
+  ]
+ ],
+ "proportions": [
+  0.28831183910369873,
+  0.9995384216308594,
+  0.7769423127174377
+ ],
+ "plan": {
+  "size": [
+   0.2883,
+   0.9995,
+   0.7769
+  ],
+  "height": 0.777,
+  "stand": 0.777,
+  "length": 3.467,
+  "parts": {
+   "count": 1,
+   "pieces": 1,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.999,
+   "y": 0.744
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.08,
+   "largest": 0.286
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.077
+  },
+  "flat": {
+   "share": 0.06,
+   "level": 0.011
+  },
+  "belly": {
+   "clear": 0.361,
+   "min": 0.002
+  },
+  "rest": {
+   "upright": 0.041,
+   "best": 0.252,
+   "poses": 10
+  }
+ },
+ "measures": {
+  "ground": 0.123,
+  "slender": 1.287,
+  "stand": 0.777,
+  "tail": 0.267,
+  "tail_reach": 0.463
+ },
+ "rigged": {
+  "file": "Farm_Goat.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 1.9
+}

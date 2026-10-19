@@ -94,3 +94,51 @@ What the calibration found:
 
 The arm and leg proxies are proxies: they read the cat and the robe correctly, but a clothed person's arms read
 between 12 and 93% with no fault visible at 12 and a clear one at 93. Look at the sheets before acting on a CHECK.
+
+## Auto's route
+
+Auto (`m2m-rig --template auto`, the page's Auto tile) sends each model one of three ways: the humanoid rig for
+people, a Mesh2Motion template for creatures, the classic rig (rerig.py and make_clips.py) for props, floaters and
+machines. `core/suggest.py` reads an archetype off the tips and the body plan, then `core/m2m_templates.choose()`
+reads the body plan again and overrules the archetype where the body plainly disagrees.
+
+```bash
+python autorig/cli/route_eval.py [--show wrong|all]     # Auto's route on every saved model, against the truth
+blender -b --python autorig/steps/route_features.py -- --out <dir> model[,model...]   # save a model's features
+```
+
+`tests/data/route_truth.json` is the route the committed rigs of Tornado Titans, Heartroot and Smeltdown took (the
+barns' M2M shark rigs, an earlier Auto's mistake, are marked classic), with a reason each and, where two routes are
+both fine (a manta ray: shark or classic), the other one. `tests/data/route_features/` holds what Auto reads off each
+source (tips, bounds, body plan, measures), so `route_eval.py` replays the choice in plain Python in a second;
+`tests/test_route_choice.py` keeps the accuracy from slipping.
+
+Two body-plan measures (core/body_plan.py) do most of the work:
+
+- **flat**: the share of the surface on flat faces square to the axes. Sculpted animals and people stay under 0.14;
+  buildings, vehicles, machines and signs have a median of 0.38. Over 0.15 is a prop, unless it stands on four legs
+  with 0.25-0.5 of its height clear under its belly (a flat-plated hound).
+- **belly**: how high the underside clears the ground along the middle. Animals on legs 0.2-0.41, vehicles low,
+  buildings and lying bodies 0. It also tells a rooster (0.25) from a person (about 0), and a hen from a fish resting
+  on its fins.
+
+Besides those: one ground patch or none, not long, not person-tall is a plant, a floater or an object; a body on
+three or more feet is not lying down however much of its footprint touches (the sitting hopper was a shark); a
+"winged" body on two feet standing 1.4 or taller with no tail is a person holding its arms out (the ticket taker, the
+robots); a "humanoid" on anything but two feet is a person only when robed-tall (2.0) with little air under the middle.
+
+| 2026-10-18, 250 models | route | template |
+|---|---|---|
+| before | 117 (47%) | 106 (42%) |
+| after | 235 (94%) | 230 (92%) |
+| people (37) | 32 -> 37 | 32 -> 37 |
+| creatures (63) | 57 -> 61 | 49 -> 57 |
+| props (150) | 28 -> 137 | 25 -> 136 |
+
+Still wrong: generated plants and produce that read as animals (Potato_Single and Corn_DryHarvest as fish and snake,
+Potato_Tubers and Wheat_Green as legs, Wheat_Golden as a person), a carport and a bomber read as fliers, three
+Smeltdown machines on many feet (nettle_hive, spitter, crystal_formation) read as spiders, Truck_Rally_Tripo, the
+fallen tree as a fish; among creatures, the dragon (octopod), cogbug (dragon), dirt_creator (horse), sky_boss
+(classic), Horse_Bay_Rigged_Tripo (its source lies on its side) and Cow_Holstein (fox: tail reach 0.60, inside the
+band, the quadrupeds' measure). The limits were set on this same set, so a new collection will do somewhat worse;
+add its models to the truth when they are rigged.

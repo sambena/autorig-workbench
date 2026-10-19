@@ -1,0 +1,226 @@
+{
+ "model": "test_tickettaker",
+ "group": "Tests",
+ "source": "Test_tickettaker.glb",
+ "height": 0.0,
+ "top": 99.8047,
+ "facing": "-y",
+ "had_rig": false,
+ "vertices": 7080,
+ "source_data": {
+  "size": [
+   92.77342224121094,
+   30.27347183227539,
+   99.80469512939453
+  ],
+  "lo": [
+   -46.38671112060547,
+   -15.136735916137695,
+   0.0
+  ],
+  "hi": [
+   46.38671112060547,
+   15.136735916137695,
+   99.80469512939453
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.63,
+   0.14,
+   0.02
+  ],
+  [
+   0.56,
+   0.04,
+   0.93
+  ],
+  [
+   0.0,
+   0.33,
+   0.78
+  ],
+  [
+   0.35,
+   0.23,
+   0.0
+  ],
+  [
+   1.0,
+   0.34,
+   0.77
+  ],
+  [
+   0.49,
+   0.98,
+   0.27
+  ],
+  [
+   0.51,
+   0.57,
+   0.8
+  ],
+  [
+   0.48,
+   0.35,
+   0.35
+  ],
+  [
+   0.46,
+   0.59,
+   0.98
+  ],
+  [
+   0.39,
+   0.53,
+   0.71
+  ],
+  [
+   0.56,
+   0.46,
+   0.25
+  ],
+  [
+   0.56,
+   0.21,
+   0.58
+  ],
+  [
+   0.69,
+   0.57,
+   0.77
+  ],
+  [
+   0.55,
+   0.07,
+   0.91
+  ],
+  [
+   0.61,
+   0.35,
+   0.3
+  ],
+  [
+   0.37,
+   0.32,
+   0.3
+  ],
+  [
+   0.47,
+   0.66,
+   0.48
+  ],
+  [
+   0.52,
+   0.21,
+   0.87
+  ]
+ ],
+ "proportions": [
+  92.77342224121094,
+  30.27347183227539,
+  99.80469512939453
+ ],
+ "plan": {
+  "size": [
+   92.7734,
+   30.2735,
+   99.8047
+  ],
+  "height": 1.076,
+  "stand": 3.297,
+  "length": 0.326,
+  "parts": {
+   "count": 5,
+   "pieces": 140,
+   "largest": 0.483
+  },
+  "mirror": {
+   "x": 0.988,
+   "y": 0.836
+  },
+  "feet": {
+   "count": 2,
+   "fill": 0.084,
+   "largest": 0.541
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.057,
+    "thin": 0.805,
+    "broad": 0.269,
+    "outward": 0.092,
+    "high": 0.766,
+    "reach": 0.465,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.058,
+    "thin": 0.818,
+    "broad": 0.252,
+    "outward": 0.117,
+    "high": 0.767,
+    "reach": 0.465,
+    "sheet": false
+   },
+   "torso": 0.062
+  },
+  "flat": {
+   "share": 0.092,
+   "level": 0.039
+  },
+  "belly": {
+   "clear": 0.001,
+   "min": 0.0
+  },
+  "rest": {
+   "upright": 0.005,
+   "best": 0.442,
+   "poses": 8
+  }
+ },
+ "measures": {
+  "ground": 0.236,
+  "slender": 0.303,
+  "stand": 3.297,
+  "tail": 0.0,
+  "tail_reach": 3.18
+ },
+ "rigged": {
+  "file": "test_tickettaker.blend",
+  "bones": [
+   "root",
+   "Hips",
+   "Spine",
+   "Spine1",
+   "Spine2",
+   "Neck",
+   "Head",
+   "LeftShoulder",
+   "LeftArm",
+   "LeftForeArm",
+   "LeftHand",
+   "LeftHandIndex1",
+   "LeftHandIndex2",
+   "LeftHandIndex3",
+   "RightShoulder",
+   "RightArm",
+   "RightForeArm",
+   "RightHand",
+   "RightHandIndex1",
+   "RightHandIndex2",
+   "RightHandIndex3",
+   "LeftUpLeg",
+   "LeftLeg",
+   "LeftFoot",
+   "LeftToeBase",
+   "RightUpLeg",
+   "RightLeg",
+   "RightFoot",
+   "RightToeBase"
+  ]
+ },
+ "seconds": 0.8
+}

@@ -1,0 +1,243 @@
+{
+ "model": "Pig_Tripo",
+ "group": "TornadoTitans",
+ "source": "Pig_Tripo.glb",
+ "height": 0.0,
+ "top": 0.6193,
+ "facing": "-x",
+ "had_rig": false,
+ "vertices": 7529,
+ "source_data": {
+  "size": [
+   0.43074241280555725,
+   0.9997445344924927,
+   0.6193196177482605
+  ],
+  "lo": [
+   -0.21537120640277863,
+   -0.49987226724624634,
+   0.0
+  ],
+  "hi": [
+   0.21537120640277863,
+   0.49987226724624634,
+   0.6193196177482605
+  ],
+  "joints": []
+ },
+ "tips": [
+  [
+   0.48,
+   1.0,
+   0.56
+  ],
+  [
+   0.63,
+   0.0,
+   0.92
+  ],
+  [
+   0.17,
+   0.42,
+   0.43
+  ],
+  [
+   0.88,
+   0.53,
+   0.83
+  ],
+  [
+   0.73,
+   0.14,
+   0.02
+  ],
+  [
+   0.81,
+   0.71,
+   0.0
+  ],
+  [
+   0.32,
+   0.13,
+   0.03
+  ],
+  [
+   0.23,
+   0.71,
+   0.0
+  ],
+  [
+   1.0,
+   0.88,
+   0.96
+  ],
+  [
+   0.01,
+   0.89,
+   0.95
+  ],
+  [
+   0.26,
+   0.32,
+   0.95
+  ],
+  [
+   0.92,
+   0.2,
+   0.6
+  ],
+  [
+   0.15,
+   0.09,
+   0.57
+  ],
+  [
+   0.08,
+   0.73,
+   0.56
+  ],
+  [
+   0.81,
+   0.75,
+   0.48
+  ],
+  [
+   0.31,
+   0.65,
+   0.96
+  ],
+  [
+   0.81,
+   0.47,
+   0.41
+  ],
+  [
+   0.58,
+   0.11,
+   0.4
+  ]
+ ],
+ "proportions": [
+  0.43074241280555725,
+  0.9997445344924927,
+  0.6193196177482605
+ ],
+ "plan": {
+  "size": [
+   0.4307,
+   0.9997,
+   0.6193
+  ],
+  "height": 0.619,
+  "stand": 0.619,
+  "length": 2.321,
+  "parts": {
+   "count": 1,
+   "pieces": 11,
+   "largest": 1.0
+  },
+  "mirror": {
+   "x": 0.998,
+   "y": 0.778
+  },
+  "feet": {
+   "count": 4,
+   "fill": 0.048,
+   "largest": 0.333
+  },
+  "wings": {
+   "both": false,
+   "left": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "right": {
+    "share": 0.0,
+    "sheet": false
+   },
+   "torso": 0.133
+  },
+  "flat": {
+   "share": 0.066,
+   "level": 0.03
+  },
+  "belly": {
+   "clear": 0.339,
+   "min": 0.041
+  },
+  "rest": {
+   "upright": 0.063,
+   "best": 0.341,
+   "poses": 13
+  }
+ },
+ "measures": {
+  "ground": 0.077,
+  "slender": 1.614,
+  "stand": 0.619,
+  "tail": 0.529,
+  "tail_reach": 0.277
+ },
+ "rigged": {
+  "file": "Pig_Tripo.blend",
+  "bones": [
+   "root",
+   "hips",
+   "spine_1",
+   "spine_2",
+   "spine_3",
+   "ribcage_middle",
+   "ribcage_leaf",
+   "spine_4",
+   "spine_5",
+   "spine_6",
+   "head",
+   "ear_1_r",
+   "ear_2_r",
+   "ear_leaf_r",
+   "ear_1_l",
+   "ear_2_l",
+   "ear_leaf_l",
+   "nose",
+   "head_leaf",
+   "mouth",
+   "mouth_tip",
+   "front_scapula_l",
+   "front_humerus_l",
+   "front_leg_upper_l",
+   "front_leg_lower_l",
+   "front_leg_ankle_l",
+   "front_leg_foot_l",
+   "front_leg_leaf_l",
+   "front_scapula_r",
+   "front_humerus_r",
+   "front_leg_upper_r",
+   "front_leg_lower_r",
+   "front_leg_ankle_r",
+   "front_leg_foot_r",
+   "front_leg_leaf_r",
+   "ribcage_front",
+   "ribcage_front_leaf",
+   "tail_1",
+   "tail_2",
+   "tail_3",
+   "tail_4",
+   "tail_leaf",
+   "back_leg_pelvis_l",
+   "back_leg_upper_l",
+   "back_leg_lower_l",
+   "back_leg_ankle_l",
+   "back_leg_foot_l",
+   "back_leg_toe_l",
+   "back_leg_leaf_l",
+   "back_leg_pelvis_r",
+   "back_leg_upper_r",
+   "back_leg_lower_r",
+   "back_leg_ankle_r",
+   "back_leg_foot_r",
+   "back_leg_toe_r",
+   "back_leg_leaf_r"
+  ]
+ },
+ "seconds": 2.0
+}
