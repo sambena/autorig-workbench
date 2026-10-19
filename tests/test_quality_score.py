@@ -55,6 +55,10 @@ class Score(unittest.TestCase):
         s = QS.score(m, rest_by_design=True)
         self.assertEqual((s["score"], s["values"]["rest_p99_pct"]), (100.0, None))
 
+    def test_no_clips_is_check_at_best(self):
+        s = QS.score({"rest": CLEAN["rest"], "clips": []})
+        self.assertEqual((s["grade"], s["worst"]), ("CHECK", ["no_clips"]))
+
     def test_grades(self):
         self.assertEqual([QS.grade(x) for x in (95, 90, 89.9, 75, 74.9, None)],
                          ["PASS", "PASS", "CHECK", "CHECK", "FAIL", None])

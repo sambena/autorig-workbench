@@ -141,6 +141,10 @@ def score_one(model, out, opts):
         if "SCORE DONE" not in r.stdout:
             return {"model": model, "error": "measure did not finish: " + (r.stdout + r.stderr)[-800:]}
         print("  measured in %.0f s" % (time.time() - t), flush=True)
+        if os.path.dirname(os.path.abspath(glb)) == os.path.abspath(d):
+            for f in ("preview.glb", "preview.json"):       # built only to measure: up to 20 MB a person
+                try: os.remove(os.path.join(d, f))
+                except OSError: pass
     measured = read_json(os.path.join(d, "measure.json"))
     if not measured: return {"model": model, "error": "no measure.json"}
     audit, audit_path = audit_for(model, opts.get("audit", "read"), d)
@@ -148,8 +152,7 @@ def score_one(model, out, opts):
     s = QS.score(measured, audit, by_design)
     if by_design: s["rest_skipped"] = "rig.json m2m.rest is \"template\": it rests in the template's pose on purpose"
     s.update({"model": model, "group": layout.group_of(model), "format": "autorig-score/1",
-              "preview": "built for scoring from the rig file" if os.path.exists(os.path.join(d, "preview.glb"))
-                         else "rigged/preview.glb",
+              "preview": measured.get("glb"),
               "audit": audit_path, "clips": [c["name"] for c in measured.get("clips", [])],
               "sheets": sorted(f for f in os.listdir(d) if f.startswith("sheet_") and f.endswith(".png"))})
     with open(os.path.join(d, "score.json"), "w", encoding="utf-8") as fh: json.dump(s, fh, indent=1)

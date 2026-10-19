@@ -21,7 +21,8 @@ Each model gets `<out>/<model>/`:
 | `score.json` | the score, grade, every check's value and what it cost, and the three checks that cost most (`worst`) |
 | `sheet_rest.png`, `sheet_<clip>.png` | side view over front view, orthographic, Workbench, 6 frames across the clip |
 
-and the table, worst first, goes in `<out>/_ranked.md` and `_ranked.json`. A partial run keeps the other models' rows.
+and the table goes in `<out>/_ranked.md` and `_ranked.json`: a summary per group, the scored models worst first,
+the models whose rig would not build or measure with the reason, and the models with no rig at all. A partial run keeps the other models' rows.
 Exit code 0 when no model it scored FAILs.
 
 The code: `autorig/steps/score.py` measures (inside Blender, one model per Blender), `autorig/core/quality_score.py`
@@ -29,7 +30,9 @@ scores (plain Python, the limits are its `CHECKS` table), `autorig/cli/score_all
 
 ## What it measures
 
-It reads the model's `rigged/preview.glb` (the rig and every clip, as a game gets them) and its source mesh
+It reads the model's `rigged/preview.glb` (the rig and every clip, as a game gets them; a classic rig with no
+preview gets one built into its score folder from `rigged/<name>.blend` or `.fbx` and `clips/<name>_clips.blend`, the
+model's own folder untouched) and its source mesh
 (`layout.source_model`). Before the rest frame and before every clip, the NLA tracks are muted, every pose bone's
 `matrix_basis` is reset and the objects go back to their rest matrices; only then is the clip's action set. Without
 that the renders and the numbers carry the previous clip's pose and lie.
@@ -48,6 +51,9 @@ that the renders and the numbers carry the previous clip's pose and lie.
 | `sink_pct` | the mesh below the floor, % of the height | 6.5 | 15 | 5 |
 | `audit_bleed_pct` | the audit's bleed | 3 | 10 | 5 |
 | `audit_head_short` | how far the audit's head share is under 1.5% | 0 | 2 | 5 |
+
+A rigged model with no clips at all loses 11 (`no_clips`): it is CHECK at best, since a rig with nothing to play
+is not done.
 
 A rig that rests in its template's pose on purpose (rig.json `m2m.rest` "template": a snake laid along the
 template's line) skips both rest checks; `score.json` says so in `rest_skipped`.
