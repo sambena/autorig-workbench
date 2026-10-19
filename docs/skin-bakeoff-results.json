@@ -14,7 +14,7 @@
     "head_pct": 6.67,
     "stand_folds": 14.5,
     "max_influences": 4,
-    "skin_seconds": 11.19,
+    "skin_seconds": 10.18,
     "bare": 0,
     "triangles": 13757,
     "clips": [
@@ -26,29 +26,29 @@
      {
       "name": "idle",
       "tear_edges": 96,
-      "worst_gap_pct": 1.2698770445383942,
-      "collapsed": 23,
-      "skate": 0.482,
+      "worst_gap_pct": 1.2655646780072767,
+      "collapsed": 24,
+      "skate": 0.4618,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 125,
-      "worst_gap_pct": 1.269872767881574,
+      "tear_edges": 114,
+      "worst_gap_pct": 1.6337046019930523,
       "collapsed": 23,
-      "skate": 1.7781,
+      "skate": 1.6929,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 98,
-      "worst_gap_pct": 1.2698736151561976,
-      "collapsed": 27,
-      "skate": 7.1413,
+      "tear_edges": 100,
+      "worst_gap_pct": 1.2663796536796668,
+      "collapsed": 26,
+      "skate": 2.2468,
       "errors": [
        "stretched edges"
       ]
@@ -59,14 +59,14 @@
     "exit": 0,
     "grade": "FAIL",
     "bleed_pct": 3.51,
-    "combined_tears": 38,
+    "combined_tears": 37,
     "bend_tears": 39,
     "head_pct": 4.48,
     "stand_folds": 8.7,
     "max_influences": 2,
     "skin_seconds": 0.45,
     "bare": 0,
-    "triangles": 13751,
+    "triangles": 13749,
     "clips": [
      "Idle_A",
      "Walk",
@@ -75,30 +75,30 @@
     "clip_checks": [
      {
       "name": "idle",
-      "tear_edges": 202,
-      "worst_gap_pct": 2.625304984521049,
+      "tear_edges": 192,
+      "worst_gap_pct": 2.6348000924334434,
       "collapsed": 4,
-      "skate": 0.482,
+      "skate": 0.4648,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 246,
-      "worst_gap_pct": 3.766152206484065,
+      "tear_edges": 237,
+      "worst_gap_pct": 3.6195634933765186,
       "collapsed": 5,
-      "skate": 2.1104,
+      "skate": 1.9037,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 205,
-      "worst_gap_pct": 2.752137863328955,
-      "collapsed": 6,
-      "skate": 7.2135,
+      "tear_edges": 200,
+      "worst_gap_pct": 2.6357903569985823,
+      "collapsed": 5,
+      "skate": 2.2037,
       "errors": [
        "stretched edges"
       ]
@@ -122,7 +122,7 @@
     "head_pct": 7.41,
     "stand_folds": 62.7,
     "max_influences": 4,
-    "skin_seconds": 32.52,
+    "skin_seconds": 32.31,
     "bare": 0,
     "triangles": 15000,
     "clips": [
@@ -133,30 +133,30 @@
     "clip_checks": [
      {
       "name": "idle",
-      "tear_edges": 41,
-      "worst_gap_pct": 2.3598359558345394,
-      "collapsed": 1,
-      "skate": 0.6079,
+      "tear_edges": 85,
+      "worst_gap_pct": 3.0747685672439067,
+      "collapsed": 3,
+      "skate": 0.5673,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 147,
-      "worst_gap_pct": 3.8706306353358073,
-      "collapsed": 9,
-      "skate": 2.5649,
+      "tear_edges": 180,
+      "worst_gap_pct": 4.077009390450083,
+      "collapsed": 14,
+      "skate": 2.0125,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 48,
-      "worst_gap_pct": 2.7347188743612407,
-      "collapsed": 3,
-      "skate": 4.0351,
+      "tear_edges": 105,
+      "worst_gap_pct": 3.0861526511869055,
+      "collapsed": 9,
+      "skate": 3.9121,
       "errors": [
        "stretched edges"
       ]
@@ -166,15 +166,15 @@
    "m2m": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 1.02,
-    "combined_tears": 242,
-    "bend_tears": 145,
-    "head_pct": 5.45,
-    "stand_folds": 171.7,
+    "bleed_pct": 0.85,
+    "combined_tears": 225,
+    "bend_tears": 106,
+    "head_pct": 5.48,
+    "stand_folds": 148.3,
     "max_influences": 2,
-    "skin_seconds": 0.58,
+    "skin_seconds": 0.46,
     "bare": 0,
-    "triangles": 14731,
+    "triangles": 14636,
     "clips": [
      "Idle_A",
      "Walk",
@@ -183,30 +183,30 @@
     "clip_checks": [
      {
       "name": "idle",
-      "tear_edges": 559,
-      "worst_gap_pct": 9.367768241008594,
-      "collapsed": 5,
-      "skate": 0.6085,
+      "tear_edges": 661,
+      "worst_gap_pct": 10.813794755471445,
+      "collapsed": 9,
+      "skate": 0.5713,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 1221,
-      "worst_gap_pct": 9.450159825563945,
-      "collapsed": 11,
-      "skate": 3.1236,
+      "tear_edges": 1170,
+      "worst_gap_pct": 12.78183540946718,
+      "collapsed": 7,
+      "skate": 2.3053,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 693,
-      "worst_gap_pct": 9.259717321281602,
-      "collapsed": 4,
-      "skate": 4.2307,
+      "tear_edges": 759,
+      "worst_gap_pct": 13.274088106327559,
+      "collapsed": 7,
+      "skate": 3.972,
       "errors": [
        "stretched edges"
       ]
@@ -230,7 +230,7 @@
     "head_pct": 10.62,
     "stand_folds": 52.0,
     "max_influences": 4,
-    "skin_seconds": 24.61,
+    "skin_seconds": 24.88,
     "bare": 0,
     "triangles": 15000,
     "clips": [
@@ -241,30 +241,30 @@
     "clip_checks": [
      {
       "name": "idle",
-      "tear_edges": 27,
-      "worst_gap_pct": 1.8908522366840035,
-      "collapsed": 2,
-      "skate": 0.6874,
+      "tear_edges": 61,
+      "worst_gap_pct": 2.131324022573788,
+      "collapsed": 7,
+      "skate": 0.5596,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 80,
-      "worst_gap_pct": 2.4003019146464974,
-      "collapsed": 9,
-      "skate": 3.6186,
+      "tear_edges": 101,
+      "worst_gap_pct": 2.406922868835746,
+      "collapsed": 12,
+      "skate": 2.6112,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 33,
-      "worst_gap_pct": 1.936810360007784,
-      "collapsed": 4,
-      "skate": 3.5051,
+      "tear_edges": 68,
+      "worst_gap_pct": 2.175628265478531,
+      "collapsed": 15,
+      "skate": 2.4127,
       "errors": [
        "stretched edges"
       ]
@@ -274,15 +274,15 @@
    "m2m": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 1.53,
-    "combined_tears": 262,
+    "bleed_pct": 1.28,
+    "combined_tears": 243,
     "bend_tears": 287,
-    "head_pct": 7.35,
-    "stand_folds": 146.6,
+    "head_pct": 7.42,
+    "stand_folds": 126.4,
     "max_influences": 2,
-    "skin_seconds": 0.65,
+    "skin_seconds": 0.54,
     "bare": 0,
-    "triangles": 14801,
+    "triangles": 14721,
     "clips": [
      "Idle_A",
      "Walk",
@@ -291,30 +291,30 @@
     "clip_checks": [
      {
       "name": "idle",
-      "tear_edges": 396,
-      "worst_gap_pct": 3.9156330025357873,
+      "tear_edges": 568,
+      "worst_gap_pct": 7.643844234961153,
       "collapsed": 4,
-      "skate": 0.6937,
+      "skate": 0.5605,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "run",
-      "tear_edges": 997,
-      "worst_gap_pct": 14.495637063936831,
-      "collapsed": 11,
-      "skate": 4.1213,
+      "tear_edges": 1069,
+      "worst_gap_pct": 7.517773669296453,
+      "collapsed": 8,
+      "skate": 2.5552,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 388,
-      "worst_gap_pct": 8.003967816802964,
+      "tear_edges": 568,
+      "worst_gap_pct": 8.025218215852039,
       "collapsed": 7,
-      "skate": 4.4126,
+      "skate": 2.1269,
       "errors": [
        "stretched edges"
       ]
@@ -338,7 +338,7 @@
     "head_pct": 3.98,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 1.48,
+    "skin_seconds": 1.54,
     "bare": 0,
     "triangles": 3414,
     "clips": [
@@ -444,7 +444,7 @@
     "head_pct": 3.55,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 22.76,
+    "skin_seconds": 25.19,
     "bare": 0,
     "triangles": 14999,
     "clips": [
@@ -552,7 +552,7 @@
     "head_pct": 2.88,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 35.32,
+    "skin_seconds": 36.07,
     "bare": 0,
     "triangles": 14997,
     "clips": [
@@ -602,7 +602,7 @@
     "head_pct": 4.33,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.56,
+    "skin_seconds": 0.46,
     "bare": 0,
     "triangles": 14181,
     "clips": [
@@ -660,7 +660,7 @@
     "head_pct": 4.03,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 1.45,
+    "skin_seconds": 1.53,
     "bare": 0,
     "triangles": 1652,
     "clips": [
@@ -679,8 +679,8 @@
      },
      {
       "name": "run",
-      "tear_edges": 5,
-      "worst_gap_pct": 6.30948675804884,
+      "tear_edges": 7,
+      "worst_gap_pct": 5.76998477678609,
       "collapsed": 5,
       "skate": 20.0594,
       "errors": [
@@ -756,15 +756,15 @@
    "autorig": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 1.47,
-    "combined_tears": 19,
+    "bleed_pct": 1.46,
+    "combined_tears": 17,
     "bend_tears": 3,
-    "head_pct": 4.63,
+    "head_pct": 4.6,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 36.8,
+    "skin_seconds": 36.74,
     "bare": 0,
-    "triangles": 14998,
+    "triangles": 15000,
     "clips": [
      "Idle",
      "Walk",
@@ -781,9 +781,9 @@
      },
      {
       "name": "run",
-      "tear_edges": 568,
+      "tear_edges": 549,
       "worst_gap_pct": 8.048550474446452,
-      "collapsed": 16,
+      "collapsed": 20,
       "skate": 20.361,
       "errors": [
        "stretched edges"
@@ -793,7 +793,7 @@
       "name": "walk",
       "tear_edges": 0,
       "worst_gap_pct": 0,
-      "collapsed": 2,
+      "collapsed": 3,
       "skate": 55.1072,
       "errors": []
      }
@@ -860,15 +860,15 @@
    "autorig": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 6.32,
-    "combined_tears": 274,
-    "bend_tears": 55,
-    "head_pct": 3.52,
+    "bleed_pct": 6.45,
+    "combined_tears": 265,
+    "bend_tears": 44,
+    "head_pct": 3.75,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 47.6,
+    "skin_seconds": 46.41,
     "bare": 0,
-    "triangles": 14929,
+    "triangles": 14915,
     "clips": [
      "Idle",
      "Walk",
@@ -879,26 +879,26 @@
       "name": "idle",
       "tear_edges": 0,
       "worst_gap_pct": 0,
-      "collapsed": 0,
-      "skate": 1.3884,
+      "collapsed": 1,
+      "skate": 1.378,
       "errors": []
      },
      {
       "name": "run",
-      "tear_edges": 1119,
-      "worst_gap_pct": 9.851289620480786,
-      "collapsed": 25,
-      "skate": 23.2087,
+      "tear_edges": 1075,
+      "worst_gap_pct": 8.723292147870868,
+      "collapsed": 20,
+      "skate": 22.8695,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 64,
-      "worst_gap_pct": 4.410483703408433,
+      "tear_edges": 63,
+      "worst_gap_pct": 4.574984602896364,
       "collapsed": 10,
-      "skate": 16.5455,
+      "skate": 16.5418,
       "errors": [
        "stretched edges"
       ]
@@ -914,7 +914,7 @@
     "head_pct": 2.76,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.46,
+    "skin_seconds": 0.53,
     "bare": 0,
     "triangles": 12529,
     "clips": [
@@ -972,7 +972,7 @@
     "head_pct": 3.12,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 3.08,
+    "skin_seconds": 3.0,
     "bare": 0,
     "triangles": 2164,
     "clips": [
@@ -1070,15 +1070,15 @@
    "autorig": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 6.06,
-    "combined_tears": 571,
-    "bend_tears": 58,
-    "head_pct": 3.1,
+    "bleed_pct": 3.37,
+    "combined_tears": 651,
+    "bend_tears": 48,
+    "head_pct": 3.48,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 69.81,
+    "skin_seconds": 68.18,
     "bare": 0,
-    "triangles": 14924,
+    "triangles": 14917,
     "clips": [
      "Idle",
      "Walk",
@@ -1087,9 +1087,9 @@
     "clip_checks": [
      {
       "name": "fly",
-      "tear_edges": 1685,
-      "worst_gap_pct": 8.933956995004625,
-      "collapsed": 23,
+      "tear_edges": 1749,
+      "worst_gap_pct": 8.534639922316725,
+      "collapsed": 27,
       "skate": 0.0,
       "errors": [
        "stretched edges"
@@ -1098,19 +1098,19 @@
      {
       "name": "idle",
       "tear_edges": 51,
-      "worst_gap_pct": 3.3688135747632644,
+      "worst_gap_pct": 2.3987913913751604,
       "collapsed": 2,
-      "skate": 0.1722,
+      "skate": 0.1755,
       "errors": [
        "stretched edges"
       ]
      },
      {
       "name": "walk",
-      "tear_edges": 105,
-      "worst_gap_pct": 4.911938593587626,
-      "collapsed": 6,
-      "skate": 81.9968,
+      "tear_edges": 89,
+      "worst_gap_pct": 3.4936571611620275,
+      "collapsed": 5,
+      "skate": 77.325,
       "errors": [
        "stretched edges"
       ]
@@ -1126,7 +1126,7 @@
     "head_pct": 7.07,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.45,
+    "skin_seconds": 0.48,
     "bare": 0,
     "triangles": 13277,
     "clips": [
@@ -1178,15 +1178,15 @@
    "autorig": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 4.55,
-    "combined_tears": 1531,
-    "bend_tears": 168,
-    "head_pct": 2.22,
+    "bleed_pct": 8.93,
+    "combined_tears": 1518,
+    "bend_tears": 170,
+    "head_pct": 2.29,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 70.93,
+    "skin_seconds": 71.66,
     "bare": 0,
-    "triangles": 14993,
+    "triangles": 14988,
     "clips": [
      "Idle",
      "Walk",
@@ -1195,9 +1195,9 @@
     "clip_checks": [
      {
       "name": "fly",
-      "tear_edges": 860,
-      "worst_gap_pct": 9.15234535191635,
-      "collapsed": 10,
+      "tear_edges": 1029,
+      "worst_gap_pct": 9.16138599666834,
+      "collapsed": 12,
       "skate": 0.0,
       "errors": [
        "stretched edges"
@@ -1205,9 +1205,9 @@
      },
      {
       "name": "idle",
-      "tear_edges": 36,
-      "worst_gap_pct": 2.6459035046432504,
-      "collapsed": 5,
+      "tear_edges": 39,
+      "worst_gap_pct": 3.200996340066879,
+      "collapsed": 3,
       "skate": 0.1194,
       "errors": [
        "stretched edges"
@@ -1215,8 +1215,8 @@
      },
      {
       "name": "walk",
-      "tear_edges": 55,
-      "worst_gap_pct": 2.523698248162486,
+      "tear_edges": 57,
+      "worst_gap_pct": 2.809359099457592,
       "collapsed": 5,
       "skate": 28.2767,
       "errors": [
@@ -1234,7 +1234,7 @@
     "head_pct": 3.49,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.47,
+    "skin_seconds": 0.46,
     "bare": 0,
     "triangles": 13481,
     "clips": [
@@ -1292,7 +1292,7 @@
     "head_pct": 0.63,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 5.98,
+    "skin_seconds": 5.64,
     "bare": 0,
     "triangles": 2994,
     "clips": [
@@ -1340,7 +1340,7 @@
     "head_pct": 1.49,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.19,
+    "skin_seconds": 0.12,
     "bare": 0,
     "triangles": 2980,
     "clips": [
@@ -1396,7 +1396,7 @@
     "head_pct": 0,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 77.69,
+    "skin_seconds": 77.27,
     "bare": 0,
     "triangles": 14980,
     "clips": [
@@ -1446,7 +1446,7 @@
     "head_pct": 4.27,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.46,
+    "skin_seconds": 0.5,
     "bare": 0,
     "triangles": 12233,
     "clips": [
@@ -1504,7 +1504,7 @@
     "head_pct": 2.61,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 58.73,
+    "skin_seconds": 58.56,
     "bare": 0,
     "triangles": 14993,
     "clips": [
@@ -1554,7 +1554,7 @@
     "head_pct": 2.95,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.47,
+    "skin_seconds": 0.53,
     "bare": 0,
     "triangles": 13012,
     "clips": [
@@ -1612,7 +1612,7 @@
     "head_pct": 1.4,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 1.24,
+    "skin_seconds": 1.27,
     "bare": 0,
     "triangles": 2318,
     "clips": [
@@ -1658,7 +1658,7 @@
     "head_pct": 2.11,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.11,
+    "skin_seconds": 0.07,
     "bare": 0,
     "triangles": 2318,
     "clips": [
@@ -1716,7 +1716,7 @@
     "head_pct": 1.14,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 3.81,
+    "skin_seconds": 3.79,
     "bare": 0,
     "triangles": 1600,
     "clips": [
@@ -1760,7 +1760,7 @@
     "head_pct": 2.83,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.05,
+    "skin_seconds": 0.09,
     "bare": 0,
     "triangles": 1600,
     "clips": [
@@ -1816,7 +1816,7 @@
     "head_pct": 5.9,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 54.12,
+    "skin_seconds": 50.98,
     "bare": 0,
     "triangles": 14998,
     "clips": [
@@ -1866,7 +1866,7 @@
     "head_pct": 2.71,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.4,
+    "skin_seconds": 0.47,
     "bare": 0,
     "triangles": 11978,
     "clips": [
@@ -1924,7 +1924,7 @@
     "head_pct": 10.12,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 14.09,
+    "skin_seconds": 13.03,
     "bare": 0,
     "triangles": 7888,
     "clips": [
@@ -1974,7 +1974,7 @@
     "head_pct": 6.58,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.24,
+    "skin_seconds": 0.26,
     "bare": 0,
     "triangles": 6397,
     "clips": [
@@ -2032,7 +2032,7 @@
     "head_pct": 3.0,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 34.76,
+    "skin_seconds": 35.18,
     "bare": 0,
     "triangles": 1130,
     "clips": [
@@ -2076,7 +2076,7 @@
     "head_pct": 4.32,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.03,
+    "skin_seconds": 0.09,
     "bare": 0,
     "triangles": 1130,
     "clips": [
@@ -2130,7 +2130,7 @@
     "head_pct": 0.76,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 3.29,
+    "skin_seconds": 3.23,
     "bare": 0,
     "triangles": 7684,
     "clips": [
@@ -2176,7 +2176,7 @@
     "head_pct": 4.91,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.24,
+    "skin_seconds": 0.25,
     "bare": 0,
     "triangles": 7609,
     "clips": [
@@ -2234,7 +2234,7 @@
     "head_pct": 0.15,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 2.97,
+    "skin_seconds": 2.85,
     "bare": 0,
     "triangles": 7803,
     "clips": [
@@ -2282,7 +2282,7 @@
     "head_pct": 1.04,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.28,
+    "skin_seconds": 0.23,
     "bare": 0,
     "triangles": 7796,
     "clips": [
@@ -2333,14 +2333,14 @@
   "methods": {
    "autorig": {
     "exit": 0,
-    "grade": "FAIL",
-    "bleed_pct": 4.56,
+    "grade": "PASS",
+    "bleed_pct": 0.01,
     "combined_tears": 0,
-    "bend_tears": 1,
-    "head_pct": 21.21,
+    "bend_tears": 0,
+    "head_pct": 18.07,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 4.75,
+    "skin_seconds": 4.73,
     "bare": 0,
     "triangles": 6576,
     "clips": [
@@ -2351,19 +2351,17 @@
     "clip_checks": [
      {
       "name": "attack",
-      "tear_edges": 1,
-      "worst_gap_pct": 0.49260705878911537,
-      "collapsed": 2,
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 10,
       "skate": null,
-      "errors": [
-       "stretched edges"
-      ]
+      "errors": []
      },
      {
       "name": "idle",
       "tear_edges": 0,
       "worst_gap_pct": 0,
-      "collapsed": 1,
+      "collapsed": 11,
       "skate": null,
       "errors": []
      },
@@ -2371,7 +2369,7 @@
       "name": "walk",
       "tear_edges": 0,
       "worst_gap_pct": 0,
-      "collapsed": 1,
+      "collapsed": 8,
       "skate": null,
       "errors": []
      }
@@ -2380,13 +2378,13 @@
    "m2m": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 8.96,
-    "combined_tears": 11,
-    "bend_tears": 3,
-    "head_pct": 20.35,
+    "bleed_pct": 1.52,
+    "combined_tears": 116,
+    "bend_tears": 46,
+    "head_pct": 16.47,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.21,
+    "skin_seconds": 0.19,
     "bare": 0,
     "triangles": 6386,
     "clips": [
@@ -2397,9 +2395,9 @@
     "clip_checks": [
      {
       "name": "attack",
-      "tear_edges": 6,
-      "worst_gap_pct": 1.6229569991371418,
-      "collapsed": 2,
+      "tear_edges": 85,
+      "worst_gap_pct": 5.6407797341256325,
+      "collapsed": 1,
       "skate": null,
       "errors": [
        "stretched edges"
@@ -2407,19 +2405,23 @@
      },
      {
       "name": "idle",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 2,
+      "tear_edges": 57,
+      "worst_gap_pct": 6.323261358824345,
+      "collapsed": 0,
       "skate": null,
-      "errors": []
+      "errors": [
+       "stretched edges"
+      ]
      },
      {
       "name": "walk",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 1,
+      "tear_edges": 45,
+      "worst_gap_pct": 5.621412393305299,
+      "collapsed": 2,
       "skate": null,
-      "errors": []
+      "errors": [
+       "stretched edges"
+      ]
      }
     ]
    }
@@ -2434,13 +2436,13 @@
    "autorig": {
     "exit": 0,
     "grade": "CHECK",
-    "bleed_pct": 1.5,
-    "combined_tears": 1,
-    "bend_tears": 7,
-    "head_pct": 19.85,
+    "bleed_pct": 0.0,
+    "combined_tears": 2,
+    "bend_tears": 1,
+    "head_pct": 22.43,
     "stand_folds": null,
     "max_influences": 4,
-    "skin_seconds": 20.47,
+    "skin_seconds": 18.74,
     "bare": 0,
     "triangles": 14999,
     "clips": [
@@ -2451,111 +2453,13 @@
     "clip_checks": [
      {
       "name": "attack",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
+      "tear_edges": 1,
+      "worst_gap_pct": 0.41001749982605756,
       "collapsed": 1,
-      "skate": null,
-      "errors": []
-     },
-     {
-      "name": "idle",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 2,
-      "skate": null,
-      "errors": []
-     },
-     {
-      "name": "walk",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 2,
-      "skate": null,
-      "errors": []
-     }
-    ]
-   },
-   "m2m": {
-    "exit": 0,
-    "grade": "FAIL",
-    "bleed_pct": 2.22,
-    "combined_tears": 76,
-    "bend_tears": 91,
-    "head_pct": 16.46,
-    "stand_folds": null,
-    "max_influences": 2,
-    "skin_seconds": 0.51,
-    "bare": 0,
-    "triangles": 14962,
-    "clips": [
-     "Idle",
-     "Swim Horizontal",
-     "Bite"
-    ],
-    "clip_checks": [
-     {
-      "name": "attack",
-      "tear_edges": 58,
-      "worst_gap_pct": 2.5126234688248164,
-      "collapsed": 4,
       "skate": null,
       "errors": [
        "stretched edges"
       ]
-     },
-     {
-      "name": "idle",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 1,
-      "skate": null,
-      "errors": []
-     },
-     {
-      "name": "walk",
-      "tear_edges": 41,
-      "worst_gap_pct": 0.8915651919871741,
-      "collapsed": 2,
-      "skate": null,
-      "errors": [
-       "stretched edges"
-      ]
-     }
-    ]
-   }
-  }
- },
- {
-  "label": "megalodon",
-  "template": "shark",
-  "source": "Heartroot/the_megalodon/tripo_convert_1414b4ed-40c3-4662-b60f-070bdc5544c5.fbx",
-  "what": "Tripo shark",
-  "methods": {
-   "autorig": {
-    "exit": 0,
-    "grade": "PASS",
-    "bleed_pct": 0.45,
-    "combined_tears": 0,
-    "bend_tears": 0,
-    "head_pct": 20.48,
-    "stand_folds": null,
-    "max_influences": 4,
-    "skin_seconds": 15.06,
-    "bare": 0,
-    "triangles": 14999,
-    "clips": [
-     "Idle",
-     "Swim Horizontal",
-     "Bite"
-    ],
-    "clip_checks": [
-     {
-      "name": "attack",
-      "tear_edges": 0,
-      "worst_gap_pct": 0,
-      "collapsed": 1,
-      "skate": null,
-      "errors": []
      },
      {
       "name": "idle",
@@ -2578,13 +2482,115 @@
    "m2m": {
     "exit": 0,
     "grade": "FAIL",
-    "bleed_pct": 4.25,
-    "combined_tears": 36,
-    "bend_tears": 98,
-    "head_pct": 19.78,
+    "bleed_pct": 0.01,
+    "combined_tears": 379,
+    "bend_tears": 201,
+    "head_pct": 18.34,
     "stand_folds": null,
     "max_influences": 2,
-    "skin_seconds": 0.47,
+    "skin_seconds": 0.45,
+    "bare": 0,
+    "triangles": 14962,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 222,
+      "worst_gap_pct": 3.122930378046627,
+      "collapsed": 4,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "idle",
+      "tear_edges": 42,
+      "worst_gap_pct": 2.929973039134825,
+      "collapsed": 0,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     },
+     {
+      "name": "walk",
+      "tear_edges": 167,
+      "worst_gap_pct": 2.6507789075521897,
+      "collapsed": 7,
+      "skate": null,
+      "errors": [
+       "stretched edges"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "label": "megalodon",
+  "template": "shark",
+  "source": "Heartroot/the_megalodon/tripo_convert_1414b4ed-40c3-4662-b60f-070bdc5544c5.fbx",
+  "what": "Tripo shark",
+  "methods": {
+   "autorig": {
+    "exit": 0,
+    "grade": "PASS",
+    "bleed_pct": 0.03,
+    "combined_tears": 0,
+    "bend_tears": 0,
+    "head_pct": 25.47,
+    "stand_folds": null,
+    "max_influences": 4,
+    "skin_seconds": 14.63,
+    "bare": 0,
+    "triangles": 14999,
+    "clips": [
+     "Idle",
+     "Swim Horizontal",
+     "Bite"
+    ],
+    "clip_checks": [
+     {
+      "name": "attack",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "idle",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     },
+     {
+      "name": "walk",
+      "tear_edges": 0,
+      "worst_gap_pct": 0,
+      "collapsed": 0,
+      "skate": null,
+      "errors": []
+     }
+    ]
+   },
+   "m2m": {
+    "exit": 0,
+    "grade": "FAIL",
+    "bleed_pct": 1.14,
+    "combined_tears": 391,
+    "bend_tears": 191,
+    "head_pct": 21.17,
+    "stand_folds": null,
+    "max_influences": 2,
+    "skin_seconds": 0.4,
     "bare": 0,
     "triangles": 14919,
     "clips": [
@@ -2595,8 +2601,8 @@
     "clip_checks": [
      {
       "name": "attack",
-      "tear_edges": 61,
-      "worst_gap_pct": 2.162723818329326,
+      "tear_edges": 260,
+      "worst_gap_pct": 5.97511504354467,
       "collapsed": 3,
       "skate": null,
       "errors": [
@@ -2605,9 +2611,9 @@
      },
      {
       "name": "idle",
-      "tear_edges": 4,
-      "worst_gap_pct": 1.1457889751092485,
-      "collapsed": 1,
+      "tear_edges": 204,
+      "worst_gap_pct": 6.5484111853095435,
+      "collapsed": 2,
       "skate": null,
       "errors": [
        "stretched edges"
@@ -2615,9 +2621,9 @@
      },
      {
       "name": "walk",
-      "tear_edges": 31,
-      "worst_gap_pct": 1.7425151637668126,
-      "collapsed": 2,
+      "tear_edges": 259,
+      "worst_gap_pct": 5.887330375456477,
+      "collapsed": 3,
       "skate": null,
       "errors": [
        "stretched edges"
