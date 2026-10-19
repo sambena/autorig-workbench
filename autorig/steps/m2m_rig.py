@@ -58,7 +58,7 @@ def args(argv=None):
                         "(ANIMAL_HEIGHT), else as it is)")
     p.add_argument("--no-kind-height", dest="height_auto", action="store_false",
                    help="no typical height by kind: as it is when nothing gives one")
-    p.add_argument("--template", default="auto", help="auto, or one of: " + ", ".join(T.TEMPLATES))
+    p.add_argument("--template", default="auto", help="auto, classic (the classic rig, --model only), or one of: " + ", ".join(T.TEMPLATES))
     p.add_argument("--archetype", default="", help="what it is when --template is auto (quadruped, humanoid...)")
     p.add_argument("--clips", default="", help="roles or clip names, each optionally =engine name; or all")
     p.add_argument("--m2m", default="", help="the Mesh2Motion app checkout (default AUTORIG_M2M)")
@@ -2136,8 +2136,12 @@ def run(a):
     root = T.m2m_root(a.m2m or None)
     if root is None: raise SystemExit("m2m_rig: Mesh2Motion's rigs and animations not found (--m2m or AUTORIG_M2M)")
     log["m2m"] = root
-    mesh, src_joints = source_mesh(a.src, a.name, a.triangles)
     t = a.template.lower()
+    if t == "classic":                  # the classic rig (rerig.py, make_clips.py) asked for by name
+        if not a.model: raise SystemExit("m2m_rig: --template classic needs --model")
+        log["choice"] = {"why": "--template classic"}
+        return classic_creature(a, log)
+    mesh, src_joints = source_mesh(a.src, a.name, a.triangles)
     if t != "auto" and t not in T.TEMPLATES: raise SystemExit("m2m_rig: no template %r" % a.template)
 
     # what it is, and which way it faces
@@ -2467,11 +2471,57 @@ def classic_steps(name, steps_wanted):
 CLASSIC_KINDS = ("build", "placed", "tripo", "rigid", "humanoid", "custom")
 
 
+def classic_score(name, tag):
+    """run.py score for one model into the work folder (no audit, no renders): its score, or -1."""
+    import subprocess, shutil, layout
+    out = os.path.join(layout.work_dir("classic_choice"), name, tag)
+    shutil.rmtree(out, ignore_errors=True)
+    subprocess.run([host_python(), os.path.join(os.path.dirname(HERE), "cli", "run.py"), "score", name, "--out", out,
+                    "--audit", "skip", "--render", "0"], capture_output=True, text=True)
+    try:
+        with open(os.path.join(out, name, "score.json"), encoding="utf-8") as fh: return float(json.load(fh)["score"])
+    except (OSError, ValueError, KeyError, TypeError): return -1.0
+
+
+def best_classic(model, name, log):
+    """A classic rig already built: kept (clips and preview made again) and rebuilt from its spec, each scored; the
+    better's files stay (rigged/ and clips/), then its audit. {step: exit code} of the winner."""
+    import shutil, layout
+    folder = layout.pack_dir(model)
+    dirs = (layout.rigged_dir(model), os.path.join(folder, "clips"))
+    work = os.path.join(layout.work_dir("classic_choice"), name)
+
+    def stash(tag):
+        dst = os.path.join(work, tag + "_files")
+        shutil.rmtree(dst, ignore_errors=True); os.makedirs(dst, exist_ok=True)
+        for d in dirs:
+            if os.path.isdir(d): shutil.copytree(d, os.path.join(dst, os.path.basename(d)))
+        return dst
+
+    def unstash(src):
+        for d in dirs:
+            shutil.rmtree(d, ignore_errors=True)
+            if os.path.isdir(os.path.join(src, os.path.basename(d))): shutil.copytree(os.path.join(src, os.path.basename(d)), d)
+
+    kept = classic_steps(name, ("clips", "preview"))
+    scores = {"kept": classic_score(name, "kept") if kept.get("clips") == 0 else -1.0}
+    files = {"kept": stash("kept")}
+    built = classic_steps(name, ("rig", "clips", "preview"))
+    scores["rebuilt"] = classic_score(name, "rebuilt") if built.get("rig") == 0 and built.get("clips") == 0 else -1.0
+    win = "rebuilt" if scores["rebuilt"] > scores["kept"] else "kept"
+    if win == "kept": unstash(files["kept"])
+    steps = dict(kept if win == "kept" else built)
+    steps.update(classic_steps(name, ("audit",)))
+    shutil.rmtree(work, ignore_errors=True)
+    log["classic"].update(scores=scores, kept_rig=win == "kept")
+    return steps
+
+
 def classic_creature(a, log):
     """Auto on a body with no Mesh2Motion template (a squid, a jelly, a drone, a chest; choose() sends props and
     floaters here) used to stop with exit 3 and the page reported the rig as failed. It runs the classic rig instead:
-    the model's own spec when it has one (a classic rig already built from it is kept: Heartroot's were measured by
-    hand), else one suggest.py proposes, merged into its rig.json beside the card and budget; then the audit, the clips
+    the model's own spec when it has one (a classic rig already built from it is kept or rebuilt, whichever scores
+    better: best_classic), else one suggest.py proposes, merged into its rig.json beside the card and budget; then the audit, the clips
     (their archetype read from the rig when the spec names none: spec_store.infer_clip_archetype) and the preview."""
     import layout, spec_store
     name = layout.leaf(a.model)
@@ -2486,7 +2536,13 @@ def classic_creature(a, log):
     log["classic"] = {"spec": "own" if classic else ("lifted" if lifted else "suggested"), "kept_rig": False}
     want = ["rig", "audit", "clips", "preview"]
     if classic and built and rig.get("kind") != "m2m":
-        want = ["audit", "clips", "preview"]; log["classic"]["kept_rig"] = True
+        # the rig already built and one built again from the same spec (the same bones, today's skinning), each
+        # clipped and scored (run.py score); the better stays. Neither always wins: the lantern squid scored 79.8 kept
+        # against 96.7 rebuilt, the reef crab 98.7 kept against 91.4 (2026-10-19)
+        steps = best_classic(a.model, name, log)
+        print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "classic": log["classic"],
+                                       "choice": log["choice"], "steps": steps}, default=str))
+        return 0 if steps.get("clips") == 0 else 1
     elif lifted and built and not classic:
         want = ["clips", "preview"]; log["classic"]["kept_rig"] = True       # a lift's rig is its source's
     elif not classic:
