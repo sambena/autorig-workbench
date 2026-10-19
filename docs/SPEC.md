@@ -228,6 +228,13 @@ legs together. A model given no height (no `--height`, no `metres_high` on its c
 stands at that animal's typical height, and the card gets `metres_high` and `metres_high_from` (`--no-kind-height`:
 as it is). Tripo's meshes come out about 1 m tall whatever they are.
 
+The creatures (docs/CREATURES.md): a spider-family body (crab, beetle, isopod) has its legs found on the mesh, each
+template leg on one of its own, a crab's claws on the fangs, and its legs rebaked the way a four-legged body's are. A
+bird's walk is rebaked once on a copy and its leg turns scaled until its feet sweep as far against its hip height as
+the template's do (1 to 1.6; `--no-stride` keeps them as made), and a bird standing on its toes with folded wings flaps
+them `--folded-flap` as far (0.35). A bird is turned to face -Y by where its toes point. A snake's head reaches back to
+its neck, measured on its body, and a long body's line starts where its head does, not at a whisker ahead of it.
+
 ### `budget`
 
 The engine triangle budget. `trim` (decimate.py) cuts the rigged FBX to it with at most four influences per vertex;
