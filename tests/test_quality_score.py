@@ -49,6 +49,12 @@ class Score(unittest.TestCase):
         self.assertEqual(s["penalties"]["audit_bleed_pct"], QS.CHECKS["audit_bleed_pct"][2])
         self.assertGreater(s["penalties"]["audit_head_short"], 0)
 
+    def test_rest_by_design_skips_the_rest_checks(self):
+        m = {"rest": {"mean_pct": 30.0, "p99_pct": 60.0}, "clips": [CLEAN_CLIP]}
+        self.assertLess(QS.score(m)["score"], QS.PASS_SCORE)
+        s = QS.score(m, rest_by_design=True)
+        self.assertEqual((s["score"], s["values"]["rest_p99_pct"]), (100.0, None))
+
     def test_grades(self):
         self.assertEqual([QS.grade(x) for x in (95, 90, 89.9, 75, 74.9, None)],
                          ["PASS", "PASS", "CHECK", "CHECK", "FAIL", None])
