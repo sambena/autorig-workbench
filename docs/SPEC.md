@@ -214,6 +214,31 @@ people in loose pieces: sleeves, hoods, boots). On Heartroot's ticket taker that
 3 and the run's from 155 to 13; `skirt` was tried as well and left off: it tore robes more in the walk (the mourner's
 run 76 to 266).
 
+**A source that came skinned** (Tripo's converter skins its people to a Mixamo-named skeleton): a measured person
+is built on that skeleton's own joints, and its skin is chosen from three: ours (bone heat and the rules above), the
+source's own weights (a bone we lack gives its weight to its nearest kept ancestor), or ours with the source's
+blended in on the arms. `rerig_humanoid.stress_tears` poses each the way the clips do (a stride, a running tuck, the
+arms down and swung, a bow) and counts the edges that stretch past 3x; the fewest wins, and a tie goes to the
+source's. rig.json `"skin": "source"` always takes the source's, and `"skin": "autorig"` never does.
+
+Bone heat tears robes, bell sleeves and capes that the source's weights carry. Measured with `run.py score` on 15 people
+(Penny, 2026-10-19), main against the choice:
+
+| model | main | choice |
+|---|---|---|
+| the_human | 55.4 | 92.7 (source) |
+| wanderer | 69.6 | 94.5 (source) |
+| the_ghost | 54.8 | 83.2 (source) |
+| echo | 64.1 | 85.3 (source) |
+| stoker | 40.7 | 65.3 (source) |
+| castaway | 80.5 | 99.1 (source) |
+| hooded figure (uploaded 2026-10-18) | 77.0 | 82.0 (ours, on its own skeleton) |
+
+The mean went from 77.2 to 88.3, and no model lost. Two other fixes were tried and left out:
+- hanging a robe's hem on the thigh, or shortening the stride under a robe, gained on some robes and lost as much on
+  others;
+- growing the arm's skin down a sleeve that bone heat had given to the thigh did the same.
+
 Against those skeletons the measured joints are 5.8% of the height off on average, the default's 7.7%; worst and
 best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
 
