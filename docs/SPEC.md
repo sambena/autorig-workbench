@@ -187,6 +187,36 @@ within a foot's length ahead of the ankle.
 then the sleeve's and the arm tracker follows it down. With it the shoulder, elbow, wrist and knuckle lie on the
 straight line from the shoulder (the arm height, the torso's depth) to the measured fingertip.
 
+`auto: true` measures the heights and spans from the mesh (`core/humanoid_fit.py`) instead of reading them from the
+section; a section that is `DEFAULT_HUMANOID`'s numbers unchanged (what Auto rig and the Human tile write for a fresh
+upload) counts as `auto` too, and `auto: false` keeps any numbers as they are. Measured, in fractions of the height,
+on a dense sampling of the surface (a Tripo person has a few thousand vertices, too few for a thin slice):
+
+- **arms**: each arm's top edge, followed in from the fingertip. The shoulder joint is under the line that edge makes
+  along the forearm half (a pauldron, a cape or the trapezius sits on the upper arm), run in to the chest's half width:
+  read at the first levels under the upper arm where the run through the middle is the torso alone. The elbow and
+  wrist are then tracked as without `auto`, through a bell sleeve's middle: the arm's own straight line was a little
+  truer to the skeletons, but bone heat gave the sleeve's hanging cloth to the torso and it tore when the arm came down.
+- **neck, head, spine, hips, knees**: from the shoulders and the ankles by proportions fitted to the Mixamo-named
+  skeletons of 18 Heartroot people and Mixamo's own rigs of 5 Tornado Titans (`humanoid_fit.AUTO`). Those put the hip
+  0.60-0.67 of the way from the ankle to the neck, but the rigs scored better with it at 0.55 (the hand-tuned Tornado
+  Titans' and Smeltdown players' share): a thigh bone that starts at the waist takes a robe's or a cape's cloth there
+  with it. A crotch is not read off the mesh: a tunic's hem looks just like one.
+- **legs**: tracked up from the feet, each the run of points continuing the one below, until the two merge or one
+  widens into a hem. When something covers them below the hips, their spacing gives `x.leg` and `x.leg_band`, so a
+  robe's hem never splays the legs, and `robe` is the height they are covered from (`true`: no legs seen at all):
+  joints above it stand under the body's middle, those below keep their own depth, and the toe is clamped to a foot's
+  length only when the feet are hidden. Legs seen up to the hips are left to the slices, which follow a stance that
+  slants them (a band set from the shins read the squire's hips too wide).
+
+A measured person also gets the skin rules `limb_pieces` and `feet_on_legs` unless rig.json sets them (Tripo dresses
+people in loose pieces: sleeves, hoods, boots). On Heartroot's ticket taker that took the walk's torn edges from 100 to
+3 and the run's from 155 to 13; `skirt` was tried as well and left off: it tore robes more in the walk (the mourner's
+run 76 to 266).
+
+Against those skeletons the measured joints are 5.8% of the height off on average, the default's 7.7%; worst and
+best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
+
 ### `m2m`
 
 Written by `steps/m2m_rig.py` (`run.py m2m-rig`), with `rig.kind: "m2m"` and `rig.skeleton` the archetype it was
