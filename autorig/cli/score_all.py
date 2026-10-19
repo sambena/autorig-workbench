@@ -147,6 +147,8 @@ def score_one(model, out, opts):
                 except OSError: pass
     measured = read_json(os.path.join(d, "measure.json"))
     if not measured: return {"model": model, "error": "no measure.json"}
+    if measured.get("bones") == 0:
+        return {"model": model, "skip": "static: no skeleton (a prop's game file in its rig folder)"}
     audit, audit_path = audit_for(model, opts.get("audit", "read"), d)
     by_design = rest_by_design(model)
     s = QS.score(measured, audit, by_design)
@@ -220,14 +222,18 @@ def main(argv):
     for k, m in enumerate(models, 1):
         print("SCORE_ALL %d/%d %s" % (k, len(models), m), flush=True)
         r = score_one(m, out, opts)
+        if r.get("skip"):
+            skipped[m] = r["skip"]; print("  -> skipped: " + r["skip"], flush=True); continue
         rows.append(r)
         print("  -> %s %s %s" % (fmt(r.get("score")), r.get("grade") or "ERROR", ", ".join(r.get("worst") or []) or r.get("error", "")[:200]), flush=True)
     # a partial run keeps the other models' rows in the table
     old = read_json(os.path.join(out, "_ranked.json")) or {}
-    have = {r["model"] for r in rows}
+    have = {r["model"] for r in rows} | set(skipped)
     rows += [r for r in old.get("models", []) if r.get("model") not in have and os.path.exists(os.path.join(out, r["model"], "score.json"))]
+    have -= set(skipped)
     # the models with no rig: this run's, and the earlier runs' (another group) that were not scored since
-    skipped = dict({m: why for m, why in (old.get("skipped") or {}).items() if m not in have}, **skipped)
+    skipped = dict({m: why for m, why in (old.get("skipped") or {}).items() if m not in have and m not in skipped},
+                   **skipped)
     rows, md = table(rows, skipped)
     with open(os.path.join(out, "_ranked.json"), "w", encoding="utf-8") as fh: json.dump({"models": rows, "skipped": skipped}, fh, indent=1)
     with open(os.path.join(out, "_ranked.md"), "w", encoding="utf-8") as fh: fh.write(md + "\n")

@@ -59,6 +59,10 @@ class Score(unittest.TestCase):
         s = QS.score({"rest": CLEAN["rest"], "clips": []})
         self.assertEqual((s["grade"], s["worst"]), ("CHECK", ["no_clips"]))
 
+    def test_no_feet_no_sinking(self):
+        m = {"rest": CLEAN["rest"], "feet": [], "clips": [dict(CLEAN_CLIP, sink_pct=80.0)]}
+        self.assertIsNone(QS.score(m)["values"]["sink_pct"])
+
     def test_grades(self):
         self.assertEqual([QS.grade(x) for x in (95, 90, 89.9, 75, 74.9, None)],
                          ["PASS", "PASS", "CHECK", "CHECK", "FAIL", None])

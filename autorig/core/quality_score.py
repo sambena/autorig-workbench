@@ -84,6 +84,8 @@ def values(measured, audit=None, rest_by_design=False):
     for k in ("stretch3_permille", "max_stretch", "squash_permille", "arm_in_torso_pct", "leg_cross_pct",
               "foot_skate", "hover_pct", "sink_pct"):
         out[k] = worst_clip(clips, k)
+    if "feet" in measured and not measured["feet"]:
+        out["sink_pct"] = None          # no feet on the floor at rest: a flier or a swimmer dips, it does not sink
     out["audit_bleed_pct"] = out["audit_head_short"] = None
     checks = ((audit or {}).get("verdict") or {}).get("checks") or {}
     if "bleed_pct" in checks: out["audit_bleed_pct"] = checks["bleed_pct"].get("value")
