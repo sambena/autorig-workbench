@@ -1360,12 +1360,22 @@ def humanoid_walker(rig, style, spec=None):
             for b, ang in zip(bones, angles):
                 p.turn(b, axis, ang)
 
+    def elbow_axis(fa):
+        """The elbow's hinge: square to the forearm as it rests and to forward, so a bend brings the hand forward. For
+        a T-posed arm (forearm along +-X) it is the vertical the clips were written for; for an arm resting as
+        modelled in an A-pose it is the real hinge, where the vertical swung the forearm across the body (Tornado
+        Titans' Ice_Age26 ran with his hands through his hips, 2026-10-18)."""
+        h = rig.direction(fa).cross(FORWARD)
+        if h.length < 1e-4:
+            return UP * (-1.0 if side_of(fa) > 0 else 1.0)
+        return h.normalized()
+
     def arms_down(p, bend=None):
         for a, fa in arms:
             p.orient(a, at_side[a])
             if bend is not None and abs(bend) > 1e-5:
                 side_sign = 1.0 if side_of(a) > 0 else -1.0
-                p.turn(fa, UP, -side_sign * bend)
+                p.turn(fa, elbow_axis(fa), bend)
 
     def lean(p, degrees):
         """Spread a pitch across the spine, so the back curves rather than hinging at one joint."""
@@ -1442,7 +1452,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "relax")
         animate_secondary(p, phase)
@@ -1499,7 +1509,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "splay" if st.get("is_flight") else "relax")
         animate_secondary(p, phase)
@@ -1539,7 +1549,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "relax")
         animate_secondary(p, tau)
@@ -1575,7 +1585,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "relax")
         animate_secondary(p, tau)
@@ -1605,7 +1615,7 @@ def humanoid_walker(rig, style, spec=None):
             p.orient(a, at_side[a].slerp(level[a], rear * (1 - recover)))
             p.turn(a, LATERAL, -16.0 * kick)                   # the muzzle climbs on the shot
             side_sign = 1.0 if side_of(a) > 0 else -1.0
-            p.turn(fa, UP, -side_sign * 8.0 * (1 - rear))
+            p.turn(fa, elbow_axis(fa), 8.0 * (1 - rear))
         crouch = rear * (1 - recover)
         for side in ("L", "R"):
             p.turn(r["thigh." + side], LATERAL, -12.0 * crouch)
@@ -1630,7 +1640,7 @@ def humanoid_walker(rig, style, spec=None):
             up = at_side[a].slerp(overhead[a], rear)
             p.orient(a, up.slerp(slam[a], strike) if strike < 1 else slam[a].slerp(at_side[a], recover))
             side_sign = 1.0 if side_of(a) > 0 else -1.0
-            p.turn(fa, UP, -side_sign * 20.0 * rear * (1 - strike))
+            p.turn(fa, elbow_axis(fa), 20.0 * rear * (1 - strike))
         lean(p, -14.0 * rear * (1 - strike) + 22.0 * strike * (1 - recover))
         drop = strike * (1 - recover)
         p.move(r["hips"], UP * (0.03 * H * rear * (1 - strike)) - UP * (0.07 * H * drop))
@@ -1721,7 +1731,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "fist" if tau < 0.6 else "splay")
         animate_secondary(p, tau)
@@ -1760,7 +1770,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "splay")
         animate_secondary(p, phase)
@@ -1799,7 +1809,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "relax")
         animate_secondary(p, tau)
@@ -1838,7 +1848,7 @@ def humanoid_walker(rig, style, spec=None):
             arm_b, fa_b = r["arm." + side], r["forearm." + side]
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "fist" if 0.2 < tau < 0.8 else "relax")
         animate_secondary(p, tau)
@@ -1880,7 +1890,7 @@ def humanoid_walker(rig, style, spec=None):
             side_sign = 1.0 if side_of(arm_b) > 0 else -1.0
             p.turn(arm_b, LATERAL, arms_st[side]["pitch"])
             p.turn(arm_b, UP, side_sign * arms_st[side]["yaw"])
-            p.turn(fa_b, UP, -side_sign * arms_st[side]["forearm_pitch"])
+            p.turn(fa_b, elbow_axis(fa_b), arms_st[side]["forearm_pitch"])
 
         curl_fingers(p, "fist")
         animate_secondary(p, phase)
