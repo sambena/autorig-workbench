@@ -121,5 +121,35 @@ class TestTripoChoice(unittest.TestCase):
             self.assertEqual(log["template"], want, "%s: %s" % (name, log["choice"]))
 
 
+@unittest.skipUnless(HAVE_BLENDER and ROOT and tripo("Cat_Tabby_Tripo") and tripo("Rabbit_Tripo"),
+                     "Blender, Mesh2Motion or the Tripo animals not found")
+class TestTripoLegged(unittest.TestCase):
+    """Four-legged rules on Tripo's animals: the cat's hip joint inside her body (the Fox sample's sparse rump read a
+    slice 0.3 m low and put it above her back), the legs' swing from their length, and the rabbit's walk a hop."""
+
+    def test_cat_hip_and_swing(self):
+        out = tempfile.mkdtemp(prefix="m2m_cat_")
+        code, log = rig("--in", tripo("Cat_Tabby_Tripo"), "--name", "Cat_Tabby_Tripo", "--out", out, "--m2m", ROOT,
+                        "--no-preview", "--no-audit", "--format", "glb")
+        self.assertEqual(code, 0, log)
+        self.assertEqual(log["template"], "fox")
+        j = log["landmarks"]["mesh"]
+        hip = T.from_gltf(json.load(open(os.path.join(out, "rig.json"), encoding="utf-8"))["m2m"]["joints"]["Back_Leg_Upper_L"])
+        self.assertLess(hip[2], j["croup"] * 0.85, (hip, j))
+        self.assertGreater(hip[2], j["belly"], (hip, j))
+        self.assertLess(log["swing_auto"], 1.0)
+        self.assertNotIn("gait", log)
+
+    def test_rabbit_hops(self):
+        out = tempfile.mkdtemp(prefix="m2m_rabbit_")
+        code, log = rig("--in", tripo("Rabbit_Tripo"), "--name", "Rabbit_Tripo", "--out", out, "--m2m", ROOT,
+                        "--no-preview", "--no-audit", "--format", "glb")
+        self.assertEqual(code, 0, log)
+        self.assertIn("hop", log.get("gait", {}))
+        self.assertEqual([(c["name"], c["m2m"]) for c in log["clips"]], [("idle", "Idle"), ("walk", "Hop")])
+        g = T.read_gltf(os.path.join(out, "Rabbit_Tripo.glb"))
+        self.assertEqual(sorted(c["name"] for c in T.gltf_clips(g)), ["idle", "walk"])
+
+
 if __name__ == "__main__":
     unittest.main()
