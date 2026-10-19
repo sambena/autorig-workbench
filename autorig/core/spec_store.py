@@ -139,7 +139,38 @@ def infer_clip_archetype(spec):
     # Quadrupeds, hexapods, octopods, humanoids, tripo creatures default to walker
     if skel in ("quadruped", "hexapod", "octopod", "humanoid", "creature") or rig.get("kind") in ("humanoid", "tripo"):
         return "walker"
+    # no skeleton named: what the chains it builds are (Heartroot's hand-measured specs name none, and their squid,
+    # jellies, wisps and chests had no clips at all): legs walk, a lone body swims, anything else floats and trails
+    names = [str(c.get("name") or "").lower() for c in rig.get("chains") or [] if isinstance(c, dict)]
+    if any(n.startswith("leg") for n in names):
+        return "walker"
+    # a fish or an eel: a body with nothing but fins, a tail, a jaw, a lure or barbels on it, swimming; or a lone long
+    # spine (the glass eel's eleven bones). A short lone one is an object (a crystal's)
+    swims = ("spine", "body", "neck", "head", "tail", "jaw", "lure", "barbel")
+    others = [n for n in names if n not in swims and not n.startswith("fin") and not n.startswith("tail_fin")]
+    long_spine = any(str(c.get("name")) == "spine" and (c.get("bones") or 0) >= 4
+                     for c in rig.get("chains") or [] if isinstance(c, dict))
+    if names and not others and ("tail" in names or any(n.startswith("fin") for n in names) or long_spine):
+        return "swimmer"
+    if names:
+        return "flyer"
     return None
+
+
+def lifted_spec(key):
+    """The rig.json of the model a lifted one was copied from (lift.json beside it: {"game", "model"}), or {}: a lift
+    carries its source's rig and none of its spec (Smeltdown's floater is Heartroot's lantern squid)."""
+    try:
+        with open(os.path.join(layout.pack_dir(key), "lift.json"), encoding="utf-8") as fh:
+            src = (json.load(fh) or {}).get("model")
+    except (OSError, ValueError, TypeError):
+        return {}
+    return model(src) if src and layout.leaf(src) != layout.leaf(key) else {}
+
+
+def clip_archetype(key):
+    """The clip archetype a model's clips are made with: its own spec's, else its lift source's."""
+    return infer_clip_archetype(model(key)) or infer_clip_archetype(lifted_spec(key))
 
 
 class _Section(Mapping):
@@ -155,7 +186,7 @@ class _Section(Mapping):
         if v is None and self.section == "clips":
             v = (m.get("rig") or {}).get("clips")
             if v is None:
-                arch = infer_clip_archetype(m)
+                arch = clip_archetype(key)
                 if arch:
                     v = {"archetype": arch}
         elif v is None and self.section == "humanoid":
@@ -169,7 +200,7 @@ class _Section(Mapping):
             m = model(m_name)
             if self.section in m: return True
             if self.section in ("clips", "humanoid") and self.section in (m.get("rig") or {}): return True
-            if self.section == "clips" and infer_clip_archetype(m): return True
+            if self.section == "clips" and clip_archetype(m_name): return True
             return False
         return (m for _, m in layout.all_models() if has(m))
 

@@ -23,7 +23,8 @@ class Accuracy(unittest.TestCase):
         cls.got = {row["model"]: row["got"] for row in cls.r["rows"]}
 
     def test_route_accuracy(self):
-        # 2026-10-18: 117/250 (47%) before the body plan's flat faces and belly; 235/250 (94%) after
+        # 2026-10-18: 117/250 (47%) before the body plan's flat faces and belly; 235/250 (94%) after; 238 (95%)
+        # with the creatures' rules (2026-10-19: domes, needle feet, resting beasts, flyers in flight)
         self.assertGreaterEqual(self.r["route_ok"] / self.r["models"], 0.92, self.r["route_ok"])
         self.assertGreaterEqual(self.r["template_ok"] / self.r["models"], 0.90, self.r["template_ok"])
         self.assertEqual(self.r["by_truth"]["people"]["route_ok"], self.r["by_truth"]["people"]["models"])
@@ -36,7 +37,13 @@ class Accuracy(unittest.TestCase):
                              ("hopper", "m2m:quad"),                # a sitting hare read as lying down
                              ("Cow_Angus_Tripo", "m2m:horse"), ("Dog_TanWhite_Tripo", "m2m:fox"),
                              ("Shark", "m2m:shark"), ("sea_serpent", "m2m:snake"), ("reef_crab", "m2m:spider"),
-                             ("the_robot", "people"), ("jelly_fish", "classic"), ("Tree_Oak_Tripo", "classic")):
+                             ("the_robot", "people"), ("jelly_fish", "classic"), ("Tree_Oak_Tripo", "classic"),
+                             ("cogbug", "m2m:spider"),              # a beetle's dome read as wings
+                             ("dirt_creator", "m2m:spider"),        # a beetle on needle feet read as a quadruped
+                             ("dragon", "m2m:bird"),                # a dragon on its feet and tail read as an octopod
+                             ("sky_boss", "m2m:dragon"),            # a dragon in flight read as standing on one base
+                             ("spitter", "classic"),                # an upright grub read as a hexapod
+                             ("Trailer_Carport_Tripo", "classic")):  # a roof on posts read as a winged beast
             if model in self.got:
                 self.assertTrue(R.same_template(self.got[model], route), "%s: %s" % (model, self.got[model]))
 
@@ -78,3 +85,28 @@ class Choose(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClipArchetype(unittest.TestCase):
+    """make_clips' archetype for a classic rig whose spec names none (core/spec_store.infer_clip_archetype)."""
+
+    def arch(self, chains, kind="build"):
+        import spec_store
+        return spec_store.infer_clip_archetype({"rig": {"kind": kind, "chains": chains}})
+
+    def test_from_the_chains(self):
+        fin = lambda n: {"name": n}
+        self.assertEqual(self.arch([fin("spine"), fin("leg1"), fin("leg2")]), "walker")
+        self.assertEqual(self.arch([fin("spine"), fin("tail"), fin("fin_pectoral"), fin("fin_dorsal"), fin("jaw"),
+                                    fin("lure")]), "swimmer")                              # an anglerfish
+        self.assertEqual(self.arch([{"name": "spine", "bones": 11}]), "swimmer")         # an eel
+        self.assertEqual(self.arch([{"name": "spine", "bones": 2}]), "flyer")            # a crystal
+        self.assertEqual(self.arch([fin("spine"), fin("tentacle"), fin("oral_arm")]), "flyer")
+        self.assertEqual(self.arch([fin("spine"), fin("tail"), fin("wing"), fin("wing")]), "flyer")   # a ray
+        self.assertIsNone(self.arch([], kind="m2m"))
+
+    def test_named_skeleton_first(self):
+        import spec_store
+        self.assertEqual(spec_store.infer_clip_archetype({"rig": {"skeleton": "serpent", "chains": [{"name": "leg1"}]}}),
+                         "swimmer")
+        self.assertEqual(spec_store.infer_clip_archetype({"clips": {"archetype": "machine"}}), "machine")

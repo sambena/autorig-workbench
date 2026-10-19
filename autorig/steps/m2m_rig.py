@@ -98,6 +98,8 @@ def args(argv=None):
     p.add_argument("--people", default="classic", choices=("classic", "m2m"),
                    help="a person (auto picks the human template, no tail): classic rigs them with the humanoid rig "
                         "(steps/rerig_humanoid.py, A-pose kept, walker clips); m2m uses the human template")
+    p.add_argument("--no-classic", dest="classic", action="store_false",
+                   help="a body with no template (auto) stops with exit 3 instead of going to the classic rig")
     p.add_argument("--choose-only", dest="choose_only", action="store_true",
                    help="print the template choice (M2M_RIG {template, choice}) and stop")
     p.add_argument("--no-audit", dest="audit", action="store_false")
@@ -2160,6 +2162,8 @@ def run(a):
         t, why = T.choose(arch, meas)
         log["choice"] = {"archetype": arch, "measures": meas, "why": why}
         if t is None:
+            if a.model and not a.choose_only and not a.joints and a.classic:
+                return classic_creature(a, log)
             print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "choice": log["choice"], "suggest": log.get("suggest"),
                                            "fallback": "rerig.py + make_clips.py"}))
             return 3
@@ -2424,6 +2428,81 @@ def is_person(a, t, log):
     ch = log.get("choice") or {}
     m = ch.get("measures") or {}
     return T.is_person(t, ch.get("archetype"), m)
+
+
+def host_python():
+    """The Python that runs the workbench's own scripts beside Blender: python3, or on Windows python (its python3 is
+    the Microsoft Store's stub, which only prints where to install Python)."""
+    import shutil
+    if os.name == "nt": return shutil.which("python") or shutil.which("py") or sys.executable
+    return shutil.which("python3") or shutil.which("python") or sys.executable
+
+
+def classic_steps(name, steps_wanted):
+    """Runs run.py's steps for a model one after another; {step: exit code}, stopping when the rig fails."""
+    import subprocess
+    run_py = os.path.join(os.path.dirname(HERE), "cli", "run.py")
+    steps = {}
+    for step in steps_wanted:
+        print("classic: %s %s" % (step, name), flush=True)
+        r = subprocess.run([host_python(), run_py, step, name], capture_output=True, text=True)
+        sys.stdout.write((r.stdout or "")[-4000:]); sys.stdout.flush()
+        steps[step] = r.returncode
+        if r.returncode != 0:
+            sys.stdout.write((r.stderr or "")[-4000:])
+            if step == "rig": break
+    return steps
+
+
+# rig.json kinds that are a classic rig's spec (rerig.py builds them)
+CLASSIC_KINDS = ("build", "placed", "tripo", "rigid", "humanoid", "custom")
+
+
+def classic_creature(a, log):
+    """Auto on a body with no Mesh2Motion template (a squid, a jelly, a drone, a chest; choose() sends props and
+    floaters here) used to stop with exit 3 and the page reported the rig as failed. It runs the classic rig instead:
+    the model's own spec when it has one (a classic rig already built from it is kept: Heartroot's were measured by
+    hand), else one suggest.py proposes, merged into its rig.json beside the card and budget; then the audit, the clips
+    (their archetype read from the rig when the spec names none: spec_store.infer_clip_archetype) and the preview."""
+    import layout, spec_store
+    name = layout.leaf(a.model)
+    folder = layout.pack_dir(a.model)
+    path = os.path.join(folder, "rig.json")
+    try: spec = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError): spec = {}
+    rig = spec.get("rig") or {}
+    built = os.path.exists(os.path.join(layout.rigged_dir(a.model), name + ".blend"))
+    classic = rig.get("kind") in CLASSIC_KINDS
+    lifted = bool(spec_store.lifted_spec(name))
+    log["classic"] = {"spec": "own" if classic else ("lifted" if lifted else "suggested"), "kept_rig": False}
+    want = ["rig", "audit", "clips", "preview"]
+    if classic and built and rig.get("kind") != "m2m":
+        want = ["audit", "clips", "preview"]; log["classic"]["kept_rig"] = True
+    elif lifted and built and not classic:
+        want = ["clips", "preview"]; log["classic"]["kept_rig"] = True       # a lift's rig is its source's
+    elif not classic:
+        import watch_daemon
+        tmp = os.path.join(layout.work_dir("suggest"), name + "_suggested_rig.json")
+        os.makedirs(os.path.dirname(tmp), exist_ok=True)
+        arch = watch_daemon.suggest_spec(name, spec_file=tmp)
+        if not arch:
+            print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "choice": log["choice"],
+                                           "classic": "no spec could be suggested"}))
+            return 1
+        sug = json.load(open(tmp, encoding="utf-8"))
+        spec.pop("m2m", None)
+        for k, v in sug.items():
+            if k == "rig" or k not in spec: spec[k] = v
+        spec.setdefault("notes", {})["classic"] = ("Auto found no Mesh2Motion template (%s): the classic rig from a "
+                                                   "suggested spec (m2m_rig.classic_creature)" % log["choice"]["why"])
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(spec, fh, indent=2)
+        log["classic"]["archetype"] = arch
+    steps = classic_steps(name, want)
+    log.update(steps=steps)
+    print("M2M_RIG " + json.dumps({"name": a.name, "template": None, "classic": log["classic"], "choice": log["choice"],
+                                   "steps": steps}, default=str))
+    return 0 if all(v == 0 for k, v in steps.items() if k in ("rig", "clips")) else 1
 
 
 def people_classic(a, log):

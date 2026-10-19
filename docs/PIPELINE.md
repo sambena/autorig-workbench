@@ -171,8 +171,10 @@ It writes `<name>.glb` (each clip an animation), `<name>.fbx` (takes, Unity's ax
 `<name>.blend`, `preview.glb`, `rig.json` (`rig.kind: "m2m"`, the template and every joint: docs/SPEC.md, "`m2m`"),
 the card (`model.json`, merged, the game's own fields kept) and `<name>_m2m.json`, and grades it with `audit.py`.
 `--clips` takes roles (`idle`, `walk`, `run`, `trot`, `fly`... per template), Mesh2Motion's own clip names, either
-with `=engine name`, or `all`. A body with no template (a floater, a prop) exits 3: rig it with `rerig.py` and
-`make_clips.py` as before. The Mesh2Motion files come from `--m2m`, else the `third_party/mesh2motion-app`
+with `=engine name`, or `all`. A body with no template (a floater, a prop) goes to the classic rig when it
+is a collection model (`--model`; `--no-classic`, or `--in`, exits 3 as before): its own spec, a classic rig already
+built from it kept; else the spec `suggest.py` proposes, merged into its rig.json; then audit, clips (the archetype read
+from the rig's chains when the spec names none: legs walk, a fish or an eel swims, anything else floats) and preview. The Mesh2Motion files come from `--m2m`, else the `third_party/mesh2motion-app`
 submodule, `AUTORIG_M2M` or `~/src/mesh2motion-app`.
 
 ### Grades
