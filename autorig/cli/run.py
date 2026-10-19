@@ -8,6 +8,8 @@
 #   python autorig/cli/run.py auto-tune wolf,moth      closed-loop auto-tuning optimizer (self-healing rigs)
 #   python autorig/cli/run.py preview wolf,moth        the 3D viewer's rigged/preview.glb (steps/preview_glb.py)
 #   python autorig/cli/run.py audit-all [-render 0] [-strict]   audit every rigged model, then a table worst first
+#   python autorig/cli/run.py score [models|all] [--group G] [--render 0] [--audit read|run|skip] [--rescore]
+#                                                   the 0-100 quality score per rigged model, ranked (docs/QUALITY.md)
 #   python autorig/cli/run.py batch [models|all] [--group <g>] [--steps ...] [--export ...]
 #   python autorig/cli/run.py watch <dir> [--group <g>] [--once] [--export ...]
 #   python autorig/cli/run.py retarget <model> <clip>  retarget external mocap / BVH / FBX clip onto character
@@ -113,6 +115,8 @@ def main(argv):
         # a group name, or a comma list of models
         args = rest if rest[0].startswith("-") or "," not in rest[0] and not model_exists(rest[0]) else ["-only"] + rest
         return blender_step(script, *args)
+    if cmd == "score":                                # the quality score (cli/score_all.py, docs/QUALITY.md)
+        return subprocess.call([sys.executable, os.path.join(HERE, "score_all.py")] + rest)
     if cmd == "audit-all":
         return subprocess.call([sys.executable, os.path.join(HERE, "audit_all.py"), "all"] + rest)
     if cmd == "audit" and rest:
