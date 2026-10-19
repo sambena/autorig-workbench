@@ -198,13 +198,16 @@ on a dense sampling of the surface (a Tripo person has a few thousand vertices, 
   wrist are then tracked as without `auto`, through a bell sleeve's middle: the arm's own straight line was a little
   truer to the skeletons, but bone heat gave the sleeve's hanging cloth to the torso and it tore when the arm came down.
 - **neck, head, spine, hips, knees**: from the shoulders and the ankles by proportions fitted to the Mixamo-named
-  skeletons of 18 Heartroot people and Mixamo's own rigs of 5 Tornado Titans (`humanoid_fit.AUTO`): the hip is
-  0.62 of the way from the ankle to the neck (0.60-0.67 on all but one of them). The default's 0.47 put every hip
-  about 8% of the height low. A crotch is not read off the mesh: a tunic's hem looks just like one.
+  skeletons of 18 Heartroot people and Mixamo's own rigs of 5 Tornado Titans (`humanoid_fit.AUTO`). Those put the hip
+  0.60-0.67 of the way from the ankle to the neck, but the rigs scored better with it at 0.55 (the hand-tuned Tornado
+  Titans' and Smeltdown players' share): a thigh bone that starts at the waist takes a robe's or a cape's cloth there
+  with it. A crotch is not read off the mesh: a tunic's hem looks just like one.
 - **legs**: tracked up from the feet, each the run of points continuing the one below, until the two merge or one
-  widens into a hem. Their spacing gives `x.leg` and `x.leg_band`, so a robe's hem never splays the legs. `robe` is
-  then the height the legs are covered from (`true`: no legs seen at all): joints above it stand under the body's
-  middle, those below keep their own depth, and the toe is clamped to a foot's length only when the feet are hidden.
+  widens into a hem. When something covers them below the hips, their spacing gives `x.leg` and `x.leg_band`, so a
+  robe's hem never splays the legs, and `robe` is the height they are covered from (`true`: no legs seen at all):
+  joints above it stand under the body's middle, those below keep their own depth, and the toe is clamped to a foot's
+  length only when the feet are hidden. Legs seen up to the hips are left to the slices, which follow a stance that
+  slants them (a band set from the shins read the squire's hips too wide).
 
 A measured person also gets the skin rules `limb_pieces` and `feet_on_legs` unless rig.json sets them (Tripo dresses
 people in loose pieces: sleeves, hoods, boots). On Heartroot's ticket taker that took the walk's torn edges from 100 to
