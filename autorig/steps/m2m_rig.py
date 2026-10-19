@@ -58,7 +58,7 @@ def args(argv=None):
                         "(ANIMAL_HEIGHT), else as it is)")
     p.add_argument("--no-kind-height", dest="height_auto", action="store_false",
                    help="no typical height by kind: as it is when nothing gives one")
-    p.add_argument("--template", default="auto", help="auto, or one of: " + ", ".join(T.TEMPLATES))
+    p.add_argument("--template", default="auto", help="auto, classic (the classic rig, --model only), or one of: " + ", ".join(T.TEMPLATES))
     p.add_argument("--archetype", default="", help="what it is when --template is auto (quadruped, humanoid...)")
     p.add_argument("--clips", default="", help="roles or clip names, each optionally =engine name; or all")
     p.add_argument("--m2m", default="", help="the Mesh2Motion app checkout (default AUTORIG_M2M)")
@@ -2136,8 +2136,12 @@ def run(a):
     root = T.m2m_root(a.m2m or None)
     if root is None: raise SystemExit("m2m_rig: Mesh2Motion's rigs and animations not found (--m2m or AUTORIG_M2M)")
     log["m2m"] = root
-    mesh, src_joints = source_mesh(a.src, a.name, a.triangles)
     t = a.template.lower()
+    if t == "classic":                  # the classic rig (rerig.py, make_clips.py) asked for by name
+        if not a.model: raise SystemExit("m2m_rig: --template classic needs --model")
+        log["choice"] = {"why": "--template classic"}
+        return classic_creature(a, log)
+    mesh, src_joints = source_mesh(a.src, a.name, a.triangles)
     if t != "auto" and t not in T.TEMPLATES: raise SystemExit("m2m_rig: no template %r" % a.template)
 
     # what it is, and which way it faces
