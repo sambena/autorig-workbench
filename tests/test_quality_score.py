@@ -107,6 +107,16 @@ class Command(unittest.TestCase):
         self.assertEqual(s["grade"], "PASS")
         with open(os.path.join(out, "_ranked.md"), encoding="utf-8") as fh: self.assertIn("| Cow | 100.0 | PASS |", fh.read())
 
+    def test_table_keeps_earlier_runs_skipped_models(self):
+        out = tempfile.mkdtemp()
+        os.makedirs(os.path.join(out, "Cow"))
+        with open(os.path.join(out, "Cow", "measure.json"), "w") as fh: json.dump(CLEAN, fh)
+        with open(os.path.join(out, "_ranked.json"), "w") as fh: json.dump({"models": [], "skipped": {"Barn": "not rigged"}}, fh)
+        env = dict(os.environ, AUTORIG_MODELS=out)
+        subprocess.run([sys.executable, os.path.join(REPO, "autorig", "cli", "run.py"), "score", "Cow", "--rescore",
+                        "--out", out, "--audit", "skip"], capture_output=True, text=True, env=env)
+        with open(os.path.join(out, "_ranked.md"), encoding="utf-8") as fh: self.assertIn("Not rigged (1): Barn", fh.read())
+
     def test_airborne_clips_skip_the_ground_checks(self):
         m = {"rest": CLEAN["rest"], "clips": [CLEAN_CLIP, dict(CLEAN_CLIP, name="roll", sink_pct=40.0, foot_skate=900.0)]}
         self.assertEqual(QS.score(m)["score"], 100.0)
