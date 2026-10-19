@@ -69,7 +69,11 @@ source_pts = source_tris = None
 if a.source and os.path.exists(a.source):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     try:
-        import_any(a.source)
+        src = a.source
+        if src.lower().endswith(".glb"):         # a Tripo rigged GLB's joints at the origin lay its mesh down (as m2m_rig reads it)
+            import tripo_glb
+            src = tripo_glb.mend(src, report=lambda *_: None)
+        import_any(src)
         for o in bpy.context.scene.objects:
             if o.type == "ARMATURE": o.data.pose_position = "REST"
             if o.animation_data: o.animation_data.action = None

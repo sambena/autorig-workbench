@@ -1046,8 +1046,8 @@
   ]
  },
  "thornmother": {
-  "route": "m2m:spider",
-  "why": "many legs: committed hexapod/crab/spider rig"
+  "route": "m2m:quad",
+  "why": "four legs and a tail whose tip rests on the floor (the committed hexapod rig was the wrong plan: foot skate 395)"
  },
  "ticket_taker": {
   "route": "people",
