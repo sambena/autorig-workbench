@@ -82,6 +82,9 @@ KAIJU_TAIL = 0.3
 # a tail this long (tail_share, past a person's depth over the height) on a body with five ground patches is the
 # fifth patch: its tip on the floor (the spiders and crabs measured 0.28-0.64 with six or more patches, or fewer)
 TAIL_ON_GROUND = 0.5
+# a four-legged body whose belly clears less than this share of its height is sitting or crouching (standing
+# animals measured 0.18-0.41; Heartroot's hopper 0.017, the bone mouse 0.027)
+CROUCHED = 0.05
 
 # archetypes (core/suggest.py, plus a few names a caller may pass) with no Mesh2Motion template: these keep the
 # old path (rerig.py and make_clips.py)
@@ -262,6 +265,11 @@ def _choose(a, m):
         return "human", "humanoid: Human"
     if a in ("quadruped", "canine", "feline", "equine", "bovine"):
         r, h = m.get("tail_reach"), m.get("metres")
+        if m.get("belly") is not None and m["belly"] < CROUCHED:
+            # sitting on its haunches, the belly on the floor (Heartroot's hopper and its Smeltdown lift, the leaper):
+            # the Horse's straight legs on folded ones scored 80 (legs crossing, squash); the Fox's fold, 90+
+            return "fox", "quadruped crouched on its haunches (%.2f of its height under the belly, under %.2f): Fox" % (
+                m["belly"], CROUCHED)
         if r is not None and h is not None and TAIL_BAND[0] <= r <= TAIL_BAND[1]:
             t = "horse" if h >= HORSE_HEIGHT else "fox"
             return t, "quadruped, tail reach %.2f (between %.2f and %.2f), %.2f m tall (Horse from %.1f m): %s" % (

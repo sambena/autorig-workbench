@@ -63,8 +63,10 @@ class Choose(unittest.TestCase):
         self.assertEqual(T.choose("quadruped", {"feet": 4, "flat": 0.21, "belly": 0.35, "tail_reach": 0.6})[0], "fox")
 
     def test_sitting_on_big_feet_is_not_lying(self):
+        # Heartroot's hopper: not lying (it stands on its feet), and crouched on its haunches it takes the Fox
         self.assertEqual(T.choose("quadruped", {"feet": 4, "flat": 0.04, "belly": 0.02, "ground": 0.41,
-                                                "tail_reach": 0.28})[0], "horse")
+                                                "tail_reach": 0.28})[0], "fox")
+        self.assertEqual(T.choose("quadruped", {"feet": 4, "flat": 0.04, "belly": 0.34, "tail_reach": 0.28})[0], "horse")
         self.assertEqual(T.choose("rigid", {"feet": 1, "flat": 0.1, "ground": 0.43, "length": 2.6, "stand": 0.34,
                                             "slender": 2.6})[0], "shark")
 
