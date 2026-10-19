@@ -121,6 +121,14 @@ BELLY_HANGING = 0.25
 BIRD_BELLY = 0.17
 # A footless long body standing this tall over its length or more is a serpent rearing or coiling; lower, a fish.
 SERPENT_STAND = 0.7
+# many limbs resting on the floor (the belly under this share of the height) on three patches or fewer: a winged beast
+# on its feet and tail, or upright from this stand an object (choose)
+RESTING_BELLY = 0.05
+SPITTER_STAND = 1.2
+# feet filling less of the footprint than this are needle tips: a beetle's, not an animal's
+NEEDLE_FEET = 0.015
+# a winged body in flight (on one patch or none) with a tail reaching this far back: a dragon, not a bird or a ray
+FLYING_TAIL = 0.5
 
 
 def plan_measures(plan):
@@ -146,7 +154,7 @@ def is_prop(m):
     if flat >= BUILT and not (legs and flat < BUILT_LEGS):
         return True, "built: %.0f%% of its surface on flat faces square to the axes" % (100 * flat)
     if feet <= 1 and (m.get("length") or 0) < BASE_LONG and (m.get("slender") or 0) < BASE_SLENDER \
-            and (m.get("stand") or 0) < BASE_TALL:
+            and (m.get("stand") or 0) < BASE_TALL and not m.get("wings"):   # not a flyer modelled in flight (sky_boss)
         return True, "stands on %s, neither long nor tall: a plant, a floater or an object" % (
             "one base" if feet == 1 else "nothing")
     return False, ""
@@ -186,6 +194,25 @@ def choose(archetype, measures=None):
                 100 * m["ground"], m["slender"], a or "unknown")
         return "shark", "lies on the ground (%.0f%% of its footprint), not slender: Shark (was %s)" % (
             100 * m["ground"], a or "unknown")
+    # many limbs to the tips, but the body rests on the floor on three patches or fewer: no many-legged walker. Low,
+    # a winged beast on its two feet and its tail (Smeltdown's dragon, its wings folded up); upright, an object
+    # (Smeltdown's spitter). Crabs, isopods and hermits stand clear of the floor (0.16-0.29 of their height).
+    if a in ("hexapod", "octopod") and feet is not None and feet <= 3 and belly is not None and belly < RESTING_BELLY:
+        if stand >= SPITTER_STAND:
+            return None, ("many limbs, but resting on %d patches standing %.1f: an object, the classic rig (was %s)"
+                          % (feet, stand, a))
+        why = " (many limbs, but resting low on %d patches: two feet and a tail: was %s)" % (feet, a); a = "winged"
+    # the tips read wings the body plan does not find: on four feet or more, a beetle's dome (Heartroot's cogbug);
+    # standing high on them, a roof on posts (a carport)
+    elif a == "winged" and not m.get("wings") and (feet or 0) >= 4 and belly is not None and stand < 1.0:
+        if belly >= BELLY_LEGS[1]:
+            return None, "no wings, %.2f of its height clear under it on %d posts: the classic rig (was winged)" % (
+                belly, feet)
+        why = " (no wings on %d feet, a dome: was winged)" % feet; a = "octopod"
+    # four legs on needle tips: a beetle (Smeltdown's dirt_creator, feet 1.1% of its footprint); every four-legged
+    # animal's feet fill 2% or more (the sea turtle's flippers 2.1%, the pig 4.8%)
+    elif a == "quadruped" and (feet or 0) >= 4 and m.get("feet_fill") is not None and m["feet_fill"] < NEEDLE_FEET:
+        why = " (feet on needle tips, %.1f%% of its footprint: was quadruped)" % (100 * m["feet_fill"]); a = "octopod"
     upright = a in ("humanoid", "biped", "human")
     if upright and feet is not None and feet != 2 and (stand < PERSON_ROBED or (belly or 0) >= BELLY_HANGING):
         return None, ("on %d contact patches, standing %.1f with %.2f of its height clear under the middle: no "
@@ -250,6 +277,8 @@ def _choose(a, m):
     if a in ("winged", "bird", "dragon", "flyer"):
         if (m.get("feet") or 0) >= 4 or a == "dragon":
             return "dragon", "winged on four feet: Dragon"
+        if m.get("wings") and (m.get("feet") or 0) <= 1 and (m.get("tail_reach") or 0) >= FLYING_TAIL:
+            return "dragon", "winged, in flight with a long tail (reach %.2f): Dragon" % m["tail_reach"]
         return "bird", "winged on two feet: Bird"
     if a in ("serpent", "snake", "worm"):
         return "snake", "serpent: Snake"
