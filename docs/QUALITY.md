@@ -36,7 +36,7 @@ that the renders and the numbers carry the previous clip's pose and lie.
 
 | check | measure | good | bad | weight |
 |---|---|---|---|---|
-| `rest_mean_pct` | mean distance from the rigged mesh at rest to the source's surface, % of the height, after lining both up (centred, feet on the floor, scaled to one height, the best of four quarter turns) | 2.5 | 6 | 10 |
+| `rest_mean_pct` | mean distance from the rigged mesh at rest to the source's surface, % of the height, after lining both up (centred, feet on the floor, scaled to one height, turned to the best degree: m2m_rig turns a model to face -Y however it was modelled) | 2.5 | 6 | 10 |
 | `rest_p99_pct` | the same, 99th percentile: a part that moved | 5 | 12 | 25 |
 | `stretch3_permille` | edges any frame of the clip stretches past 3x, opening a gap over 0.4% of the size, per thousand edges | 5.5 | 12 | 20 |
 | `max_stretch` | the worst edge's stretch | 12 | 60 | 5 |
@@ -48,6 +48,9 @@ that the renders and the numbers carry the previous clip's pose and lie.
 | `sink_pct` | the mesh below the floor, % of the height | 6.5 | 15 | 5 |
 | `audit_bleed_pct` | the audit's bleed | 3 | 10 | 5 |
 | `audit_head_short` | how far the audit's head share is under 1.5% | 0 | 2 | 5 |
+
+A rig that rests in its template's pose on purpose (rig.json `m2m.rest` "template": a snake laid along the
+template's line) skips both rest checks; `score.json` says so in `rest_skipped`.
 
 A check costs nothing at or under *good*, its whole weight at or past *bad*, and a straight line between. Clip checks
 take the worst clip. Jumps, rolls, deaths, falls, flights, swims, landings and lying down are left out of the five
