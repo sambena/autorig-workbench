@@ -226,8 +226,8 @@ def main(argv):
     old = read_json(os.path.join(out, "_ranked.json")) or {}
     have = {r["model"] for r in rows}
     rows += [r for r in old.get("models", []) if r.get("model") not in have and os.path.exists(os.path.join(out, r["model"], "score.json"))]
-    if not skipped and target != "all": skipped = {}
-    elif not skipped: skipped = old.get("skipped") or {}
+    # the models with no rig: this run's, and the earlier runs' (another group) that were not scored since
+    skipped = dict({m: why for m, why in (old.get("skipped") or {}).items() if m not in have}, **skipped)
     rows, md = table(rows, skipped)
     with open(os.path.join(out, "_ranked.json"), "w", encoding="utf-8") as fh: json.dump({"models": rows, "skipped": skipped}, fh, indent=1)
     with open(os.path.join(out, "_ranked.md"), "w", encoding="utf-8") as fh: fh.write(md + "\n")
