@@ -407,63 +407,6 @@ def chains_for(J, digits=False):
     return ch
 
 
-def _seg_dist(p, a, b):
-    """Distances from points p (n, 3) to the segment a-b."""
-    d = b - a; ll = float(d @ d) or 1e-12
-    t = np.clip(((p - a) @ d) / ll, 0.0, 1.0)
-    return np.linalg.norm(p - (a + t[:, None] * d), axis=1)
-
-
-def leg_reach(mesh, arm, size, reach, log, fade=0.05):
-    """A thigh or shin bone gives up skin far from its leg: above the knee, a vertex more than `reach` x the height
-    from both of that side's leg bones hands its leg weight to the nearest other deforming bone, all of it beyond
-    reach + fade, a share of it across the fade (no hard edge for a seam to open on). Bone heat gave the bell sleeves
-    hanging beside the hips of Heartroot's stoker and the_human to the thighs, 0.18-0.27 of the height out from the
-    leg, and the edges between sleeve and "thigh" stretched 100-1000x when the arms moved. A robe's skirt around the
-    thigh is nearer than that, and below the knee nothing is touched. rig.json "leg_reach": 0 turns it off."""
-    H = float(size[2]) or 1.0
-    bones = {b.name: (np.array(b.head_local[:]), np.array(b.tail_local[:])) for b in arm.data.bones if b.use_deform}
-    leg = {n: v for n, v in bones.items() if n.endswith("Leg") and n.startswith(("Left", "Right"))}   # UpLeg, Leg
-    rest = {n: v for n, v in bones.items() if not any(k in n for k in ("UpLeg", "Leg", "Foot", "ToeBase"))}
-    if not leg or not rest:
-        return 0
-    groups = {vg.name: vg for vg in mesh.vertex_groups}
-    knees = [float(min(a[2], b[2])) for n, (a, b) in leg.items() if n.endswith("UpLeg")]
-    knee_z = min(knees) if knees else 0.0
-    co = np.array([v.co[:] for v in mesh.data.vertices])
-    side_bones = {s: [n for n in leg if n.startswith(s)] for s in ("Left", "Right")}
-    dist = {}
-    for s, names in side_bones.items():
-        if names:
-            dist[s] = np.min([_seg_dist(co, *leg[n]) for n in names], axis=0)
-    rest_names = list(rest)
-    rest_d = np.stack([_seg_dist(co, *rest[n]) for n in rest_names], axis=1)
-    nearest = [rest_names[i] for i in np.argmin(rest_d, axis=1)]
-    gi = {vg.index: vg.name for vg in mesh.vertex_groups}
-    moved = 0
-    for v in mesh.data.vertices:
-        if co[v.index, 2] < knee_z:
-            continue
-        for g in list(v.groups):
-            name = gi.get(g.group, "")
-            if name not in leg or g.weight <= 0:
-                continue
-            s = "Left" if name.startswith("Left") else "Right"
-            d = float(dist[s][v.index]) / H
-            share = min(1.0, max(0.0, (d - reach) / fade))
-            if share <= 0:
-                continue
-            w = g.weight * share
-            groups[name].add([v.index], g.weight - w, 'REPLACE')
-            to = groups.get(nearest[v.index]) or mesh.vertex_groups.new(name=nearest[v.index])
-            groups[nearest[v.index]] = to
-            to.add([v.index], w, 'ADD')
-            moved += 1
-    if moved:
-        log["leg_reach"] = {"reach": reach, "verts": moved}
-    return moved
-
-
 def straighten(arm, size, arms="t-pose"):
     """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
     arms: "keep" leaves them exactly as modelled; "as-modelled" keeps the upper arms' modelled slope and lines the
@@ -652,8 +595,6 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         rerig.keep_joints_inside(chains, bvh, size, log)
     arm, _ = rerig.build_armature(key, chains, size)
     if not rerig.skin(mesh, arm, chains, spec, size, log): return log
-    if spec.get("leg_reach", 0.16):
-        leg_reach(mesh, arm, size, float(spec.get("leg_reach", 0.16)), log)
     rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "keep"))     # the arms as modelled (2026-10-18)
     log["rest_arms"] = rest_arms
     log["rest_offset"] = straighten(arm, size, arms=rest_arms)
