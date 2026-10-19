@@ -573,8 +573,6 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         # the legs and the hips (skirt), a generated person's loose pieces (Tripo's sleeves, hoods, boots) belong to
         # one limb each (limb_pieces), and a boot holds together below the knee (feet_on_legs)
         auto_rules = {"limb_pieces": True, "feet_on_legs": True}
-        if h.get("robe"):
-            auto_rules["skirt"] = True
         for k, v in auto_rules.items():
             if k not in rig_spec and k not in h_in:
                 spec[k] = v

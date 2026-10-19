@@ -206,6 +206,11 @@ on a dense sampling of the surface (a Tripo person has a few thousand vertices, 
   then the height the legs are covered from (`true`: no legs seen at all): joints above it stand under the body's
   middle, those below keep their own depth, and the toe is clamped to a foot's length only when the feet are hidden.
 
+A measured person also gets the skin rules `limb_pieces` and `feet_on_legs` unless rig.json sets them (Tripo dresses
+people in loose pieces: sleeves, hoods, boots). On Heartroot's ticket taker that took the walk's torn edges from 100 to
+3 and the run's from 155 to 13; `skirt` was tried as well and left off: it tore robes more in the walk (the mourner's
+run 76 to 266).
+
 Against those skeletons the measured joints are 5.6% of the height off on average, the default's 7.7%; worst and
 best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
 
