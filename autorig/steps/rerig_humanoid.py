@@ -37,6 +37,7 @@ import rerig
 from layout import work_dir
 from spec_store import HUMANOIDS, SPECS
 from humanoid_fit import DEFAULT_HUMANOID, AUTO, wants_auto, auto_section, auto_landmarks   # noqa: F401 (re-exported)
+from humanoid_fit import fold_weights, blend_arm_weights
 
 # HUMANOIDS (rig.json "humanoid"): heights (z) and spans (x) as 0..1 of the model's bounds after it is turned to face
 # -Y, read off measure.py's front view; everything else about a joint is measured from the mesh.
@@ -407,6 +408,141 @@ def chains_for(J, digits=False):
     return ch
 
 
+HUMANOID_BONES = {"Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"} | {
+    s + b for s in ("Left", "Right") for b in ("Shoulder", "Arm", "ForeArm", "Hand", "UpLeg", "Leg", "Foot", "ToeBase")}
+
+
+def source_weights(mesh, joints):
+    """{vertex index: {bone: weight}} from the source's own skin, by bone name without a "mixamorig:" style prefix,
+    when the source came skinned to a Mixamo-named humanoid skeleton covering the body (every bone in
+    HUMANOID_BONES has a group, and 95% of the vertices have weight); else None."""
+    if not joints or not mesh.vertex_groups:
+        return None
+    names = {vg.index: vg.name.split(":")[-1] for vg in mesh.vertex_groups}
+    if not HUMANOID_BONES <= set(names.values()):
+        return None
+    out = {}
+    for v in mesh.data.vertices:
+        w = {}
+        for g in v.groups:
+            if g.weight > 1e-4:
+                nm = names.get(g.group)
+                if nm: w[nm] = w.get(nm, 0.0) + g.weight
+        if w: out[v.index] = w
+    return out if len(out) >= 0.95 * len(mesh.data.vertices) else None
+
+
+def apply_source_weights(mesh, arm, joints, src_w, log):
+    """Binds the mesh to the armature with the source's own weights (humanoid_fit.fold_weights: a bone the skeleton
+    does not have gives its weight to its nearest ancestor that it does have; four influences, summing to one)."""
+    have = {b.name for b in arm.data.bones if b.use_deform}
+    parent = {n.split(":")[-1]: (j.get("parent") or "").split(":")[-1] for n, j in joints.items()}
+    mesh.vertex_groups.clear()
+    if not any(m.type == 'ARMATURE' and m.object == arm for m in mesh.modifiers):   # bound once, never twice
+        rerig.select_only(mesh, arm)
+        bpy.ops.object.parent_set(type='ARMATURE')
+    groups = {}
+    for i, w in src_w.items():
+        for b, x in fold_weights(w, have, parent).items():
+            g = groups.get(b) or mesh.vertex_groups.new(name=b)
+            groups[b] = g
+            g.add([i], x, 'REPLACE')
+    log["skinning"] = "source"
+    log["source_skin_bones"] = len(groups)
+    return len(src_w)
+
+
+def blend_source_arms(mesh, arm, joints, src_w, log, gain=2.0):
+    """Our skin everywhere, but where the source's own skin gives a vertex to an arm (a sleeve, a hand, a shoulder)
+    the source's weights are blended in by that share (x gain, at most all of it: humanoid_fit.blend_arm_weights)."""
+    have = {b.name for b in arm.data.bones if b.use_deform}
+    parent = {n.split(":")[-1]: (j.get("parent") or "").split(":")[-1] for n, j in joints.items()}
+    gi = {vg.index: vg.name for vg in mesh.vertex_groups}
+    groups = {vg.name: vg for vg in mesh.vertex_groups}
+    n = 0
+    for v in mesh.data.vertices:
+        w = src_w.get(v.index)
+        if not w:
+            continue
+        ours = {gi[g.group]: g.weight for g in v.groups if g.group in gi}
+        mix = blend_arm_weights(ours, fold_weights(w, have, parent), gain)
+        if mix is None:
+            continue
+        for b in ours:
+            groups[b].remove([v.index])
+        for b, x in mix.items():
+            g = groups.get(b) or mesh.vertex_groups.new(name=b); groups[b] = g
+            g.add([v.index], x, 'REPLACE')
+        n += 1
+    log["source_arms_blended"] = n
+    return n
+
+
+def stress_tears(mesh, arm, size):
+    """Edges a humanoid's own clips would tear, counted over a few poses like theirs: a stride, a running tuck, the
+    arms brought down to the sides and swung, a bow. An edge tears when it stretches past 3x and opens a gap over
+    0.4% of the size (run.py score's stretch3). Used to choose between skins; lower is better."""
+    from mathutils import Quaternion
+    H = float(max(size)) or 1.0
+    me = mesh.data
+    ed = np.empty(len(me.edges) * 2, dtype=np.int64); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
+    dg = bpy.context.evaluated_depsgraph_get()
+    def coords():
+        dg.update(); e = mesh.evaluated_get(dg); m = e.to_mesh()
+        c = np.empty(len(m.vertices) * 3); m.vertices.foreach_get("co", c); e.to_mesh_clear(); return c.reshape(-1, 3)
+    pb = arm.pose.bones
+    def reset():
+        for b in pb:
+            b.rotation_mode = 'QUATERNION'; b.rotation_quaternion = (1, 0, 0, 0)
+    reset(); rest = coords()
+    L0 = np.linalg.norm(rest[ed[:, 0]] - rest[ed[:, 1]], axis=1)
+    X, Y = Vector((1, 0, 0)), Vector((0, -1, 0))           # lateral, forward (the model faces -Y)
+    def down(side):
+        b = arm.data.bones.get(side + "Arm")
+        if not b: return 0.0
+        d = (b.tail_local - b.head_local).normalized()
+        return math.degrees(math.atan2(-d.z, abs(d.x))) - 74.0  # from its slope to 16 degrees off straight down
+    poses = [
+        {"LeftUpLeg": (X, -35), "LeftLeg": (X, 30), "RightUpLeg": (X, 25), "RightLeg": (X, 40)},
+        {"LeftUpLeg": (X, -70), "LeftLeg": (X, 90), "RightUpLeg": (X, 30), "RightLeg": (X, 60)},
+        {"LeftArm": (Y, down("Left")), "RightArm": (Y, -down("Right"))},
+        {"LeftArm": (Y, down("Left")), "RightArm": (Y, -down("Right")), "LeftForeArm": (X, -40), "RightForeArm": (X, -40)},
+        {"Spine": (X, -15), "Spine1": (X, -15), "LeftUpLeg": (X, -40), "RightUpLeg": (X, -40), "LeftLeg": (X, 50), "RightLeg": (X, 50)},
+    ]
+    total = 0
+    for pose in poses:
+        reset()
+        for name, (ax, deg) in pose.items():
+            if name not in pb: continue
+            m = arm.data.bones[name].matrix_local.to_3x3()
+            q = Quaternion(ax, math.radians(deg)).to_matrix()
+            pb[name].rotation_quaternion = (m.inverted() @ q @ m).to_quaternion()
+        c = coords()
+        L = np.linalg.norm(c[ed[:, 0]] - c[ed[:, 1]], axis=1)
+        total += int(((L > 3 * np.maximum(L0, 1e-9)) & (L - L0 > 0.004 * H)).sum())
+    reset(); dg.update()
+    return total
+
+
+def choose_skin(mesh, arm, joints, src_w, size, log):
+    """Our skin (already on the mesh), the source's own, or ours with the source's blended in on the arms: the one
+    with the fewest torn edges in stress_tears' poses is kept (a tie goes to the source's)."""
+    import placed_rules as PR
+    names = [b.name for b in arm.data.bones if b.use_deform]
+    W = {"autorig": PR.read_weights(mesh, names)}
+    tears = {"autorig": stress_tears(mesh, arm, size)}
+    blend_source_arms(mesh, arm, joints, src_w, {})
+    W["hybrid"] = PR.read_weights(mesh, names); tears["hybrid"] = stress_tears(mesh, arm, size)
+    apply_source_weights(mesh, arm, joints, src_w, {})
+    W["source"] = PR.read_weights(mesh, names); tears["source"] = stress_tears(mesh, arm, size)
+    best = min(tears, key=lambda k: (tears[k], k != "source"))
+    if best != "source":
+        PR.write_weights(mesh, names, W["source"], W[best])
+    log["skin_choice"] = dict(tears, chosen=best)
+    log["skinning"] = best if best != "autorig" else log.get("skinning", "bone-heat")
+    return best
+
+
 def straighten(arm, size, arms="t-pose"):
     """Pose the limbs into a clean T-pose and make it the rest pose, mesh included. rig.json "rest_arms" changes the
     arms: "keep" leaves them exactly as modelled; "as-modelled" keeps the upper arms' modelled slope and lines the
@@ -554,6 +690,7 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         log["error"] = f"no source model file found for {key}"
         return log
     mesh, joints = rerig.load(src_path)
+    src_w = source_weights(mesh, joints)          # read now: skinning clears the vertex groups
     rerig.floating(mesh, spec, log)
     mesh.name = key
     log["turned_deg"] = rerig.normalise(mesh, joints, spec)
@@ -585,6 +722,17 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
             if tips:
                 J[side + "fingertips"] = tips
                 log[side + "_fingertips"] = [[round(c, 4) for c in t] for t in tips]
+    # a person whose source came skinned to a Mixamo-named skeleton (Tripo's converter does this) is built on that
+    # skeleton's joints, and its skin is chosen between ours, the source's own weights, and ours with the source's
+    # blended in on the arms: whichever tears least in poses like the clips' (stress_tears). Bone heat tears robes,
+    # bell sleeves and capes that the source's weights carry (Heartroot's robed people scored 40-80 re-skinned against
+    # 85-99 on their own weights); on a few the source hangs a robe's hem on the shins and ours is better (the hooded
+    # figure uploaded 2026-10-18). rig.json "skin": "source" or "autorig" fixes the choice; a measured (auto) person
+    # with a skinned source gets the choice
+    skin = spec.get("skin")
+    use_src = bool(src_w) and bool(joints) and (skin == "source" or (skin is None and wants_auto(h_in)))
+    if use_src:
+        spec["joints"] = "source"
     if spec.get("joints") == "source" and joints:
         J = source_joints(joints, J, bool(spec.get("digits")), log)
         log["joints"] = {k: [round(c, 4) for c in v] for k, v in J.items() if not k.endswith("fingertips")}
@@ -594,7 +742,12 @@ def rerig_humanoid(key, h, qa_dir, export, rig_spec=None):
         bvh = rerig.BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
         rerig.keep_joints_inside(chains, bvh, size, log)
     arm, _ = rerig.build_armature(key, chains, size)
-    if not rerig.skin(mesh, arm, chains, spec, size, log): return log
+    if use_src and skin == "source":
+        apply_source_weights(mesh, arm, joints, src_w, log)
+    elif not rerig.skin(mesh, arm, chains, spec, size, log):
+        return log
+    elif use_src:
+        choose_skin(mesh, arm, joints, src_w, size, log)
     rest_arms = h.get("rest_arms", rig_spec.get("rest_arms", "keep"))     # the arms as modelled (2026-10-18)
     log["rest_arms"] = rest_arms
     log["rest_offset"] = straighten(arm, size, arms=rest_arms)
