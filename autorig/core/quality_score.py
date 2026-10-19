@@ -37,6 +37,9 @@ CHECKS = {
     "audit_head_short":   (0.0, 2.0, 5),     # how far the head share is under 1.5%, in points
 }
 
+# A rigged model with no clips at all scores its rest only, and loses this much: CHECK at best.
+NO_CLIPS = 11
+
 # The checks a clip has no say in (a prop or a model with no clips scores only on these).
 REST_CHECKS = ("rest_mean_pct", "rest_p99_pct", "audit_bleed_pct", "audit_head_short")
 
@@ -94,6 +97,7 @@ def score(measured, audit=None, rest_by_design=False):
     three checks that cost most (what to look at first)."""
     vals = values(measured, audit, rest_by_design)
     pens = {k: round(penalty(k, v), 2) for k, v in vals.items()}
+    if not measured.get("clips"): pens["no_clips"] = NO_CLIPS     # a rig with nothing to play is not done
     total = max(0.0, 100.0 - sum(pens.values()))
     worst = [k for k, p in sorted(pens.items(), key=lambda kv: -kv[1]) if p > 0][:3]
     return {"score": round(total, 1), "grade": grade(total), "values": vals, "penalties": pens, "worst": worst}
