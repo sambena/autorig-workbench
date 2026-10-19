@@ -219,7 +219,11 @@ the snake's `head`) and, on a root-motion clip (a name ending in " RM" or "_RM")
 the leg-length change. Legs below the belly and a person's arms are rebaked to point the way the template's do,
 frame by frame (a cow's straight legs walk the horse's leg postures), with the feet standing as the template's do;
 the body, neck, head and tail keep the clip's own turns. `--swing`, `--tail-swing` and `--wing-swing` (on the
-ground) scale the swing of the legs, the tail and the wings.
+ground) scale the swing of the legs, the tail and the wings. With no `--swing`, a four-legged body (fox, horse) swings
+its legs by how long they are against the template's (the belly's height over the distance between the front and hind
+feet), 1 down to 0.65: a horse 1, a dog 0.75, a pig 0.65 (`m2m.swing` keeps what was used). `--gait hop` (auto: a
+rabbit or hare, by the first word of its name, on the Fox) walks on a hop made from the Fox's Run with each pair of
+legs together.
 
 ### `budget`
 

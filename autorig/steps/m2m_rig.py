@@ -65,7 +65,11 @@ def args(argv=None):
     p.add_argument("--skin", default="", help="skinning method: autorig or m2m (default: the template's)")
     p.add_argument("--triangles", type=int, default=15000)
     p.add_argument("--facing", default="auto", help="which way the source's head points: +x, -x, +y, -y or auto")
-    p.add_argument("--swing", type=float, default=1.0, help="scale the legs' swing (1 as made; a cow ~0.75)")
+    p.add_argument("--swing", type=float, default=None,
+                   help="scale the legs' swing (1 as made; a cow ~0.75; default: from the legs' length, auto_swing)")
+    p.add_argument("--gait", default="auto", choices=("auto", "walk", "hop"),
+                   help="hop: walk on a hop made from the template's run, each pair of legs together (auto: a "
+                        "rabbit or a hare on the Fox; HOP_KINDS)")
     p.add_argument("--tail-swing", dest="tail_swing", type=float, default=0.4, help="scale the tail's swing")
     p.add_argument("--wing-swing", dest="wing_swing", type=float, default=0.3,
                    help="scale the wings' swing in clips on the ground (walk, idle); flying clips swing as made")
@@ -347,7 +351,7 @@ class Shape:
     up from the ground. A joint is placed by where it sits inside its part (how far up, across, along), so the same
     joint lands in the same place inside a differently shaped body."""
 
-    def __init__(self, points, marks, floor=None):
+    def __init__(self, points, marks, floor=None, profile=False):
         self.p = list(points)
         self.m = marks
         self.length = max(marks["tail"] - marks["nose"], 1e-6)
@@ -357,6 +361,42 @@ class Shape:
         # each leg group's band along the body: halfway to its neighbours
         self.bands = [((ys[i - 1] + ys[i]) / 2 if i else -1e9, (ys[i] + ys[i + 1]) / 2 if i + 1 < len(ys) else 1e9)
                       for i in range(len(ys))]
+        self.prof = self._profile() if profile else None
+
+    PROFILE_BINS = 48
+
+    def _profile(self):
+        """The body's slices read on a grid along its length, each value the median of its five neighbours. A slice
+        is a percentile of the points near it, so where a sparse surface has its vertices bunched on one part (the
+        Fox template's sample has 1250, crowded on the thigh at the hip) a lone slice read the rump 0.3 m low, and
+        the hip joint placed by its share of that height went above a cat's back: her thigh then owned the whole
+        haunch and folded her flank on every stride (Cat_Tabby_Tripo, 2026-10-18). slice() drops such a lone slice
+        for the median."""
+        n = self.PROFILE_BINS
+        y0 = self.m["nose"]
+        step = self.length / (n - 1)
+        raw = [self._slice(y0 + i * step) for i in range(n)]
+        out = []
+        for i in range(n):
+            near = raw[max(0, i - 2):i + 3]
+            out.append(tuple(sorted(r[k] for r in near)[len(near) // 2] for k in range(3)))
+        return y0, step, out
+
+    # a slice is an outlier where it is further from its neighbours' median than this share of the body's depth
+    OUTLIER = 0.12
+
+    def slice(self, y):
+        """The body at y: its top, bottom (above the legs) and half width; with a profile, each read the profile's
+        way where the slice's own is an outlier (elsewhere as it is: a dense mesh's head and rump keep their shape)."""
+        raw = self._slice(y)
+        if self.prof is None: return raw
+        y0, step, prof = self.prof
+        x = max(0.0, min(len(prof) - 1.0, (y - y0) / step))
+        i = min(int(x), len(prof) - 2)
+        f = x - i
+        med = tuple(a + (b - a) * f for a, b in zip(prof[i], prof[i + 1]))
+        tol = self.OUTLIER * max(med[0] - med[1], 1e-3)
+        return tuple(m if abs(r - m) > tol else r for r, m in zip(raw, med))
 
     @staticmethod
     def _spread(vals):
@@ -365,7 +405,7 @@ class Shape:
         lo, hi = vals[int(n * 0.08)], vals[min(n - 1, int(n * 0.92))]
         return (lo + hi) / 2, max((hi - lo) / 2, 1e-3)
 
-    def slice(self, y):
+    def _slice(self, y):
         """The body at y: its top, bottom (above the legs) and half width, widening the window until it holds points."""
         sel = []
         for w in (0.03, 0.06, 0.12, 0.25):
@@ -425,13 +465,18 @@ def chains(arm, groups):
 
 # ---------------------------------------------------------------- fitting: where every joint goes
 
-def fit_shape(arm, R, A, rig_surface, animal_surface, family):
+# the four-legged templates: what this file's quadruped rules (the smoothed body profile, ...) are for
+FOUR_LEGGED = ("fox", "horse")
+
+def fit_shape(arm, R, A, rig_surface, animal_surface, family, profile=False):
     """heads {bone: new head} and tails {bone: new tail} (tails only where they do not follow a child), plus what the
     fit found. legged: legs level by level inside each leg, the body slice by slice, the tail down the animal's own
     tail; body and spider: every joint slice by slice."""
     legless = family in ("body", "spider")
     floor = -1.0 if legless else None
-    SR, SA = Shape(rig_surface, R, floor), Shape(animal_surface, A, floor)
+    # profile: the template's sample read with outlier slices dropped (Shape._profile); the animal's own mesh is
+    # dense, and smoothing it moved a sheep's nose joint (and its head's skin) for nothing
+    SR, SA = Shape(rig_surface, R, floor, profile), Shape(animal_surface, A, floor)
     ys = ([R["nose"], R["front"], R["back"], R["tail"]], [A["nose"], A["front"], A["back"], A["tail"]])
     leg_of, tail = chains(arm, 0 if legless else R["groups"])
     zk = A["belly"] / max(R["belly"], 1e-6) if not legless else A["top"] / max(R["top"], 1e-6)
@@ -828,6 +873,85 @@ def damp(actions, names, k):
                     kp = f.keyframe_points[i]
                     d = q[j] - kp.co.y
                     kp.co.y += d; kp.handle_left.y += d; kp.handle_right.y += d
+
+
+# Leg swing from the legs' length. A clip turns each leg joint by the same angle on any body, so the step it takes
+# keeps to the leg, but the knee a horse's walk folds up 114 degrees lifts a short-legged pig's hoof into its own
+# belly and folds the flank above it (Pig_Tripo, 2026-10-18). Legs shorter against the body than the template's
+# (the belly's height over the distance between the front and hind feet) swing less by that share, never under
+# SWING_MIN: horse 1.04 -> 1, goat 0.9, cat 0.8, dogs and rabbit 0.75, sheep 0.7, pig 0.63 -> 0.65. The lesson Sam
+# set by hand for the cows was 0.75.
+SWING_MIN = 0.65
+
+
+def auto_swing(A, R):
+    """The legs' swing for a four-legged body (A its landmarks, R the template's): 1 down to SWING_MIN."""
+    def legs(m): return m["belly"] / max(abs(m["back"] - m["front"]), 1e-6)
+    r = legs(A) / max(legs(R), 1e-6)
+    return round(max(SWING_MIN, min(1.0, r)) * 20) / 20
+
+
+# The animals that hop rather than walk, by their kind (core/lessons.kind: the first word of the name, as the
+# collections name their models). Mesh2Motion has no hop; hop_from() makes one.
+HOP_KINDS = ("rabbit", "hare", "bunny", "jackrabbit", "kangaroo", "wallaby")
+HOP_SOURCE = "Run"
+HOP_NAME = "Hop"
+
+
+def wants_hop(a, t):
+    if a.gait != "auto": return a.gait == "hop"
+    if t != "fox": return False
+    import lessons
+    return lessons.kind(a.name or "") in HOP_KINDS or lessons.kind(a.model or "") in HOP_KINDS
+
+
+def hop_from(src, name=HOP_NAME):
+    """A hop from a gallop: a copy of the clip with each right leg moving exactly as its left one, mirrored, so each
+    pair of legs pushes off and lands together (a rabbit's bound), and the body bones' side-to-side turns and the
+    hips' sideways sway dropped, so it travels straight. The Fox's left and right bones are exact mirrors across X,
+    so a left turn (w, x, y, z) mirrored is (w, x, -y, -z) on the right; a bone on the middle line keeps the part of
+    its turn that is its own mirror, (w, x, 0, 0) normalised: it bends up and down only."""
+    act = src.copy()
+    act.name = name
+    act.use_fake_user = True
+    curves = {}
+    for fc in fcurves(act):
+        curves[(fc.data_path, fc.array_index)] = fc
+    def keys(fc): return [(k.co.x, k.co.y) for k in fc.keyframe_points]
+    def write(fc, pts):
+        fc.keyframe_points.clear()
+        fc.keyframe_points.add(len(pts))
+        for k, (x, y) in zip(fc.keyframe_points, pts):
+            k.co = (x, y); k.interpolation = 'LINEAR'
+        fc.update()
+    done = set()
+    for (path, i), fc in list(curves.items()):
+        b = bone_of(path)
+        if b is None: continue
+        m = re.match(r"^(.*)_R$", b)
+        if m and path.endswith("rotation_quaternion"):
+            left = curves.get((path.replace('"%s"' % b, '"%s_L"' % m.group(1)), i))
+            if left is not None:
+                pts = keys(left)
+                write(fc, [(x, -y if i >= 2 else y) for x, y in pts])
+                done.add(b)
+            continue
+        if re.search(r"_[LR]$", b): continue
+        if path.endswith("rotation_quaternion") and i == 0:
+            q = [curves.get((path, j)) for j in range(4)]
+            if None in q: continue
+            frames = sorted({x for c in q for x, _ in keys(c)})
+            vals = []
+            for f in frames:
+                w, x = q[0].evaluate(f), q[1].evaluate(f)
+                n = max(math.hypot(w, x), 1e-9)
+                vals.append((w / n, x / n))
+            write(q[0], [(f, v[0]) for f, v in zip(frames, vals)])
+            write(q[1], [(f, v[1]) for f, v in zip(frames, vals)])
+            for j in (2, 3): write(q[j], [(f, 0.0) for f in frames])
+        elif path.endswith("location") and i == 0:
+            write(fc, [(x, 0.0) for x, _ in keys(fc)])
+    return act, sorted(done)
 
 
 # The audit's single-bone bend is 40 degrees, a combined pose 30 on limbs; a bone that never turns that far in its
@@ -1564,7 +1688,17 @@ def run(a):
     # the template and its clips
     names = [c["name"] for c in T.clips(t, root)]
     wanted = T.resolve_clips(t, a.clips, names)
-    arm, rig_surface, acts = load_template(t, root, [w for w, _ in wanted], log)
+    hop = wants_hop(a, t) and HOP_SOURCE in names
+    if hop:     # the walk is a hop made from the run (hop_from)
+        walk = info["roles"].get("walk")
+        wanted = [(HOP_NAME if w == walk else w, e) for w, e in wanted]
+    load = [w for w, _ in wanted if w != HOP_NAME] + ([HOP_SOURCE] if hop else [])
+    arm, rig_surface, acts = load_template(t, root, load, log)
+    if hop and HOP_SOURCE in acts:
+        acts[HOP_NAME], mirrored = hop_from(acts[HOP_SOURCE])
+        log["gait"] = {"hop": "the walk is the %s with each pair of legs together" % HOP_SOURCE, "mirrored": len(mirrored)}
+        if HOP_SOURCE not in [w for w, _ in wanted]:
+            bpy.data.actions.remove(acts.pop(HOP_SOURCE))
     actions = [acts[w] for w, _ in wanted if w in acts]
     bones = arm.data.bones
     rtop = max((b.tail_local.z for b in bones), default=1.0)
@@ -1596,7 +1730,8 @@ def run(a):
         scale, leg_of, found = k, {}, {"line": True}
         animal = [v.co.copy() for v in mesh.data.vertices]
     else:
-        heads, tails, found, leg_of, tail_names, shape = fit_shape(arm, R, A, rig_surface, animal, fam)
+        heads, tails, found, leg_of, tail_names, shape = fit_shape(arm, R, A, rig_surface, animal, fam,
+                                                                   profile=t in FOUR_LEGGED)
         scale = A["top"] / max(R["top"], 1e-6)
         if fam == "legged": k = A["belly"] / max(R["belly"], 1e-6)
         else: k = (A["tail"] - A["nose"]) / max(R["tail"] - R["nose"], 1e-6)
@@ -1634,6 +1769,9 @@ def run(a):
     rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
     bpy.data.objects.remove(rig0)
     if tail_names and fam == "legged": damp(actions, set(tail_names), a.tail_swing)
+    if a.swing is None:
+        a.swing = auto_swing(A, R) if t in FOUR_LEGGED else 1.0
+        log["swing_auto"] = a.swing
     if a.swing != 1.0: damp(actions, set(leg_of), a.swing)
     # wings on the ground: the template's walk and idle turn its wings from their spread rest, and the same turns
     # open a bird's folded wings out from her sides; off the ground (flap, glide, fly) they swing as made
@@ -1712,7 +1850,7 @@ def run(a):
         if os.path.exists(os.path.join(a.out, "preview.glb")): out["preview"] = os.path.join(a.out, "preview.glb")
         else: log["preview_error"] = ((r.stdout or "") + (r.stderr or ""))[-800:]
     clips = [{"name": engine[w], "m2m": w, "root_motion": T.is_root_motion(w),
-              "seconds": next((c["seconds"] for c in T.clips(t, root) if c["name"] == w), None)}
+              "seconds": next((c["seconds"] for c in T.clips(t, root) if c["name"] == (HOP_SOURCE if w == HOP_NAME else w)), None)}
              for w, _ in wanted if w in acts]
 
     # rig.json, the card and the log
