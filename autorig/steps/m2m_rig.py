@@ -290,11 +290,12 @@ def kmeans1(vals, k, iters=25):
     return c, [min(range(k), key=lambda i: abs(v - c[i])) for v in vals]
 
 
-def landmarks(points, groups):
+def landmarks(points, groups, leg_roots=False):
     """Where a body's parts are, from its surface points (x across, y along with the head at -Y, z up). groups: the
     pairs of feet it stands on (0 for none), front to back. feet {(g, left)}, ys / xs each group's place along and
     out from the middle, the belly (the lowest point of the body between the legs), the top line over the first and
-    last group, the nose and tail ends."""
+    last group, the nose and tail ends. leg_roots (four-legged): also front_root and back_root, the y where each pair
+    of legs meets the body (leg_root), which the shape fit's body map is anchored on."""
     import statistics
     ps = list(points)
     top = max(p.z for p in ps)
@@ -326,7 +327,37 @@ def landmarks(points, groups):
         return max(p.z for p in sel) if sel else top
     out.update(front=fy, back=by, ys=ys, xs=xs, feet=feet, belly=belly, front_x=xs[0], back_x=xs[-1],
                withers=top_at(fy), croup=top_at(by))
+    if leg_roots:
+        # where each pair of legs meets the body: the neck and head are placed between the nose and the front legs,
+        # and Heartroot's snap_jaw lunges with its front paws under its jaw: from its feet the 0.9 m of the horse's
+        # neck and head went into 6 cm and the head had no skin (0.2%). Each leg is traced up from its foot.
+        roots = []
+        for g in range(len(centres)):
+            here = [leg_root(ps, feet[(g, s)], belly, top) for s in (True, False) if (g, s) in feet]
+            roots.append(statistics.mean(here) if here else ys[g])
+        out.update(front_root=roots[0], back_root=roots[-1])
     return out
+
+
+def leg_root(ps, foot, belly, top, levels=8):
+    """The y where a leg standing on this foot meets the body: up from the foot, level by level to 0.8 of the
+    belly's height, each level's points near the last level's centre (so the head or a paw beside it is not taken),
+    their median the next centre. (Tighter, 0.07 of the height and off the middle line, scored worse on the clips.)"""
+    import statistics
+    cx, cy = foot.x, foot.y
+    z1 = belly * 0.8
+    band = max(top * 0.03, z1 / levels * 0.6)
+    reach = top * 0.12
+    for k in range(1, levels + 1):
+        z = z1 * k / levels
+        sel = [p for p in ps if abs(p.z - z) < band and (p.x > 0) == (foot.x > 0)
+               and math.hypot(p.x - cx, p.y - cy) < reach]
+        if len(sel) < 4: break
+        # the nearer half: a lantern hung from a cat's collar beside her front legs pulled the median off the leg
+        sel.sort(key=lambda p: math.hypot(p.x - cx, p.y - cy))
+        sel = sel[:max(4, len(sel) // 2)]
+        cx, cy = statistics.median([p.x for p in sel]), statistics.median([p.y for p in sel])
+    return cy
 
 
 def piecewise(x, xs, ys):
@@ -482,6 +513,8 @@ def fit_shape(arm, R, A, rig_surface, animal_surface, family, profile=False):
     # dense, and smoothing it moved a sheep's nose joint (and its head's skin) for nothing
     SR, SA = Shape(rig_surface, R, floor, profile), Shape(animal_surface, A, floor)
     ys = ([R["nose"], R["front"], R["back"], R["tail"]], [A["nose"], A["front"], A["back"], A["tail"]])
+    if "front_root" in R and "front_root" in A:     # four-legged: the body by where the legs meet it (landmarks)
+        ys = ([R["nose"], R["front_root"], R["back_root"], R["tail"]], [A["nose"], A["front_root"], A["back_root"], A["tail"]])
     leg_of, tail = chains(arm, 0 if legless else R["groups"])
     zk = A["belly"] / max(R["belly"], 1e-6) if not legless else A["top"] / max(R["top"], 1e-6)
 
@@ -1737,8 +1770,8 @@ def run(a):
     # the fit
     feet_groups = 0 if fam in ("body", "spider") else max(1, len([b for b in bones if not b.children and b.tail_local.z < rtop * 0.05
                                                                  and b.head_local.z < rtop * 0.08]) // 2)
-    R = landmarks(rig_surface, feet_groups)
-    A = landmarks(animal, feet_groups)
+    R = landmarks(rig_surface, feet_groups, leg_roots=t in FOUR_LEGGED)
+    A = landmarks(animal, feet_groups, leg_roots=t in FOUR_LEGGED)
     limb, tail_names, shape = {}, [], Shape(animal, A, -1.0 if fam in ("body", "spider") else None)
     if fam == "human":
         try:
@@ -1788,6 +1821,15 @@ def run(a):
             limb_set.update(c.name for c in b.children_recursive)
     limb_set.discard(root_bone)
     feet = [n for n in leg_of if not bones[n].children]
+    if a.swing is None:
+        a.swing = auto_swing(A, R) if t in FOUR_LEGGED else 1.0
+        log["swing_auto"] = a.swing
+    # four-legged: the swing is eased on the template's own turns, before the legs are rebaked and the feet stood
+    # where the template's stand, so the feet stand on the eased legs. Eased afterwards, on the rebaked legs, the
+    # feet the rebake had stood on the ground left it: at 0.65 the pig, the sheep and the cows sank 8-11% of their
+    # height into the floor and their planted feet slid (the quality score's sink 10%, skate 130; 2.5% and 70 at 1)
+    early = t in FOUR_LEGGED and a.swing != 1.0
+    if early: damp(actions, set(leg_of), a.swing)
     if fam in ("human", "legged") and limb_set:
         match_world(arm, rig0, actions, limb_set, feet, k, root_bone, calibrate=fam in ("legged", "human") and a.limbs == "calibrated")
     else:
@@ -1795,10 +1837,7 @@ def run(a):
     rest3 = {b.name: b.matrix_local.to_3x3() for b in rig0.data.bones}
     bpy.data.objects.remove(rig0)
     if tail_names and fam == "legged": damp(actions, set(tail_names), a.tail_swing)
-    if a.swing is None:
-        a.swing = auto_swing(A, R) if t in FOUR_LEGGED else 1.0
-        log["swing_auto"] = a.swing
-    if a.swing != 1.0: damp(actions, set(leg_of), a.swing)
+    if a.swing != 1.0 and not early: damp(actions, set(leg_of), a.swing)
     # wings on the ground: the template's walk and idle turn its wings from their spread rest, and the same turns
     # open a bird's folded wings out from her sides; off the ground (flap, glide, fly) they swing as made
     wings = {b.name for b in bones if b.name.lower().startswith(("wing_", "shoulder_"))}
