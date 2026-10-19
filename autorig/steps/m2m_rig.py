@@ -1771,11 +1771,17 @@ def people_classic(a, log):
     except (OSError, ValueError): spec = {}
     if (spec.get("rig") or {}).get("kind") != "humanoid":
         import rerig_humanoid
+        # a humanoid section someone tuned (Smeltdown's player_blue: faces +Y, sculpted mid-stride) is kept; only
+        # what is missing is filled in, and a rig made on the template (rig.m2m, the m2m section) is dropped
         spec.pop("m2m", None)
         spec["schema"] = "autorig-spec/1"
-        spec["rig"] = {"kind": "humanoid", "skeleton": "humanoid", "clips": {"archetype": "walker"}}
-        spec["humanoid"] = json.loads(json.dumps(rerig_humanoid.DEFAULT_HUMANOID))
-        spec["clips"] = {"archetype": "walker"}
+        rig = {k: v for k, v in (spec.get("rig") or {}).items() if k not in ("m2m", "audit_clip_bends")}  # template bones
+        rig.update(kind="humanoid", skeleton="humanoid")
+        rig.setdefault("clips", {"archetype": "walker"})
+        spec["rig"] = rig
+        if not isinstance(spec.get("humanoid"), dict) or not spec["humanoid"].get("z"):
+            spec["humanoid"] = json.loads(json.dumps(rerig_humanoid.DEFAULT_HUMANOID))
+        spec.setdefault("clips", {"archetype": "walker"})
         spec.setdefault("notes", {})["people"] = ("Auto rig took it for a person: the humanoid rig, arms as modelled "
                                                   "and mirrored (m2m_rig --people classic)")
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
