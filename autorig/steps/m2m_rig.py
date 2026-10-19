@@ -1646,6 +1646,27 @@ def gate(mesh, arm, reach=1.8):
     return cut
 
 
+def nearest_weights(mesh, arm):
+    """Weights by distance: each vertex shared among the deforming bones within 1.8x its nearest bone's distance,
+    fading out to none at 3x (core/skin_fade.near_share), normalised. A fallback where bone heat fails."""
+    import numpy as np
+    import skin_fade
+    names = [b.name for b in arm.data.bones if b.use_deform and b.name in mesh.vertex_groups]
+    if not names: return 0
+    me = mesh.data
+    n = len(me.vertices)
+    P = np.empty(n * 3); me.vertices.foreach_get("co", P); P = P.reshape(n, 3)
+    H = np.array([arm.data.bones[nm].head_local[:] for nm in names])
+    Tl = np.array([arm.data.bones[nm].tail_local[:] for nm in names])
+    W = skin_fade.near_share(P, H, Tl, [True] * len(names), inner=1.0, outer=1.8)
+    W /= np.maximum(W.sum(1, keepdims=True), 1e-12)
+    for j, nm in enumerate(names):
+        g = mesh.vertex_groups[nm]
+        g.remove(list(range(n)))
+        for i in np.nonzero(W[:, j] > 1e-4)[0]: g.add([int(i)], float(W[i, j]), 'REPLACE')
+    return n
+
+
 def fill_bare(mesh):
     """Vertices bone heat left with no weight take their nearest weighted neighbour's."""
     from mathutils import kdtree
@@ -1758,6 +1779,11 @@ def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0, width=0
         unreached = heat(mesh); used = "mesh"
         for b in arm.data.bones:
             if b.use_deform and b.name not in mesh.vertex_groups: mesh.vertex_groups.new(name=b.name)
+        if unreached > len(mesh.data.vertices) * 0.5:
+            # bone heat reached nothing on any copy (Heartroot's thornmother, all 7585 vertices): the rig went out
+            # with empty weights and stood still in every clip. Weights by distance to the nearest bones instead;
+            # the gate, the rules and the fade below work on them as on bone heat's
+            nearest_weights(mesh, arm); used = "nearest"
     fill_bare(mesh)
     bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = mesh
