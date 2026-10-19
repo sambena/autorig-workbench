@@ -1,4 +1,4 @@
-# Skinning bake-off (M2b): Mesh2Motion's skinning against ours
+# Skinning bake-off: Mesh2Motion's skinning against ours (M2b), and the fade that followed (M9)
 
 2026-10-18. Every model was fitted to its Mesh2Motion template once by `steps/m2m_rig.py`, then skinned both ways
 on that same skeleton (the second run takes the first run's joints through `--joints`; the heads match exactly):
@@ -17,7 +17,178 @@ template has only its sample.
 Re-run on the box with `python3 scripts/skin_bakeoff.py --out ~/bakeoff`. The full numbers, per clip, are in
 [skin-bakeoff-results.json](skin-bakeoff-results.json).
 
-## Results
+## M9 (2026-10-18): the fade, clip bends and heads
+
+M2b's "Being honest" list below, worked in order and measured with `scripts/skin_bakeoff.py` before and after each
+change. The before column is main as of #125 (#123's calibrated limbs, side and tail rules and weld cut; #125's sides
+and shark rest), run the same evening on the same box; the after column is this branch. Full numbers: [skin-bakeoff-results.json](skin-bakeoff-results.json).
+
+**Grades, our skinning, 25 models: before 0 PASS, 3 CHECK, 22 FAIL; after 6 PASS, 3 CHECK, 16 FAIL.** Two of the
+passes are asset-packs models (the Tripo horse and the megalodon); the Tripo shark is CHECK. Tears in the audit's
+poses fell from 13663 combined and 5642 single-bend to 4794 and 505, and the tears in the played clips (which the
+audit does not grade) fell on most models (the human sample is the exception, below).
+
+### What changed
+
+1. **Buried joints and tails: the fade** (`core/skin_fade.py`, `steps/m2m_rig.skin`). The tears were not at the
+   joints. A bend of bone j moves a vertex by about its distance from j's head times F_j, the weight it takes from j
+   and everything below it, so far from a joint a small step in F_j tears: bending the hen's spine_1 tore her tail
+   0.6 of the model away, where the tail took 5-20% from the wings in steps (the gate's cuts and the four-influence
+   limit). Each F_j is now made as smooth as a 40-degree bend there needs and no smoother (a Lipschitz envelope over
+   the mesh's edges, with the audit's own tear rule as the bound), the bones' weights rebuilt from the F's, and then
+   limited to four influences by handing the smallest weight to its bone's parent. The limit cuts steps of its own
+   where the fade overlapped many bones (on the hen 59% of vertices had more than four), so the two alternate for 20
+   rounds (`--fade-rounds`); each limit gathers weight into fewer bones and each fade needs fewer. The leg confine
+   and #123's side and tail rules now run before the fade, so it smooths their cuts too. Snakes and sharks also keep
+   each vertex's weight to its near bones each round (a soft gate: all of it within 1.8x the nearest bone's
+   distance, none past 3x), which kept their bleed down; on the legged templates it brought the tears back, so they go
+   without. `--fade 0` is the old ring smoothing.
+2. **Clip bends in the audit** (`steps/audit.py`, `steps/m2m_rig.clip_bends`). See "The audit's rule" below.
+3. **Heads** (`steps/m2m_rig.py`). The snake's head bone is a 1.3 cm stub with its tip bone 13 cm on: a bone whose
+   leaf tip lies straight ahead of it now reaches the tip (same direction, so the same frame and clip turns); the
+   snake sample's head share went from 0.3% to 3.0% (PASS). Spider heads reach forward to the front of the body on
+   its middle line (`reach_front`): the crab went from 0% to 10.1%, the crawler from 0% to 5.9%. The shark template's
+   head joint goes 22% of the length back from the nose instead of the template's 29% (`head_at` in
+   `core/m2m_templates.py`): the head share went from 37-46% to 18-26%.
+4. **Bleed** fell on the dragon sample (10.08% to 0), the eel and the sharks (#125's rest had already brought those
+   under 0.6%; now 0-0.03%), but rose on the legged animals the fade blends most: see "Still failing".
+5. **The Hereford cow's chest spike** (Sam, 2026-10-18: a sharp cone of skin between the front legs on the page).
+   It shows in the trot: three brisket vertices pulled 6-7% of the cow's size from their neighbours, one 97% on
+   spine_3 beside others 58-68% on a humerus, a hard step the swinging leg drags into a cone. Rigged with the fade
+   the worst pull is 2.6% and the chest stays whole in renders; the audit went from FAIL (120 combined tears) to
+   CHECK (9, bleed 2.5%).
+
+### The audit's rule: bends as far as the clips turn (changed, and why)
+
+The single-bone bend was 40 degrees for every bone and the combined pose 30 on limbs. A shoulder blade, a thigh in
+the haunch or a hen's spine turns a few degrees in its clips, so 40 tested poses the model never takes. A rig whose
+clips are known now records how far each bone turns in them (`rig.json` `rig.audit_clip_bends`: every frame of every
+clip it ships with, times 1.25 headroom, never under 15 degrees, for a game's own turns, and never over 40), and the
+audit bends each bone that far, and no further in the combined pose. The grades, their limits and the tear rule are
+unchanged, and a rig without the record is tested exactly as before. Re-rig with more clips and it is measured again.
+What it buys, honestly: on this branch's skin it took Ice_Age26 from 23 combined tears to 3 and halved the bend
+tears of the many-boned models; most of the drop in the tables is the fade's. The fade itself works at 40 degrees
+whatever the clips say: fading each bone only for its own clip angle under-smoothed, because the combined pose adds
+every bone's turn at once (a person tore 1543 edges).
+
+### Before and after (our skinning)
+
+Clip tears: stretched edges summed over three played clips (each clip's worst frame).
+
+| Model | Before: grade | bleed % | combined / bend | head % | clip tears | After: grade | bleed % | combined / bend | head % | clip tears |
+|---|---|---|---|---|---|---|---|---|---|---|
+| human_sample | CHECK | 0.00 | 6 / 4 | 6.8 | 30 | CHECK | 0.00 | 1 / 0 | 6.67 | 310 |
+| Ice_Age26 | FAIL | 0.01 | 46 / 46 | 7.52 | 497 | FAIL | 0.04 | 3 / 1 | 7.41 | 370 |
+| Laree_Age32 | FAIL | 0.00 | 19 / 25 | 10.67 | 449 | FAIL | 0.00 | 3 / 4 | 10.62 | 230 |
+| horse_sample | FAIL | 0.00 | 4 / 4 | 4.19 | 42 | PASS | 0.09 | 0 / 0 | 3.98 | 10 |
+| Horse_Bay | FAIL | 0.09 | 31 / 20 | 4.16 | 300 | PASS | 0.14 | 0 / 0 | 3.55 | 164 |
+| Cow_Holstein | FAIL | 0.83 | 168 / 83 | 3.98 | 466 | FAIL | 4.27 | 30 / 4 | 2.88 | 179 |
+| fox_sample | FAIL | 0.00 | 15 / 3 | 3.98 | 26 | PASS | 0.00 | 0 / 0 | 4.03 | 7 |
+| Dog_BlackTan | FAIL | 0.17 | 449 / 248 | 3.81 | 1190 | FAIL | 1.46 | 17 / 3 | 4.6 | 549 |
+| Cat_Tabby | FAIL | 0.00 | 529 / 216 | 4.02 | 1238 | FAIL | 6.45 | 265 / 44 | 3.75 | 1138 |
+| bird_sample | FAIL | 1.67 | 15 / 14 | 3.15 | 34 | CHECK | 0.78 | 2 / 2 | 3.12 | 19 |
+| Chicken_Hen | FAIL | 3.41 | 1638 / 532 | 16.83 | 1944 | FAIL | 3.37 | 651 / 48 | 3.48 | 1889 |
+| Chicken_Rooster | FAIL | 2.25 | 3225 / 1375 | 1.83 | 3431 | FAIL | 8.93 | 1518 / 170 | 2.29 | 1125 |
+| dragon_sample | FAIL | 10.08 | 4 / 2 | 0.59 | 4 | FAIL | 0.00 | 0 / 0 | 0.63 | 4 |
+| Dragon | FAIL | 6.32 | 3791 / 806 | 0.27 | 3290 | FAIL | 10.01 | 1211 / 161 | 0 | 1246 |
+| Drake | FAIL | 2.23 | 686 / 456 | 2.66 | 1137 | FAIL | 3.80 | 389 / 42 | 2.61 | 402 |
+| kaiju_sample | CHECK | 0.00 | 4 / 4 | 1.6 | 9 | FAIL | 0.00 | 0 / 0 | 1.4 | 2 |
+| spider_sample | CHECK | 1.45 | 0 / 0 | 1.93 | 0 | FAIL | 1.06 | 0 / 0 | 1.14 | 0 |
+| Crawler | FAIL | 0.73 | 2051 / 1155 | 0 | 2859 | FAIL | 6.68 | 602 / 11 | 5.9 | 507 |
+| reef_crab | FAIL | 2.08 | 658 / 350 | 0 | 972 | FAIL | 2.27 | 100 / 14 | 10.12 | 311 |
+| snake_sample | FAIL | 0.00 | 0 / 0 | 0.32 | 0 | PASS | 0.00 | 0 / 0 | 3.0 | 0 |
+| glass_eel | FAIL | 1.27 | 5 / 3 | 0 | 105 | FAIL | 0.27 | 0 / 0 | 0.76 | 3 |
+| sea_serpent | FAIL | 0.43 | 1 / 1 | 0 | 27 | FAIL | 0.32 | 0 / 0 | 0.15 | 7 |
+| shark_sample | FAIL | 0.30 | 15 / 74 | 37.36 | 18 | PASS | 0.01 | 0 / 0 | 18.07 | 0 |
+| Shark | FAIL | 0.53 | 273 / 183 | 45.47 | 108 | CHECK | 0.00 | 2 / 1 | 22.43 | 1 |
+| megalodon | FAIL | 0.34 | 30 / 38 | 42.2 | 22 | PASS | 0.03 | 0 / 0 | 25.47 | 0 |
+
+### Still failing (being honest)
+
+- **16 of 25 FAIL.** The Tripo people fail on the standing pose's folds (Ice_Age26 63, Laree_Age32 52 per 10k
+  triangles; the limit is 8, CHECK to 20), not on tears (3 each). The Tripo birds, the Smeltdown dragon, drake and
+  crawler, the cat and the dog still tear (hen 651 combined, rooster 1518, dragon 1211, crawler 602, drake 389, cat
+  265), and the many-boned ones bleed more than before: cat 0 to 6.5%, rooster 2.3 to 8.9%, dragon 6.3 to 10.0%,
+  drake 2.2 to 3.8%, crawler 0.7 to 6.7%, cow 0.8 to 4.3%, dog 0.2 to 1.5% (the hen stays at 3.4%). The bleed is mostly near-ties where parts
+  touch (the cat's right thigh, left lower leg and tail at 35/35/30); the gate that removes it brings the tears back.
+- **Two samples got worse:** the kaiju and spider samples went from CHECK to FAIL on the head share alone (1.6% to
+  1.4%, 1.9% to 1.1%): the fade blurs a small head into its neck. The human sample stays CHECK but tears more in its
+  played clips (30 to 310; the Tripo people tear less: 497 to 370, 449 to 230).
+- **The hen and rooster are noisy:** two runs that differed only in float rounding gave the hen 909 and 689 combined
+  tears and the rooster 1125 and 1522; the limit's choices are chaotic on those meshes.
+- **Slower:** the skinning step went from 80 s over all 25 models to 648 s (the slowest, the Smeltdown dragon, 78 s).
+  `--fade-rounds 10` is about half that, and somewhat worse on the birds and dragons.
+- The eel and the sea serpent still have almost no head share (0.8%, 0.1%).
+- Foot skate was left alone, as planned: it is the fit's and the clips'.
+
+### What did not work
+
+Each was measured over the whole bake-off and dropped: a diffusion whose width grows with the distance from the
+joint (it blurred the limbs' own skin); measuring the reach from each bone's bend axis instead of its head (a
+person's spine went unfaded along the arms: 1033 tears on the human sample); a soft limit taking the fifth weight
+off all (it divides by little where many bones overlap alike); moving weight up the chain in rounds inside the limit
+(the cascade multiplied small moves); dropping the influence whose loss costs least by distance; and the hard gate
+every round (bleed near 0, tears back to 20459).
+
+### Full table, both methods
+
+The m2m rows are Mesh2Motion's skinning on the same fitted joints, graded by the same audit (with clip bends).
+
+| Model | Template | Method | Grade | Bleed % | Combined / bend tears | Head % | Stand folds | Clip tears / worst skate | Skin s |
+|---|---|---|---|---|---|---|---|---|---|
+| human_sample | human | autorig | CHECK | 0.00 | 1 / 0 | 6.7 | 14.5 | 310 / 2.25 | 10.2 |
+| human_sample | human | m2m | FAIL | 3.51 | 37 / 39 | 4.5 | 8.7 | 629 / 2.20 | 0.5 |
+| Ice_Age26 | human | autorig | FAIL | 0.04 | 3 / 1 | 7.4 | 62.7 | 370 / 3.91 | 32.3 |
+| Ice_Age26 | human | m2m | FAIL | 0.85 | 225 / 106 | 5.5 | 148.3 | 2590 / 3.97 | 0.5 |
+| Laree_Age32 | human | autorig | FAIL | 0.00 | 3 / 4 | 10.6 | 52.0 | 230 / 2.61 | 24.9 |
+| Laree_Age32 | human | m2m | FAIL | 1.28 | 243 / 287 | 7.4 | 126.4 | 2205 / 2.56 | 0.5 |
+| horse_sample | horse | autorig | PASS | 0.09 | 0 / 0 | 4.0 | - | 10 / 27.84 | 1.5 |
+| horse_sample | horse | m2m | FAIL | 1.61 | 55 / 16 | 3.3 | - | 65 / 28.07 | 0.1 |
+| Horse_Bay | horse | autorig | PASS | 0.14 | 0 / 0 | 3.5 | - | 164 / 29.15 | 25.2 |
+| Horse_Bay | horse | m2m | FAIL | 0.52 | 910 / 332 | 2.6 | - | 1504 / 29.03 | 0.5 |
+| Cow_Holstein | horse | autorig | FAIL | 4.27 | 30 / 4 | 2.9 | - | 179 / 44.57 | 36.1 |
+| Cow_Holstein | horse | m2m | FAIL | 0.30 | 960 / 207 | 4.3 | - | 1561 / 45.55 | 0.5 |
+| fox_sample | fox | autorig | PASS | 0.00 | 0 / 0 | 4.0 | - | 7 / 39.02 | 1.5 |
+| fox_sample | fox | m2m | FAIL | 5.08 | 19 / 4 | 5.0 | - | 58 / 39.46 | 0.1 |
+| Dog_BlackTan | fox | autorig | FAIL | 1.46 | 17 / 3 | 4.6 | - | 549 / 55.11 | 36.7 |
+| Dog_BlackTan | fox | m2m | FAIL | 1.91 | 749 / 130 | 2.3 | - | 1002 / 53.33 | 0.5 |
+| Cat_Tabby | fox | autorig | FAIL | 6.45 | 265 / 44 | 3.8 | - | 1138 / 22.87 | 46.4 |
+| Cat_Tabby | fox | m2m | FAIL | 1.88 | 819 / 157 | 2.8 | - | 1188 / 21.17 | 0.5 |
+| bird_sample | bird | autorig | CHECK | 0.78 | 2 / 2 | 3.1 | - | 19 / 23.16 | 3.0 |
+| bird_sample | bird | m2m | FAIL | 1.78 | 26 / 4 | 2.4 | - | 151 / 23.16 | 0.1 |
+| Chicken_Hen | bird | autorig | FAIL | 3.37 | 651 / 48 | 3.5 | - | 1889 / 77.33 | 68.2 |
+| Chicken_Hen | bird | m2m | FAIL | 2.10 | 875 / 135 | 7.1 | - | 1821 / 81.67 | 0.5 |
+| Chicken_Rooster | bird | autorig | FAIL | 8.93 | 1518 / 170 | 2.3 | - | 1125 / 28.28 | 71.7 |
+| Chicken_Rooster | bird | m2m | FAIL | 3.31 | 659 / 106 | 3.5 | - | 1337 / 33.42 | 0.5 |
+| dragon_sample | dragon | autorig | FAIL | 0.00 | 0 / 0 | 0.6 | - | 4 / 12.15 | 5.6 |
+| dragon_sample | dragon | m2m | FAIL | 3.47 | 57 / 10 | 1.5 | - | 80 / 12.10 | 0.1 |
+| Dragon | dragon | autorig | FAIL | 10.01 | 1211 / 161 | 0 | - | 1246 / 5.33 | 77.3 |
+| Dragon | dragon | m2m | FAIL | 10.77 | 1408 / 103 | 4.3 | - | 2027 / 7.84 | 0.5 |
+| Drake | dragon | autorig | FAIL | 3.80 | 389 / 42 | 2.6 | - | 402 / 14.92 | 58.6 |
+| Drake | dragon | m2m | FAIL | 5.37 | 898 / 118 | 3.0 | - | 911 / 1.05 | 0.5 |
+| kaiju_sample | kaiju | autorig | FAIL | 0.00 | 0 / 0 | 1.4 | - | 2 / 10.29 | 1.3 |
+| kaiju_sample | kaiju | m2m | FAIL | 1.80 | 33 / 10 | 2.1 | - | 72 / 10.33 | 0.1 |
+| spider_sample | spider | autorig | FAIL | 1.06 | 0 / 0 | 1.1 | - | 0 / 139.84 | 3.8 |
+| spider_sample | spider | m2m | FAIL | 7.20 | 15 / 2 | 2.8 | - | 11 / 139.84 | 0.1 |
+| Crawler | spider | autorig | FAIL | 6.68 | 602 / 11 | 5.9 | - | 507 / 51.21 | 51.0 |
+| Crawler | spider | m2m | FAIL | 4.92 | 567 / 88 | 2.7 | - | 1045 / 49.17 | 0.5 |
+| reef_crab | spider | autorig | FAIL | 2.27 | 100 / 14 | 10.1 | - | 311 / 56.43 | 13.0 |
+| reef_crab | spider | m2m | FAIL | 7.89 | 250 / 62 | 6.6 | - | 465 / 65.16 | 0.3 |
+| snake_sample | snake | autorig | PASS | 0.00 | 0 / 0 | 3.0 | - | 0 / - | 35.2 |
+| snake_sample | snake | m2m | PASS | 0.00 | 0 / 0 | 4.3 | - | 2 / - | 0.1 |
+| glass_eel | snake | autorig | FAIL | 0.27 | 0 / 0 | 0.8 | - | 3 / - | 3.2 |
+| glass_eel | snake | m2m | FAIL | 0.00 | 16 / 27 | 4.9 | - | 687 / - | 0.2 |
+| sea_serpent | snake | autorig | FAIL | 0.32 | 0 / 0 | 0.1 | - | 7 / - | 2.9 |
+| sea_serpent | snake | m2m | FAIL | 0.53 | 2 / 29 | 1.0 | - | 81 / - | 0.2 |
+| shark_sample | shark | autorig | PASS | 0.01 | 0 / 0 | 18.1 | - | 0 / - | 4.7 |
+| shark_sample | shark | m2m | FAIL | 1.52 | 116 / 46 | 16.5 | - | 187 / - | 0.2 |
+| Shark | shark | autorig | CHECK | 0.00 | 2 / 1 | 22.4 | - | 1 / - | 18.7 |
+| Shark | shark | m2m | FAIL | 0.01 | 379 / 201 | 18.3 | - | 431 / - | 0.5 |
+| megalodon | shark | autorig | PASS | 0.03 | 0 / 0 | 25.5 | - | 0 / - | 14.6 |
+| megalodon | shark | m2m | FAIL | 1.14 | 391 / 191 | 21.2 | - | 723 / - | 0.4 |
+
+## M2b results (before M9)
+
 
 Columns:
 - **Clip tears**: stretched edges summed over the three clips (each clip's worst frame).
@@ -100,7 +271,8 @@ The browser's "Use M2M skinning" path loses on every template, so per the plan (
 Only the Mesh2Motion samples reach CHECK, and only with ours. Mesh2Motion's skinning passes the snake sample alone.
 Every asset-packs model FAILs both ways. The worst are Tripo's birds and Smeltdown's dragon and crawler, with
 2000-4400 combined tears either way. Closest-bone skinning isn't the fix. Its hard boundaries tear more, and its
-one-ring blends smear across Tripo's loose fragments. The next skinning work should go on ours:
+one-ring blends smear across Tripo's loose fragments. The next skinning work should go on ours (M9, above, worked
+through this list; skin-bakeoff-results.json now holds M9's numbers, M2b's are in its git history):
 
 1. **The animals' bend tears.** The tears come from the 40-degree single-bone bends on bones buried in the body
    (girdles, the shoulder and the thigh) and on tails (the hen 2869, the cat 1031, the dog 591). They need a fade

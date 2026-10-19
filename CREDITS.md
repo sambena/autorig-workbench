@@ -32,6 +32,7 @@ Code (or a close reimplementation of it) that lives in this repository.
 | A. Aristidou, J. Lasenby, [*FABRIK: A fast, iterative solver for the Inverse Kinematics problem*](https://doi.org/10.1016/j.gmod.2011.05.003) (Graphical Models, 2011) | Leg IK in clip clean-up |
 | W. Li et al., [*Example-based Motion Synthesis via Generative Motion Matching*](https://weiyuli.xyz/GenMM/) (SIGGRAPH 2023) | Clip variants |
 | C. Guo et al., [*MoMask: Generative Masked Modeling of 3D Human Motions*](https://github.com/EricGuo5513/momask-codes) (CVPR 2024) | Foot contact and skate measures |
+| E. J. McShane, [*Extension of range of functions*](https://doi.org/10.1090/S0002-9904-1934-05978-0) (Bull. AMS 1934), and H. Whitney, [*Analytic extensions of differentiable functions defined in closed sets*](https://doi.org/10.1090/S0002-9947-1934-1501735-3) (Trans. AMS 1934): the lower and upper Lipschitz envelopes ([Wikipedia](https://en.wikipedia.org/wiki/Lipschitz_continuity#Extensions)), computed over the mesh's edges as shortest paths by Bellman-Ford style relaxation ([Wikipedia](https://en.wikipedia.org/wiki/Bellman%E2%80%93Ford_algorithm)) | The M9 skin fade: each joint's subtree weight made as smooth as a bend there needs, and no smoother (`autorig/core/skin_fade.py`) |
 | M. Loper et al., [*SMPL: A Skinned Multi-Person Linear Model*](https://smpl.is.tue.mpg.de) (SIGGRAPH Asia 2015) | The joint layout of SMPL motion data. No SMPL model files are included; those are under the SMPL licence from the Max Planck Institute |
 
 ## Bundled third-party files

@@ -4,6 +4,7 @@
 #   blender -b --python autorig/steps/audit.py -- -model wolf               the model's rigged/<model>.fbx
 #   blender -b --python autorig/steps/audit.py -- -fbx <path> -slug <name>  any FBX
 #   options: -out <dir> (default <AUTORIG_WORK>/audit)   -render 0 (numbers only, no sheets)
+#            -clip-bends <json> ({bone: degrees}: how far the model's clips turn each bone, steps/m2m_rig.clip_bends)
 #   python autorig/cli/audit_all.py wolf,moth ...                           several, one Blender each, and a table
 #   python autorig/cli/audit_all.py all                                     every rigged model
 #
@@ -12,10 +13,16 @@
 #   bleed       vertices dominated by a bone that is neither their nearest bone nor next to it
 #   ownership   each bone's share of the surface, and its reach (90th percentile distance of what it owns)
 #   joints      how smoothly each joint blends parent into child
-#   bends       each bone turned 40 degrees about its own X ("bend") and twisted 60 ("twist"): edges stretched past
+#   bends       each bone turned 40 degrees about its own X ("bend"; less where the model's clips turn it less, below)
+#               and twisted 60 ("twist"): edges stretched past
 #               2x ("tear edges"), the widest gap they open, and surface outside the bone's subtree that moves
 #               ("collateral")
-#   combined    every joint at once (limbs 30, spine 12, tail 14): the pose the old bend test only showed as a picture
+#   combined    every joint at once (limbs 30, spine 12, tail 14; no more than its clips turn it, below): the pose the
+#               old bend test only showed as a picture
+#   clip bends  a rig whose clips are known (steps/m2m_rig.py: rig.json rig.audit_clip_bends, or -clip-bends) is bent
+#               as far as its clips turn each bone with headroom, between 15 and 40 degrees, and never further than
+#               the defaults above. A shoulder blade or a hen's spine turns a few degrees in a walk; 40 tested a pose
+#               the model never takes (docs/SKIN-BAKEOFF.md, "M9"). The grades and their limits do not change.
 #   stand       humanoids: both upper arms hanging 12 degrees off vertical, as a game stands a person; folds per
 #               10k triangles (faces whose crease angle changes over 60 degrees), graded as stand_folds
 # Writes <out>/<slug>.json with a "verdict" block (grade, pass, checks), "tears" (per bone) and "tear_sites" (where the
@@ -48,6 +55,7 @@ def arg(n, d=None): return A[A.index(n) + 1] if n in A else d
 MODEL = arg("-model")
 SPEC_AUDIT = {}
 POSE_RANGES = {}
+CLIP_BENDS = {}
 if MODEL:
     from layout import rigged_dir, leaf
     FBX = os.path.join(rigged_dir(MODEL), leaf(MODEL) + ".fbx")
@@ -59,6 +67,7 @@ if MODEL:
     try:
         from spec_store import SPECS, model as spec_of
         POSE_RANGES = (spec_of(MODEL).get("rig") or {}).get("audit_motion_ranges", {})
+        CLIP_BENDS = (spec_of(MODEL).get("rig") or {}).get("audit_clip_bends") or {}
         # rig.audit; or, for a model with no rig section of its own (one lifted from another pack, rigged there and
         # cut to this one's budget here), a top-level "audit" in its rig.json
         SPEC_AUDIT = dict(SPECS.get(MODEL, {}).get("audit") or spec_of(MODEL).get("audit", {}))
@@ -66,6 +75,9 @@ if MODEL:
         pass
 else:
     FBX = arg("-fbx")
+if arg("-clip-bends"):
+    CLIP_BENDS = json.load(open(arg("-clip-bends"), encoding="utf-8"))
+CLIP_BENDS = {n: min(40.0, max(0.0, float(v))) for n, v in CLIP_BENDS.items() if isinstance(v, (int, float))}
 SLUG = arg("-slug", MODEL or os.path.splitext(os.path.basename(FBX or "x"))[0])
 OUT = arg("-out") or __import__("layout").work_dir("audit")
 RENDER = arg("-render", "1") == "1"
@@ -383,7 +395,8 @@ if arm is not None:
         if parent[c] < 0: continue
         sub = subtree(c)
         ranges = POSE_RANGES.get(BN[c], {})
-        probes = [(mode, angle) for mode, default in (("bend", [40]), ("twist", [60]))
+        bend0 = [CLIP_BENDS[BN[c]]] if BN[c] in CLIP_BENDS else [40]
+        probes = [(mode, angle) for mode, default in (("bend", bend0), ("twist", [60]))
                   for angle in ranges.get(mode, default)]
         if any(not isinstance(angle, (int, float)) or not math.isfinite(angle) or abs(angle) > 180 for _, angle in probes):
             raise ValueError("audit motion angles must be finite degrees between -180 and 180")
@@ -426,6 +439,7 @@ def combined_angles():
         r = role_of(BN[i])
         ang = {"spine": 12, "neck": 20, "head": 15, "tail": 14, "jaw": 25, "finger": 0, "root": 0}.get(r, 30)
         if r == "unnamed": ang = 20
+        if BN[i] in CLIP_BENDS: ang = min(ang, CLIP_BENDS[BN[i]])
         out[BN[i]] = ang
     return out
 COMBINED = combined_angles()
@@ -546,7 +560,7 @@ for k, i in enumerate(order):
     col[i] = hue_rgb((k * 0.618034) % 1.0, 0.7 if k % 2 else 0.9, 0.95 if k % 3 else 0.75)
 bone_colours = {BN[i]: [round(float(x), 3) for x in col[i]] for i in range(nb)}
 
-result = dict(slug=SLUG, fbx=FBX, meshes=per_mesh, unskinned_meshes=unskinned_meshes, verts=NV,
+result = dict(slug=SLUG, fbx=FBX, clip_bends=CLIP_BENDS or None, meshes=per_mesh, unskinned_meshes=unskinned_meshes, verts=NV,
               size_units=[round(float(x), 3) for x in size], bones=nb, deform_weighted=len(deform),
               bones_without_skin=[BN[i] for i in range(nb) if i not in weighted_set],
               groups_unmatched=sorted(groups_unmatched),

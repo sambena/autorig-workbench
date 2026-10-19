@@ -49,7 +49,11 @@ TEMPLATES = {
               "family": "body", "roles": {"idle": "Idle", "walk": "Side winding", "attack": "Bite"}},
     "shark": {"title": "Shark", "rig": "rig-shark.glb", "animations": ["shark-animations.glb"], "tracking": "pelvis",
               "family": "body", "roles": {"idle": "Idle", "walk": "Swim Horizontal", "swim": "Swim Horizontal",
-                                          "attack": "Bite"}},
+                                          "attack": "Bite"},
+              # the head joint 22% of the length back from the nose (the template's is 29%: on Tripo's sharks the
+              # head then owned 36-41% of the skin, the thickest part of the body; a shark's head, snout to the last
+              # gill slit, is about a fifth to a quarter of it). steps/m2m_rig.fit_line
+              "head_at": 0.22},
 }
 # M2b's bake-off (docs/SKIN-BAKEOFF.md, 2026-10-18): ours beat Mesh2Motion's skinning on all nine templates
 for _t in TEMPLATES.values():

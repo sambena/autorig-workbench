@@ -6,9 +6,11 @@
 #
 # The model keeps the skeleton it was fitted to (rig.json m2m: template and joints). Only the skin is tried again,
 # several ways, each into a scratch folder and graded by steps/audit.py:
-#   - autorig: our bone heat on a voxel copy (the default);
+#   - autorig: our bone heat on a voxel copy, faded (core/skin_fade.py; the default);
 #   - fine:    the same on a finer voxel copy, which keeps thin parts (udders, dewlaps, ears) apart from the body;
 #   - coarse:  a coarser copy, which closes gaps between loose shells so they move with the body;
+#   - ring:    ours as before M9: six passes of ring smoothing instead of the fade (still better on a few
+#              models: docs/SKIN-BAKEOFF.md, "M9");
 #   - m2m:     Mesh2Motion's own closest-bone skinning (core/m2m_skin.py).
 # The best by audit (grade, then tears, then bleed) wins only if it beats the rig the model has now. The winner is
 # then rigged into the model's own folder exactly as Auto rig would, with the same clips. Prints M2M_FIX {json}.
@@ -82,6 +84,7 @@ def main(name):
     tries = [("autorig", ["--skin", "autorig"]),
              ("fine", ["--skin", "autorig", "--voxel", "%.4f" % (height / 120)]),
              ("coarse", ["--skin", "autorig", "--voxel", "%.4f" % (height / 45)]),
+             ("ring", ["--skin", "autorig", "--fade", "0"]),
              ("m2m", ["--skin", "m2m"])]
     print("M2M_FIX now: %s" % describe(current), flush=True)
     results = []

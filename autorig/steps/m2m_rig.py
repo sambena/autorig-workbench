@@ -27,7 +27,8 @@
 #      the travel scaled by the leg-length change; the limbs (legs, arms, wings) rebaked to point the way the
 #      template's do frame by frame, the body keeping the clip's own turns, the feet grounded as the template's are;
 #   5. skinned (--skin, default the template's): "autorig", bone heat on a watertight voxel copy, carried back by
-#      nearest face (below the belly a leg only moves its own leg), at most four influences; or "m2m", Mesh2Motion's
+#      nearest face, every joint faded as far as a --fade-degree bend there needs (core/skin_fade.py; below the
+#      belly a leg only moves its own leg), at most four influences; or "m2m", Mesh2Motion's
 #      own closest-bone skinning (core/m2m_skin.py, ported from its solvers);
 #   6. written: <name>.glb (every clip an animation), <name>.fbx (takes; Unity's axes unless --target generic),
 #      <name>.blend, preview.glb, rig.json (rig.kind "m2m", m2m: template, joints), the card (model.json) and
@@ -74,7 +75,14 @@ def args(argv=None):
                         "and adds the template's turns (default); absolute points every leg bone as the template's")
     p.add_argument("--rest", default="", choices=("", "template", "as-modelled"),
                    help="the rest pose: the template's (default for snakes) or the body as modelled")
-    p.add_argument("--smooth", type=int, default=6, help="weight smoothing passes after the transfer")
+    p.add_argument("--smooth", type=int, default=6, help="ring smoothing passes after the transfer (--fade 0 only)")
+    p.add_argument("--no-clip-bends", dest="clip_bends", action="store_false",
+                   help="fade and audit every bone at 40 degrees, not as far as its clips turn it")
+    p.add_argument("--fade-rounds", dest="fade_rounds", type=int, default=20,
+                   help="fade, limit to four influences, fade again: this many rounds (core/skin_fade.py)")
+    p.add_argument("--fade", type=float, default=40.0,
+                   help="fade every joint as far as a bend of this many degrees needs (core/skin_fade.py; 0: the "
+                        "old ring smoothing)")
     p.add_argument("--choose-only", dest="choose_only", action="store_true",
                    help="print the template choice (M2M_RIG {template, choice}) and stop")
     p.add_argument("--no-audit", dest="audit", action="store_false")
@@ -478,7 +486,31 @@ def fit_shape(arm, R, A, rig_surface, animal_surface, family):
         for i, n in enumerate(tail): heads[n] = along(cum[i] / max(cum[-1], 1e-6))
         tails[tail[-1]] = along(1.0)
     found = dict(legs=len(set(leg_of.values())), leg_bones=len(leg_of), tail=len(tail), tail_hangs=tail_path is not None)
+    if family == "spider":
+        found["head_reach"] = reach_front(heads, tails, bones, animal_surface)
     return heads, tails, found, leg_of, tail, SA
+
+
+def reach_front(heads, tails, bones, surface):
+    """A spider's head as far forward as the body goes. The template's head sits behind long forward legs, and slice
+    by slice that proportion put a crab's and a hexapod's head bone in the middle of the body, nearer no skin than the
+    legs and fangs around it: bone heat gave it 0%. Here head_tip (and so the head's tail) moves out to the front of
+    the body on its middle line (the legs are off it), 80% of the way, its tail there, when that is further forward
+    than the fit put it. Returns the move in metres (0: none)."""
+    if "head" not in bones or "head_tip" not in bones: return 0.0
+    xs = [abs(q.x) for q in surface]
+    width = max(xs) if xs else 0.0
+    mid = [q for q in surface if abs(q.x) < width * 0.08]
+    if len(mid) < 10: return 0.0
+    front = min(q.y for q in mid)
+    near = [q for q in mid if q.y < front + 0.03 * (max(q.y for q in mid) - front)]
+    tip = Vector((0.0, front, sorted(q.z for q in near)[len(near) // 2]))
+    h = heads["head"]
+    old = heads["head_tip"]
+    if tip.y > old.y - 1e-3 or tip.y > h.y: return 0.0
+    heads["head_tip"] = h.lerp(tip, 0.8)
+    tails["head_tip"] = tip
+    return round((heads["head_tip"] - old).length, 3)
 
 
 def mesh_line(mesh, bins=40):
@@ -549,11 +581,13 @@ def frame(d, hint=Vector((0, 0, 1))):
     return Matrix((x, y, z)).transposed()
 
 
-def fit_line(arm, mesh, log):
+def fit_line(arm, mesh, log, head_at=None):
     """heads, tails and rolls for a body with no legs to stand on (snake, shark): the template's line from its front
     tip to its back tip laid along the body's own centre line, every joint at the same share of the length; a joint
     off the line (a fin, the jaw) keeps its offset from it, turned with the line there (back kept up) and scaled by
-    the length change. The mesh is first turned about Z so it heads the template's way, so nothing turns over."""
+    the length change. The mesh is first turned about Z so it heads the template's way, so nothing turns over.
+    head_at: the share of the length (from the front) the head bone's joint goes to, the line ahead of it and behind
+    it each stretched evenly to fit (None: where the template has it)."""
     mw = arm.matrix_world
     bones = arm.data.bones
     leaves = [b for b in bones if not b.children]
@@ -585,10 +619,15 @@ def fit_line(arm, mesh, log):
     mlen = sum((ml[i] - ml[i - 1]).length for i in range(1, len(ml)))
     k = mlen / max(tlen, 1e-9)
 
+    u_head = polyline_param(tl, mw @ bones["head"].head_local)[0] if head_at and "head" in bones else None
+    def share(u):
+        if not u_head or not 0 < u_head < 1: return u
+        return u * head_at / u_head if u < u_head else head_at + (u - u_head) * (1 - head_at) / (1 - u_head)
+
     def turn_at(p):
         u, q, i = polyline_param(tl, p)
         d_t = (tl[min(i + 1, len(tl) - 1)] - tl[i])
-        at, d_m = polyline_at(ml, u)
+        at, d_m = polyline_at(ml, share(u))
         return at, q, frame(d_m) @ frame(d_t).inverted()
 
     def place(p):
@@ -604,6 +643,7 @@ def fit_line(arm, mesh, log):
             tails[b.name] = heads[b.name] + (mw.to_3x3() @ (b.tail_local - b.head_local)) * k
     rolls = {b.name: turn_at(mw @ b.head_local.lerp(b.tail_local, 0.5))[2] @ (mw.to_3x3() @ b.z_axis) for b in bones}
     log["line"] = {"template_m": round(tlen, 3), "mesh_m": round(mlen, 3), "points": len(ml),
+                   "head_at": [round(u_head, 3), head_at] if u_head and head_at else None,
                    "front": front.name, "back": back.name, "turned_deg": round(math.degrees(yaw), 1)}
     return heads, tails, rolls, k
 
@@ -668,7 +708,14 @@ def write_bones(arm, heads, tails, scale, tol, rolls=None):
         oh, ot = mw @ b.head, mw @ b.tail
         nh = heads[b.name]
         nxt = [c for c in b.children if ((mw @ c.head) - ot).length < tol]
+        # a stub whose tip bone (a leaf, no skin) starts well ahead along it: the snake's head is 1.3 cm long with
+        # head_tip 13 cm on, so bone heat gave the head 0-0.3% of the body. It reaches the tip instead; its direction,
+        # and so its frame and the clips' turns, stay the same
+        ahead = [c for c in b.children if not c.children and LEAF.search(c.name)
+                 and ((mw @ c.head) - oh).length > (ot - oh).length * 1.5
+                 and ((mw @ c.head) - oh).angle(ot - oh, math.pi) < math.radians(15)]
         if nxt: nt = heads[nxt[0].name]
+        elif ahead: nt = heads[ahead[0].name]
         elif b.name in tails: nt = tails[b.name]
         else: nt = nh + (ot - oh) * scale
         if (nt - nh).length < 1e-4: nt = nh + (ot - oh) * scale
@@ -778,6 +825,40 @@ def damp(actions, names, k):
                     kp = f.keyframe_points[i]
                     d = q[j] - kp.co.y
                     kp.co.y += d; kp.handle_left.y += d; kp.handle_right.y += d
+
+
+# The audit's single-bone bend is 40 degrees, a combined pose 30 on limbs; a bone that never turns that far in its
+# clips (a hen's spine turns a few degrees) is tested at what it does turn, with headroom, and never past 40 (the
+# old test) nor under 15 (a game adds turns of its own: a look-at, a hit reaction). docs/SKIN-BAKEOFF.md, "M9".
+CLIP_BEND_HEADROOM, CLIP_BEND_MIN, CLIP_BEND_MAX = 1.25, 15.0, 40.0
+
+
+def clip_bends(arm, actions):
+    """{bone: degrees}: the most each bone turns from its rest in these clips (its rotation curves, every frame),
+    times the headroom, between CLIP_BEND_MIN and CLIP_BEND_MAX; and {bone: the raw most}. Both kinds of rotation
+    curve count; a bone with no curves turns 0."""
+    most = {b.name: 0.0 for b in arm.data.bones}
+    for act in actions:
+        quat, eul = {}, {}
+        for fc in fcurves(act):
+            n = bone_of(fc.data_path)
+            if n not in most: continue
+            if fc.data_path.endswith("rotation_quaternion"): quat.setdefault(n, {})[fc.array_index] = fc
+            elif fc.data_path.endswith("rotation_euler"): eul.setdefault(n, {})[fc.array_index] = fc
+        frames = frames_of(act)
+        for n, fcs in quat.items():
+            for f in frames:
+                q = Quaternion([fcs[i].evaluate(f) if i in fcs else (1.0 if i == 0 else 0.0) for i in range(4)])
+                if q.magnitude < 1e-9: continue
+                q.normalize()
+                most[n] = max(most[n], math.degrees(2 * math.acos(min(1.0, abs(q.w)))))
+        for n, fcs in eul.items():
+            from mathutils import Euler
+            for f in frames:
+                q = Euler([fcs[i].evaluate(f) if i in fcs else 0.0 for i in range(3)]).to_quaternion()
+                most[n] = max(most[n], math.degrees(2 * math.acos(min(1.0, abs(q.w)))))
+    test = {n: round(min(CLIP_BEND_MAX, max(CLIP_BEND_MIN, v * CLIP_BEND_HEADROOM)), 1) for n, v in most.items()}
+    return test, {n: round(v, 1) for n, v in most.items()}
 
 
 def assign(o, act):
@@ -968,10 +1049,58 @@ def fill_bare(mesh):
     return len(bare)
 
 
-def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0):
+def _weights(mesh, arm):
+    """The mesh's weights as (vertices, edges, W n x bones, parent indices, deform flags, heads, bone names)."""
+    import numpy as np
+    me = mesh.data
+    n = len(me.vertices)
+    bones = list(arm.data.bones)
+    names = [b.name for b in bones]
+    bi = {nm: i for i, nm in enumerate(names)}
+    parent = [bi[b.parent.name] if b.parent else -1 for b in bones]
+    deform = [bool(b.use_deform and b.name in mesh.vertex_groups) for b in bones]
+    gb = {g.index: bi[g.name] for g in mesh.vertex_groups if g.name in bi}
+    W = np.zeros((n, len(bones)))
+    for v in me.vertices:
+        for g in v.groups:
+            if g.group in gb and deform[gb[g.group]]: W[v.index, gb[g.group]] += g.weight
+    P = np.empty(n * 3); me.vertices.foreach_get("co", P); P = P.reshape(n, 3)
+    E = np.empty(len(me.edges) * 2, int); me.edges.foreach_get("vertices", E); E = E.reshape(-1, 2)
+    heads = np.array([b.head_local[:] for b in bones])
+    return P, E, W, parent, deform, heads, names
+
+
+def _write_weights(mesh, W, names, deform):
+    import numpy as np
+    n = W.shape[0]
+    for j, nm in enumerate(names):
+        if not deform[j]: continue
+        g = mesh.vertex_groups[nm]
+        g.remove(list(range(n)))
+        for i in np.nonzero(W[:, j] > 0)[0]: g.add([int(i)], float(W[i, j]), 'REPLACE')
+
+
+def fade(mesh, arm, angle=40.0, rounds=20, gate_rounds=False):
+    """core/skin_fade.fade_rounds on the mesh's weights: every joint faded as far as a bend of angle degrees there
+    needs, then four influences at most, `rounds` times; gate_rounds: each round first keeps each vertex's weight to
+    its near bones (core/skin_fade.near_share). Returns the relaxation passes."""
+    import skin_fade
+    import numpy as np
+    P, E, W, parent, deform, heads, names = _weights(mesh, arm)
+    near = None
+    if gate_rounds:
+        tails = np.array([b.tail_local[:] for b in arm.data.bones])
+        near = skin_fade.near_share(P, heads, tails, deform)
+    out, passes = skin_fade.fade_rounds(P, E, W, parent, deform, heads, angle, rounds, near=near)
+    _write_weights(mesh, out, names, deform)
+    return passes
+
+
+def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0, width=0.0, rounds=20, gate_rounds=False):
     """Bone heat on a watertight voxel copy, carried back to the mesh by nearest face. The root, the leaf and tip
-    bones at the ends of chains and (girdles) the girdle bones carry no skin; smooth: passes of weight smoothing
-    after the transfer."""
+    bones at the ends of chains and (girdles) the girdle bones carry no skin. width: fade() for a bend of that many
+    degrees, `rounds` rounds, after the gate (0: none, and smooth: passes of ring smoothing instead, as before M9).
+    At most four influences, normalised, as an engine takes them."""
     off = []
     for b in arm.data.bones:
         if b.parent is None or (not b.children and LEAF.search(b.name)) or (girdles and GIRDLE.search(b.name)):
@@ -1020,13 +1149,18 @@ def skin(mesh, arm, voxel, after_transfer=None, girdles=False, smooth=0):
     bpy.context.view_layer.objects.active = mesh
     mesh.select_set(True)
     gated = gate(mesh, arm)
-    if smooth:
-        import rerig
-        rerig.smooth_weights(mesh, int(smooth))
-    if after_transfer: after_transfer()
-    # at most four influences, normalised, as an engine takes them
-    bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
-    bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
+    if width:
+        # the leg confine's cuts first, so the fade smooths them too; then four influences at most
+        if after_transfer: after_transfer()
+        fade(mesh, arm, width, rounds, gate_rounds)
+    else:
+        if smooth:
+            import rerig
+            rerig.smooth_weights(mesh, int(smooth))
+        if after_transfer: after_transfer()
+        # at most four influences, normalised, as an engine takes them
+        bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
+        bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
     mesh.parent = arm
     mod = mesh.modifiers.new("Armature", 'ARMATURE'); mod.object = arm
     bare = sum(1 for v in mesh.data.vertices if not v.groups)
@@ -1302,8 +1436,14 @@ def blender_run(script, *argv, timeout=1800):
     return subprocess.run(cmd, capture_output=True, text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=timeout)
 
 
-def audit(fbx, slug, out):
-    r = blender_run("audit.py", "-fbx", fbx, "-slug", slug, "-out", out, "-render", "0")
+def audit(fbx, slug, out, bends=None):
+    extra = []
+    if bends:
+        os.makedirs(out, exist_ok=True)
+        path = os.path.join(out, slug + "_clip_bends.json")
+        with open(path, "w", encoding="utf-8", newline="\n") as fh: json.dump(bends, fh, indent=1)
+        extra = ["-clip-bends", path]
+    r = blender_run("audit.py", "-fbx", fbx, "-slug", slug, "-out", out, "-render", "0", *extra)
     path = os.path.join(out, slug + ".json")
     if not os.path.exists(path):
         return {"error": ((r.stdout or "") + (r.stderr or ""))[-1500:]}
@@ -1447,7 +1587,7 @@ def run(a):
         k = J["hip"].z / max(bones[tracking].head_local.z, 1e-6) if tracking in bones else scale
         found = {"legs": 1, "leg_bones": len(leg_of)}
     elif fam == "body":
-        heads, tails, rolls, k = fit_line(arm, mesh, log)
+        heads, tails, rolls, k = fit_line(arm, mesh, log, info.get("head_at"))
         scale, leg_of, found = k, {}, {"line": True}
         animal = [v.co.copy() for v in mesh.data.vertices]
     else:
@@ -1496,6 +1636,8 @@ def run(a):
     grounded = [act for act in actions if not re.search(r"fly|flap|glide", act.name, re.I)]
     if wings and grounded and a.wing_swing != 1.0: damp(grounded, wings, a.wing_swing)
     log["limbs_rebaked"] = len(limb_set) if fam in ("human", "legged") else 0
+    bends, bends_raw = clip_bends(arm, actions)
+    log["clip_bends"] = {"turns": {n: v for n, v in bends_raw.items() if v}, "tested_at": bends}
 
     # the skin
     voxel = a.voxel or top / (110.0 if fam == "human" else 70.0)
@@ -1510,7 +1652,8 @@ def run(a):
         unreached, bare, off = m2m_skin_blender.skin(mesh, arm, t)
         gated, used = 0, None
     else:
-        unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth)
+        unreached, bare, off, gated, used = skin(mesh, arm, voxel, after, girdles=fam == "legged", smooth=a.smooth,
+                                                 width=a.fade, rounds=a.fade_rounds, gate_rounds=fam == "body")
     log["unwelded"] = unweld(mesh, arm, actions, top)                              # the generator's welds, cut
     log.update(proxy_unreached=unreached, bare_vertices=bare, no_skin_bones=len(off), gated=gated, voxel=used,
                skin_seconds=round(time.time() - t_skin, 2))
@@ -1549,7 +1692,7 @@ def run(a):
     bpy.ops.wm.save_as_mainfile(filepath=blend)
     out["blend"] = blend
     if a.audit:
-        log["audit"] = audit(tmp_fbx, a.name, os.path.join(a.out, "audit"))
+        log["audit"] = audit(tmp_fbx, a.name, os.path.join(a.out, "audit"), bends if a.clip_bends else None)
     if "fbx" in fmts:
         out["fbx"] = os.path.join(a.out, a.name + ".fbx")
         if a.target == "unity":
@@ -1574,7 +1717,8 @@ def run(a):
     rel = (lambda p: os.path.relpath(p, spec_dir).replace(os.sep, "/"))
     merge_json(os.path.join(spec_dir, "rig.json"), {"schema": "autorig-spec/1",
                                                      "rig": {"kind": "m2m", "skeleton": log["choice"].get("archetype") or t,
-                                                             "forward": [0, -1, 0]},
+                                                             "forward": [0, -1, 0],
+                                                             "audit_clip_bends": bends if a.clip_bends else None},
                                                      "m2m": m2m})
     grade = (log.get("audit") or {}).get("grade")
     merge_json(os.path.join(spec_dir, "model.json"), {
