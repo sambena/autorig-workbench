@@ -115,7 +115,7 @@ class Fit(unittest.TestCase):
         out = F.auto_section(h, pts, lo, size)
         self.assertEqual(out["forward"], [0, 1, 0])
         self.assertEqual(out["rest_arms"], "keep")
-        self.assertTrue(out["straight_arms"])
+        self.assertNotIn("straight_arms", out)                          # the sleeve tracker places the arm's joints
         self.assertNotEqual(out["z"]["hip"], F.DEFAULT_HUMANOID["z"]["hip"])
         self.assertEqual(F.DEFAULT_HUMANOID["z"]["hip"], 0.47)           # the default itself is untouched
 

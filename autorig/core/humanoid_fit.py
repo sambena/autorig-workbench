@@ -75,7 +75,11 @@ def auto_landmarks(co, lo, size, main=None, h=None, log=None):
       legs:  tracked up from the feet, each the run of points continuing the one below, until the two merge or one
              widens into a hem. Their spacing is what places the legs ("leg"/"leg_band": slices are read only in a band
              around each, so a robe's hem never splays them); "robe" when something covers them below the hip.
-    Returns {"z": {...}, "x": {...}[, "robe": True]} as the section's fractions (x counted in from each side's edge).
+    The arms' joints between the shoulder and the fingertip are left to measure()'s tracker, which follows a bell
+    sleeve's middle: the arm's own line (straight_arms) is truer to the skeletons it was checked on (5.6% of the height
+    off against 5.8%), but bone heat then gave the sleeve's hanging cloth to the torso, and it tore when the arms came
+    down (Heartroot's stoker: 87 torn edges in idle became 262).
+    Returns {"z": {...}, "x": {...}[, "robe": ...]} as the section's fractions (x counted in from each side's edge).
     log (a dict) gets what was found."""
     log = {} if log is None else log
     lo = np.asarray(lo, dtype=float); size = np.asarray(size, dtype=float)
@@ -231,7 +235,6 @@ def auto_landmarks(co, lo, size, main=None, h=None, log=None):
                 "arm": round(arm_z, 4), "spine2": round(hip + sp[2] * (neck - hip), 4),
                 "spine1": round(hip + sp[1] * (neck - hip), 4), "spine": round(hip + sp[0] * (neck - hip), 4),
                 "hip": round(hip, 4), "knee": round(knee, 4), "ankle": round(ankle, 4)}
-    out["straight_arms"] = True            # the arm from the shoulder to the fingertip: a sleeve never pulls it down
     if legs_seen:
         lx = [float(np.median([t["c"] for t in tracks[sg] if 0.08 < t["z"] < 0.3] or [tracks[sg][-1]["c"]])) for sg in (1, -1)]
         lw = float(np.median([t["w"] for sg in (1, -1) for t in tracks[sg] if t["z"] > 0.08] or [0.06]))

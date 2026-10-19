@@ -194,8 +194,9 @@ on a dense sampling of the surface (a Tripo person has a few thousand vertices, 
 
 - **arms**: each arm's top edge, followed in from the fingertip. The shoulder joint is under the line that edge makes
   along the forearm half (a pauldron, a cape or the trapezius sits on the upper arm), run in to the chest's half width:
-  read at the first levels under the upper arm where the run through the middle is the torso alone. The arms then
-  run straight to the fingertip (`straight_arms`), so a bell sleeve never pulls them down.
+  read at the first levels under the upper arm where the run through the middle is the torso alone. The elbow and
+  wrist are then tracked as without `auto`, through a bell sleeve's middle: the arm's own straight line was a little
+  truer to the skeletons, but bone heat gave the sleeve's hanging cloth to the torso and it tore when the arm came down.
 - **neck, head, spine, hips, knees**: from the shoulders and the ankles by proportions fitted to the Mixamo-named
   skeletons of 18 Heartroot people and Mixamo's own rigs of 5 Tornado Titans (`humanoid_fit.AUTO`): the hip is
   0.62 of the way from the ankle to the neck (0.60-0.67 on all but one of them). The default's 0.47 put every hip
