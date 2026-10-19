@@ -145,8 +145,13 @@ def source_mesh(path, name, triangles):
         # Titans horse twin lay on its side, 0.26 m high, and Auto took it for a prop. The API mends uploads; a file
         # already in the collection is mended here (a copy; nothing when it needs none)
         import tripo_glb
-        path = tripo_glb.mend(path, report=lambda *_: None)
-    import_any(path)
+        mended = tripo_glb.mend(path, report=lambda *_: None)
+        import_any(mended)
+        if mended != path:                  # its temporary copy (21 MB on the box's 1 GB /tmp): the GLB's images are packed
+            import shutil
+            shutil.rmtree(os.path.dirname(mended), ignore_errors=True)
+    else:
+        import_any(path)
     joints = {}
     for o in bpy.data.objects:
         if o.type == 'ARMATURE':

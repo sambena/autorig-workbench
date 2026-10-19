@@ -74,6 +74,9 @@ if a.source and os.path.exists(a.source):
             import tripo_glb
             src = tripo_glb.mend(src, report=lambda *_: None)
         import_any(src)
+        if src != a.source:                       # the mended temporary copy
+            import shutil
+            shutil.rmtree(os.path.dirname(src), ignore_errors=True)
         for o in bpy.context.scene.objects:
             if o.type == "ARMATURE": o.data.pose_position = "REST"
             if o.animation_data: o.animation_data.action = None
