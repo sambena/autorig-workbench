@@ -239,6 +239,30 @@ The mean went from 77.2 to 88.3, and no model lost. Two other fixes were tried a
   others;
 - growing the arm's skin down a sleeve that bone heat had given to the thigh did the same.
 
+**The Rig button (Auto, the Human tile) rigs a person more than one way and keeps the best score.**
+`m2m_rig.people_classic` rigs, clips and scores each candidate with `run.py score`, and the best one's files stay:
+- our skeleton (`AUTORIG_HUMANOID_SKIN=rebuild`, with the skin choice above);
+- when the source came rigged and skinned to a full Mixamo-named humanoid, that rig kept as it came
+  (`rerig_humanoid.keep_source_rig`: its bones, rest and weights, only stood up and faced -Y; `"skin": "kept"`);
+- when standing the legs straight turned one more than 8 degrees (a sculpt made mid-stride), the legs resting as
+  sculpted (`AUTORIG_HUMANOID_LEGS=keep`; `humanoid.rest_legs: "keep"`).
+
+Each candidate is a full rig, clips and score, so a person takes about three times as long. Measured on Penny,
+2026-10-19:
+
+| model | kept | rebuilt | legs kept | chosen |
+|---|---|---|---|---|
+| stoker | 91.9 | 65.3 | | kept |
+| juggling_imp | 96.2 | 73.2 | 97.2 | legs kept |
+| crossbow_sentinel | 100 | 88.9 | | kept |
+| hooded figure | 65.6 | 82.5 | | rebuilt |
+| player_blue | | 80.8 | 98.1 | legs kept |
+
+A section someone tuned is not measured unless it says `"auto": true`. Given back to the measuring, the tuned
+sections scored:
+- the_skeleton 55.8 -> 90.3, armoured_guard 87.4 -> 100, Ice_Age16 80.4 -> 98.4, Leon_Age10 90.7 -> 94.4;
+- Laree_Age32 99.8 -> 92.1 and Radar_Age17 94.0 -> 86.9 worse, so those two keep their numbers.
+
 Against those skeletons the measured joints are 5.8% of the height off on average, the default's 7.7%; worst and
 best: the robot (arms down with shields) and the squire, ticket taker and wanderer (2-3%).
 
